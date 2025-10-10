@@ -19,3 +19,6 @@ Early development – more coming soon.
 - FastAPI
 - SQLite / Pandas
 - LLM API or local later
+
+## Documentation
+The full project documentation and progress log are available on [Notion](https://www.notion.so/Arete-Intelligent-Training-Assistant-28866cec311a80d8828dcf68b45f6193?source=copy_link)
