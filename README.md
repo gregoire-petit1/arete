@@ -1,6 +1,6 @@
 # Arete 🤖
 
-> **"Arete (ἀρετή)** — an ancient Greek concept meaning *excellence* or *virtue*,  
+> **Arete (ἀρετή)** — an ancient Greek concept meaning *excellence* or *virtue*,  
 > achieved when one fulfills their highest potential through discipline, balance, and mastery.  
 >  
 > **Project Arete** embodies this pursuit — an intelligent training assistant that helps you reach your personal best, every day.
