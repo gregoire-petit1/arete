@@ -6,7 +6,7 @@
 - Stack cible : FastAPI, DuckDB (`app.*`), uv (Python 3.11), ingestion CSV, endpoints `/health`, `/plan/jour`, `/log/recent`, CRUD persistance.
 - Qualité : ruff, mypy, pytest ; `.env` + `.env.example` ; lancement via `uv run uvicorn arete.api.main:app --reload --app-dir src`.
 
-## État actuel (mise à jour 2025-01)
+## État actuel (mise à jour 2025-12-01)
 
 ### Infrastructure
 
@@ -21,6 +21,49 @@
 - Validation : schémas Pydantic v2 avec `date`, bornes via `Field`, `Literal` pour le sexe
 - Calcul BMI extrait dans helper `_calculate_bmi()`
 
+### Features Engineering ✅ NEW (2025-12-01)
+
+Module complet `src/arete/features/` avec métriques scientifiques :
+
+#### Workload (`workload.py`)
+
+- ACWR (Acute:Chronic Workload Ratio) avec EWMA ou fenêtre glissante
+- Monotony (variabilité de la charge)
+- Strain (indicateur de fatigue accumulée)
+- Zones : Danger (>1.5), High Risk (1.3-1.5), Optimal (0.8-1.3), Undertrained (<0.8)
+- Références : Gabbett (2016), Foster (1998)
+
+#### Cardio (`cardio.py`)
+
+- TRIMP (Training Impulse) avec pondération par sexe (Banister)
+- Zones FC (5 zones basées sur %FCmax ou %FCR)
+- Estimation VO2max (Cooper, Rockport, méthode FC)
+- Efficiency Factor, calculs de pace
+
+#### Strength (`strength.py`)
+
+- Estimation 1RM : 7 formules (Epley, Brzycki, Lombardi, O'Conner, Wathan, Mayhew, RPE-based)
+- Zones de force (5 zones : Recovery → Max Strength)
+- INOL (Intensity × Number of Lifts)
+- Zones VBT (Velocity-Based Training)
+- Volume, tonnage, intensité
+
+#### Fitness-Fatigue (`fitness.py`)
+
+- CTL (Chronic Training Load / Fitness) — EWMA 42 jours
+- ATL (Acute Training Load / Fatigue) — EWMA 7 jours
+- TSB (Training Stress Balance / Form) = CTL − ATL
+- Readiness Score (0-100 composite)
+- Zones : Exhausted, Fatigued, Neutral, Fresh, Peak
+- Référence : Banister (1975)
+
+#### Recommendations (`recommendations.py`)
+
+- Recommandations intelligentes en français
+- Évaluation des risques (ACWR, monotony, strain, TSB)
+- Génération de plan hebdomadaire
+- Actions prioritaires avec catégories
+
 ### Sécurité & Robustesse (CodeRabbit review fixes)
 
 - ✅ Gestion des ressources : connexions DB fermées via try/finally
@@ -33,8 +76,8 @@
 ### Qualité & Tests
 
 - ✅ ruff (lint + format) configuré dans pyproject.toml
-- ✅ mypy configuré (quelques warnings à résoudre)
-- ✅ pytest avec 19 tests (API + repository)
+- ✅ mypy configuré et 100% clean sur features/
+- ✅ pytest avec **114+ tests** (API + repository + features)
 - ✅ GitHub Actions CI (.github/workflows/ci.yml) : lint, test, typecheck
 
 ### Données
@@ -70,12 +113,12 @@ uv run ruff format src tests
 ## Écarts / points d'attention
 
 - IDs générés côté dépôt : risque théorique de collisions si écriture concurrente (faible dans ce contexte mono-user).
-- mypy : 11 warnings (fetchone() peut retourner None) - non bloquants.
 
 ## Next steps (priorisés)
 
-1. **RAG roadmap** : définir le plan d'indexation (embeddings, store), schéma de features (ACWR, charge), et intégration dans `/plan/jour`.
-2. **Features engineering** : module `src/arete/features/` pour calcul ACWR, charge monotony, etc.
-3. **LLM integration** : connexion OpenAI/local LLM pour génération de recommandations.
-4. **Front/UX** : mini UI ou collection HTTP (Insomnia/Postman) prête à l'emploi.
-5. **Déploiement** : Docker, fly.io ou Render pour démo live.
+1. ~~**Features engineering** : module `src/arete/features/` pour calcul ACWR, charge monotony, etc.~~ ✅ **DONE**
+2. **Intégration API** : exposer les métriques features via endpoints `/metrics/workload`, `/metrics/fitness`, etc.
+3. **RAG roadmap** : définir le plan d'indexation (embeddings, store), et intégration dans `/plan/jour`.
+4. **LLM integration** : connexion OpenAI/local LLM pour génération de recommandations personnalisées.
+5. **Front/UX** : mini UI ou collection HTTP (Insomnia/Postman) prête à l'emploi.
+6. **Déploiement** : Docker, fly.io ou Render pour démo live.

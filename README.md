@@ -9,7 +9,7 @@
 
 ## 🚧 Status
 
-Early development – more coming soon.
+Active development — Features Engineering module complete.
 
 ## Goals
 
@@ -17,6 +17,7 @@ Early development – more coming soon.
 - Smart memory of previous sessions
 - RAG-based recommendations
 - AI Agent to orchestrate planning and adaptation
+- **Scientific training metrics** (ACWR, CTL/ATL/TSB, TRIMP, 1RM estimation)
 
 ## Stack
 
@@ -103,7 +104,7 @@ arete/
 ├── src/arete/           # Main source code
 │   ├── api/             # FastAPI routes and main app
 │   ├── dataio/          # Database and data ingestion
-│   ├── features/        # Feature engineering (coming soon)
+│   ├── features/        # Feature engineering (workload, cardio, strength, fitness)
 │   ├── models/          # ML models (coming soon)
 │   ├── rules/           # Business rules (coming soon)
 │   └── utils/           # Utility functions
@@ -111,6 +112,97 @@ arete/
 ├── data/                # Data files (not in git)
 ├── notebooks/           # Jupyter notebooks
 └── experiments/         # MLflow experiments
+```
+
+## Features Engineering Module
+
+The `src/arete/features/` module provides scientific training metrics and intelligent recommendations:
+
+### Workload Metrics (`workload.py`)
+
+- **ACWR** (Acute:Chronic Workload Ratio) with EWMA or rolling window
+- **Monotony** (training load variability)
+- **Strain** (accumulated fatigue indicator)
+- Zone classification: Danger, High Risk, Optimal, Undertrained
+
+### Cardio Metrics (`cardio.py`)
+
+- **TRIMP** (Training Impulse) with gender-specific weighting
+- **HR Zones** (5 zones based on % HRmax or HRR)
+- **VO2max** estimation (Cooper, Rockport, HR methods)
+- **Efficiency Factor** and pace calculations
+
+### Strength Metrics (`strength.py`)
+
+- **1RM Estimation** (7 formulas: Epley, Brzycki, Lombardi, O'Conner, Wathan, Mayhew, Wathen, RPE-based)
+- **Strength Zones** (5 zones from Recovery to Max Strength)
+- **INOL** (Intensity × Number of Lifts)
+- **VBT Zones** (Velocity-Based Training)
+- Volume, tonnage, and intensity calculations
+
+### Fitness-Fatigue Model (`fitness.py`)
+
+- **CTL** (Chronic Training Load / Fitness) — 42-day EWMA
+- **ATL** (Acute Training Load / Fatigue) — 7-day EWMA
+- **TSB** (Training Stress Balance / Form) = CTL − ATL
+- **Readiness Score** (0-100 composite)
+- Form zones: Exhausted, Fatigued, Neutral, Fresh, Peak
+
+### Recommendations (`recommendations.py`)
+
+- Intelligent training advice in French
+- Risk assessment based on ACWR, monotony, strain
+- Weekly training plan generation
+- Priority-based action items
+
+### Usage Example
+
+```python
+from arete.features import (
+    compute_workload_metrics,
+    calculate_trimp,
+    estimate_1rm_epley,
+    compute_performance_model,
+    generate_recommendations,
+)
+
+# Compute workload metrics from last 28 days of training loads
+loads = [45, 50, 55, 60, 50, 55, 65]  # sRPE values
+metrics = compute_workload_metrics(loads)
+print(f"ACWR: {metrics.acwr:.2f} ({metrics.acwr_zone.value})")
+
+# Calculate TRIMP for a cardio session
+trimp = calculate_trimp(
+    duration_min=60,
+    avg_hr=150,
+    hr_rest=60,
+    hr_max=190,
+    gender="male"
+)
+
+# Estimate 1RM for strength training
+estimated_1rm = estimate_1rm_epley(weight=100, reps=5)
+print(f"Estimated 1RM: {estimated_1rm:.1f} kg")
+
+# Compute fitness-fatigue model
+tss_history = [50, 60, 70, 55, 80, 65, 75]  # Daily TSS values
+model = compute_performance_model(tss_history)
+print(f"Form: {model.tsb:.1f} ({model.form_zone.value})")
+
+# Generate recommendations
+recommendations = generate_recommendations(
+    acwr=1.35,
+    acwr_zone=metrics.acwr_zone,
+    monotony=1.8,
+    monotony_zone=metrics.monotony_zone,
+    strain=2500,
+    strain_zone=metrics.strain_zone,
+    tsb=-15,
+    form_zone=model.form_zone,
+    sport_type="running",
+)
+for rec in recommendations:
+    print(f"[{rec.priority.value}] {rec.message}")
 ```
 
 ## Documentation
