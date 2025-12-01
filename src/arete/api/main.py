@@ -43,7 +43,7 @@ def log_recent(n: int = 5):
             [n],
         ).fetchall()
         columns = ["date", "sport", "type", "duree_min", "distance_km", "rpe"]
-        return {"rows": [dict(zip(columns, row)) for row in rows]}
+        return {"rows": [dict(zip(columns, row, strict=True)) for row in rows]}
     finally:
         con.close()
 
