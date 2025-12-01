@@ -1,9 +1,6 @@
 version = 1
 revision = 3
 requires-python = "==3.11.*"
-required-markers = [
-    "platform_machine == 'x86_64' and sys_platform == 'darwin'",
-]
 
 [[package]]
 name = "alembic"
@@ -49,17 +46,8 @@ source = { virtual = "." }
 dependencies = [
     { name = "duckdb" },
     { name = "fastapi" },
-    { name = "mlflow" },
-    { name = "numpy" },
-    { name = "optuna" },
-    { name = "pandas" },
-    { name = "polars" },
     { name = "pydantic" },
     { name = "python-dotenv" },
-    { name = "scikit-learn" },
-    { name = "torch" },
-    { name = "torchvision" },
-    { name = "typer" },
     { name = "uvicorn" },
 ]
 
@@ -71,30 +59,41 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
+ml = [
+    { name = "mlflow" },
+    { name = "numpy" },
+    { name = "optuna" },
+    { name = "pandas" },
+    { name = "polars" },
+    { name = "scikit-learn" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "typer" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "duckdb", specifier = ">=1.4.2" },
     { name = "fastapi", specifier = ">=0.119.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
-    { name = "mlflow", specifier = ">=3.6.0" },
+    { name = "mlflow", marker = "extra == 'ml'", specifier = ">=3.6.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.19.0" },
-    { name = "numpy", specifier = ">=2.3.5" },
-    { name = "optuna", specifier = ">=4.6.0" },
-    { name = "pandas", specifier = ">=2.3.3" },
-    { name = "polars", specifier = ">=1.35.2" },
+    { name = "numpy", marker = "extra == 'ml'", specifier = ">=2.3.5" },
+    { name = "optuna", marker = "extra == 'ml'", specifier = ">=4.6.0" },
+    { name = "pandas", marker = "extra == 'ml'", specifier = ">=2.3.3" },
+    { name = "polars", marker = "extra == 'ml'", specifier = ">=1.35.2" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.1" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25.0" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.7" },
-    { name = "scikit-learn", specifier = ">=1.7.2" },
-    { name = "torch", specifier = "==2.2.2" },
-    { name = "torchvision", specifier = "==0.17.2" },
-    { name = "typer", specifier = ">=0.20.0" },
+    { name = "scikit-learn", marker = "extra == 'ml'", specifier = ">=1.7.2" },
+    { name = "torch", marker = "extra == 'ml'", specifier = "==2.2.2" },
+    { name = "torchvision", marker = "extra == 'ml'", specifier = "==0.17.2" },
+    { name = "typer", marker = "extra == 'ml'", specifier = ">=0.20.0" },
     { name = "uvicorn", specifier = ">=0.37.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "ml"]
 
 [[package]]
 name = "blinker"

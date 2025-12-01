@@ -33,7 +33,7 @@ def log_recent(n: int = 5):
         n = 5  # Default to safe value
     con = connect(read_only=True)
     try:
-        df = con.execute(
+        rows = con.execute(
             """
             SELECT date, sport, type, duree_min, distance_km, rpe
             FROM app.training_log
@@ -41,8 +41,9 @@ def log_recent(n: int = 5):
             LIMIT ?
             """,
             [n],
-        ).fetch_df()
-        return {"rows": df.to_dict(orient="records")}
+        ).fetchall()
+        columns = ["date", "sport", "type", "duree_min", "distance_km", "rpe"]
+        return {"rows": [dict(zip(columns, row)) for row in rows]}
     finally:
         con.close()
 
