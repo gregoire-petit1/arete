@@ -1,0 +1,28 @@
+[project]
+name = "arete"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "duckdb>=1.4.2",
+    "fastapi>=0.119.0",
+    "mlflow>=3.6.0",
+    "mypy>=1.19.0",
+    "numpy>=2.3.5",
+    "optuna>=4.6.0",
+    "pandas>=2.3.3",
+    "polars>=1.35.2",
+    "pydantic>=2",
+    "pytest>=9.0.1",
+    "python-dotenv>=1.1.1",
+    "ruff>=0.14.7",
+    "scikit-learn>=1.7.2",
+    "torch==2.2.2",
+    "torchvision==0.17.2",
+    "typer>=0.20.0",
+    "uvicorn>=0.37.0",
+]
+
+[tool.uv]
+required-environments = ["sys_platform == 'darwin' and platform_machine == 'x86_64'"]

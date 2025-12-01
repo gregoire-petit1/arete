@@ -1,0 +1,330 @@
+from __future__ import annotations
+
+from datetime import date
+from typing import Any, Dict, List, Optional, Tuple
+
+from arete.dataio.db import connect
+
+
+# ---------- Helpers ----------
+def _next_id(con, table_qualified: str) -> int:
+    return con.execute(f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table_qualified}").fetchone()[0]
+
+
+def _session_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
+    return {
+        "id": row[0],
+        "date": row[1],
+        "objective": row[2],
+        "duration": row[3],
+        "fatigue": row[4],
+        "rpe_avg7d": row[5],
+    }
+
+
+def _user_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
+    return {
+        "id": row[0],
+        "sex": row[1],
+        "age": row[2],
+        "height": row[3],
+        "weight": row[4],
+        "desired_training_load": row[5],
+    }
+
+
+def _objective_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
+    return {
+        "id": row[0],
+        "sport": row[1],
+        "name": row[2],
+        "priority": row[3],
+    }
+
+
+def _record_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
+    return {
+        "id": row[0],
+        "sport": row[1],
+        "event": row[2],
+        "performance": row[3],
+        "unit": row[4],
+    }
+
+
+# ---------- Sessions ----------
+def create_session(
+    *, session_date: date, objective: str, duration: int, fatigue: int, rpe_avg7d: Optional[float]
+) -> Dict[str, Any]:
+    con = connect(False)
+    try:
+        new_id = _next_id(con, "app.sessions")
+        row = con.execute(
+            """
+            INSERT INTO app.sessions (id, date, objective, duration, fatigue, rpe_avg7d)
+            VALUES (?, ?, ?, ?, ?, ?)
+            RETURNING id, date, objective, duration, fatigue, rpe_avg7d
+            """,
+            [new_id, session_date, objective, duration, fatigue, rpe_avg7d],
+        ).fetchone()
+        return _session_from_row(row)
+    finally:
+        con.close()
+
+
+def list_sessions(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
+    con = connect(True)
+    try:
+        total = con.execute("SELECT COUNT(*) FROM app.sessions").fetchone()[0]
+        rows = con.execute(
+            """
+            SELECT id, date, objective, duration, fatigue, rpe_avg7d
+            FROM app.sessions
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+            """,
+            [limit, skip],
+        ).fetchall()
+        return total, [_session_from_row(r) for r in rows]
+    finally:
+        con.close()
+
+
+def get_session(session_id: int) -> Optional[Dict[str, Any]]:
+    con = connect(True)
+    try:
+        row = con.execute(
+            """
+            SELECT id, date, objective, duration, fatigue, rpe_avg7d
+            FROM app.sessions
+            WHERE id = ?
+            """,
+            [session_id],
+        ).fetchone()
+        return _session_from_row(row) if row else None
+    finally:
+        con.close()
+
+
+def update_session(
+    session_id: int,
+    *,
+    session_date: date,
+    objective: str,
+    duration: int,
+    fatigue: int,
+    rpe_avg7d: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    con = connect(False)
+    try:
+        row = con.execute(
+            """
+            UPDATE app.sessions
+            SET date = ?, objective = ?, duration = ?, fatigue = ?, rpe_avg7d = ?
+            WHERE id = ?
+            RETURNING id, date, objective, duration, fatigue, rpe_avg7d
+            """,
+            [session_date, objective, duration, fatigue, rpe_avg7d, session_id],
+        ).fetchone()
+        return _session_from_row(row) if row else None
+    finally:
+        con.close()
+
+
+def delete_session(session_id: int) -> bool:
+    con = connect(False)
+    try:
+        # Check existence first
+        existing = con.execute("SELECT 1 FROM app.sessions WHERE id = ?", [session_id]).fetchone()
+        if not existing:
+            return False
+        con.execute("DELETE FROM app.sessions WHERE id = ?", [session_id])
+        return True
+    finally:
+        con.close()
+
+
+# ---------- User (single) ----------
+def get_user() -> Optional[Dict[str, Any]]:
+    con = connect(True)
+    try:
+        row = con.execute(
+            """
+            SELECT id, sex, age, height, weight, desired_training_load
+            FROM app.users
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ).fetchone()
+        return _user_from_row(row) if row else None
+    finally:
+        con.close()
+
+
+def create_user(*, sex: str, age: int, height: float, weight: float, desired_training_load: Optional[float]) -> Dict[str, Any]:
+    con = connect(False)
+    try:
+        existing = con.execute("SELECT COUNT(*) FROM app.users").fetchone()[0]
+        if existing:
+            raise ValueError("User already exists")
+        new_id = _next_id(con, "app.users")
+        row = con.execute(
+            """
+            INSERT INTO app.users (id, sex, age, height, weight, desired_training_load)
+            VALUES (?, ?, ?, ?, ?, ?)
+            RETURNING id, sex, age, height, weight, desired_training_load
+            """,
+            [new_id, sex, age, height, weight, desired_training_load],
+        ).fetchone()
+        return _user_from_row(row)
+    finally:
+        con.close()
+
+
+def update_user(
+    *, sex: str, age: int, height: float, weight: float, desired_training_load: Optional[float]
+) -> Optional[Dict[str, Any]]:
+    con = connect(False)
+    try:
+        row = con.execute(
+            """
+            UPDATE app.users
+            SET sex = ?, age = ?, height = ?, weight = ?, desired_training_load = ?
+            WHERE id = (SELECT id FROM app.users ORDER BY id ASC LIMIT 1)
+            RETURNING id, sex, age, height, weight, desired_training_load
+            """,
+            [sex, age, height, weight, desired_training_load],
+        ).fetchone()
+        return _user_from_row(row) if row else None
+    finally:
+        con.close()
+
+
+# ---------- Objectives ----------
+def create_objective(*, sport: str, name: str, priority: int) -> Dict[str, Any]:
+    con = connect(False)
+    try:
+        new_id = _next_id(con, "app.objectives")
+        row = con.execute(
+            """
+            INSERT INTO app.objectives (id, sport, name, priority)
+            VALUES (?, ?, ?, ?)
+            RETURNING id, sport, name, priority
+            """,
+            [new_id, sport, name, priority],
+        ).fetchone()
+        return _objective_from_row(row)
+    finally:
+        con.close()
+
+
+def list_objectives(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
+    con = connect(True)
+    try:
+        total = con.execute("SELECT COUNT(*) FROM app.objectives").fetchone()[0]
+        rows = con.execute(
+            """
+            SELECT id, sport, name, priority
+            FROM app.objectives
+            ORDER BY priority DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            [limit, skip],
+        ).fetchall()
+        return total, [_objective_from_row(r) for r in rows]
+    finally:
+        con.close()
+
+
+def update_objective(obj_id: int, *, sport: str, name: str, priority: int) -> Optional[Dict[str, Any]]:
+    con = connect(False)
+    try:
+        row = con.execute(
+            """
+            UPDATE app.objectives
+            SET sport = ?, name = ?, priority = ?
+            WHERE id = ?
+            RETURNING id, sport, name, priority
+            """,
+            [sport, name, priority, obj_id],
+        ).fetchone()
+        return _objective_from_row(row) if row else None
+    finally:
+        con.close()
+
+
+def delete_objective(obj_id: int) -> bool:
+    con = connect(False)
+    try:
+        found = con.execute("SELECT 1 FROM app.objectives WHERE id = ?", [obj_id]).fetchone()
+        if not found:
+            return False
+        con.execute("DELETE FROM app.objectives WHERE id = ?", [obj_id])
+        return True
+    finally:
+        con.close()
+
+
+# ---------- Personal records ----------
+def create_record(*, sport: str, event: str, performance: float, unit: str) -> Dict[str, Any]:
+    con = connect(False)
+    try:
+        new_id = _next_id(con, "app.personal_records")
+        row = con.execute(
+            """
+            INSERT INTO app.personal_records (id, sport, event, performance, unit)
+            VALUES (?, ?, ?, ?, ?)
+            RETURNING id, sport, event, performance, unit
+            """,
+            [new_id, sport, event, performance, unit],
+        ).fetchone()
+        return _record_from_row(row)
+    finally:
+        con.close()
+
+
+def list_records(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
+    con = connect(True)
+    try:
+        total = con.execute("SELECT COUNT(*) FROM app.personal_records").fetchone()[0]
+        rows = con.execute(
+            """
+            SELECT id, sport, event, performance, unit
+            FROM app.personal_records
+            ORDER BY id DESC
+            LIMIT ? OFFSET ?
+            """,
+            [limit, skip],
+        ).fetchall()
+        return total, [_record_from_row(r) for r in rows]
+    finally:
+        con.close()
+
+
+def update_record(rec_id: int, *, sport: str, event: str, performance: float, unit: str) -> Optional[Dict[str, Any]]:
+    con = connect(False)
+    try:
+        row = con.execute(
+            """
+            UPDATE app.personal_records
+            SET sport = ?, event = ?, performance = ?, unit = ?
+            WHERE id = ?
+            RETURNING id, sport, event, performance, unit
+            """,
+            [sport, event, performance, unit, rec_id],
+        ).fetchone()
+        return _record_from_row(row) if row else None
+    finally:
+        con.close()
+
+
+def delete_record(rec_id: int) -> bool:
+    con = connect(False)
+    try:
+        found = con.execute("SELECT 1 FROM app.personal_records WHERE id = ?", [rec_id]).fetchone()
+        if not found:
+            return False
+        con.execute("DELETE FROM app.personal_records WHERE id = ?", [rec_id])
+        return True
+    finally:
+        con.close()
