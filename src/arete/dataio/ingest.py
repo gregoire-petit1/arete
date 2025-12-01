@@ -1,5 +1,6 @@
-import pathlib
 import logging
+import pathlib
+
 from arete.dataio.db import connect
 
 logger = logging.getLogger(__name__)

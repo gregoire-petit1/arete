@@ -1,5 +1,5 @@
 from datetime import date
-from typing import List, Optional, Literal
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -33,7 +33,7 @@ class SessionCreate(BaseModel):
     objective: str
     duration: int = Field(ge=0)
     fatigue: int = Field(ge=0)
-    rpe_avg7d: Optional[float] = None
+    rpe_avg7d: float | None = None
 
 
 class SessionOut(BaseModel):
@@ -42,12 +42,12 @@ class SessionOut(BaseModel):
     objective: str
     duration: int
     fatigue: int
-    rpe_avg7d: Optional[float] = None
+    rpe_avg7d: float | None = None
 
 
 class SessionList(BaseModel):
     total: int
-    items: List[SessionOut]
+    items: list[SessionOut]
 
 
 class UserCreate(BaseModel):
@@ -55,7 +55,7 @@ class UserCreate(BaseModel):
     age: int = Field(gt=0)
     height: float = Field(gt=0)  # cm
     weight: float = Field(gt=0)  # kg
-    desired_training_load: Optional[float] = None
+    desired_training_load: float | None = None
 
 
 class UserOut(BaseModel):
@@ -64,8 +64,8 @@ class UserOut(BaseModel):
     age: int
     height: float
     weight: float
-    desired_training_load: Optional[float] = None
-    bmi: Optional[float] = None
+    desired_training_load: float | None = None
+    bmi: float | None = None
 
 
 class ObjectiveCreate(BaseModel):
@@ -83,7 +83,7 @@ class ObjectiveOut(BaseModel):
 
 class ObjectiveList(BaseModel):
     total: int
-    items: List[ObjectiveOut]
+    items: list[ObjectiveOut]
 
 
 class RecordCreate(BaseModel):
@@ -103,7 +103,7 @@ class RecordOut(BaseModel):
 
 class RecordList(BaseModel):
     total: int
-    items: List[RecordOut]
+    items: list[RecordOut]
 
 
 # ---------- Endpoints ----------

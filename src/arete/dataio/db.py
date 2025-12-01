@@ -1,8 +1,8 @@
 import os
 import pathlib
 
-from dotenv import load_dotenv
 import duckdb
+from dotenv import load_dotenv
 
 load_dotenv()
 DEFAULT_DB_PATH = pathlib.Path("data/arete.duckdb")

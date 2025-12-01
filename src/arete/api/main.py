@@ -1,8 +1,9 @@
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel
-from dotenv import load_dotenv
-from arete.dataio.db import connect
+
 from arete.api.routes import router as api_router
+from arete.dataio.db import connect
 
 load_dotenv()
 app = FastAPI(title="Arete API", version="0.1.0")

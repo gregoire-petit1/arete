@@ -1,4 +1,5 @@
 import logging
+
 from arete.dataio.db import connect
 
 logger = logging.getLogger(__name__)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from arete.dataio.db import connect
 
@@ -13,7 +13,7 @@ def _next_id(con, table_qualified: str) -> int:
     ).fetchone()[0]
 
 
-def _session_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
+def _session_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "id": row[0],
         "date": row[1],
@@ -24,7 +24,7 @@ def _session_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
     }
 
 
-def _user_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
+def _user_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "id": row[0],
         "sex": row[1],
@@ -35,7 +35,7 @@ def _user_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
     }
 
 
-def _objective_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
+def _objective_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "id": row[0],
         "sport": row[1],
@@ -44,7 +44,7 @@ def _objective_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
     }
 
 
-def _record_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
+def _record_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "id": row[0],
         "sport": row[1],
@@ -61,8 +61,8 @@ def create_session(
     objective: str,
     duration: int,
     fatigue: int,
-    rpe_avg7d: Optional[float],
-) -> Dict[str, Any]:
+    rpe_avg7d: float | None,
+) -> dict[str, Any]:
     con = connect(False)
     try:
         new_id = _next_id(con, "app.sessions")
@@ -79,7 +79,7 @@ def create_session(
         con.close()
 
 
-def list_sessions(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
+def list_sessions(skip: int, limit: int) -> tuple[int, list[dict[str, Any]]]:
     con = connect(True)
     try:
         total = con.execute("SELECT COUNT(*) FROM app.sessions").fetchone()[0]
@@ -97,7 +97,7 @@ def list_sessions(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
         con.close()
 
 
-def get_session(session_id: int) -> Optional[Dict[str, Any]]:
+def get_session(session_id: int) -> dict[str, Any] | None:
     con = connect(True)
     try:
         row = con.execute(
@@ -120,8 +120,8 @@ def update_session(
     objective: str,
     duration: int,
     fatigue: int,
-    rpe_avg7d: Optional[float],
-) -> Optional[Dict[str, Any]]:
+    rpe_avg7d: float | None,
+) -> dict[str, Any] | None:
     con = connect(False)
     try:
         row = con.execute(
@@ -156,7 +156,7 @@ def delete_session(session_id: int) -> bool:
 
 
 # ---------- User (single) ----------
-def get_user() -> Optional[Dict[str, Any]]:
+def get_user() -> dict[str, Any] | None:
     con = connect(True)
     try:
         row = con.execute(
@@ -178,8 +178,8 @@ def create_user(
     age: int,
     height: float,
     weight: float,
-    desired_training_load: Optional[float],
-) -> Dict[str, Any]:
+    desired_training_load: float | None,
+) -> dict[str, Any]:
     """Create a new user. Raises ValueError if user already exists."""
     con = connect(False)
     try:
@@ -220,8 +220,8 @@ def update_user(
     age: int,
     height: float,
     weight: float,
-    desired_training_load: Optional[float],
-) -> Optional[Dict[str, Any]]:
+    desired_training_load: float | None,
+) -> dict[str, Any] | None:
     con = connect(False)
     try:
         row = con.execute(
@@ -239,7 +239,7 @@ def update_user(
 
 
 # ---------- Objectives ----------
-def create_objective(*, sport: str, name: str, priority: int) -> Dict[str, Any]:
+def create_objective(*, sport: str, name: str, priority: int) -> dict[str, Any]:
     con = connect(False)
     try:
         new_id = _next_id(con, "app.objectives")
@@ -256,7 +256,7 @@ def create_objective(*, sport: str, name: str, priority: int) -> Dict[str, Any]:
         con.close()
 
 
-def list_objectives(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
+def list_objectives(skip: int, limit: int) -> tuple[int, list[dict[str, Any]]]:
     con = connect(True)
     try:
         total = con.execute("SELECT COUNT(*) FROM app.objectives").fetchone()[0]
@@ -276,7 +276,7 @@ def list_objectives(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
 
 def update_objective(
     obj_id: int, *, sport: str, name: str, priority: int
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     con = connect(False)
     try:
         row = con.execute(
@@ -313,7 +313,7 @@ def delete_objective(obj_id: int) -> bool:
 # ---------- Personal records ----------
 def create_record(
     *, sport: str, event: str, performance: float, unit: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     con = connect(False)
     try:
         new_id = _next_id(con, "app.personal_records")
@@ -330,7 +330,7 @@ def create_record(
         con.close()
 
 
-def list_records(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
+def list_records(skip: int, limit: int) -> tuple[int, list[dict[str, Any]]]:
     con = connect(True)
     try:
         total = con.execute("SELECT COUNT(*) FROM app.personal_records").fetchone()[0]
@@ -350,7 +350,7 @@ def list_records(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
 
 def update_record(
     rec_id: int, *, sport: str, event: str, performance: float, unit: str
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     con = connect(False)
     try:
         row = con.execute(
