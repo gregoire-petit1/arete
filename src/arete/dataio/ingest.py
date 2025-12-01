@@ -8,22 +8,22 @@ COLUMNS = [
     "date",
     "sport",
     "type",
-    "duration_min",
+    "duree_min",
     "distance_km",
-    "pace_minkm",
+    "allure_minkm",
     "avg_hr",
     "rpe",
-    "sleep_h",
+    "sommeil_h",
     "hrv",
-    "weight_kg",
-    "elevation_m",
+    "poids_kg",
+    "denivele_m",
     "terrain",
-    "pain",
+    "douleurs",
     "stress",
     "notes",
-    "race_date",
-    "race_type",
-    "target_time",
+    "course_date",
+    "course_type",
+    "objectif_tps",
 ]
 
 # Allowed column names (whitelist for SQL safety)
@@ -31,11 +31,11 @@ ALLOWED_COLUMNS = frozenset(COLUMNS)
 
 
 def duck_type(col: str) -> str:
-    if col in {"date", "race_date"}:
+    if col in {"date", "course_date"}:
         return "DATE"
-    if col in {"duration_min", "avg_hr", "elevation_m", "stress"}:
+    if col in {"duree_min", "avg_hr", "denivele_m", "stress"}:
         return "INTEGER"
-    if col in {"distance_km", "pace_minkm", "rpe", "sleep_h", "hrv", "weight_kg"}:
+    if col in {"distance_km", "allure_minkm", "rpe", "sommeil_h", "hrv", "poids_kg"}:
         return "DOUBLE"
     return "VARCHAR"
 

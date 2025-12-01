@@ -1,3 +1,7 @@
+# Reviews
+*.txt
+
+
 # Environnement Python
 .venv/
 __pycache__/

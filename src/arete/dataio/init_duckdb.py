@@ -14,22 +14,22 @@ CREATE TABLE IF NOT EXISTS app.training_log (
     date          DATE NOT NULL,
     sport         VARCHAR NOT NULL,
     type          VARCHAR,
-    duration_min  INTEGER,
+    duree_min     INTEGER,
     distance_km   DOUBLE,
-    pace_minkm    DOUBLE,
+    allure_minkm  DOUBLE,
     avg_hr        INTEGER,
     rpe           DOUBLE,
-    sleep_h       DOUBLE,
+    sommeil_h     DOUBLE,
     hrv           DOUBLE,
-    weight_kg     DOUBLE,
-    elevation_m   INTEGER,
+    poids_kg      DOUBLE,
+    denivele_m    INTEGER,
     terrain       VARCHAR,
-    pain          VARCHAR,
+    douleurs      VARCHAR,
     stress        INTEGER,
     notes         VARCHAR,
-    race_date     DATE,
-    race_type     VARCHAR,
-    target_time   VARCHAR
+    course_date   DATE,
+    course_type   VARCHAR,
+    objectif_tps  VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS app.sessions (

@@ -34,7 +34,7 @@ def log_recent(n: int = 5):
     try:
         df = con.execute(
             """
-            SELECT date, sport, type, duration_min, distance_km, rpe
+            SELECT date, sport, type, duree_min, distance_km, rpe
             FROM app.training_log
             ORDER BY date DESC
             LIMIT ?
