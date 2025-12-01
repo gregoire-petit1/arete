@@ -8,7 +8,9 @@ from arete.dataio.db import connect
 
 # ---------- Helpers ----------
 def _next_id(con, table_qualified: str) -> int:
-    return con.execute(f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table_qualified}").fetchone()[0]
+    return con.execute(
+        f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table_qualified}"
+    ).fetchone()[0]
 
 
 def _session_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
@@ -54,7 +56,12 @@ def _record_from_row(row: Tuple[Any, ...]) -> Dict[str, Any]:
 
 # ---------- Sessions ----------
 def create_session(
-    *, session_date: date, objective: str, duration: int, fatigue: int, rpe_avg7d: Optional[float]
+    *,
+    session_date: date,
+    objective: str,
+    duration: int,
+    fatigue: int,
+    rpe_avg7d: Optional[float],
 ) -> Dict[str, Any]:
     con = connect(False)
     try:
@@ -132,14 +139,18 @@ def update_session(
 
 
 def delete_session(session_id: int) -> bool:
+    """Delete a session by ID. Returns True if deleted, False if not found."""
     con = connect(False)
     try:
-        # Check existence first
-        existing = con.execute("SELECT 1 FROM app.sessions WHERE id = ?", [session_id]).fetchone()
-        if not existing:
-            return False
-        con.execute("DELETE FROM app.sessions WHERE id = ?", [session_id])
-        return True
+        # Use single atomic operation to avoid TOCTOU race condition
+        result = con.execute(
+            """
+            DELETE FROM app.sessions WHERE id = ?
+            RETURNING id
+            """,
+            [session_id],
+        ).fetchone()
+        return result is not None
     finally:
         con.close()
 
@@ -161,28 +172,55 @@ def get_user() -> Optional[Dict[str, Any]]:
         con.close()
 
 
-def create_user(*, sex: str, age: int, height: float, weight: float, desired_training_load: Optional[float]) -> Dict[str, Any]:
+def create_user(
+    *,
+    sex: str,
+    age: int,
+    height: float,
+    weight: float,
+    desired_training_load: Optional[float],
+) -> Dict[str, Any]:
+    """Create a new user. Raises ValueError if user already exists."""
     con = connect(False)
     try:
-        existing = con.execute("SELECT COUNT(*) FROM app.users").fetchone()[0]
-        if existing:
-            raise ValueError("User already exists")
+        # Use INSERT with check in single statement to avoid race condition
+        # First, attempt to get next ID (will be 1 if no users exist)
         new_id = _next_id(con, "app.users")
-        row = con.execute(
-            """
-            INSERT INTO app.users (id, sex, age, height, weight, desired_training_load)
-            VALUES (?, ?, ?, ?, ?, ?)
-            RETURNING id, sex, age, height, weight, desired_training_load
-            """,
-            [new_id, sex, age, height, weight, desired_training_load],
-        ).fetchone()
-        return _user_from_row(row)
+
+        # Try to insert - if another user was created concurrently,
+        # we detect it by checking count before insert in a transaction
+        con.execute("BEGIN TRANSACTION")
+        try:
+            existing = con.execute("SELECT COUNT(*) FROM app.users").fetchone()[0]
+            if existing:
+                con.execute("ROLLBACK")
+                raise ValueError("User already exists")
+
+            row = con.execute(
+                """
+                INSERT INTO app.users
+                    (id, sex, age, height, weight, desired_training_load)
+                VALUES (?, ?, ?, ?, ?, ?)
+                RETURNING id, sex, age, height, weight, desired_training_load
+                """,
+                [new_id, sex, age, height, weight, desired_training_load],
+            ).fetchone()
+            con.execute("COMMIT")
+            return _user_from_row(row)
+        except Exception:
+            con.execute("ROLLBACK")
+            raise
     finally:
         con.close()
 
 
 def update_user(
-    *, sex: str, age: int, height: float, weight: float, desired_training_load: Optional[float]
+    *,
+    sex: str,
+    age: int,
+    height: float,
+    weight: float,
+    desired_training_load: Optional[float],
 ) -> Optional[Dict[str, Any]]:
     con = connect(False)
     try:
@@ -236,7 +274,9 @@ def list_objectives(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
         con.close()
 
 
-def update_objective(obj_id: int, *, sport: str, name: str, priority: int) -> Optional[Dict[str, Any]]:
+def update_objective(
+    obj_id: int, *, sport: str, name: str, priority: int
+) -> Optional[Dict[str, Any]]:
     con = connect(False)
     try:
         row = con.execute(
@@ -254,19 +294,26 @@ def update_objective(obj_id: int, *, sport: str, name: str, priority: int) -> Op
 
 
 def delete_objective(obj_id: int) -> bool:
+    """Delete an objective by ID. Returns True if deleted, False if not found."""
     con = connect(False)
     try:
-        found = con.execute("SELECT 1 FROM app.objectives WHERE id = ?", [obj_id]).fetchone()
-        if not found:
-            return False
-        con.execute("DELETE FROM app.objectives WHERE id = ?", [obj_id])
-        return True
+        # Use single atomic operation to avoid TOCTOU race condition
+        result = con.execute(
+            """
+            DELETE FROM app.objectives WHERE id = ?
+            RETURNING id
+            """,
+            [obj_id],
+        ).fetchone()
+        return result is not None
     finally:
         con.close()
 
 
 # ---------- Personal records ----------
-def create_record(*, sport: str, event: str, performance: float, unit: str) -> Dict[str, Any]:
+def create_record(
+    *, sport: str, event: str, performance: float, unit: str
+) -> Dict[str, Any]:
     con = connect(False)
     try:
         new_id = _next_id(con, "app.personal_records")
@@ -301,7 +348,9 @@ def list_records(skip: int, limit: int) -> Tuple[int, List[Dict[str, Any]]]:
         con.close()
 
 
-def update_record(rec_id: int, *, sport: str, event: str, performance: float, unit: str) -> Optional[Dict[str, Any]]:
+def update_record(
+    rec_id: int, *, sport: str, event: str, performance: float, unit: str
+) -> Optional[Dict[str, Any]]:
     con = connect(False)
     try:
         row = con.execute(
@@ -319,12 +368,17 @@ def update_record(rec_id: int, *, sport: str, event: str, performance: float, un
 
 
 def delete_record(rec_id: int) -> bool:
+    """Delete a personal record by ID. Returns True if deleted, False if not found."""
     con = connect(False)
     try:
-        found = con.execute("SELECT 1 FROM app.personal_records WHERE id = ?", [rec_id]).fetchone()
-        if not found:
-            return False
-        con.execute("DELETE FROM app.personal_records WHERE id = ?", [rec_id])
-        return True
+        # Use single atomic operation to avoid TOCTOU race condition
+        result = con.execute(
+            """
+            DELETE FROM app.personal_records WHERE id = ?
+            RETURNING id
+            """,
+            [rec_id],
+        ).fetchone()
+        return result is not None
     finally:
         con.close()

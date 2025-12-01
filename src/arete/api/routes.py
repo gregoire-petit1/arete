@@ -8,6 +8,24 @@ from arete.dataio import repository as repo
 
 router = APIRouter()
 
+# Pagination limits
+MAX_LIMIT = 100
+DEFAULT_LIMIT = 20
+
+
+def _calculate_bmi(height: float, weight: float) -> float | None:
+    """Calculate BMI from height (cm) and weight (kg)."""
+    if height and weight and height > 0:
+        return round(weight / ((height / 100) ** 2), 2)
+    return None
+
+
+def _validate_pagination(skip: int, limit: int) -> tuple[int, int]:
+    """Validate and clamp pagination parameters."""
+    skip = max(0, skip)
+    limit = max(1, min(limit, MAX_LIMIT))
+    return skip, limit
+
 
 # ---------- Schemas ----------
 class SessionCreate(BaseModel):
@@ -102,7 +120,8 @@ def plan_day(payload: SessionCreate):
 
 
 @router.get("/sessions", response_model=SessionList)
-def list_sessions(skip: int = 0, limit: int = 20):
+def list_sessions(skip: int = 0, limit: int = DEFAULT_LIMIT):
+    skip, limit = _validate_pagination(skip, limit)
     total, rows = repo.list_sessions(skip=skip, limit=limit)
     return SessionList(total=total, items=[SessionOut(**r) for r in rows])
 
@@ -148,8 +167,7 @@ def create_user(payload: UserCreate):
         weight=payload.weight,
         desired_training_load=payload.desired_training_load,
     )
-    bmi = round(row["weight"] / ((row["height"] / 100) ** 2), 2) if row["height"] and row["weight"] else None
-    return UserOut(**row, bmi=bmi)
+    return UserOut(**row, bmi=_calculate_bmi(row["height"], row["weight"]))
 
 
 @router.get("/user", response_model=UserOut)
@@ -157,8 +175,7 @@ def get_user():
     row = repo.get_user()
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
-    bmi = round(row["weight"] / ((row["height"] / 100) ** 2), 2) if row["height"] and row["weight"] else None
-    return UserOut(**row, bmi=bmi)
+    return UserOut(**row, bmi=_calculate_bmi(row["height"], row["weight"]))
 
 
 @router.put("/user", response_model=UserOut)
@@ -172,25 +189,29 @@ def update_user(payload: UserCreate):
     )
     if not row:
         raise HTTPException(status_code=404, detail="User not found")
-    bmi = round(row["weight"] / ((row["height"] / 100) ** 2), 2) if row["height"] and row["weight"] else None
-    return UserOut(**row, bmi=bmi)
+    return UserOut(**row, bmi=_calculate_bmi(row["height"], row["weight"]))
 
 
 @router.post("/objectives", response_model=ObjectiveOut)
 def create_objective(payload: ObjectiveCreate):
-    row = repo.create_objective(sport=payload.sport, name=payload.name, priority=payload.priority)
+    row = repo.create_objective(
+        sport=payload.sport, name=payload.name, priority=payload.priority
+    )
     return ObjectiveOut(**row)
 
 
 @router.get("/objectives", response_model=ObjectiveList)
-def list_objectives(skip: int = 0, limit: int = 20):
+def list_objectives(skip: int = 0, limit: int = DEFAULT_LIMIT):
+    skip, limit = _validate_pagination(skip, limit)
     total, rows = repo.list_objectives(skip=skip, limit=limit)
     return ObjectiveList(total=total, items=[ObjectiveOut(**r) for r in rows])
 
 
 @router.put("/objectives/{obj_id}", response_model=ObjectiveOut)
 def update_objective(obj_id: int, payload: ObjectiveCreate):
-    row = repo.update_objective(obj_id, sport=payload.sport, name=payload.name, priority=payload.priority)
+    row = repo.update_objective(
+        obj_id, sport=payload.sport, name=payload.name, priority=payload.priority
+    )
     if not row:
         raise HTTPException(status_code=404, detail="Objective not found")
     return ObjectiveOut(**row)
@@ -215,7 +236,8 @@ def create_record(payload: RecordCreate):
 
 
 @router.get("/records", response_model=RecordList)
-def list_records(skip: int = 0, limit: int = 20):
+def list_records(skip: int = 0, limit: int = DEFAULT_LIMIT):
+    skip, limit = _validate_pagination(skip, limit)
     total, rows = repo.list_records(skip=skip, limit=limit)
     return RecordList(total=total, items=[RecordOut(**r) for r in rows])
 
@@ -223,7 +245,11 @@ def list_records(skip: int = 0, limit: int = 20):
 @router.put("/records/{rec_id}", response_model=RecordOut)
 def update_record(rec_id: int, payload: RecordCreate):
     row = repo.update_record(
-        rec_id, sport=payload.sport, event=payload.event, performance=payload.performance, unit=payload.unit
+        rec_id,
+        sport=payload.sport,
+        event=payload.event,
+        performance=payload.performance,
+        unit=payload.unit,
     )
     if not row:
         raise HTTPException(status_code=404, detail="Record not found")

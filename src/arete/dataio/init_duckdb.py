@@ -1,75 +1,92 @@
+import logging
 from arete.dataio.db import connect
+
+logger = logging.getLogger(__name__)
+
+# Note: DuckDB 1.x has limited support for PRIMARY KEY and FOREIGN KEY constraints.
+# IDs are managed application-side via COALESCE(MAX(id),0)+1 in repository.py.
+# NOT NULL constraints are added where data integrity is critical.
 
 DDL = """
 CREATE SCHEMA IF NOT EXISTS app;
 
 CREATE TABLE IF NOT EXISTS app.training_log (
-    date          DATE,
-    sport         VARCHAR,
+    date          DATE NOT NULL,
+    sport         VARCHAR NOT NULL,
     type          VARCHAR,
-    duree_min     INTEGER,
+    duration_min  INTEGER,
     distance_km   DOUBLE,
-    allure_minkm  DOUBLE,
+    pace_minkm    DOUBLE,
     avg_hr        INTEGER,
     rpe           DOUBLE,
-    sommeil_h     DOUBLE,
+    sleep_h       DOUBLE,
     hrv           DOUBLE,
-    poids_kg      DOUBLE,
-    denivele_m    INTEGER,
+    weight_kg     DOUBLE,
+    elevation_m   INTEGER,
     terrain       VARCHAR,
-    douleurs      VARCHAR,
+    pain          VARCHAR,
     stress        INTEGER,
     notes         VARCHAR,
-    course_date   DATE,
-    course_type   VARCHAR,
-    objectif_tps  VARCHAR
+    race_date     DATE,
+    race_type     VARCHAR,
+    target_time   VARCHAR
 );
 
 CREATE TABLE IF NOT EXISTS app.sessions (
-    id              INTEGER,
+    id              INTEGER NOT NULL,
     date            DATE NOT NULL,
-    objective       VARCHAR,
-    duration        INTEGER,
-    fatigue         INTEGER,
+    objective       VARCHAR NOT NULL,
+    duration        INTEGER NOT NULL,
+    fatigue         INTEGER NOT NULL,
     rpe_avg7d       DOUBLE
 );
 
 CREATE TABLE IF NOT EXISTS app.users (
-    id                     INTEGER,
-    sex                    VARCHAR,
-    age                    INTEGER,
-    height                 DOUBLE,
-    weight                 DOUBLE,
+    id                     INTEGER NOT NULL,
+    sex                    VARCHAR NOT NULL,
+    age                    INTEGER NOT NULL,
+    height                 DOUBLE NOT NULL,
+    weight                 DOUBLE NOT NULL,
     desired_training_load  DOUBLE
 );
 
 CREATE TABLE IF NOT EXISTS app.objectives (
-    id        INTEGER,
-    sport     VARCHAR,
-    name      VARCHAR,
-    priority  INTEGER
+    id        INTEGER NOT NULL,
+    sport     VARCHAR NOT NULL,
+    name      VARCHAR NOT NULL,
+    priority  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS app.personal_records (
-    id           INTEGER,
-    sport        VARCHAR,
-    event        VARCHAR,
-    performance  DOUBLE,
-    unit         VARCHAR
+    id           INTEGER NOT NULL,
+    sport        VARCHAR NOT NULL,
+    event        VARCHAR NOT NULL,
+    performance  DOUBLE NOT NULL,
+    unit         VARCHAR NOT NULL
 );
 """
 
 
 def main():
-    con = connect(False)
-    for stmt in DDL.strip().split(";"):
-        s = stmt.strip()
-        if s:
-            con.execute(s + ";")
-    tables = con.execute(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema='app'"
-    ).fetchall()
-    print("Tables:", tables)
+    """Initialize the DuckDB database with the required schema."""
+    con = None
+    try:
+        con = connect(False)
+        for stmt in DDL.strip().split(";"):
+            s = stmt.strip()
+            if s:
+                con.execute(s + ";")
+        tables = con.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema='app'"
+        ).fetchall()
+        logger.info(f"Tables created: {tables}")
+        print("Tables:", tables)
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+        raise
+    finally:
+        if con:
+            con.close()
 
 
 if __name__ == "__main__":

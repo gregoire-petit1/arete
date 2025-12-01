@@ -3,6 +3,7 @@
 Notes pédagogiques sur ce qui a été fait, commandes utilisées, et solutions aux problèmes rencontrés. Objectif : servir de mémo pour reproduire et dépanner rapidement.
 
 ## 1. Environnement & uv
+
 - **Cible** : Python 3.11 avec uv, venv local `.venv`.
 - **Installer/pinner Python 3.11** :
   ```bash
@@ -20,10 +21,12 @@ Notes pédagogiques sur ce qui a été fait, commandes utilisées, et solutions 
 - **Commande invalide** : `uv python --version` n’existe pas. Utiliser `python -V` ou `uv run python -V`.
 
 ## 2. Structure du projet
-- Structure : `src/arete/...` (API, dataio).  
+
+- Structure : `src/arete/...` (API, dataio).
 - `.env` et `.env.example` définissent `ARETE_DB` et `MLFLOW_TRACKING_URI`.
 
 ## 3. Base DuckDB
+
 - **Helper** : `arete.dataio.db.connect()` centralise la connexion et crée `data/arete.duckdb` si besoin.
 - **DDL** : `arete.dataio.init_duckdb` crée :
   - `app.training_log`
@@ -39,6 +42,7 @@ Notes pédagogiques sur ce qui a été fait, commandes utilisées, et solutions 
   **Fix** : retirer les contraintes et générer les IDs côté applicatif (`COALESCE(MAX(id),0)+1` dans le dépôt).
 
 ### Ingestion
+
 - **Script** : `arete.dataio.ingest` ingère un CSV dans `app.training_log`.
   ```bash
   PYTHONPATH=src uv run python -m arete.dataio.ingest data/sample_log.csv
@@ -47,6 +51,7 @@ Notes pédagogiques sur ce qui a été fait, commandes utilisées, et solutions 
   **Reset rapide** : `rm data/arete.duckdb` puis ré-exécuter init + ingestion, ou `DELETE FROM app.training_log;`.
 
 ## 4. API FastAPI
+
 - **Endpoints exposés** :
   - `/health`
   - `/plan/jour` (stub)
@@ -56,14 +61,16 @@ Notes pédagogiques sur ce qui a été fait, commandes utilisées, et solutions 
   ```bash
   uv run uvicorn arete.api.main:app --reload --app-dir src
   ```
-- **404 sur /** : attendu, pas de route racine ; utiliser `/docs` ou `/health`.
+- **404 sur `/`** : comportement attendu (pas de route racine définie). Utiliser `/docs` ou `/health`.
 
 ## 5. Couche dépôt (DuckDB)
-- Fichier : `src/arete/dataio/repository.py`.  
+
+- Fichier : `src/arete/dataio/repository.py`.
 - Rôle : CRUD sessions/user/objectives/records, génération d’ID appli, mapping dict pour l’API.
 - Schémas Pydantic : `src/arete/api/routes.py` (types `date`, `Field` bornés, `Literal` pour `sex`).
 
 ## 6. Commandes utiles (récap)
+
 - Init DB : `PYTHONPATH=src uv run python -m arete.dataio.init_duckdb`
 - Ingestion sample : `PYTHONPATH=src uv run python -m arete.dataio.ingest data/sample_log.csv`
 - Lancer API : `uv run uvicorn arete.api.main:app --reload --app-dir src`
@@ -78,7 +85,7 @@ Notes pédagogiques sur ce qui a été fait, commandes utilisées, et solutions 
   ```
 
 ## 7. Points de vigilance
-- IDs gérés côté app (pas de PK/identity DuckDB 1.4.2) → éviter les écritures concurrentes.
-- Toujours utiliser `PYTHONPATH=src` tant que le projet n’est pas installé en editable.  
-- Ingestion : purger avant de ré-ingérer pour éviter les doublons dans `training_log`.
 
+- IDs gérés côté app (pas de PK/identity DuckDB 1.4.2) → éviter les écritures concurrentes.
+- Toujours utiliser `PYTHONPATH=src` tant que le projet n’est pas installé en editable.
+- Ingestion : purger avant de ré-ingérer pour éviter les doublons dans `training_log`.

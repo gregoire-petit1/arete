@@ -28,17 +28,22 @@ def plan_jour(req: SessionRequest):
 
 @app.get("/log/recent")
 def log_recent(n: int = 5):
+    if n < 1 or n > 100:
+        n = 5  # Default to safe value
     con = connect(read_only=True)
-    df = con.execute(
-        """
-        SELECT date, sport, type, duree_min, distance_km, rpe
-        FROM app.training_log
-        ORDER BY date DESC
-        LIMIT ?
-    """,
-        [n],
-    ).fetch_df()
-    return {"rows": df.to_dict(orient="records")}
+    try:
+        df = con.execute(
+            """
+            SELECT date, sport, type, duration_min, distance_km, rpe
+            FROM app.training_log
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            [n],
+        ).fetch_df()
+        return {"rows": df.to_dict(orient="records")}
+    finally:
+        con.close()
 
 
 # Routes CRUD (sessions/user/objectives/records)

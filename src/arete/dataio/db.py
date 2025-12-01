@@ -1,4 +1,6 @@
-import os, pathlib
+import os
+import pathlib
+
 from dotenv import load_dotenv
 import duckdb
 
@@ -13,7 +15,8 @@ def get_db_path() -> pathlib.Path:
 
 def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     db_path = get_db_path()
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not read_only:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(db_path), read_only=read_only)
     con.execute("PRAGMA threads=4;")
     con.execute("PRAGMA temp_directory='data';")
