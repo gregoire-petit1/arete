@@ -128,7 +128,7 @@ class TokenManager:
     def _save_usage(self) -> None:
         """Persist usage to disk."""
         # Don't save too frequently
-        if (datetime.now() - self._last_save).seconds < 60:
+        if (datetime.now() - self._last_save).total_seconds() < 60:
             return
 
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -256,7 +256,7 @@ class TokenManager:
 
         # Check per-minute limit
         if stats["remaining"]["tokens_minute"] < estimated_tokens:
-            wait_seconds = 60 - (datetime.now().second)
+            wait_seconds = 60  # Wait full minute to ensure rate limit window resets
             return (
                 False,
                 f"Minute limit reached, wait {wait_seconds}s",
@@ -319,13 +319,19 @@ class TokenManager:
         return 0.0
 
 
-# Singleton instance
+# Singleton instance with thread-safe initialization
 _token_manager: TokenManager | None = None
+_token_manager_lock = Lock()
 
 
 def get_token_manager() -> TokenManager:
-    """Get or create the global token manager."""
+    """Get or create the global token manager.
+
+    Uses double-checked locking for thread safety.
+    """
     global _token_manager
     if _token_manager is None:
-        _token_manager = TokenManager()
+        with _token_manager_lock:
+            if _token_manager is None:
+                _token_manager = TokenManager()
     return _token_manager
