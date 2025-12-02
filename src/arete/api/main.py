@@ -152,3 +152,8 @@ app.include_router(metrics_router)
 from arete.api.rag import router as rag_router
 
 app.include_router(rag_router)
+
+# Routes Garmin (planned/actual sessions, FIT upload, matching)
+from arete.api.garmin import router as garmin_router
+
+app.include_router(garmin_router)

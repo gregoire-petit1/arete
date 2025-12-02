@@ -65,6 +65,89 @@ CREATE TABLE IF NOT EXISTS app.personal_records (
     performance  DOUBLE NOT NULL,
     unit         VARCHAR NOT NULL
 );
+
+-- ============================================================
+-- Garmin Pipeline Tables (Phase 1)
+-- ============================================================
+
+-- Sequences for auto-increment
+CREATE SEQUENCE IF NOT EXISTS app.planned_sessions_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS app.actual_sessions_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS app.session_analysis_seq START 1;
+
+-- Planned training sessions (recommendations from coach/LLM)
+CREATE TABLE IF NOT EXISTS app.planned_sessions (
+    id              INTEGER PRIMARY KEY DEFAULT nextval('app.planned_sessions_seq'),
+    user_id         INTEGER,
+    date            DATE NOT NULL,
+    sport           VARCHAR NOT NULL DEFAULT 'running',
+    session_type    VARCHAR NOT NULL,          -- 'recovery', 'endurance', 'tempo', 'intervals', 'long_run'
+    target_duration_min INTEGER,               -- planned duration
+    target_distance_km  DOUBLE,                -- planned distance
+    target_hr_zone  VARCHAR,                   -- 'Z1', 'Z2', etc.
+    target_intensity VARCHAR,                  -- 'easy', 'moderate', 'hard'
+    description     VARCHAR,                   -- workout description
+    source          VARCHAR DEFAULT 'manual',  -- 'manual', 'llm', 'coach'
+    status          VARCHAR DEFAULT 'pending', -- 'pending', 'completed', 'skipped', 'modified'
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Actual training sessions (imported from Garmin/FIT files)
+CREATE TABLE IF NOT EXISTS app.actual_sessions (
+    id                  INTEGER PRIMARY KEY DEFAULT nextval('app.actual_sessions_seq'),
+    planned_session_id  INTEGER,               -- FK to planned_sessions (NULL if unplanned)
+    user_id             INTEGER,
+    date                DATE NOT NULL,
+    sport               VARCHAR NOT NULL DEFAULT 'running',
+    session_type        VARCHAR,               -- auto-detected or manual
+    
+    -- Core metrics
+    duration_sec        INTEGER NOT NULL,
+    distance_m          DOUBLE,
+    calories            INTEGER,
+    
+    -- Heart rate
+    avg_hr              INTEGER,
+    max_hr              INTEGER,
+    hr_zones_json       VARCHAR,               -- JSON: {"Z1": 300, "Z2": 1200, ...} seconds per zone
+    
+    -- Pace/Speed
+    avg_pace_sec_km     INTEGER,               -- seconds per km
+    avg_speed_mps       DOUBLE,                -- meters per second
+    max_speed_mps       DOUBLE,
+    
+    -- Elevation
+    ascent_m            DOUBLE,
+    descent_m           DOUBLE,
+    
+    -- GPS (optional, for route analysis)
+    start_lat           DOUBLE,
+    start_lon           DOUBLE,
+    
+    -- Source tracking
+    source              VARCHAR NOT NULL,      -- 'fit_file', 'garmin_connect', 'manual', 'strava'
+    source_file         VARCHAR,               -- original filename
+    garmin_activity_id  VARCHAR,               -- Garmin Connect activity ID
+    
+    -- Computed adherence (filled by matching logic)
+    adherence_score     DOUBLE,                -- 0-100: how well it matched the plan
+    intensity_deviation DOUBLE,                -- % deviation from planned intensity
+    
+    -- Timestamps
+    start_time          TIMESTAMP,
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Session analysis/feedback (LLM-generated insights)
+CREATE TABLE IF NOT EXISTS app.session_analysis (
+    id                  INTEGER PRIMARY KEY DEFAULT nextval('app.session_analysis_seq'),
+    actual_session_id   INTEGER NOT NULL,      -- FK to actual_sessions
+    analysis_type       VARCHAR NOT NULL,      -- 'adherence', 'performance', 'recovery'
+    insights_json       VARCHAR,               -- JSON with structured insights
+    recommendations     VARCHAR,               -- text recommendations
+    generated_by        VARCHAR DEFAULT 'llm', -- 'llm', 'rules', 'manual'
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
