@@ -211,22 +211,22 @@ The API exposes training metrics via REST endpoints:
 
 ### Core Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/health` | GET | Health check |
-| `/docs` | GET | OpenAPI documentation (Swagger UI) |
-| `/log/recent` | GET | Recent training log entries |
+| Endpoint      | Method | Description                        |
+| ------------- | ------ | ---------------------------------- |
+| `/health`     | GET    | Health check                       |
+| `/docs`       | GET    | OpenAPI documentation (Swagger UI) |
+| `/log/recent` | GET    | Recent training log entries        |
 
 ### Metrics Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/metrics/workload` | GET | ACWR, Monotony, Strain from training history |
-| `/metrics/fitness` | GET | CTL/ATL/TSB (Banister model), readiness score |
-| `/metrics/cardio/trimp` | POST | Calculate TRIMP for a cardio session |
-| `/metrics/strength/1rm` | POST | Estimate 1RM from submaximal lift |
-| `/metrics/strength/inol` | POST | Calculate INOL for strength training |
-| `/metrics/recommendations` | GET | Intelligent training recommendations |
+| Endpoint                   | Method | Description                                   |
+| -------------------------- | ------ | --------------------------------------------- |
+| `/metrics/workload`        | GET    | ACWR, Monotony, Strain from training history  |
+| `/metrics/fitness`         | GET    | CTL/ATL/TSB (Banister model), readiness score |
+| `/metrics/cardio/trimp`    | POST   | Calculate TRIMP for a cardio session          |
+| `/metrics/strength/1rm`    | POST   | Estimate 1RM from submaximal lift             |
+| `/metrics/strength/inol`   | POST   | Calculate INOL for strength training          |
+| `/metrics/recommendations` | GET    | Intelligent training recommendations          |
 
 ### Example API Calls
 

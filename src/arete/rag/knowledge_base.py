@@ -212,9 +212,7 @@ class KnowledgeBase:
 
     def get_collection_stats(self) -> dict[str, int]:
         """Get document counts per collection."""
-        return {
-            name: coll.count() for name, coll in self._collections.items()
-        }
+        return {name: coll.count() for name, coll in self._collections.items()}
 
     def clear_collection(self, collection: str) -> None:
         """Clear all documents from a collection."""

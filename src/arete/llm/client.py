@@ -2,6 +2,8 @@
 
 Uses OpenAI-compatible API with Groq backend.
 Models: llama-3.3-70b-versatile (default), llama-4-scout-17b-16e-instruct
+
+Token usage is tracked and rate limits are enforced to stay within Groq free tier.
 """
 
 from __future__ import annotations
@@ -13,11 +15,17 @@ from typing import Any
 
 from openai import OpenAI
 
+from arete.llm.token_manager import get_token_manager
+
 logger = logging.getLogger(__name__)
 
 # Groq configuration
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"  # Best quality/speed for French text generation
+
+# Token budget per request (prompt + completion)
+MAX_PROMPT_TOKENS = 800  # Reduced from ~1500
+MAX_COMPLETION_TOKENS = 800  # Reduced from 1024
 
 
 @dataclass
@@ -58,34 +66,21 @@ def get_client() -> OpenAI | None:
 
 
 def _build_system_prompt() -> str:
-    """Build system prompt for training coach."""
-    return """Tu es un coach d'entraînement expert en course à pied et préparation physique.
-Tu génères des plans d'entraînement personnalisés basés sur les données physiologiques de l'athlète.
+    """Build compact system prompt for training coach.
 
-Règles :
-- Réponds UNIQUEMENT en JSON valide, sans texte avant/après
-- Adapte l'intensité selon le TSB (forme) et l'ACWR (charge)
-- Si fatigue élevée (>7) ou TSB < -10, privilégie récupération active
-- Si ACWR > 1.3, réduis la charge pour éviter blessure
-- Inclus toujours échauffement et retour au calme
-- Utilise les zones FC françaises : Z1 (récup), Z2 (endurance), Z3 (tempo), Z4 (seuil), Z5 (VO2max)
+    Optimized for token efficiency (~300 tokens vs 500 before).
+    """
+    return """Coach expert course à pied. Génère plans personnalisés en JSON.
 
-Format JSON requis :
-{
-  "seance": "Description courte de la séance",
-  "details": {
-    "echauffement": "Description échauffement",
-    "corps": "Description du corps de séance",
-    "retour_calme": "Description retour au calme"
-  },
-  "cible": {
-    "fc": "Zone FC cible",
-    "allure": "Zone d'allure",
-    "duree_totale": "Durée en minutes"
-  },
-  "justification": "Explication courte basée sur les métriques",
-  "charge_prevue": "légère | modérée | intense"
-}"""
+RÈGLES:
+- JSON valide uniquement, sans texte
+- Intensité selon TSB (forme) et ACWR (charge)
+- Si fatigue>7 ou TSB<-10: récupération
+- Si ACWR>1.3: réduire charge
+- Zones FC: Z1 récup, Z2 endurance, Z3 tempo, Z4 seuil, Z5 VO2max
+
+FORMAT JSON:
+{"seance":"...", "details":{"echauffement":"...", "corps":"...", "retour_calme":"..."}, "cible":{"fc":"Zone", "allure":"...", "duree_totale":"min"}, "justification":"...", "charge_prevue":"légère|modérée|intense"}"""
 
 
 def _build_user_prompt(ctx: TrainingContext) -> str:
@@ -117,22 +112,22 @@ def _build_user_prompt(ctx: TrainingContext) -> str:
         lines.append(f"Strain : {ctx.strain:.0f}")
 
     if ctx.recommendations:
-        lines.append(f"Recommandations système : {', '.join(ctx.recommendations[:3])}")
+        lines.append(f"Reco: {', '.join(ctx.recommendations[:2])}")
 
-    lines.append("\nGénère un plan d'entraînement adapté pour aujourd'hui.")
+    lines.append("\nPlan pour aujourd'hui:")
 
     return "\n".join(lines)
 
 
 def generate_plan(
     ctx: TrainingContext,
-    model: str = DEFAULT_MODEL,
+    model: str | None = None,
 ) -> dict[str, Any]:
     """Generate training plan using Groq LLM.
 
     Args:
         ctx: Training context with user data and metrics
-        model: Groq model to use
+        model: Groq model to use (auto-selected if None)
 
     Returns:
         Parsed JSON plan or fallback if LLM unavailable
@@ -145,6 +140,22 @@ def generate_plan(
         # Fallback when no API key
         return _generate_fallback_plan(ctx)
 
+    # Token management
+    token_manager = get_token_manager()
+
+    # Auto-select best available model
+    if model is None:
+        model = token_manager.get_best_model(estimated_tokens=1500)
+
+    # Check if we can make request
+    can_proceed, reason = token_manager.can_make_request(model, estimated_tokens=1500)
+    if not can_proceed:
+        logger.warning(f"Rate limit: {reason}, using fallback")
+        return _generate_fallback_plan(ctx)
+
+    # Wait if needed (per-minute limit)
+    token_manager.wait_if_needed(model, estimated_tokens=1500)
+
     try:
         response = client.chat.completions.create(
             model=model,
@@ -153,9 +164,17 @@ def generate_plan(
                 {"role": "user", "content": _build_user_prompt(ctx)},
             ],
             temperature=0.7,
-            max_tokens=1024,
+            max_tokens=MAX_COMPLETION_TOKENS,
             response_format={"type": "json_object"},
         )
+
+        # Track token usage
+        if response.usage:
+            token_manager.record_usage(
+                model=model,
+                prompt_tokens=response.usage.prompt_tokens,
+                completion_tokens=response.usage.completion_tokens,
+            )
 
         content = response.choices[0].message.content
         if content:

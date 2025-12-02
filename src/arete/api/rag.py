@@ -211,3 +211,15 @@ def clear_collection(collection: str):
         )
     kb.clear_collection(collection)
     return {"status": "success", "collection_cleared": collection}
+
+
+@router.get("/llm/usage")
+def get_llm_usage(model: str | None = Query(None, description="Specific model")):
+    """Get LLM token usage statistics.
+
+    Shows current usage against Groq rate limits.
+    """
+    from arete.llm.token_manager import get_token_manager
+
+    token_manager = get_token_manager()
+    return token_manager.get_usage_stats(model)

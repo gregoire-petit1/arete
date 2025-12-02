@@ -25,16 +25,17 @@
 
 Nouveau router `src/arete/api/metrics.py` exposant les métriques features :
 
-| Endpoint | Méthode | Description |
-|----------|---------|-------------|
-| `/metrics/workload` | GET | ACWR, Monotony, Strain depuis l'historique training_log |
-| `/metrics/fitness` | GET | CTL/ATL/TSB (Banister model), readiness score |
-| `/metrics/cardio/trimp` | POST | Calcul TRIMP pour une session cardio |
-| `/metrics/strength/1rm` | POST | Estimation 1RM (Epley, Brzycki, RPE-based) |
-| `/metrics/strength/inol` | POST | Calcul INOL (volume/intensité) |
-| `/metrics/recommendations` | GET | Recommandations intelligentes en français |
+| Endpoint                   | Méthode | Description                                             |
+| -------------------------- | ------- | ------------------------------------------------------- |
+| `/metrics/workload`        | GET     | ACWR, Monotony, Strain depuis l'historique training_log |
+| `/metrics/fitness`         | GET     | CTL/ATL/TSB (Banister model), readiness score           |
+| `/metrics/cardio/trimp`    | POST    | Calcul TRIMP pour une session cardio                    |
+| `/metrics/strength/1rm`    | POST    | Estimation 1RM (Epley, Brzycki, RPE-based)              |
+| `/metrics/strength/inol`   | POST    | Calcul INOL (volume/intensité)                          |
+| `/metrics/recommendations` | GET     | Recommandations intelligentes en français               |
 
 Helpers internes :
+
 - `_get_training_loads()` : récupère DailyLoad depuis training_log
 - `_get_tss_history()` : calcule TSS estimé depuis RPE × durée
 
@@ -81,6 +82,76 @@ Module complet `src/arete/features/` avec métriques scientifiques :
 - Génération de plan hebdomadaire
 - Actions prioritaires avec catégories
 
+### LLM Integration ✅ (2025-12-02)
+
+Module `src/arete/llm/` avec intégration Groq :
+
+- **Client** (`client.py`) : Groq API via OpenAI SDK (Llama 3.3 70B Versatile)
+- **TrainingContext** : dataclass avec métriques utilisateur
+- **generate_plan()** : génération de plan avec fallback intelligent
+- **Fallback** : plans prédéfinis si LLM indisponible (high fatigue → recovery, low TSB → regeneration)
+- Endpoint `/plan/jour` utilise le LLM avec contexte DB
+
+#### Token Management ✅ (2025-12-02)
+
+Module `token_manager.py` pour optimisation du budget Groq free tier :
+
+| Limite Groq (llama-3.3-70b) | Valeur    | Notre usage |
+| --------------------------- | --------- | ----------- |
+| Tokens/minute               | 12,000    | ~2,000/req  |
+| Tokens/jour                 | 100,000   | ~50 req/day |
+| Requests/minute             | 30        | ~1-2        |
+| Requests/jour               | 1,000     | ~50         |
+
+Fonctionnalités :
+- **Usage tracking** : comptage tokens prompt + completion par requête
+- **Rate limiting** : blocage automatique si quotas dépassés
+- **Model fallback** : bascule vers modèle plus léger si quota épuisé
+- **Prompts optimisés** : réduction de ~60% des tokens (800 vs 2000)
+- **Endpoint `/rag/llm/usage`** : statistiques temps réel
+
+### RAG System ✅ (2025-12-02)
+
+Module `src/arete/rag/` avec ChromaDB :
+
+#### Knowledge Base (`knowledge_base.py`)
+
+- ChromaDB PersistentClient avec 3 collections :
+  - `scientific` : littérature scientifique (ACWR, Banister, Foster, Mujika)
+  - `protocols` : protocoles d'entraînement (deload, recovery, build)
+  - `exercises` : base d'exercices (footing, tempo, intervals, long run)
+- Embeddings automatiques via ChromaDB (all-MiniLM-L6-v2)
+- Metadata sanitization (listes → JSON strings)
+
+#### Retriever (`retriever.py`)
+
+- Récupération contextuelle basée sur métriques utilisateur
+- UserContext avec acwr, tsb, fatigue, experience, sport
+- get_risk_level() pour évaluation du risque
+- infer_intent() : risk_mitigation, variety_seeking, recovery_needed, ready_for_intensity
+
+#### Augmented Generator (`augmented_generator.py`)
+
+- Combine RAG + LLM pour recommandations enrichies
+- Cite les sources dans la justification
+- Metadata avec sources_retrieved et context_summary
+
+#### Seed Knowledge (`seed_knowledge.py`)
+
+- 5 documents scientifiques (Gabbett, Banister, Foster, Mujika, TRIMP)
+- 4 protocoles (deload, recovery, build phase, taper)
+- 4 exercices (footing Z2, tempo, intervals, long run)
+
+#### RAG API (`src/arete/api/rag.py`)
+
+| Endpoint                  | Méthode | Description                         |
+| ------------------------- | ------- | ----------------------------------- |
+| `/rag/query`              | POST    | Génération de plan RAG-augmenté     |
+| `/rag/search`             | GET     | Recherche dans la knowledge base    |
+| `/rag/stats`              | GET     | Statistiques des collections        |
+| `/rag/seed`               | POST    | Seeding de la base de connaissances |
+| `/rag/clear/{collection}` | DELETE  | Vidage d'une collection             |
+
 ### Sécurité & Robustesse (CodeRabbit review fixes)
 
 - ✅ Gestion des ressources : connexions DB fermées via try/finally
@@ -94,7 +165,7 @@ Module complet `src/arete/features/` avec métriques scientifiques :
 
 - ✅ ruff (lint + format) configuré dans pyproject.toml
 - ✅ mypy configuré et 100% clean sur features/ et api/
-- ✅ pytest avec **151 tests** (API + repository + features + metrics API)
+- ✅ pytest avec **190 tests** (API + repository + features + metrics API + LLM + RAG + TokenManager)
 - ✅ GitHub Actions CI (.github/workflows/ci.yml) : lint, test, typecheck
 
 ### Données
@@ -135,7 +206,7 @@ uv run ruff format src tests
 
 1. ~~**Features engineering** : module `src/arete/features/` pour calcul ACWR, charge monotony, etc.~~ ✅ **DONE**
 2. ~~**Intégration API** : exposer les métriques features via endpoints `/metrics/workload`, `/metrics/fitness`, etc.~~ ✅ **DONE**
-3. **RAG roadmap** : définir le plan d'indexation (embeddings, store), et intégration dans `/plan/jour`.
-4. **LLM integration** : connexion OpenAI/local LLM pour génération de recommandations personnalisées.
+3. ~~**LLM integration** : connexion Groq/Llama pour génération de recommandations personnalisées.~~ ✅ **DONE**
+4. ~~**RAG roadmap** : indexation ChromaDB avec littérature scientifique, intégration dans `/plan/jour`.~~ ✅ **DONE**
 5. **Front/UX** : mini UI ou collection HTTP (Insomnia/Postman) prête à l'emploi.
 6. **Déploiement** : Docker, fly.io ou Render pour démo live.

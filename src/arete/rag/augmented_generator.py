@@ -1,6 +1,7 @@
 """RAG-augmented generator integrating knowledge with LLM.
 
 Combines retrieved knowledge with user context for enriched recommendations.
+Token-optimized for Groq free tier limits.
 """
 
 from __future__ import annotations
@@ -9,10 +10,16 @@ import json
 import logging
 from typing import Any
 
+from arete.llm.token_manager import get_token_manager
 from arete.rag.knowledge_base import KnowledgeBase, RetrievedDocument
 from arete.rag.retriever import Retriever, UserContext
 
 logger = logging.getLogger(__name__)
+
+# Token budget optimization
+MAX_DOCS_FOR_CONTEXT = 3  # Reduced from 5
+MAX_CONTENT_CHARS = 200  # Reduced from 500
+MAX_COMPLETION_TOKENS = 800  # Reduced from 1500
 
 
 class AugmentedGenerator:
@@ -42,20 +49,33 @@ class AugmentedGenerator:
         self,
         query: str,
         context: UserContext,
-        model: str = "llama-3.3-70b-versatile",
+        model: str | None = None,
     ) -> dict[str, Any]:
         """Generate training plan augmented with RAG knowledge.
 
         Args:
             query: User query or training objective
             context: User context with metrics and profile
-            model: Groq model to use
+            model: Groq model to use (auto-selected if None)
 
         Returns:
             Structured plan with citations
         """
-        # Retrieve relevant knowledge
-        retrieved_docs = self.retriever.retrieve(query, context, k=5)
+        # Token management
+        token_manager = get_token_manager()
+
+        # Auto-select best available model
+        if model is None:
+            model = token_manager.get_best_model(estimated_tokens=2000)
+
+        # Check if we can make request
+        can_proceed, reason = token_manager.can_make_request(model, estimated_tokens=2000)
+        if not can_proceed:
+            logger.warning(f"Rate limit: {reason}, using fallback")
+            return self._fallback_response()
+
+        # Retrieve relevant knowledge (reduced count for token efficiency)
+        retrieved_docs = self.retriever.retrieve(query, context, k=MAX_DOCS_FOR_CONTEXT)
 
         # Build augmented prompt
         prompt = self._build_augmented_prompt(query, context, retrieved_docs)
@@ -74,92 +94,55 @@ class AugmentedGenerator:
         context: UserContext,
         docs: list[RetrievedDocument],
     ) -> tuple[str, str]:
-        """Build system and user prompts with RAG augmentation.
+        """Build compact system and user prompts with RAG augmentation.
+
+        Token-optimized: ~600 tokens total vs ~2000 before.
 
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
-        # System prompt with role and constraints
-        system_prompt = """Tu es un expert en science du sport et coaching personnalisé.
-Tu génères des plans d'entraînement basés sur des preuves scientifiques.
+        # Compact system prompt (~250 tokens)
+        system_prompt = """Expert science du sport. Plans basés sur preuves.
 
-## RÈGLES ABSOLUES
-1. Réponds UNIQUEMENT en JSON valide
-2. Cite les sources avec [Source: ID] quand tu utilises une connaissance
-3. Adapte l'intensité selon les métriques (ACWR, TSB)
-4. Si risque élevé (ACWR > 1.3 ou TSB < -15), PRIORISE la sécurité
-5. Quantifie tes recommandations (%, durées, zones)
-6. NE JAMAIS inventer de données ou sources
+RÈGLES:
+- JSON valide uniquement
+- Cite sources avec [Source: ID]
+- Si ACWR>1.3 ou TSB<-15: SÉCURITÉ prioritaire
+- Quantifie (%, durées, zones)
 
-## FORMAT JSON REQUIS
-{
-  "seance": "Description courte",
-  "details": {
-    "echauffement": "...",
-    "corps": "...",
-    "retour_calme": "..."
-  },
-  "cible": {
-    "fc": "Zone FC",
-    "allure": "Zone allure",
-    "duree_totale": "minutes"
-  },
-  "justification": "Explication basée sur métriques et science",
-  "charge_prevue": "légère | modérée | intense",
-  "sources_utilisees": ["ID1", "ID2"],
-  "avertissements": ["si applicable"]
-}"""
+FORMAT JSON:
+{"seance":"...", "details":{"echauffement":"...", "corps":"...", "retour_calme":"..."}, "cible":{"fc":"Zone", "allure":"...", "duree_totale":"min"}, "justification":"...", "charge_prevue":"légère|modérée|intense", "sources_utilisees":["ID"], "avertissements":[]}"""
 
-        # Build user prompt with context and knowledge
+        # Compact user prompt
         user_parts = []
 
-        # User context
-        user_parts.append("## CONTEXTE UTILISATEUR")
-        user_parts.append(f"- Sport : {context.primary_sport}")
-        user_parts.append(f"- Niveau : {context.experience}")
-        user_parts.append(f"- Fatigue ressentie : {context.fatigue}/10")
+        # Essential context only
+        user_parts.append(f"Sport:{context.primary_sport} Niveau:{context.experience} Fatigue:{context.fatigue}/10")
 
-        # Current metrics
-        user_parts.append("\n## MÉTRIQUES ACTUELLES")
+        # Key metrics on one line
+        metrics = []
         if context.acwr is not None:
-            zone = context.acwr_zone or "unknown"
-            user_parts.append(f"- ACWR : {context.acwr:.2f} ({zone})")
+            metrics.append(f"ACWR:{context.acwr:.2f}")
         if context.tsb is not None:
-            zone = context.form_zone or "unknown"
-            user_parts.append(f"- TSB (forme) : {context.tsb:.1f} ({zone})")
+            metrics.append(f"TSB:{context.tsb:.0f}")
         if context.ctl is not None:
-            user_parts.append(f"- CTL (fitness) : {context.ctl:.1f}")
-        if context.monotony is not None:
-            user_parts.append(f"- Monotonie : {context.monotony:.2f}")
-        if context.strain is not None:
-            user_parts.append(f"- Strain : {context.strain:.0f}")
+            metrics.append(f"CTL:{context.ctl:.0f}")
+        if metrics:
+            user_parts.append(" ".join(metrics))
 
-        # Risk assessment
-        risk = context.get_risk_level()
-        intent = context.infer_intent()
-        user_parts.append("\n## ÉVALUATION")
-        user_parts.append(f"- Niveau de risque : {risk:.0%}")
-        user_parts.append(f"- Intention détectée : {intent}")
+        # Risk/intent summary
+        user_parts.append(f"Risque:{context.get_risk_level():.0%} Intent:{context.infer_intent()}")
 
-        # Retrieved knowledge
+        # Compact knowledge (limited chars per doc)
         if docs:
-            user_parts.append("\n## CONNAISSANCES SCIENTIFIQUES PERTINENTES")
-            for doc in docs:
-                user_parts.append(f"\n### [Source: {doc.id}]")
-                user_parts.append(f"Collection: {doc.collection}")
-                if doc.metadata.get("title"):
-                    user_parts.append(f"Titre: {doc.metadata['title']}")
-                user_parts.append(f"Contenu: {doc.content[:500]}...")
-                if doc.metadata.get("key_findings"):
-                    findings = doc.metadata["key_findings"]
-                    if isinstance(findings, list):
-                        user_parts.append("Conclusions clés:")
-                        for f in findings[:3]:
-                            user_parts.append(f"  - {f}")
+            user_parts.append("\nSources:")
+            for doc in docs[:MAX_DOCS_FOR_CONTEXT]:
+                title = doc.metadata.get("title", doc.id)[:50]
+                content = doc.content[:MAX_CONTENT_CHARS].replace("\n", " ")
+                user_parts.append(f"[{doc.id}] {title}: {content}...")
 
         # Query
-        user_parts.append(f"\n## DEMANDE\n{query}")
-        user_parts.append("\nGénère un plan d'entraînement adapté en JSON.")
+        user_parts.append(f"\nDemande: {query[:200]}")
 
         user_prompt = "\n".join(user_parts)
 
@@ -170,10 +153,12 @@ Tu génères des plans d'entraînement basés sur des preuves scientifiques.
         prompt: tuple[str, str],
         model: str,
     ) -> dict[str, Any]:
-        """Call Groq LLM for generation."""
+        """Call Groq LLM for generation with token tracking."""
         import os
 
         from openai import OpenAI
+
+        from arete.llm.token_manager import get_token_manager
 
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
@@ -186,6 +171,10 @@ Tu génères des plans d'entraînement basés sur des preuves scientifiques.
         )
 
         system_prompt, user_prompt = prompt
+        token_manager = get_token_manager()
+
+        # Wait if per-minute limit reached
+        token_manager.wait_if_needed(model, estimated_tokens=2000)
 
         try:
             response = client.chat.completions.create(
@@ -195,9 +184,17 @@ Tu génères des plans d'entraînement basés sur des preuves scientifiques.
                     {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.3,
-                max_tokens=1500,
+                max_tokens=MAX_COMPLETION_TOKENS,
                 response_format={"type": "json_object"},
             )
+
+            # Track token usage
+            if response.usage:
+                token_manager.record_usage(
+                    model=model,
+                    prompt_tokens=response.usage.prompt_tokens,
+                    completion_tokens=response.usage.completion_tokens,
+                )
 
             content = response.choices[0].message.content
             if content:
