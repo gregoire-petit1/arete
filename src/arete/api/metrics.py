@@ -5,6 +5,7 @@ Exposes training metrics computed from features module.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 from typing import Literal
 
@@ -40,6 +41,8 @@ from arete.features.workload import (
     DailyLoad,
     compute_workload_metrics,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -118,7 +121,7 @@ class INOLRequest(BaseModel):
     """INOL calculation request."""
 
     reps: int = Field(gt=0, description="Total repetitions")
-    intensity_pct: float = Field(gt=0, le=100, description="Intensity as % of 1RM")
+    intensity_pct: float = Field(gt=0, lt=100, description="Intensity as % of 1RM")
 
 
 class INOLResponse(BaseModel):
@@ -196,8 +199,8 @@ def _get_training_loads(days: int = 28) -> list[DailyLoad]:
 def _get_tss_history(days: int = 42) -> list[DailyTSS]:
     """Fetch daily TSS-like values from training_log.
 
-    Uses simplified TSS estimation: (duration * intensity^2) / 36
-    where intensity = RPE / 10.
+    Uses simplified TSS estimation: (duration * intensity^2) / 0.36
+    where intensity = RPE / 10. This approximates 100 TSS for 1 hour at RPE 6.
     """
     con = connect(read_only=True)
     try:
@@ -412,7 +415,7 @@ def get_recommendations(
         if any(load.duration_min > 0 for load in loads):
             workload = compute_workload_metrics(loads, target_date)
     except Exception:
-        pass
+        logger.warning("Failed to compute workload metrics", exc_info=True)
 
     fitness = None
     tss = None
@@ -421,7 +424,7 @@ def get_recommendations(
         if any(t.tss > 0 for t in tss):
             fitness = compute_performance_model(tss, target_date)
     except Exception:
-        pass
+        logger.warning("Failed to compute fitness metrics", exc_info=True)
 
     if not workload and not fitness:
         raise HTTPException(
