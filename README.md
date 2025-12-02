@@ -9,7 +9,7 @@
 
 ## 🚧 Status
 
-Active development — Features Engineering module complete.
+Active development — Features Engineering & Metrics API complete.
 
 ## Goals
 
@@ -203,6 +203,52 @@ recommendations = generate_recommendations(
 )
 for rec in recommendations:
     print(f"[{rec.priority.value}] {rec.message}")
+```
+
+## API Endpoints
+
+The API exposes training metrics via REST endpoints:
+
+### Core Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/docs` | GET | OpenAPI documentation (Swagger UI) |
+| `/log/recent` | GET | Recent training log entries |
+
+### Metrics Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/metrics/workload` | GET | ACWR, Monotony, Strain from training history |
+| `/metrics/fitness` | GET | CTL/ATL/TSB (Banister model), readiness score |
+| `/metrics/cardio/trimp` | POST | Calculate TRIMP for a cardio session |
+| `/metrics/strength/1rm` | POST | Estimate 1RM from submaximal lift |
+| `/metrics/strength/inol` | POST | Calculate INOL for strength training |
+| `/metrics/recommendations` | GET | Intelligent training recommendations |
+
+### Example API Calls
+
+```bash
+# Get workload metrics (last 28 days)
+curl http://localhost:8000/metrics/workload
+
+# Get fitness metrics (CTL/ATL/TSB)
+curl http://localhost:8000/metrics/fitness
+
+# Calculate TRIMP for a session
+curl -X POST http://localhost:8000/metrics/cardio/trimp \
+  -H "Content-Type: application/json" \
+  -d '{"duration_min": 60, "avg_hr": 150, "hr_rest": 60, "hr_max": 190, "gender": "male"}'
+
+# Estimate 1RM
+curl -X POST http://localhost:8000/metrics/strength/1rm \
+  -H "Content-Type: application/json" \
+  -d '{"weight": 100, "reps": 5, "rpe": 8}'
+
+# Get recommendations
+curl "http://localhost:8000/metrics/recommendations?sport_type=cardio"
 ```
 
 ## Documentation

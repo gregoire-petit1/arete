@@ -57,6 +57,7 @@ Notes pédagogiques sur ce qui a été fait, commandes utilisées, et solutions 
   - `/plan/jour` (stub)
   - `/log/recent` (lit `training_log`)
   - CRUD DuckDB : `/plan/day`, `/sessions`, `/user`, `/objectives`, `/records`
+  - **Metrics (2025-12-02)** : `/metrics/workload`, `/metrics/fitness`, `/metrics/cardio/trimp`, `/metrics/strength/1rm`, `/metrics/strength/inol`, `/metrics/recommendations`
 - **Lancement** :
   ```bash
   uv run uvicorn arete.api.main:app --reload --app-dir src
@@ -87,5 +88,15 @@ Notes pédagogiques sur ce qui a été fait, commandes utilisées, et solutions 
 ## 7. Points de vigilance
 
 - IDs gérés côté app (pas de PK/identity DuckDB 1.4.2) → éviter les écritures concurrentes.
-- Toujours utiliser `PYTHONPATH=src` tant que le projet n’est pas installé en editable.
+- Toujours utiliser `PYTHONPATH=src` tant que le projet n'est pas installé en editable.
 - Ingestion : purger avant de ré-ingérer pour éviter les doublons dans `training_log`.
+
+## 8. Intégration Features → API (2025-12-02)
+
+- **Router** : `src/arete/api/metrics.py` ajouté à `main.py` via `include_router(metrics_router)`.
+- **Signatures features** : Les fonctions `compute_workload_metrics()` et `compute_performance_model()` attendent :
+  - `Sequence[DailyLoad]` / `Sequence[DailyTSS]` (pas des listes de floats)
+  - Un paramètre `target_date: date`
+- **StrengthZone** : C'est un `IntEnum`, donc `zone.value` retourne un int. Utiliser `zone.name` pour une string.
+- **Recommendation** : L'attribut est `actions` (liste), pas `action` (string).
+- **Tests API** : 18 tests dans `tests/test_metrics_api.py` couvrant tous les endpoints.

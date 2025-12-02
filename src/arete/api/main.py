@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from arete.api.routes import router as api_router
+from arete.api.metrics import router as metrics_router
 from arete.dataio.db import connect
 
 load_dotenv()
@@ -50,3 +51,6 @@ def log_recent(n: int = 5):
 
 # Routes CRUD (sessions/user/objectives/records)
 app.include_router(api_router)
+
+# Routes metrics (workload/fitness/cardio/strength/recommendations)
+app.include_router(metrics_router)

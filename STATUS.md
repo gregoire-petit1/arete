@@ -6,7 +6,7 @@
 - Stack cible : FastAPI, DuckDB (`app.*`), uv (Python 3.11), ingestion CSV, endpoints `/health`, `/plan/jour`, `/log/recent`, CRUD persistance.
 - Qualité : ruff, mypy, pytest ; `.env` + `.env.example` ; lancement via `uv run uvicorn arete.api.main:app --reload --app-dir src`.
 
-## État actuel (mise à jour 2025-12-01)
+## État actuel (mise à jour 2025-12-02)
 
 ### Infrastructure
 
@@ -20,6 +20,23 @@
 - Router CRUD DuckDB (`/sessions`, `/user`, `/objectives`, `/records`) avec pagination validée
 - Validation : schémas Pydantic v2 avec `date`, bornes via `Field`, `Literal` pour le sexe
 - Calcul BMI extrait dans helper `_calculate_bmi()`
+
+### API Metrics ✅ NEW (2025-12-02)
+
+Nouveau router `src/arete/api/metrics.py` exposant les métriques features :
+
+| Endpoint | Méthode | Description |
+|----------|---------|-------------|
+| `/metrics/workload` | GET | ACWR, Monotony, Strain depuis l'historique training_log |
+| `/metrics/fitness` | GET | CTL/ATL/TSB (Banister model), readiness score |
+| `/metrics/cardio/trimp` | POST | Calcul TRIMP pour une session cardio |
+| `/metrics/strength/1rm` | POST | Estimation 1RM (Epley, Brzycki, RPE-based) |
+| `/metrics/strength/inol` | POST | Calcul INOL (volume/intensité) |
+| `/metrics/recommendations` | GET | Recommandations intelligentes en français |
+
+Helpers internes :
+- `_get_training_loads()` : récupère DailyLoad depuis training_log
+- `_get_tss_history()` : calcule TSS estimé depuis RPE × durée
 
 ### Features Engineering ✅ NEW (2025-12-01)
 
@@ -76,8 +93,8 @@ Module complet `src/arete/features/` avec métriques scientifiques :
 ### Qualité & Tests
 
 - ✅ ruff (lint + format) configuré dans pyproject.toml
-- ✅ mypy configuré et 100% clean sur features/
-- ✅ pytest avec **114+ tests** (API + repository + features)
+- ✅ mypy configuré et 100% clean sur features/ et api/
+- ✅ pytest avec **151 tests** (API + repository + features + metrics API)
 - ✅ GitHub Actions CI (.github/workflows/ci.yml) : lint, test, typecheck
 
 ### Données
@@ -117,7 +134,7 @@ uv run ruff format src tests
 ## Next steps (priorisés)
 
 1. ~~**Features engineering** : module `src/arete/features/` pour calcul ACWR, charge monotony, etc.~~ ✅ **DONE**
-2. **Intégration API** : exposer les métriques features via endpoints `/metrics/workload`, `/metrics/fitness`, etc.
+2. ~~**Intégration API** : exposer les métriques features via endpoints `/metrics/workload`, `/metrics/fitness`, etc.~~ ✅ **DONE**
 3. **RAG roadmap** : définir le plan d'indexation (embeddings, store), et intégration dans `/plan/jour`.
 4. **LLM integration** : connexion OpenAI/local LLM pour génération de recommandations personnalisées.
 5. **Front/UX** : mini UI ou collection HTTP (Insomnia/Postman) prête à l'emploi.
