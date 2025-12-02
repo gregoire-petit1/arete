@@ -147,3 +147,8 @@ app.include_router(api_router)
 
 # Routes metrics (workload/fitness/cardio/strength/recommendations)
 app.include_router(metrics_router)
+
+# Routes RAG (knowledge-augmented recommendations)
+from arete.api.rag import router as rag_router
+
+app.include_router(rag_router)

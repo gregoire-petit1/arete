@@ -1,0 +1,195 @@
+"""Tests for RAG (Retrieval-Augmented Generation) module."""
+
+import tempfile
+from pathlib import Path
+
+import pytest
+
+from arete.rag.knowledge_base import Document, KnowledgeBase, RetrievedDocument
+from arete.rag.retriever import Retriever, UserContext
+from arete.rag.seed_knowledge import seed_knowledge_base
+
+
+@pytest.fixture
+def temp_kb_dir():
+    """Create a temporary directory for test knowledge base."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        yield Path(tmpdir)
+
+
+@pytest.fixture
+def kb(temp_kb_dir):
+    """Create a test knowledge base."""
+    return KnowledgeBase(persist_directory=temp_kb_dir)
+
+
+@pytest.fixture
+def seeded_kb(kb):
+    """Create and seed a test knowledge base."""
+    seed_knowledge_base(kb)
+    return kb
+
+
+class TestKnowledgeBase:
+    """Tests for KnowledgeBase class."""
+
+    def test_initialization(self, temp_kb_dir):
+        """Test knowledge base initialization."""
+        kb = KnowledgeBase(persist_directory=temp_kb_dir)
+        assert kb is not None
+        assert len(kb.COLLECTIONS) == 3
+        assert "scientific" in kb.COLLECTIONS
+        assert "protocols" in kb.COLLECTIONS
+        assert "exercises" in kb.COLLECTIONS
+
+    def test_add_document(self, kb):
+        """Test adding a single document."""
+        doc = Document(
+            id="test_doc_1",
+            content="This is a test document about ACWR.",
+            metadata={"type": "test", "topic": "acwr"},
+        )
+        count = kb.add_documents("scientific", [doc])
+        assert count == 1
+
+    def test_add_multiple_documents(self, kb):
+        """Test adding multiple documents."""
+        docs = [
+            Document(
+                id=f"test_doc_{i}",
+                content=f"Test document {i} about training.",
+                metadata={"index": i},
+            )
+            for i in range(5)
+        ]
+        count = kb.add_documents("protocols", docs)
+        assert count == 5
+
+    def test_metadata_list_sanitization(self, kb):
+        """Test that list metadata is properly sanitized."""
+        doc = Document(
+            id="test_list_meta",
+            content="Document with list metadata",
+            metadata={
+                "authors": ["Author 1", "Author 2"],
+                "tags": ["tag1", "tag2", "tag3"],
+                "year": 2024,
+            },
+        )
+        # Should not raise ValueError
+        count = kb.add_documents("scientific", [doc])
+        assert count == 1
+
+    def test_query_empty_collection(self, kb):
+        """Test querying an empty collection returns empty list."""
+        results = kb.query("exercises", "running workout", n_results=5)
+        assert results == []
+
+    def test_invalid_collection(self, kb):
+        """Test that invalid collection raises error."""
+        doc = Document(id="test", content="Test", metadata={})
+        with pytest.raises(ValueError, match="Unknown collection"):
+            kb.add_documents("invalid_collection", [doc])
+
+
+class TestSeedKnowledge:
+    """Tests for knowledge base seeding."""
+
+    @pytest.mark.slow
+    def test_seed_knowledge_base(self, kb):
+        """Test seeding the knowledge base."""
+        stats = seed_knowledge_base(kb)
+        assert "scientific" in stats
+        assert "protocols" in stats
+        assert "exercises" in stats
+        assert stats["scientific"] >= 5
+        assert stats["protocols"] >= 3
+        assert stats["exercises"] >= 3
+
+    @pytest.mark.slow
+    def test_seed_is_idempotent(self, kb):
+        """Test that seeding twice doesn't duplicate documents."""
+        stats1 = seed_knowledge_base(kb)
+        stats2 = seed_knowledge_base(kb)
+        # Counts should be the same (upsert behavior)
+        assert stats1 == stats2
+
+
+class TestRetriever:
+    """Tests for Retriever class."""
+
+    def test_initialization(self, kb):
+        """Test retriever initialization."""
+        retriever = Retriever(kb)
+        assert retriever is not None
+
+
+class TestUserContext:
+    """Tests for UserContext dataclass."""
+
+    def test_default_context(self):
+        """Test default user context."""
+        context = UserContext()
+        assert context.experience == "intermediate"
+        assert context.primary_sport == "running"
+        assert context.fatigue == 5
+
+    def test_context_with_metrics(self):
+        """Test context with training metrics."""
+        context = UserContext(
+            acwr=1.2,
+            tsb=-10,
+            ctl=80,
+            monotony=1.5,
+            strain=3000,
+        )
+        assert context.acwr == 1.2
+        assert context.tsb == -10
+        assert context.ctl == 80
+
+    def test_risk_level_high(self):
+        """Test high risk level detection."""
+        context = UserContext(acwr=1.6, fatigue=9)
+        assert context.get_risk_level() > 0.5
+
+    def test_risk_level_low(self):
+        """Test low risk level."""
+        context = UserContext(acwr=1.0, tsb=10, fatigue=3)
+        assert context.get_risk_level() <= 0.5
+
+
+class TestDocument:
+    """Tests for Document dataclass."""
+
+    def test_document_creation(self):
+        """Test document creation."""
+        doc = Document(
+            id="test_id",
+            content="Test content",
+            metadata={"key": "value"},
+        )
+        assert doc.id == "test_id"
+        assert doc.content == "Test content"
+        assert doc.metadata == {"key": "value"}
+
+    def test_document_default_metadata(self):
+        """Test document with default empty metadata."""
+        doc = Document(id="test", content="content")
+        assert doc.metadata == {}
+
+
+class TestRetrievedDocument:
+    """Tests for RetrievedDocument dataclass."""
+
+    def test_retrieved_document(self):
+        """Test retrieved document creation."""
+        doc = RetrievedDocument(
+            id="ret_id",
+            content="Retrieved content",
+            metadata={"source": "test"},
+            relevance_score=0.85,
+            collection="scientific",
+        )
+        assert doc.id == "ret_id"
+        assert doc.relevance_score == 0.85
+        assert doc.collection == "scientific"
