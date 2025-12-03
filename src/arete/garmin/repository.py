@@ -406,9 +406,7 @@ class GarminRepository:
         conn = self._get_connection()
 
         # Count totals
-        planned_row = conn.execute(
-            "SELECT COUNT(*) FROM planned_sessions"
-        ).fetchone()
+        planned_row = conn.execute("SELECT COUNT(*) FROM planned_sessions").fetchone()
         total_planned = int(planned_row[0]) if planned_row else 0
         actual_row = conn.execute("SELECT COUNT(*) FROM actual_sessions").fetchone()
         total_actual = int(actual_row[0]) if actual_row else 0

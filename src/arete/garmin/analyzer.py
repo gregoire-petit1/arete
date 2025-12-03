@@ -256,9 +256,7 @@ def _generate_fallback_analysis(
             points_positifs.append("Durée correcte")
         if actual.avg_hr and actual.avg_hr < 160:
             points_positifs.append("FC modérée")
-        recommendation = (
-            "Continuez à planifier vos séances pour un meilleur suivi"
-        )
+        recommendation = "Continuez à planifier vos séances pour un meilleur suivi"
 
         return ActivityAnalysis(
             actual_session_id=actual.id or 0,
@@ -315,9 +313,7 @@ def _generate_fallback_analysis(
         else:
             adherence["intensité"] = "dur"
             if planned.target_intensity == "easy":
-                points_amelioration.append(
-                    "Intensité plus élevée que prévu"
-                )
+                points_amelioration.append("Intensité plus élevée que prévu")
                 score -= 10
 
     adherence["score"] = max(0, score)
