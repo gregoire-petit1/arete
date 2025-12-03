@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from arete.rag.knowledge_base import Document, KnowledgeBase, RetrievedDocument
-from arete.rag.retriever import Retriever, StrengthBenchmark, UserContext
+from arete.rag.retriever import Retriever, CardioBenchmark, StrengthBenchmark, UserContext
 from arete.rag.seed_knowledge import seed_knowledge_base
 
 
@@ -257,3 +257,78 @@ class TestStrengthBenchmarkIntegration:
         assert context.strength_session_count_30d == 0
         assert context.strength_total_volume_30d == 0.0
         assert context.strength_volume_by_muscle == {}
+
+
+class TestCardioBenchmarkIntegration:
+    """Tests for cardio benchmark integration in UserContext."""
+
+    def test_cardio_benchmark_dataclass(self):
+        """Test CardioBenchmark creation."""
+        bench = CardioBenchmark(
+            avg_cadence_spm=180,
+            avg_vertical_oscillation_mm=8.5,
+            avg_ground_contact_time_ms=240,
+            avg_stride_length_m=1.15,
+            avg_easy_hr=145,
+            avg_easy_pace="5:30",
+            best_pace="4:15",
+            total_distance_km_90d=350.0,
+            session_count_90d=40,
+        )
+        assert bench.avg_cadence_spm == 180
+        assert bench.avg_easy_pace == "5:30"
+        assert bench.total_distance_km_90d == 350.0
+
+    def test_context_with_cardio_benchmarks(self):
+        """Test context with cardio benchmarks."""
+        cardio = CardioBenchmark(
+            avg_cadence_spm=178,
+            avg_easy_pace="5:45",
+            total_distance_km_90d=200.0,
+        )
+        context = UserContext(
+            cardio_benchmark=cardio,
+            hr_drift_flags=["2024-12-01: potential_fatigue"],
+        )
+        assert context.cardio_benchmark is not None
+        assert context.cardio_benchmark.avg_cadence_spm == 178
+        assert len(context.hr_drift_flags) == 1
+
+    def test_cardio_summary_generation(self):
+        """Test compact cardio summary for prompts."""
+        cardio = CardioBenchmark(
+            avg_cadence_spm=180,
+            avg_vertical_oscillation_mm=8.2,
+            avg_easy_hr=142,
+            avg_easy_pace="5:30",
+            total_distance_km_90d=400.0,
+        )
+        context = UserContext(cardio_benchmark=cardio)
+        summary = context.get_cardio_summary()
+
+        assert "Cadence:180spm" in summary
+        assert "VO:8.2mm" in summary
+        assert "EasyPace:5:30" in summary
+        assert "EasyHR:142bpm" in summary
+        assert "Km90d:400" in summary
+
+    def test_cardio_summary_with_drift_flags(self):
+        """Test cardio summary includes drift warnings."""
+        cardio = CardioBenchmark(avg_cadence_spm=175)
+        context = UserContext(
+            cardio_benchmark=cardio,
+            hr_drift_flags=["flag1", "flag2"],
+        )
+        summary = context.get_cardio_summary()
+        assert "⚠️Drift:2" in summary
+
+    def test_empty_cardio_summary(self):
+        """Test that no cardio benchmark returns empty string."""
+        context = UserContext()
+        assert context.get_cardio_summary() == ""
+
+    def test_cardio_default_values(self):
+        """Test default cardio values in context."""
+        context = UserContext()
+        assert context.cardio_benchmark is None
+        assert context.hr_drift_flags == []

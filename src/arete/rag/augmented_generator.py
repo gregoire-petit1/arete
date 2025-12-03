@@ -141,6 +141,11 @@ FORMAT JSON:
         if strength_summary:
             user_parts.append(f"Force: {strength_summary}")
 
+        # Cardio benchmarks (compact)
+        cardio_summary = context.get_cardio_summary()
+        if cardio_summary:
+            user_parts.append(f"Cardio: {cardio_summary}")
+
         # Compact knowledge (limited chars per doc)
         if docs:
             user_parts.append("\nSources:")
@@ -314,4 +319,73 @@ def enrich_context_with_strength(
     except Exception as e:
         logger.warning(f"Failed to load strength benchmarks: {e}")
 
+    return context
+
+
+def enrich_context_with_cardio(
+    context: UserContext,
+    db_path: str = "data/arete.duckdb",
+) -> UserContext:
+    """Enrich UserContext with cardio/running benchmarks.
+
+    Fetches cadence, vertical oscillation, pace benchmarks from Garmin data.
+
+    Args:
+        context: Existing user context
+        db_path: Path to DuckDB database
+
+    Returns:
+        Enriched UserContext with cardio data
+    """
+    from arete.garmin.repository import GarminRepository
+    from arete.rag.retriever import CardioBenchmark
+
+    try:
+        repo = GarminRepository()
+
+        # Get cardio benchmarks (90-day averages)
+        benchmarks = repo.get_cardio_benchmarks(days=90)
+        context.cardio_benchmark = CardioBenchmark(
+            avg_cadence_spm=benchmarks.get("avg_cadence_spm"),
+            avg_vertical_oscillation_mm=benchmarks.get("avg_vertical_oscillation_mm"),
+            avg_ground_contact_time_ms=benchmarks.get("avg_ground_contact_time_ms"),
+            avg_stride_length_m=benchmarks.get("avg_stride_length_m"),
+            avg_easy_hr=benchmarks.get("avg_easy_hr"),
+            avg_easy_pace=benchmarks.get("avg_easy_pace"),
+            best_pace=benchmarks.get("best_pace"),
+            total_distance_km_90d=benchmarks.get("total_distance_km", 0),
+            session_count_90d=benchmarks.get("session_count", 0),
+        )
+
+        # Get HR drift flags for fatigue detection
+        drift_data = repo.get_hr_drift_analysis(days=14)
+        context.hr_drift_flags = [
+            f"{d['date']}: {d['flag']}"
+            for d in drift_data
+            if d.get("flag") == "potential_fatigue"
+        ]
+
+    except Exception as e:
+        logger.warning(f"Failed to load cardio benchmarks: {e}")
+
+    return context
+
+
+def enrich_context_full(
+    context: UserContext,
+    db_path: str = "data/arete.duckdb",
+) -> UserContext:
+    """Enrich UserContext with all available benchmarks.
+
+    Combines strength and cardio data for comprehensive RAG context.
+
+    Args:
+        context: Existing user context
+        db_path: Path to DuckDB database
+
+    Returns:
+        Fully enriched UserContext
+    """
+    context = enrich_context_with_strength(context, db_path)
+    context = enrich_context_with_cardio(context, db_path)
     return context

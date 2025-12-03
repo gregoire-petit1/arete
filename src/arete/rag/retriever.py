@@ -27,6 +27,21 @@ class StrengthBenchmark:
 
 
 @dataclass
+class CardioBenchmark:
+    """Cardio/running benchmarks for endurance sessions."""
+
+    avg_cadence_spm: int | None = None
+    avg_vertical_oscillation_mm: float | None = None
+    avg_ground_contact_time_ms: int | None = None
+    avg_stride_length_m: float | None = None
+    avg_easy_hr: int | None = None
+    avg_easy_pace: str | None = None  # "5:30" format
+    best_pace: str | None = None
+    total_distance_km_90d: float = 0.0
+    session_count_90d: int = 0
+
+
+@dataclass
 class UserContext:
     """User context for retrieval personalization."""
 
@@ -52,6 +67,10 @@ class UserContext:
     strength_session_count_30d: int = 0
     strength_total_volume_30d: float = 0.0
     strength_volume_by_muscle: dict[str, float] = field(default_factory=dict)
+
+    # Cardio benchmarks
+    cardio_benchmark: CardioBenchmark | None = None
+    hr_drift_flags: list[str] = field(default_factory=list)  # Recent fatigue warnings
 
     def infer_intent(self) -> str:
         """Infer user intent from metrics."""
@@ -103,6 +122,34 @@ class UserContext:
         # Volume trend
         if self.strength_session_count_30d > 0:
             parts.append(f"Vol30d:{self.strength_total_volume_30d:.0f}kg({self.strength_session_count_30d}sess)")
+
+        return " ".join(parts)
+
+    def get_cardio_summary(self) -> str:
+        """Get compact cardio summary for prompts."""
+        if not self.cardio_benchmark:
+            return ""
+
+        cb = self.cardio_benchmark
+        parts = []
+
+        # Key running dynamics
+        if cb.avg_cadence_spm:
+            parts.append(f"Cadence:{cb.avg_cadence_spm}spm")
+        if cb.avg_vertical_oscillation_mm:
+            parts.append(f"VO:{cb.avg_vertical_oscillation_mm}mm")
+        if cb.avg_easy_pace:
+            parts.append(f"EasyPace:{cb.avg_easy_pace}")
+        if cb.avg_easy_hr:
+            parts.append(f"EasyHR:{cb.avg_easy_hr}bpm")
+
+        # Volume
+        if cb.total_distance_km_90d > 0:
+            parts.append(f"Km90d:{cb.total_distance_km_90d:.0f}")
+
+        # Fatigue flags
+        if self.hr_drift_flags:
+            parts.append(f"⚠️Drift:{len(self.hr_drift_flags)}")
 
         return " ".join(parts)
 

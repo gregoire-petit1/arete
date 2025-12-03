@@ -123,6 +123,13 @@ class ActualSession:
     start_lat: float | None = None
     start_lon: float | None = None
 
+    # Running dynamics
+    avg_cadence: int | None = None
+    max_cadence: int | None = None
+    avg_vertical_oscillation: float | None = None  # mm
+    avg_ground_contact_time: int | None = None  # ms
+    avg_stride_length: float | None = None  # meters
+
     # Source
     source: ActivitySource = ActivitySource.FIT_FILE
     source_file: str | None = None
@@ -184,6 +191,11 @@ class ActualSession:
             "descent_m": self.descent_m,
             "start_lat": self.start_lat,
             "start_lon": self.start_lon,
+            "avg_cadence": self.avg_cadence,
+            "max_cadence": self.max_cadence,
+            "avg_vertical_oscillation": self.avg_vertical_oscillation,
+            "avg_ground_contact_time": self.avg_ground_contact_time,
+            "avg_stride_length": self.avg_stride_length,
             "source": self.source.value,
             "source_file": self.source_file,
             "garmin_activity_id": self.garmin_activity_id,

@@ -129,6 +129,13 @@ CREATE TABLE IF NOT EXISTS app.actual_sessions (
     source_file         VARCHAR,               -- original filename
     garmin_activity_id  VARCHAR,               -- Garmin Connect activity ID
     
+    -- Running dynamics (from Garmin sensors)
+    avg_cadence         INTEGER,               -- steps per minute (running) or RPM (cycling)
+    max_cadence         INTEGER,
+    avg_vertical_oscillation DOUBLE,           -- mm (running only)
+    avg_ground_contact_time  INTEGER,          -- ms (running only)
+    avg_stride_length   DOUBLE,                -- meters
+    
     -- Computed adherence (filled by matching logic)
     adherence_score     DOUBLE,                -- 0-100: how well it matched the plan
     intensity_deviation DOUBLE,                -- % deviation from planned intensity
