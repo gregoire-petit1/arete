@@ -9,7 +9,7 @@
 
 ## 🚧 Status
 
-Active development — Features Engineering & Metrics API complete.
+Active development — Garmin Pipeline & LLM Analysis complete.
 
 ## Goals
 
@@ -18,6 +18,7 @@ Active development — Features Engineering & Metrics API complete.
 - RAG-based recommendations
 - AI Agent to orchestrate planning and adaptation
 - **Scientific training metrics** (ACWR, CTL/ATL/TSB, TRIMP, 1RM estimation)
+- **Garmin FIT file analysis** with interval detection and LLM coaching
 
 ## Stack
 
@@ -105,6 +106,9 @@ arete/
 │   ├── api/             # FastAPI routes and main app
 │   ├── dataio/          # Database and data ingestion
 │   ├── features/        # Feature engineering (workload, cardio, strength, fitness)
+│   ├── garmin/          # Garmin FIT parsing, analysis, LLM coaching
+│   ├── llm/             # LLM client, token management
+│   ├── rag/             # RAG system with ChromaDB
 │   ├── models/          # ML models (coming soon)
 │   ├── rules/           # Business rules (coming soon)
 │   └── utils/           # Utility functions
@@ -113,6 +117,59 @@ arete/
 ├── notebooks/           # Jupyter notebooks
 └── experiments/         # MLflow experiments
 ```
+
+## Garmin Pipeline
+
+The `src/arete/garmin/` module provides automated analysis of Garmin activities:
+
+### FIT File Parsing
+
+- Parse `.FIT` files with full time series data (1Hz sampling)
+- Extract running dynamics (HRM-Pro): stance time, vertical oscillation, step length
+- Automatic lap detection with intensity classification (warmup/active/rest/cooldown)
+- HR zone calculation based on max HR
+
+### Workout Analysis
+
+**Basic Analysis** — Compares planned vs actual session:
+- Adherence score (duration, distance, intensity)
+- Points positifs / points d'amélioration
+
+**Detailed Analysis** — Deep dive with time series metrics:
+- HR drift & cardiac decoupling
+- Pace fade analysis
+- Running dynamics evaluation
+- Per-kilometer splits
+
+**Interval Analysis** — For quality workouts:
+- Automatic detection of interval structure (e.g., "4x8min @4:20 r2min")
+- Pace consistency across intervals (CV%)
+- HR progression analysis
+- Best/worst interval identification
+- Recovery adequacy evaluation
+
+### Usage Example
+
+```bash
+# Upload FIT file (auto-matching with planned sessions)
+curl -X POST http://localhost:8000/garmin/upload-fit \
+  -F "file=@data/activity.fit"
+
+# Analyze with detailed metrics + interval detection
+curl -X POST "http://localhost:8000/garmin/actual/1/analyze?detailed=true"
+```
+
+### API Endpoints
+
+| Endpoint                          | Method | Description                    |
+| --------------------------------- | ------ | ------------------------------ |
+| `/garmin/planned`                 | POST   | Create planned session         |
+| `/garmin/planned`                 | GET    | List planned sessions          |
+| `/garmin/upload-fit`              | POST   | Upload FIT file + auto-match   |
+| `/garmin/actual`                  | GET    | List actual sessions           |
+| `/garmin/actual/{id}/analyze`     | POST   | Run LLM analysis               |
+| `/garmin/actual/{id}/analysis`    | GET    | Get cached analysis            |
+| `/garmin/summary`                 | GET    | Matching statistics            |
 
 ## Features Engineering Module
 
@@ -228,6 +285,28 @@ The API exposes training metrics via REST endpoints:
 | `/metrics/strength/inol`   | POST   | Calculate INOL for strength training          |
 | `/metrics/recommendations` | GET    | Intelligent training recommendations          |
 
+### Garmin Endpoints
+
+| Endpoint                          | Method | Description                         |
+| --------------------------------- | ------ | ----------------------------------- |
+| `/garmin/planned`                 | POST   | Create planned session              |
+| `/garmin/planned`                 | GET    | List planned sessions               |
+| `/garmin/upload-fit`              | POST   | Upload FIT file + auto-match        |
+| `/garmin/actual`                  | GET    | List actual sessions                |
+| `/garmin/actual/{id}/analyze`     | POST   | Run LLM analysis (?detailed=true)   |
+| `/garmin/actual/{id}/analysis`    | GET    | Get cached analysis                 |
+| `/garmin/summary`                 | GET    | Matching statistics                 |
+| `/garmin/unmatched`               | GET    | Unmatched sessions                  |
+
+### RAG Endpoints
+
+| Endpoint                  | Method | Description                         |
+| ------------------------- | ------ | ----------------------------------- |
+| `/rag/query`              | POST   | RAG-augmented plan generation       |
+| `/rag/search`             | GET    | Search knowledge base               |
+| `/rag/stats`              | GET    | Collection statistics               |
+| `/rag/seed`               | POST   | Seed knowledge base                 |
+
 ### Example API Calls
 
 ```bash
@@ -249,6 +328,13 @@ curl -X POST http://localhost:8000/metrics/strength/1rm \
 
 # Get recommendations
 curl "http://localhost:8000/metrics/recommendations?sport_type=cardio"
+
+# Upload FIT file and get auto-matching
+curl -X POST http://localhost:8000/garmin/upload-fit \
+  -F "file=@data/activity.fit"
+
+# Analyze activity with detailed metrics
+curl -X POST "http://localhost:8000/garmin/actual/1/analyze?detailed=true"
 ```
 
 ## Documentation

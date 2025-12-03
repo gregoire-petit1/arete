@@ -6,7 +6,7 @@
 - Stack cible : FastAPI, DuckDB (`app.*`), uv (Python 3.11), ingestion CSV, endpoints `/health`, `/plan/jour`, `/log/recent`, CRUD persistance.
 - Qualité : ruff, mypy, pytest ; `.env` + `.env.example` ; lancement via `uv run uvicorn arete.api.main:app --reload --app-dir src`.
 
-## État actuel (mise à jour 2025-12-02)
+## État actuel (mise à jour 2025-12-03)
 
 ### Infrastructure
 
@@ -153,6 +153,143 @@ Module `src/arete/rag/` avec ChromaDB :
 | `/rag/seed`               | POST    | Seeding de la base de connaissances |
 | `/rag/clear/{collection}` | DELETE  | Vidage d'une collection             |
 
+### Garmin Pipeline ✅ NEW (2025-12-03)
+
+Module complet `src/arete/garmin/` pour l'analyse automatisée des activités Garmin :
+
+#### Architecture du module
+
+| Fichier           | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| `models.py`       | Dataclasses PlannedSession, ActualSession, etc.      |
+| `fit_parser.py`   | Parsing FIT avec fitparse (time series, laps)        |
+| `repository.py`   | CRUD DuckDB pour sessions planifiées/réalisées       |
+| `matcher.py`      | Matching automatique planned ↔ actual                |
+| `time_series.py`  | TimeSeriesData, DerivedMetrics, WorkoutStructure     |
+| `analyzer.py`     | Analyse LLM (basique, détaillée, intervalles)        |
+
+#### FIT Parser (`fit_parser.py`)
+
+- Parsing fichiers `.FIT` via fitparse>=1.2.0
+- Mode `detailed=True` : extraction time series complète
+- Extraction des données :
+  - **Session** : sport, durée, distance, HR, pace, élévation
+  - **Records** : HR, speed, cadence, power, altitude, GPS (1Hz)
+  - **Running Dynamics** (HRM-Pro) : stance time, vertical oscillation, step length
+  - **Laps** : intensité (warmup/active/rest), durée, pace, HR
+- Calcul automatique zones HR (5 zones basées sur HRmax)
+
+#### Time Series Analysis (`time_series.py`)
+
+**TimeSeriesPoint** - Données par seconde :
+- Core : heart_rate, speed_mps, cadence, power, altitude
+- Running dynamics : stance_time, stance_time_balance, step_length, vertical_oscillation, vertical_ratio
+- GPS : lat, lon
+
+**DerivedMetrics** - Métriques calculées :
+- HR : avg, max, drift%, decoupling%
+- Pace : avg, CV%, fade%
+- Cadence : avg, CV%
+- Power : avg, NP (normalized power), VI (variability index)
+- Running dynamics : stance_ms, stance_drift%, step_mm, vert_osc_mm, vert_ratio%, balance%
+- Elevation : ascent_m, descent_m, impact
+- Splits : km-by-km avec pace, HR
+
+**WorkoutStructure** - Analyse des laps :
+- Détection automatique interval workouts
+- Groupement par intensité (warmup/work/rest/cooldown)
+- Métriques intervalles : pace_cv%, hr_drift%
+- Identification meilleur/pire intervalle
+
+#### Session Matching (`matcher.py`)
+
+- Matching automatique planned ↔ actual sessions
+- Scores de confiance : HIGH (>80%), MEDIUM (50-80%), LOW (<50%)
+- Critères : date, sport, durée (tolérance 20%), distance
+
+#### LLM Analyzer (`analyzer.py`)
+
+3 modes d'analyse avec prompts optimisés tokens :
+
+| Mode       | Description                                           | Données                    |
+| ---------- | ----------------------------------------------------- | -------------------------- |
+| `basic`    | Adhérence planned vs actual                           | Résumé session             |
+| `detailed` | Analyse technique approfondie                         | DerivedMetrics (~500 char) |
+| `interval` | Analyse séance qualité                                | WorkoutStructure JSON      |
+
+**Format réponse LLM** :
+- `performance` : note A-F, forces, faiblesses
+- `technique` : analyse, conseils
+- `physiologie` : hr_analysis, fatigue_indicators
+- `pacing` : evaluation, suggestion
+- `intervalles` : progression, meilleur/pire intervalle
+- `recommendation_prioritaire` : une action clé
+
+**Fallback rule-based** si LLM indisponible.
+
+#### Garmin API (`src/arete/api/garmin.py`)
+
+| Endpoint                             | Méthode | Description                           |
+| ------------------------------------ | ------- | ------------------------------------- |
+| `/garmin/planned`                    | POST    | Créer session planifiée               |
+| `/garmin/planned`                    | GET     | Lister sessions planifiées            |
+| `/garmin/planned/{id}`               | GET     | Détail session planifiée              |
+| `/garmin/planned/{id}`               | DELETE  | Supprimer session planifiée           |
+| `/garmin/upload-fit`                 | POST    | Upload fichier FIT + matching auto    |
+| `/garmin/actual`                     | GET     | Lister sessions réalisées             |
+| `/garmin/actual/{id}`                | GET     | Détail session réalisée               |
+| `/garmin/actual/{id}/match/{pid}`    | POST    | Matcher manuellement                  |
+| `/garmin/actual/{id}/match`          | DELETE  | Supprimer matching                    |
+| `/garmin/actual/{id}/analyze`        | POST    | Lancer analyse LLM                    |
+| `/garmin/actual/{id}/analysis`       | GET     | Récupérer analyse existante           |
+| `/garmin/summary`                    | GET     | Stats matching (total, matched, etc.) |
+| `/garmin/unmatched`                  | GET     | Lister sessions non-matchées          |
+
+**Paramètres analyse** :
+- `?detailed=true` : analyse détaillée avec time series
+- `?force=true` : régénérer même si cache existant
+
+#### Exemple d'utilisation
+
+```bash
+# 1. Créer une session planifiée
+curl -X POST http://localhost:8000/garmin/planned \
+  -H "Content-Type: application/json" \
+  -d '{"date": "2025-12-03", "session_type": "intervals", "description": "4x8min @4:20-4:25 r2min"}'
+
+# 2. Upload FIT file (matching automatique)
+curl -X POST http://localhost:8000/garmin/upload-fit \
+  -F "file=@data/activity.fit"
+
+# 3. Analyse détaillée avec structure intervalles
+curl -X POST "http://localhost:8000/garmin/actual/1/analyze?detailed=true"
+```
+
+**Exemple réponse analyse interval** :
+```json
+{
+  "analysis_type": "interval",
+  "insights": {
+    "execution": {"note": "B", "regularite": "bonne"},
+    "intervalles": {
+      "analyse": "Allures régulières (CV 1.5%)",
+      "progression": "positive",
+      "meilleur_intervalle": 5,
+      "pire_intervalle": 2
+    },
+    "_workout_structure": {
+      "type": "intervals",
+      "structure": "8x work + rest",
+      "warmup": "19min",
+      "intervals": [{"n": 1, "pace": "4:32", "hr": 179}, ...],
+      "rest_avg": "2.0min",
+      "pace_cv%": 1.5,
+      "hr_drift%": 4.5
+    }
+  }
+}
+```
+
 ### Sécurité & Robustesse (CodeRabbit review fixes)
 
 - ✅ Gestion des ressources : connexions DB fermées via try/finally
@@ -209,5 +346,7 @@ uv run ruff format src tests
 2. ~~**Intégration API** : exposer les métriques features via endpoints `/metrics/workload`, `/metrics/fitness`, etc.~~ ✅ **DONE**
 3. ~~**LLM integration** : connexion Groq/Llama pour génération de recommandations personnalisées.~~ ✅ **DONE**
 4. ~~**RAG roadmap** : indexation ChromaDB avec littérature scientifique, intégration dans `/plan/jour`.~~ ✅ **DONE**
-5. **Front/UX** : mini UI ou collection HTTP (Insomnia/Postman) prête à l'emploi.
-6. **Déploiement** : Docker, fly.io ou Render pour démo live.
+5. ~~**Garmin Pipeline** : parsing FIT, matching planned/actual, analyse LLM détaillée + intervalles.~~ ✅ **DONE**
+6. **Garmin OAuth** : sync automatique via Garmin Connect API (Health API ou Web Scraping).
+7. **Front/UX** : mini UI ou collection HTTP (Insomnia/Postman) prête à l'emploi.
+8. **Déploiement** : Docker, fly.io ou Render pour démo live.
