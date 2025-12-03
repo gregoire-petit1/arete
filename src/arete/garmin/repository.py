@@ -1,5 +1,6 @@
 """Repository for Garmin sessions database operations."""
 
+import json
 from datetime import date, datetime, timedelta
 
 import duckdb
@@ -51,14 +52,18 @@ class GarminRepository:
                 session.user_id or 1,
                 session.date,
                 session.sport,
-                session.session_type.value if isinstance(session.session_type, SessionType) else session.session_type,
+                session.session_type.value
+                if isinstance(session.session_type, SessionType)
+                else session.session_type,
                 session.target_duration_min,
                 session.target_distance_km,
                 session.target_hr_zone,
                 session.target_intensity,
                 session.description,
                 session.source,
-                session.status.value if isinstance(session.status, SessionStatus) else session.status,
+                session.status.value
+                if isinstance(session.status, SessionStatus)
+                else session.status,
                 datetime.now(),
             ],
         ).fetchone()
@@ -151,9 +156,7 @@ class GarminRepository:
             for row in results
         ]
 
-    def update_planned_session_status(
-        self, session_id: int, status: SessionStatus
-    ) -> bool:
+    def update_planned_session_status(self, session_id: int, status: SessionStatus) -> bool:
         """Update the status of a planned session."""
         conn = self._get_connection()
         result = conn.execute(
@@ -218,7 +221,9 @@ class GarminRepository:
                 session.descent_m,
                 session.start_lat,
                 session.start_lon,
-                session.source.value if isinstance(session.source, ActivitySource) else session.source,
+                session.source.value
+                if isinstance(session.source, ActivitySource)
+                else session.source,
                 session.source_file,
                 session.garmin_activity_id,
                 session.adherence_score,
@@ -367,12 +372,8 @@ class GarminRepository:
         conn = self._get_connection()
 
         # Count totals
-        total_planned = conn.execute(
-            "SELECT COUNT(*) FROM planned_sessions"
-        ).fetchone()[0]
-        total_actual = conn.execute(
-            "SELECT COUNT(*) FROM actual_sessions"
-        ).fetchone()[0]
+        total_planned = conn.execute("SELECT COUNT(*) FROM planned_sessions").fetchone()[0]
+        total_actual = conn.execute("SELECT COUNT(*) FROM actual_sessions").fetchone()[0]
         total_matched = conn.execute(
             "SELECT COUNT(*) FROM actual_sessions WHERE planned_session_id IS NOT NULL"
         ).fetchone()[0]
@@ -388,3 +389,81 @@ class GarminRepository:
                 round(total_matched / total_planned * 100, 1) if total_planned > 0 else 0
             ),
         }
+
+    # ==================== Session Analysis ====================
+
+    def save_analysis(
+        self,
+        actual_session_id: int,
+        analysis_type: str,
+        insights_json: str,
+        recommendations: str,
+        generated_by: str = "llm",
+    ) -> int:
+        """Save session analysis to database.
+
+        Args:
+            actual_session_id: ID of the analyzed session
+            analysis_type: Type of analysis ('adherence', 'summary', etc.)
+            insights_json: JSON string with structured insights
+            recommendations: Text recommendations
+            generated_by: Source of analysis ('llm', 'rules')
+
+        Returns:
+            ID of created analysis
+        """
+        conn = self._get_connection()
+        result = conn.execute(
+            """
+            INSERT INTO session_analysis (
+                actual_session_id, analysis_type, insights_json,
+                recommendations, generated_by, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            [
+                actual_session_id,
+                analysis_type,
+                insights_json,
+                recommendations,
+                generated_by,
+                datetime.now(),
+            ],
+        ).fetchone()
+        conn.close()
+        return result[0]
+
+    def get_analysis(self, actual_session_id: int) -> dict | None:
+        """Get the latest analysis for a session.
+
+        Args:
+            actual_session_id: ID of the session
+
+        Returns:
+            Analysis dict or None if not found
+        """
+        conn = self._get_connection()
+        result = conn.execute(
+            """
+            SELECT id, actual_session_id, analysis_type, insights_json,
+                   recommendations, generated_by, created_at
+            FROM session_analysis
+            WHERE actual_session_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            [actual_session_id],
+        ).fetchone()
+        conn.close()
+
+        if result:
+            return {
+                "id": result[0],
+                "actual_session_id": result[1],
+                "analysis_type": result[2],
+                "insights": json.loads(result[3]) if result[3] else {},
+                "recommendations": result[4],
+                "generated_by": result[5],
+                "created_at": result[6].isoformat() if result[6] else None,
+            }
+        return None

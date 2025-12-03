@@ -117,14 +117,18 @@ def _planned_to_response(session: PlannedSession) -> PlannedSessionResponse:
         id=session.id,
         date=session.date,
         sport=session.sport,
-        session_type=session.session_type.value if isinstance(session.session_type, SessionType) else session.session_type,
+        session_type=session.session_type.value
+        if isinstance(session.session_type, SessionType)
+        else session.session_type,
         target_duration_min=session.target_duration_min,
         target_distance_km=session.target_distance_km,
         target_hr_zone=session.target_hr_zone,
         target_intensity=session.target_intensity,
         description=session.description,
         source=session.source,
-        status=session.status.value if isinstance(session.status, SessionStatus) else session.status,
+        status=session.status.value
+        if isinstance(session.status, SessionStatus)
+        else session.status,
     )
 
 
@@ -142,7 +146,9 @@ def _actual_to_response(session: ActualSession) -> ActualSessionResponse:
         max_hr=session.max_hr,
         avg_pace=session.avg_pace_min_km,
         ascent_m=session.ascent_m,
-        source=session.source.value if isinstance(session.source, ActivitySource) else session.source,
+        source=session.source.value
+        if isinstance(session.source, ActivitySource)
+        else session.source,
         adherence_score=session.adherence_score,
     )
 
@@ -242,13 +248,16 @@ async def upload_fit_file(
     The activity is saved to the database and optionally matched
     to a planned session based on date and activity type.
     """
+    import io
+    
     if not file.filename or not file.filename.lower().endswith(".fit"):
         raise HTTPException(status_code=400, detail="File must be a .fit file")
 
     try:
         content = await file.read()
         parser = FITParser()
-        parsed = parser.parse(content)
+        parsed = parser.parse_stream(io.BytesIO(content))
+        parsed.source_file = file.filename
     except Exception as e:
         logger.error(f"Failed to parse FIT file: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to parse FIT file: {e}")
@@ -257,16 +266,17 @@ async def upload_fit_file(
     actual = ActualSession(
         date=parsed.start_time.date() if parsed.start_time else date.today(),
         sport=parsed.sport or "running",
-        session_type=parsed.sub_sport,
-        duration_sec=parsed.total_elapsed_time or 0,
-        distance_m=parsed.total_distance,
-        calories=parsed.total_calories,
-        avg_hr=parsed.avg_heart_rate,
-        max_hr=parsed.max_heart_rate,
-        avg_speed_mps=parsed.avg_speed,
-        max_speed_mps=parsed.max_speed,
-        ascent_m=parsed.total_ascent,
-        descent_m=parsed.total_descent,
+        session_type=parsed.sub_sport or parsed.infer_session_type(),
+        duration_sec=parsed.duration_sec or parsed.elapsed_time_sec or 0,
+        distance_m=parsed.distance_m,
+        calories=parsed.calories,
+        avg_hr=parsed.avg_hr,
+        max_hr=parsed.max_hr,
+        hr_zones_json=parsed.hr_zones.to_json() if parsed.hr_zones else None,
+        avg_speed_mps=parsed.avg_speed_mps,
+        max_speed_mps=parsed.max_speed_mps,
+        ascent_m=parsed.ascent_m,
+        descent_m=parsed.descent_m,
         start_lat=parsed.start_lat,
         start_lon=parsed.start_lon,
         source=ActivitySource.FIT_FILE,
@@ -382,9 +392,7 @@ def unmatch_session(session_id: int):
 
     if actual.planned_session_id:
         # Reset planned session status
-        _repo.update_planned_session_status(
-            actual.planned_session_id, SessionStatus.PENDING
-        )
+        _repo.update_planned_session_status(actual.planned_session_id, SessionStatus.PENDING)
 
     success = _repo.update_actual_session_match(session_id, None)
     if not success:
@@ -421,3 +429,106 @@ def get_unmatched_sessions():
         "count": len(unmatched),
         "sessions": [_actual_to_response(s) for s in unmatched],
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# LLM Analysis
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class AnalysisResponse(BaseModel):
+    """Activity analysis response."""
+
+    actual_session_id: int
+    analysis_type: str
+    insights: dict
+    recommendations: str
+    generated_by: str
+    cached: bool = False
+
+
+@router.post("/actual/{session_id}/analyze", response_model=AnalysisResponse)
+def analyze_activity(session_id: int, force: bool = Query(False, description="Force re-analysis")):
+    """Analyze an actual session using LLM.
+
+    Compares the actual session against its planned session (if matched)
+    and provides insights and recommendations.
+
+    Args:
+        session_id: ID of the actual session to analyze
+        force: If True, regenerate analysis even if cached
+
+    Returns:
+        LLM-generated or rule-based analysis
+    """
+    from arete.garmin.analyzer import analyze_activity as do_analysis
+
+    # Get actual session
+    actual = _repo.get_actual_session(session_id)
+    if not actual:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Check for cached analysis
+    if not force:
+        cached = _repo.get_analysis(session_id)
+        if cached:
+            return AnalysisResponse(
+                actual_session_id=session_id,
+                analysis_type=cached["analysis_type"],
+                insights=cached["insights"],
+                recommendations=cached["recommendations"] or "",
+                generated_by=cached["generated_by"],
+                cached=True,
+            )
+
+    # Get matched planned session if exists
+    planned = None
+    if actual.planned_session_id:
+        planned = _repo.get_planned_session(actual.planned_session_id)
+
+    # Run analysis
+    logger.info(f"Analyzing session {session_id} (planned: {actual.planned_session_id})")
+    analysis = do_analysis(actual, planned)
+
+    # Persist to database
+    import json
+    analysis_id = _repo.save_analysis(
+        actual_session_id=session_id,
+        analysis_type=analysis.analysis_type,
+        insights_json=json.dumps(analysis.insights),
+        recommendations=analysis.recommendations,
+        generated_by=analysis.generated_by,
+    )
+    logger.info(f"Saved analysis {analysis_id} for session {session_id}")
+
+    return AnalysisResponse(
+        actual_session_id=session_id,
+        analysis_type=analysis.analysis_type,
+        insights=analysis.insights,
+        recommendations=analysis.recommendations,
+        generated_by=analysis.generated_by,
+        cached=False,
+    )
+
+
+@router.get("/actual/{session_id}/analysis", response_model=AnalysisResponse)
+def get_analysis(session_id: int):
+    """Get cached analysis for an actual session.
+
+    Returns 404 if no analysis exists yet. Use POST /analyze to generate.
+    """
+    cached = _repo.get_analysis(session_id)
+    if not cached:
+        raise HTTPException(
+            status_code=404,
+            detail="No analysis found. Use POST /garmin/actual/{id}/analyze to generate.",
+        )
+
+    return AnalysisResponse(
+        actual_session_id=session_id,
+        analysis_type=cached["analysis_type"],
+        insights=cached["insights"],
+        recommendations=cached["recommendations"] or "",
+        generated_by=cached["generated_by"],
+        cached=True,
+    )

@@ -218,3 +218,35 @@ class SessionMatch:
             f"'{self.planned_session.description or self.planned_session.session_type.value}' - "
             f"Adhérence: {self.adherence_score:.0f}%"
         )
+
+
+@dataclass
+class SessionAnalysis:
+    """LLM-generated analysis for a session."""
+
+    id: int | None = None
+    actual_session_id: int = 0
+    analysis_type: str = "adherence"  # 'adherence', 'performance', 'summary'
+    insights_json: str | None = None  # JSON with structured insights
+    recommendations: str | None = None
+    generated_by: str = "llm"  # 'llm', 'rules', 'manual'
+    created_at: datetime | None = None
+
+    @property
+    def insights(self) -> dict[str, Any]:
+        """Parse insights JSON."""
+        import json
+        if self.insights_json:
+            return json.loads(self.insights_json)
+        return {}
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for DB insertion."""
+        return {
+            "id": self.id,
+            "actual_session_id": self.actual_session_id,
+            "analysis_type": self.analysis_type,
+            "insights_json": self.insights_json,
+            "recommendations": self.recommendations,
+            "generated_by": self.generated_by,
+        }
