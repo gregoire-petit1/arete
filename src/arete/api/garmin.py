@@ -448,7 +448,11 @@ class AnalysisResponse(BaseModel):
 
 
 @router.post("/actual/{session_id}/analyze", response_model=AnalysisResponse)
-def analyze_activity(session_id: int, force: bool = Query(False, description="Force re-analysis")):
+def analyze_activity(
+    session_id: int,
+    force: bool = Query(False, description="Force re-analysis"),
+    detailed: bool = Query(False, description="Enable in-depth analysis with time series metrics"),
+):
     """Analyze an actual session using LLM.
 
     Compares the actual session against its planned session (if matched)
@@ -457,29 +461,37 @@ def analyze_activity(session_id: int, force: bool = Query(False, description="Fo
     Args:
         session_id: ID of the actual session to analyze
         force: If True, regenerate analysis even if cached
+        detailed: If True, parse FIT file for advanced metrics (HR drift, running dynamics, etc.)
 
     Returns:
         LLM-generated or rule-based analysis
     """
     from arete.garmin.analyzer import analyze_activity as do_analysis
+    from arete.garmin.analyzer import analyze_activity_detailed
 
     # Get actual session
     actual = _repo.get_actual_session(session_id)
     if not actual:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Determine cache key (include detailed flag)
+    cache_type = "detailed" if detailed else None
+
     # Check for cached analysis
     if not force:
         cached = _repo.get_analysis(session_id)
         if cached:
-            return AnalysisResponse(
-                actual_session_id=session_id,
-                analysis_type=cached["analysis_type"],
-                insights=cached["insights"],
-                recommendations=cached["recommendations"] or "",
-                generated_by=cached["generated_by"],
-                cached=True,
-            )
+            # Only use cache if analysis type matches request
+            if (detailed and cached["analysis_type"] == "detailed") or \
+               (not detailed and cached["analysis_type"] != "detailed"):
+                return AnalysisResponse(
+                    actual_session_id=session_id,
+                    analysis_type=cached["analysis_type"],
+                    insights=cached["insights"],
+                    recommendations=cached["recommendations"] or "",
+                    generated_by=cached["generated_by"],
+                    cached=True,
+                )
 
     # Get matched planned session if exists
     planned = None
@@ -487,8 +499,36 @@ def analyze_activity(session_id: int, force: bool = Query(False, description="Fo
         planned = _repo.get_planned_session(actual.planned_session_id)
 
     # Run analysis
-    logger.info(f"Analyzing session {session_id} (planned: {actual.planned_session_id})")
-    analysis = do_analysis(actual, planned)
+    logger.info(f"Analyzing session {session_id} (planned: {actual.planned_session_id}, detailed: {detailed})")
+
+    if detailed:
+        # Need FIT file path for detailed analysis
+        fit_path = None
+        if actual.source_file:
+            # Try to find the FIT file
+            import os
+            data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "..", "data")
+            potential_path = os.path.join(data_dir, actual.source_file)
+            if os.path.exists(potential_path):
+                fit_path = potential_path
+            else:
+                # Try with full filename
+                for ext in [".fit", ".FIT"]:
+                    test_path = os.path.join(data_dir, actual.source_file.replace(".fit", ext).replace(".FIT", ext))
+                    if os.path.exists(test_path):
+                        fit_path = test_path
+                        break
+
+        if not fit_path:
+            logger.warning(f"FIT file not found for detailed analysis: {actual.source_file}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"FIT file not found: {actual.source_file}. Detailed analysis requires the original file."
+            )
+
+        analysis = analyze_activity_detailed(actual, planned, fit_path)
+    else:
+        analysis = do_analysis(actual, planned)
 
     # Persist to database
     import json

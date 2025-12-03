@@ -135,9 +135,7 @@ class SessionMatcher:
 
         for actual in sorted_actual:
             # Only consider pending planned sessions
-            pending = [
-                p for p in available_planned if p.status == SessionStatus.PENDING
-            ]
+            pending = [p for p in available_planned if p.status == SessionStatus.PENDING]
 
             match = self.find_match(actual, pending)
             matches.append(match)

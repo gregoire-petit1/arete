@@ -134,7 +134,7 @@ class TestSessionMatcher:
     def test_no_match_different_date(self):
         """Test no match when date is too different."""
         from arete.garmin.matcher import MatchingConfig
-        
+
         config = MatchingConfig(date_tolerance_days=1)
         matcher = SessionMatcher(config=config)
 
@@ -262,9 +262,7 @@ class TestGarminRepository:
         session_id = repo.create_planned_session(session)
 
         # Update status
-        success = repo.update_planned_session_status(
-            session_id, SessionStatus.COMPLETED
-        )
+        success = repo.update_planned_session_status(session_id, SessionStatus.COMPLETED)
         assert success
 
         # Verify
@@ -312,9 +310,7 @@ class TestGarminRepository:
         actual_id = repo.create_actual_session(actual)
 
         # Match them
-        success = repo.update_actual_session_match(
-            actual_id, planned_id, adherence_score=95.0
-        )
+        success = repo.update_actual_session_match(actual_id, planned_id, adherence_score=95.0)
         assert success
 
         # Verify
@@ -412,12 +408,8 @@ class TestGarminIntegration:
         assert match.adherence_score > 80  # Should be good adherence
 
         # 4. Save the match
-        repo.update_actual_session_match(
-            actual_id, match.planned_session.id, match.adherence_score
-        )
-        repo.update_planned_session_status(
-            match.planned_session.id, SessionStatus.COMPLETED
-        )
+        repo.update_actual_session_match(actual_id, match.planned_session.id, match.adherence_score)
+        repo.update_planned_session_status(match.planned_session.id, SessionStatus.COMPLETED)
 
         # 5. Check summary
         summary = repo.get_matches_summary()

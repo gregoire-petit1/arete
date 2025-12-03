@@ -44,8 +44,21 @@ class ActivityAnalysis:
         }
 
 
-def _build_analysis_system_prompt() -> str:
+def _build_analysis_system_prompt(detailed: bool = False) -> str:
     """Compact system prompt for activity analysis (~200 tokens)."""
+    if detailed:
+        return """Coach course à pied expert. Analyse détaillée avec métriques avancées. JSON uniquement.
+
+RÈGLES:
+- Analyse HR drift et découplage cardiaque
+- Évalue running dynamics (stance, oscillation, foulée)
+- Identifie patterns de fatigue et pacing
+- Conseils techniques spécifiques
+- Ton expert mais accessible
+
+FORMAT JSON:
+{"performance":{"note":"A-F","forces":["..."],"faiblesses":["..."]},"technique":{"analyse":"...","conseils":["..."]},"physiologie":{"hr_analysis":"...","fatigue_indicators":["..."]},"pacing":{"evaluation":"...","suggestion":"..."},"recommendation_prioritaire":"Une action clé"}"""
+    
     return """Coach course à pied. Analyse séance réalisée vs planifiée. JSON uniquement.
 
 RÈGLES:
@@ -97,6 +110,29 @@ def _build_analysis_user_prompt(
         lines.append("\nPLANIFIÉ: Aucune séance planifiée")
 
     lines.append("\nAnalyse:")
+    return "\n".join(lines)
+
+
+def _build_detailed_user_prompt(
+    actual: ActualSession,
+    planned: PlannedSession | None,
+    metrics_json: str,
+) -> str:
+    """Build user prompt with detailed metrics for in-depth analysis."""
+    lines = ["ACTIVITÉ:"]
+    lines.append(f"- Sport: {actual.sport}")
+    lines.append(f"- Durée: {actual.duration_min:.0f} min")
+    if actual.distance_km:
+        lines.append(f"- Distance: {actual.distance_km:.2f} km")
+
+    if planned:
+        lines.append(f"\nOBJECTIF: {planned.session_type.value}")
+        if planned.description:
+            lines.append(f"Consigne: {planned.description[:80]}")
+
+    lines.append(f"\nMÉTRIQUES DÉTAILLÉES:\n{metrics_json}")
+    lines.append("\nAnalyse technique approfondie:")
+
     return "\n".join(lines)
 
 
@@ -260,5 +296,179 @@ def _generate_fallback_analysis(
         analysis_type="adherence",
         insights=insights,
         recommendations=insights["recommendation"],
+        generated_by="rules",
+    )
+
+
+def analyze_activity_detailed(
+    actual: ActualSession,
+    planned: PlannedSession | None = None,
+    fit_file_path: str | None = None,
+    model: str | None = None,
+) -> ActivityAnalysis:
+    """In-depth activity analysis using time series metrics.
+
+    Parses the FIT file for detailed metrics (HR drift, running dynamics, etc.)
+    and provides expert-level analysis.
+
+    Args:
+        actual: The actual session from database
+        planned: Optional matched planned session
+        fit_file_path: Path to the original FIT file for re-parsing
+        model: LLM model to use
+
+    Returns:
+        ActivityAnalysis with detailed insights
+    """
+    from arete.garmin.fit_parser import FITParser
+    from arete.garmin.time_series import ActivityMetricsCalculator
+
+    # Parse FIT file with detailed time series
+    if not fit_file_path:
+        logger.warning("No FIT file path provided, falling back to basic analysis")
+        return analyze_activity(actual, planned, model)
+
+    try:
+        parser = FITParser()
+        parsed = parser.parse_file(fit_file_path, detailed=True)
+
+        if not parsed.time_series:
+            logger.warning("No time series data extracted")
+            return analyze_activity(actual, planned, model)
+
+        # Calculate derived metrics
+        calculator = ActivityMetricsCalculator()
+        metrics = calculator.calculate(parsed.time_series)
+
+        # Convert to compact JSON for LLM
+        metrics_json = metrics.to_compact_json()
+        logger.info(f"Detailed metrics: {len(metrics_json)} chars")
+
+    except Exception as e:
+        logger.error(f"Failed to parse FIT file for detailed analysis: {e}")
+        return analyze_activity(actual, planned, model)
+
+    # Call LLM with detailed prompt
+    client = get_client()
+    if client is None:
+        return _generate_fallback_detailed_analysis(actual, metrics)
+
+    token_manager = get_token_manager()
+    if model is None:
+        model = token_manager.get_best_model(estimated_tokens=1200)
+
+    can_proceed, reason = token_manager.can_make_request(model, estimated_tokens=1200)
+    if not can_proceed:
+        logger.warning(f"Rate limit: {reason}, using fallback")
+        return _generate_fallback_detailed_analysis(actual, metrics)
+
+    token_manager.wait_if_needed(model, estimated_tokens=1200)
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": _build_analysis_system_prompt(detailed=True)},
+                {"role": "user", "content": _build_detailed_user_prompt(actual, planned, metrics_json)},
+            ],
+            temperature=0.5,
+            max_tokens=600,  # Slightly more for detailed analysis
+            response_format={"type": "json_object"},
+        )
+
+        if response.usage:
+            token_manager.record_usage(
+                model=model,
+                prompt_tokens=response.usage.prompt_tokens,
+                completion_tokens=response.usage.completion_tokens,
+            )
+
+        content = response.choices[0].message.content
+        if content:
+            insights = json.loads(content)
+            # Add raw metrics to insights
+            insights["_metrics"] = json.loads(metrics_json)
+            insights["_anomalies"] = metrics.anomalies
+
+            return ActivityAnalysis(
+                actual_session_id=actual.id or 0,
+                analysis_type="detailed",
+                insights=insights,
+                recommendations=insights.get("recommendation_prioritaire", ""),
+                generated_by="llm",
+            )
+
+    except Exception as e:
+        logger.error(f"Detailed LLM analysis failed: {e}")
+
+    return _generate_fallback_detailed_analysis(actual, metrics)
+
+
+def _generate_fallback_detailed_analysis(
+    actual: ActualSession,
+    metrics: "DerivedMetrics",
+) -> ActivityAnalysis:
+    """Generate rule-based detailed analysis when LLM unavailable."""
+    from arete.garmin.time_series import DerivedMetrics
+
+    insights = {
+        "performance": {"note": "B", "forces": [], "faiblesses": []},
+        "technique": {"analyse": "", "conseils": []},
+        "physiologie": {"hr_analysis": "", "fatigue_indicators": []},
+        "pacing": {"evaluation": "", "suggestion": ""},
+        "recommendation_prioritaire": "",
+        "_metrics": json.loads(metrics.to_compact_json()),
+        "_anomalies": metrics.anomalies,
+    }
+
+    # Analyze based on metrics
+    if metrics.hr_drift_pct:
+        if metrics.hr_drift_pct < 5:
+            insights["physiologie"]["hr_analysis"] = "Excellent contrôle cardiaque"
+            insights["performance"]["forces"].append("Stabilité FC")
+        elif metrics.hr_drift_pct < 10:
+            insights["physiologie"]["hr_analysis"] = "Dérive cardiaque acceptable"
+        else:
+            insights["physiologie"]["hr_analysis"] = f"Dérive cardiaque importante ({metrics.hr_drift_pct:.0f}%)"
+            insights["physiologie"]["fatigue_indicators"].append("HR drift élevé")
+
+    if metrics.hr_decoupling_pct and metrics.hr_decoupling_pct > 5:
+        insights["physiologie"]["fatigue_indicators"].append(
+            f"Découplage {metrics.hr_decoupling_pct:.0f}% - efficacité aérobie réduite"
+        )
+
+    if metrics.pace_fade_pct:
+        if metrics.pace_fade_pct < 3:
+            insights["pacing"]["evaluation"] = "Pacing parfait"
+            insights["performance"]["forces"].append("Régularité")
+        elif metrics.pace_fade_pct < 8:
+            insights["pacing"]["evaluation"] = "Bon pacing avec légère fatigue finale"
+        else:
+            insights["pacing"]["evaluation"] = f"Pacing à revoir ({metrics.pace_fade_pct:.0f}% de perte)"
+            insights["pacing"]["suggestion"] = "Partez 5-10s/km plus lent"
+
+    if metrics.cadence_cv and metrics.cadence_cv > 0.1:
+        insights["technique"]["conseils"].append("Travaillez la régularité de cadence")
+
+    if metrics.vertical_oscillation_avg:
+        if metrics.vertical_oscillation_avg > 100:
+            insights["technique"]["conseils"].append("Réduisez l'oscillation verticale")
+            insights["technique"]["analyse"] = "Foulée avec rebond excessif"
+        elif metrics.vertical_oscillation_avg < 60:
+            insights["performance"]["forces"].append("Excellente économie de course")
+
+    # Set priority recommendation
+    if metrics.anomalies:
+        insights["recommendation_prioritaire"] = metrics.anomalies[0]
+    elif insights["pacing"]["suggestion"]:
+        insights["recommendation_prioritaire"] = insights["pacing"]["suggestion"]
+    else:
+        insights["recommendation_prioritaire"] = "Maintenez cette qualité de travail"
+
+    return ActivityAnalysis(
+        actual_session_id=actual.id or 0,
+        analysis_type="detailed",
+        insights=insights,
+        recommendations=insights["recommendation_prioritaire"],
         generated_by="rules",
     )

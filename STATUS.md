@@ -96,14 +96,15 @@ Module `src/arete/llm/` avec intégration Groq :
 
 Module `token_manager.py` pour optimisation du budget Groq free tier :
 
-| Limite Groq (llama-3.3-70b) | Valeur    | Notre usage |
-| --------------------------- | --------- | ----------- |
-| Tokens/minute               | 12,000    | ~2,000/req  |
-| Tokens/jour                 | 100,000   | ~50 req/day |
-| Requests/minute             | 30        | ~1-2        |
-| Requests/jour               | 1,000     | ~50         |
+| Limite Groq (llama-3.3-70b) | Valeur  | Notre usage |
+| --------------------------- | ------- | ----------- |
+| Tokens/minute               | 12,000  | ~2,000/req  |
+| Tokens/jour                 | 100,000 | ~50 req/day |
+| Requests/minute             | 30      | ~1-2        |
+| Requests/jour               | 1,000   | ~50         |
 
 Fonctionnalités :
+
 - **Usage tracking** : comptage tokens prompt + completion par requête
 - **Rate limiting** : blocage automatique si quotas dépassés
 - **Model fallback** : bascule vers modèle plus léger si quota épuisé

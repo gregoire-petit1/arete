@@ -11,7 +11,10 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, BinaryIO
+from typing import TYPE_CHECKING, Any, BinaryIO
+
+if TYPE_CHECKING:
+    from arete.garmin.time_series import TimeSeriesData
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +44,7 @@ class HRZoneData:
     @property
     def total_sec(self) -> int:
         """Total time with HR data."""
-        return (
-            self.zone1_sec
-            + self.zone2_sec
-            + self.zone3_sec
-            + self.zone4_sec
-            + self.zone5_sec
-        )
+        return self.zone1_sec + self.zone2_sec + self.zone3_sec + self.zone4_sec + self.zone5_sec
 
     @property
     def dominant_zone(self) -> str:
@@ -113,6 +110,9 @@ class ParsedActivity:
 
     # Source file
     source_file: str | None = None
+
+    # Detailed time series (only populated when parse_detailed=True)
+    time_series: TimeSeriesData | None = None
 
     @property
     def duration_min(self) -> float:
@@ -216,11 +216,12 @@ class FITParser:
         else:
             return 5
 
-    def parse_file(self, file_path: str | Path) -> ParsedActivity:
+    def parse_file(self, file_path: str | Path, detailed: bool = False) -> ParsedActivity:
         """Parse a FIT file from disk.
 
         Args:
             file_path: Path to .FIT file.
+            detailed: If True, extract full time series data for in-depth analysis.
 
         Returns:
             ParsedActivity with extracted data.
@@ -237,16 +238,17 @@ class FITParser:
             raise ValueError(f"Not a FIT file: {path}")
 
         with open(path, "rb") as f:
-            activity = self.parse_stream(f)
+            activity = self.parse_stream(f, detailed=detailed)
             activity.source_file = path.name
 
         return activity
 
-    def parse_stream(self, stream: BinaryIO) -> ParsedActivity:
+    def parse_stream(self, stream: BinaryIO, detailed: bool = False) -> ParsedActivity:
         """Parse a FIT file from a binary stream.
 
         Args:
             stream: Binary file-like object containing FIT data.
+            detailed: If True, extract full time series data for in-depth analysis.
 
         Returns:
             ParsedActivity with extracted data.
@@ -256,8 +258,7 @@ class FITParser:
         except ImportError:
             logger.error("fitparse not installed. Install with: pip install fitparse")
             raise ImportError(
-                "fitparse library required for FIT parsing. "
-                "Install with: pip install fitparse"
+                "fitparse library required for FIT parsing. Install with: pip install fitparse"
             )
 
         fit_file = FitFile(stream)
@@ -266,6 +267,10 @@ class FITParser:
         # Collect HR samples for zone calculation
         hr_samples: list[tuple[int, int]] = []  # (hr, duration_sec)
         last_timestamp: datetime | None = None
+
+        # Time series data (only if detailed=True)
+        time_series_points: list[Any] = [] if detailed else []
+        start_time: datetime | None = None
 
         for record in fit_file.get_messages():
             record_type = record.name
@@ -284,10 +289,68 @@ class FITParser:
                             hr_samples.append((hr, int(delta)))
                     last_timestamp = ts
 
+                # Extract full time series if detailed mode
+                if detailed:
+                    point = self._extract_time_series_point(record, start_time)
+                    if point:
+                        if start_time is None and point.timestamp:
+                            start_time = point.timestamp
+                        time_series_points.append(point)
+
         # Calculate HR zones from samples
         activity.hr_zones = self._calculate_hr_zones(hr_samples)
 
+        # Attach time series if detailed mode
+        if detailed and time_series_points:
+            from arete.garmin.time_series import TimeSeriesData
+            activity.time_series = TimeSeriesData(points=time_series_points)
+
         return activity
+
+    def _extract_time_series_point(self, record: Any, start_time: datetime | None) -> Any:
+        """Extract a time series point from a record.
+
+        Args:
+            record: FIT record message
+            start_time: Activity start time for elapsed calculation
+
+        Returns:
+            TimeSeriesPoint or None if no valid data
+        """
+        from arete.garmin.time_series import TimeSeriesPoint
+
+        fields = {f.name: f.value for f in record.fields}
+
+        ts = fields.get("timestamp")
+        if not ts:
+            return None
+
+        elapsed = 0
+        if start_time:
+            elapsed = int((ts - start_time).total_seconds())
+
+        point = TimeSeriesPoint(
+            timestamp=ts,
+            elapsed_sec=elapsed,
+            heart_rate=fields.get("heart_rate"),
+            speed_mps=fields.get("enhanced_speed"),
+            cadence=fields.get("cadence"),
+            power=fields.get("power"),
+            altitude=fields.get("enhanced_altitude"),
+            stance_time=fields.get("stance_time"),
+            stance_time_balance=fields.get("stance_time_balance"),
+            step_length=fields.get("step_length"),
+            vertical_oscillation=fields.get("vertical_oscillation"),
+            vertical_ratio=fields.get("vertical_ratio"),
+        )
+
+        # GPS
+        if "position_lat" in fields and fields["position_lat"]:
+            point.lat = self._semicircles_to_degrees(fields["position_lat"])
+        if "position_long" in fields and fields["position_long"]:
+            point.lon = self._semicircles_to_degrees(fields["position_long"])
+
+        return point
 
     def _parse_session_record(self, record: Any, activity: ParsedActivity) -> None:
         """Extract data from session record."""
@@ -358,19 +421,13 @@ class FITParser:
             "total_anaerobic_training_effect" in fields
             and fields["total_anaerobic_training_effect"]
         ):
-            activity.anaerobic_training_effect = float(
-                fields["total_anaerobic_training_effect"]
-            )
+            activity.anaerobic_training_effect = float(fields["total_anaerobic_training_effect"])
 
         # GPS start position
         if "start_position_lat" in fields and fields["start_position_lat"]:
-            activity.start_lat = self._semicircles_to_degrees(
-                fields["start_position_lat"]
-            )
+            activity.start_lat = self._semicircles_to_degrees(fields["start_position_lat"])
         if "start_position_long" in fields and fields["start_position_long"]:
-            activity.start_lon = self._semicircles_to_degrees(
-                fields["start_position_long"]
-            )
+            activity.start_lon = self._semicircles_to_degrees(fields["start_position_long"])
 
     def _parse_activity_record(self, record: Any, activity: ParsedActivity) -> None:
         """Extract data from activity record."""
@@ -379,9 +436,7 @@ class FITParser:
         if "local_timestamp" in fields:
             activity.start_time = fields["local_timestamp"]
 
-    def _extract_hr_from_record(
-        self, record: Any
-    ) -> tuple[int | None, datetime | None]:
+    def _extract_hr_from_record(self, record: Any) -> tuple[int | None, datetime | None]:
         """Extract HR and timestamp from a data record."""
         fields = {f.name: f.value for f in record.fields}
 
@@ -392,9 +447,7 @@ class FITParser:
             return hr, ts
         return None, None
 
-    def _calculate_hr_zones(
-        self, hr_samples: list[tuple[int, int]]
-    ) -> HRZoneData:
+    def _calculate_hr_zones(self, hr_samples: list[tuple[int, int]]) -> HRZoneData:
         """Calculate time in each HR zone from samples.
 
         Args:
