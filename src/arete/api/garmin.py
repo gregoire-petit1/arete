@@ -249,7 +249,7 @@ async def upload_fit_file(
     to a planned session based on date and activity type.
     """
     import io
-    
+
     if not file.filename or not file.filename.lower().endswith(".fit"):
         raise HTTPException(status_code=400, detail="File must be a .fit file")
 
@@ -482,8 +482,9 @@ def analyze_activity(
         cached = _repo.get_analysis(session_id)
         if cached:
             # Only use cache if analysis type matches request
-            if (detailed and cached["analysis_type"] == "detailed") or \
-               (not detailed and cached["analysis_type"] != "detailed"):
+            if (detailed and cached["analysis_type"] == "detailed") or (
+                not detailed and cached["analysis_type"] != "detailed"
+            ):
                 return AnalysisResponse(
                     actual_session_id=session_id,
                     analysis_type=cached["analysis_type"],
@@ -499,7 +500,9 @@ def analyze_activity(
         planned = _repo.get_planned_session(actual.planned_session_id)
 
     # Run analysis
-    logger.info(f"Analyzing session {session_id} (planned: {actual.planned_session_id}, detailed: {detailed})")
+    logger.info(
+        f"Analyzing session {session_id} (planned: {actual.planned_session_id}, detailed: {detailed})"
+    )
 
     if detailed:
         # Need FIT file path for detailed analysis
@@ -507,14 +510,19 @@ def analyze_activity(
         if actual.source_file:
             # Try to find the FIT file
             import os
-            data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "..", "data")
+
+            data_dir = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "..", "data"
+            )
             potential_path = os.path.join(data_dir, actual.source_file)
             if os.path.exists(potential_path):
                 fit_path = potential_path
             else:
                 # Try with full filename
                 for ext in [".fit", ".FIT"]:
-                    test_path = os.path.join(data_dir, actual.source_file.replace(".fit", ext).replace(".FIT", ext))
+                    test_path = os.path.join(
+                        data_dir, actual.source_file.replace(".fit", ext).replace(".FIT", ext)
+                    )
                     if os.path.exists(test_path):
                         fit_path = test_path
                         break
@@ -523,7 +531,7 @@ def analyze_activity(
             logger.warning(f"FIT file not found for detailed analysis: {actual.source_file}")
             raise HTTPException(
                 status_code=400,
-                detail=f"FIT file not found: {actual.source_file}. Detailed analysis requires the original file."
+                detail=f"FIT file not found: {actual.source_file}. Detailed analysis requires the original file.",
             )
 
         analysis = analyze_activity_detailed(actual, planned, fit_path)
@@ -532,6 +540,7 @@ def analyze_activity(
 
     # Persist to database
     import json
+
     analysis_id = _repo.save_analysis(
         actual_session_id=session_id,
         analysis_type=analysis.analysis_type,

@@ -159,14 +159,14 @@ Module complet `src/arete/garmin/` pour l'analyse automatisée des activités Ga
 
 #### Architecture du module
 
-| Fichier           | Description                                          |
-| ----------------- | ---------------------------------------------------- |
-| `models.py`       | Dataclasses PlannedSession, ActualSession, etc.      |
-| `fit_parser.py`   | Parsing FIT avec fitparse (time series, laps)        |
-| `repository.py`   | CRUD DuckDB pour sessions planifiées/réalisées       |
-| `matcher.py`      | Matching automatique planned ↔ actual                |
-| `time_series.py`  | TimeSeriesData, DerivedMetrics, WorkoutStructure     |
-| `analyzer.py`     | Analyse LLM (basique, détaillée, intervalles)        |
+| Fichier          | Description                                      |
+| ---------------- | ------------------------------------------------ |
+| `models.py`      | Dataclasses PlannedSession, ActualSession, etc.  |
+| `fit_parser.py`  | Parsing FIT avec fitparse (time series, laps)    |
+| `repository.py`  | CRUD DuckDB pour sessions planifiées/réalisées   |
+| `matcher.py`     | Matching automatique planned ↔ actual            |
+| `time_series.py` | TimeSeriesData, DerivedMetrics, WorkoutStructure |
+| `analyzer.py`    | Analyse LLM (basique, détaillée, intervalles)    |
 
 #### FIT Parser (`fit_parser.py`)
 
@@ -182,11 +182,13 @@ Module complet `src/arete/garmin/` pour l'analyse automatisée des activités Ga
 #### Time Series Analysis (`time_series.py`)
 
 **TimeSeriesPoint** - Données par seconde :
+
 - Core : heart_rate, speed_mps, cadence, power, altitude
 - Running dynamics : stance_time, stance_time_balance, step_length, vertical_oscillation, vertical_ratio
 - GPS : lat, lon
 
 **DerivedMetrics** - Métriques calculées :
+
 - HR : avg, max, drift%, decoupling%
 - Pace : avg, CV%, fade%
 - Cadence : avg, CV%
@@ -196,6 +198,7 @@ Module complet `src/arete/garmin/` pour l'analyse automatisée des activités Ga
 - Splits : km-by-km avec pace, HR
 
 **WorkoutStructure** - Analyse des laps :
+
 - Détection automatique interval workouts
 - Groupement par intensité (warmup/work/rest/cooldown)
 - Métriques intervalles : pace_cv%, hr_drift%
@@ -211,13 +214,14 @@ Module complet `src/arete/garmin/` pour l'analyse automatisée des activités Ga
 
 3 modes d'analyse avec prompts optimisés tokens :
 
-| Mode       | Description                                           | Données                    |
-| ---------- | ----------------------------------------------------- | -------------------------- |
-| `basic`    | Adhérence planned vs actual                           | Résumé session             |
-| `detailed` | Analyse technique approfondie                         | DerivedMetrics (~500 char) |
-| `interval` | Analyse séance qualité                                | WorkoutStructure JSON      |
+| Mode       | Description                   | Données                    |
+| ---------- | ----------------------------- | -------------------------- |
+| `basic`    | Adhérence planned vs actual   | Résumé session             |
+| `detailed` | Analyse technique approfondie | DerivedMetrics (~500 char) |
+| `interval` | Analyse séance qualité        | WorkoutStructure JSON      |
 
 **Format réponse LLM** :
+
 - `performance` : note A-F, forces, faiblesses
 - `technique` : analyse, conseils
 - `physiologie` : hr_analysis, fatigue_indicators
@@ -229,23 +233,24 @@ Module complet `src/arete/garmin/` pour l'analyse automatisée des activités Ga
 
 #### Garmin API (`src/arete/api/garmin.py`)
 
-| Endpoint                             | Méthode | Description                           |
-| ------------------------------------ | ------- | ------------------------------------- |
-| `/garmin/planned`                    | POST    | Créer session planifiée               |
-| `/garmin/planned`                    | GET     | Lister sessions planifiées            |
-| `/garmin/planned/{id}`               | GET     | Détail session planifiée              |
-| `/garmin/planned/{id}`               | DELETE  | Supprimer session planifiée           |
-| `/garmin/upload-fit`                 | POST    | Upload fichier FIT + matching auto    |
-| `/garmin/actual`                     | GET     | Lister sessions réalisées             |
-| `/garmin/actual/{id}`                | GET     | Détail session réalisée               |
-| `/garmin/actual/{id}/match/{pid}`    | POST    | Matcher manuellement                  |
-| `/garmin/actual/{id}/match`          | DELETE  | Supprimer matching                    |
-| `/garmin/actual/{id}/analyze`        | POST    | Lancer analyse LLM                    |
-| `/garmin/actual/{id}/analysis`       | GET     | Récupérer analyse existante           |
-| `/garmin/summary`                    | GET     | Stats matching (total, matched, etc.) |
-| `/garmin/unmatched`                  | GET     | Lister sessions non-matchées          |
+| Endpoint                          | Méthode | Description                           |
+| --------------------------------- | ------- | ------------------------------------- |
+| `/garmin/planned`                 | POST    | Créer session planifiée               |
+| `/garmin/planned`                 | GET     | Lister sessions planifiées            |
+| `/garmin/planned/{id}`            | GET     | Détail session planifiée              |
+| `/garmin/planned/{id}`            | DELETE  | Supprimer session planifiée           |
+| `/garmin/upload-fit`              | POST    | Upload fichier FIT + matching auto    |
+| `/garmin/actual`                  | GET     | Lister sessions réalisées             |
+| `/garmin/actual/{id}`             | GET     | Détail session réalisée               |
+| `/garmin/actual/{id}/match/{pid}` | POST    | Matcher manuellement                  |
+| `/garmin/actual/{id}/match`       | DELETE  | Supprimer matching                    |
+| `/garmin/actual/{id}/analyze`     | POST    | Lancer analyse LLM                    |
+| `/garmin/actual/{id}/analysis`    | GET     | Récupérer analyse existante           |
+| `/garmin/summary`                 | GET     | Stats matching (total, matched, etc.) |
+| `/garmin/unmatched`               | GET     | Lister sessions non-matchées          |
 
 **Paramètres analyse** :
+
 - `?detailed=true` : analyse détaillée avec time series
 - `?force=true` : régénérer même si cache existant
 
@@ -266,6 +271,7 @@ curl -X POST "http://localhost:8000/garmin/actual/1/analyze?detailed=true"
 ```
 
 **Exemple réponse analyse interval** :
+
 ```json
 {
   "analysis_type": "interval",

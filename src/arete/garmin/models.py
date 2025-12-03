@@ -236,6 +236,7 @@ class SessionAnalysis:
     def insights(self) -> dict[str, Any]:
         """Parse insights JSON."""
         import json
+
         if self.insights_json:
             return json.loads(self.insights_json)
         return {}

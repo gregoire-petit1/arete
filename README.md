@@ -132,16 +132,19 @@ The `src/arete/garmin/` module provides automated analysis of Garmin activities:
 ### Workout Analysis
 
 **Basic Analysis** — Compares planned vs actual session:
+
 - Adherence score (duration, distance, intensity)
 - Points positifs / points d'amélioration
 
 **Detailed Analysis** — Deep dive with time series metrics:
+
 - HR drift & cardiac decoupling
 - Pace fade analysis
 - Running dynamics evaluation
 - Per-kilometer splits
 
 **Interval Analysis** — For quality workouts:
+
 - Automatic detection of interval structure (e.g., "4x8min @4:20 r2min")
 - Pace consistency across intervals (CV%)
 - HR progression analysis
@@ -161,15 +164,15 @@ curl -X POST "http://localhost:8000/garmin/actual/1/analyze?detailed=true"
 
 ### API Endpoints
 
-| Endpoint                          | Method | Description                    |
-| --------------------------------- | ------ | ------------------------------ |
-| `/garmin/planned`                 | POST   | Create planned session         |
-| `/garmin/planned`                 | GET    | List planned sessions          |
-| `/garmin/upload-fit`              | POST   | Upload FIT file + auto-match   |
-| `/garmin/actual`                  | GET    | List actual sessions           |
-| `/garmin/actual/{id}/analyze`     | POST   | Run LLM analysis               |
-| `/garmin/actual/{id}/analysis`    | GET    | Get cached analysis            |
-| `/garmin/summary`                 | GET    | Matching statistics            |
+| Endpoint                       | Method | Description                  |
+| ------------------------------ | ------ | ---------------------------- |
+| `/garmin/planned`              | POST   | Create planned session       |
+| `/garmin/planned`              | GET    | List planned sessions        |
+| `/garmin/upload-fit`           | POST   | Upload FIT file + auto-match |
+| `/garmin/actual`               | GET    | List actual sessions         |
+| `/garmin/actual/{id}/analyze`  | POST   | Run LLM analysis             |
+| `/garmin/actual/{id}/analysis` | GET    | Get cached analysis          |
+| `/garmin/summary`              | GET    | Matching statistics          |
 
 ## Features Engineering Module
 
@@ -287,25 +290,25 @@ The API exposes training metrics via REST endpoints:
 
 ### Garmin Endpoints
 
-| Endpoint                          | Method | Description                         |
-| --------------------------------- | ------ | ----------------------------------- |
-| `/garmin/planned`                 | POST   | Create planned session              |
-| `/garmin/planned`                 | GET    | List planned sessions               |
-| `/garmin/upload-fit`              | POST   | Upload FIT file + auto-match        |
-| `/garmin/actual`                  | GET    | List actual sessions                |
-| `/garmin/actual/{id}/analyze`     | POST   | Run LLM analysis (?detailed=true)   |
-| `/garmin/actual/{id}/analysis`    | GET    | Get cached analysis                 |
-| `/garmin/summary`                 | GET    | Matching statistics                 |
-| `/garmin/unmatched`               | GET    | Unmatched sessions                  |
+| Endpoint                       | Method | Description                       |
+| ------------------------------ | ------ | --------------------------------- |
+| `/garmin/planned`              | POST   | Create planned session            |
+| `/garmin/planned`              | GET    | List planned sessions             |
+| `/garmin/upload-fit`           | POST   | Upload FIT file + auto-match      |
+| `/garmin/actual`               | GET    | List actual sessions              |
+| `/garmin/actual/{id}/analyze`  | POST   | Run LLM analysis (?detailed=true) |
+| `/garmin/actual/{id}/analysis` | GET    | Get cached analysis               |
+| `/garmin/summary`              | GET    | Matching statistics               |
+| `/garmin/unmatched`            | GET    | Unmatched sessions                |
 
 ### RAG Endpoints
 
-| Endpoint                  | Method | Description                         |
-| ------------------------- | ------ | ----------------------------------- |
-| `/rag/query`              | POST   | RAG-augmented plan generation       |
-| `/rag/search`             | GET    | Search knowledge base               |
-| `/rag/stats`              | GET    | Collection statistics               |
-| `/rag/seed`               | POST   | Seed knowledge base                 |
+| Endpoint      | Method | Description                   |
+| ------------- | ------ | ----------------------------- |
+| `/rag/query`  | POST   | RAG-augmented plan generation |
+| `/rag/search` | GET    | Search knowledge base         |
+| `/rag/stats`  | GET    | Collection statistics         |
+| `/rag/seed`   | POST   | Seed knowledge base           |
 
 ### Example API Calls
 

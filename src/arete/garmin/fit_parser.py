@@ -314,6 +314,7 @@ class FITParser:
         # Attach time series if detailed mode
         if detailed and time_series_points:
             from arete.garmin.time_series import TimeSeriesData
+
             activity.time_series = TimeSeriesData(points=time_series_points)
 
         # Build workout structure from laps if detailed mode
