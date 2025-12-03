@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
 if TYPE_CHECKING:
-    from arete.garmin.time_series import TimeSeriesData
+    from arete.garmin.time_series import TimeSeriesData, WorkoutStructure
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +113,9 @@ class ParsedActivity:
 
     # Detailed time series (only populated when parse_detailed=True)
     time_series: TimeSeriesData | None = None
+
+    # Workout structure with laps (only populated when parse_detailed=True)
+    workout_structure: WorkoutStructure | None = None
 
     @property
     def duration_min(self) -> float:
@@ -272,6 +275,9 @@ class FITParser:
         time_series_points: list[Any] = [] if detailed else []
         start_time: datetime | None = None
 
+        # Lap data (only if detailed=True)
+        lap_records: list[dict[str, Any]] = [] if detailed else []
+
         for record in fit_file.get_messages():
             record_type = record.name
 
@@ -279,6 +285,11 @@ class FITParser:
                 self._parse_session_record(record, activity)
             elif record_type == "activity":
                 self._parse_activity_record(record, activity)
+            elif record_type == "lap" and detailed:
+                # Extract lap data for interval detection
+                lap_data = self._extract_lap_data(record)
+                if lap_data:
+                    lap_records.append(lap_data)
             elif record_type == "record":
                 # Individual data points (for HR zone calculation)
                 hr, ts = self._extract_hr_from_record(record)
@@ -304,6 +315,10 @@ class FITParser:
         if detailed and time_series_points:
             from arete.garmin.time_series import TimeSeriesData
             activity.time_series = TimeSeriesData(points=time_series_points)
+
+        # Build workout structure from laps if detailed mode
+        if detailed and lap_records:
+            activity.workout_structure = self._build_workout_structure(lap_records)
 
         return activity
 
@@ -476,6 +491,80 @@ class FITParser:
     def _semicircles_to_degrees(self, semicircles: int) -> float:
         """Convert FIT semicircles to degrees."""
         return semicircles * (180.0 / (2**31))
+
+    def _extract_lap_data(self, record: Any) -> dict[str, Any] | None:
+        """Extract lap data from a lap record.
+
+        Args:
+            record: FIT lap record message
+
+        Returns:
+            Dict with lap data or None if invalid
+        """
+        fields = {f.name: f.value for f in record.fields}
+
+        # Must have at least duration
+        if not fields.get("total_timer_time"):
+            return None
+
+        return {
+            "intensity": fields.get("intensity"),
+            "lap_trigger": str(fields.get("lap_trigger", "unknown")),
+            "start_time": fields.get("start_time"),
+            "duration_sec": float(fields.get("total_timer_time", 0)),
+            "distance_m": float(fields.get("total_distance", 0)),
+            # Use enhanced_avg_speed if available, fallback to avg_speed
+            "avg_speed_mps": fields.get("enhanced_avg_speed") or fields.get("avg_speed"),
+            "max_speed_mps": fields.get("enhanced_max_speed") or fields.get("max_speed"),
+            "avg_hr": fields.get("avg_heart_rate"),
+            "max_hr": fields.get("max_heart_rate"),
+            "avg_cadence": fields.get("avg_cadence") or fields.get("avg_running_cadence"),
+            "avg_power": fields.get("avg_power"),
+            "avg_stance_time": fields.get("avg_stance_time"),
+            "avg_vertical_oscillation": fields.get("avg_vertical_oscillation"),
+        }
+
+    def _build_workout_structure(self, lap_records: list[dict[str, Any]]) -> "WorkoutStructure":
+        """Build workout structure from lap records.
+
+        Args:
+            lap_records: List of lap data dicts
+
+        Returns:
+            WorkoutStructure with analyzed laps
+        """
+        from arete.garmin.time_series import LapData, LapIntensity, WorkoutStructure
+
+        structure = WorkoutStructure()
+
+        for i, lap_data in enumerate(lap_records):
+            # Skip session_end laps
+            trigger = str(lap_data.get("lap_trigger", "")).lower()
+            if trigger == "session_end":
+                continue
+
+            lap = LapData(
+                lap_number=i + 1,
+                intensity=LapIntensity.from_fit_value(lap_data.get("intensity")),
+                trigger=trigger,
+                duration_sec=lap_data.get("duration_sec", 0),
+                start_time=lap_data.get("start_time"),
+                distance_m=lap_data.get("distance_m", 0),
+                avg_speed_mps=lap_data.get("avg_speed_mps"),
+                max_speed_mps=lap_data.get("max_speed_mps"),
+                avg_hr=lap_data.get("avg_hr"),
+                max_hr=lap_data.get("max_hr"),
+                avg_cadence=lap_data.get("avg_cadence"),
+                avg_power=lap_data.get("avg_power"),
+                avg_stance_time=lap_data.get("avg_stance_time"),
+                avg_vertical_oscillation=lap_data.get("avg_vertical_oscillation"),
+            )
+            structure.laps.append(lap)
+
+        # Analyze the structure
+        structure.analyze()
+
+        return structure
 
 
 def parse_fit_file(file_path: str | Path, hr_max: int = 190) -> ParsedActivity:

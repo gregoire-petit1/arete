@@ -10,7 +10,252 @@ import json
 import statistics
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any
+
+
+class LapIntensity(str, Enum):
+    """Lap intensity types from Garmin FIT files."""
+
+    WARMUP = "warmup"
+    ACTIVE = "active"  # Main work interval
+    REST = "rest"  # Recovery between intervals
+    COOLDOWN = "cooldown"
+    OTHER = "other"
+
+    @classmethod
+    def from_fit_value(cls, value: Any) -> LapIntensity:
+        """Convert FIT intensity value to enum."""
+        if value is None:
+            return cls.OTHER
+
+        # FIT SDK intensity values
+        value_str = str(value).lower()
+        if value_str == "warmup":
+            return cls.WARMUP
+        elif value_str == "active":
+            return cls.ACTIVE
+        elif value_str in ("4", "rest", "recovery"):
+            return cls.REST
+        elif value_str == "cooldown":
+            return cls.COOLDOWN
+        else:
+            return cls.OTHER
+
+
+@dataclass
+class LapData:
+    """Data for a single lap/interval from FIT file."""
+
+    lap_number: int
+    intensity: LapIntensity
+    trigger: str  # 'manual', 'distance', 'time', 'session_end'
+
+    # Timing
+    duration_sec: float = 0
+    start_time: datetime | None = None
+
+    # Distance/Pace
+    distance_m: float = 0
+    avg_speed_mps: float | None = None
+    max_speed_mps: float | None = None
+
+    # Heart rate
+    avg_hr: int | None = None
+    max_hr: int | None = None
+
+    # Cadence
+    avg_cadence: int | None = None
+
+    # Power (if available)
+    avg_power: int | None = None
+
+    # Running dynamics
+    avg_stance_time: float | None = None
+    avg_vertical_oscillation: float | None = None
+
+    @property
+    def duration_min(self) -> float:
+        """Duration in minutes."""
+        return self.duration_sec / 60.0
+
+    @property
+    def distance_km(self) -> float:
+        """Distance in kilometers."""
+        return self.distance_m / 1000.0
+
+    @property
+    def pace_sec_km(self) -> int | None:
+        """Average pace in seconds per km."""
+        if self.avg_speed_mps and self.avg_speed_mps > 0.5:
+            return int(1000 / self.avg_speed_mps)
+        return None
+
+    @property
+    def pace_str(self) -> str:
+        """Pace as MM:SS string."""
+        pace = self.pace_sec_km
+        if pace is None:
+            return "N/A"
+        return f"{pace // 60}:{pace % 60:02d}"
+
+    def to_compact_dict(self) -> dict[str, Any]:
+        """Convert to compact dict for JSON."""
+        d: dict[str, Any] = {
+            "n": self.lap_number,
+            "type": self.intensity.value,
+            "dur": f"{self.duration_min:.1f}m",
+        }
+        if self.distance_m > 100:
+            d["dist"] = f"{self.distance_km:.2f}km"
+        if self.pace_sec_km:
+            d["pace"] = self.pace_str
+        if self.avg_hr:
+            d["hr"] = self.avg_hr
+        if self.avg_cadence:
+            d["cad"] = self.avg_cadence
+        return d
+
+
+@dataclass
+class WorkoutStructure:
+    """Analyzed workout structure with grouped laps."""
+
+    laps: list[LapData] = field(default_factory=list)
+
+    # Grouped phases
+    warmup_laps: list[LapData] = field(default_factory=list)
+    work_intervals: list[LapData] = field(default_factory=list)
+    rest_intervals: list[LapData] = field(default_factory=list)
+    cooldown_laps: list[LapData] = field(default_factory=list)
+
+    # Interval analysis
+    is_interval_workout: bool = False
+    num_work_intervals: int = 0
+    avg_work_duration_sec: float = 0
+    avg_rest_duration_sec: float = 0
+
+    # Consistency metrics
+    work_pace_consistency_cv: float | None = None  # CV of paces across work intervals
+    work_hr_progression: float | None = None  # HR drift across work intervals
+
+    def analyze(self) -> None:
+        """Analyze the workout structure and calculate metrics."""
+        if not self.laps:
+            return
+
+        # Group laps by intensity
+        for lap in self.laps:
+            if lap.intensity == LapIntensity.WARMUP:
+                self.warmup_laps.append(lap)
+            elif lap.intensity == LapIntensity.ACTIVE:
+                self.work_intervals.append(lap)
+            elif lap.intensity == LapIntensity.REST:
+                self.rest_intervals.append(lap)
+            elif lap.intensity == LapIntensity.COOLDOWN:
+                self.cooldown_laps.append(lap)
+
+        # Determine if this is an interval workout
+        self.num_work_intervals = len(self.work_intervals)
+        self.is_interval_workout = (
+            self.num_work_intervals >= 2 and len(self.rest_intervals) >= 1
+        )
+
+        if self.is_interval_workout:
+            # Calculate averages
+            if self.work_intervals:
+                self.avg_work_duration_sec = statistics.mean(
+                    [lap.duration_sec for lap in self.work_intervals]
+                )
+            if self.rest_intervals:
+                self.avg_rest_duration_sec = statistics.mean(
+                    [lap.duration_sec for lap in self.rest_intervals]
+                )
+
+            # Pace consistency across work intervals
+            work_paces = [
+                lap.pace_sec_km for lap in self.work_intervals if lap.pace_sec_km
+            ]
+            if len(work_paces) >= 2:
+                avg_pace = statistics.mean(work_paces)
+                std_pace = statistics.stdev(work_paces)
+                self.work_pace_consistency_cv = (
+                    (std_pace / avg_pace) * 100 if avg_pace else None
+                )
+
+            # HR progression (first vs last work interval)
+            work_hrs = [lap.avg_hr for lap in self.work_intervals if lap.avg_hr]
+            if len(work_hrs) >= 2:
+                first_hr = work_hrs[0]
+                last_hr = work_hrs[-1]
+                self.work_hr_progression = ((last_hr - first_hr) / first_hr) * 100
+
+    def to_compact_json(self) -> str:
+        """Convert to compact JSON for LLM."""
+        if not self.is_interval_workout:
+            # Simple workout - just show laps
+            return json.dumps(
+                {
+                    "laps": [
+                        lap.to_compact_dict() for lap in self.laps[:10]
+                    ],  # Max 10 laps
+                },
+                separators=(",", ":"),
+            )
+
+        # Interval workout - show structure
+        data: dict[str, Any] = {
+            "type": "intervals",
+            "structure": f"{self.num_work_intervals}x work + rest",
+        }
+
+        # Warmup summary
+        if self.warmup_laps:
+            total_warmup = sum(lap.duration_sec for lap in self.warmup_laps)
+            data["warmup"] = f"{total_warmup / 60:.0f}min"
+
+        # Work intervals detail
+        data["intervals"] = []
+        for i, lap in enumerate(self.work_intervals):
+            interval_data = {
+                "n": i + 1,
+                "dur": f"{lap.duration_min:.1f}m",
+                "pace": lap.pace_str,
+                "hr": lap.avg_hr,
+            }
+            if lap.avg_cadence:
+                interval_data["cad"] = lap.avg_cadence
+            data["intervals"].append(interval_data)
+
+        # Rest summary
+        if self.rest_intervals:
+            data["rest_avg"] = f"{self.avg_rest_duration_sec / 60:.1f}min"
+
+        # Consistency metrics
+        if self.work_pace_consistency_cv is not None:
+            data["pace_cv%"] = round(self.work_pace_consistency_cv, 1)
+        if self.work_hr_progression is not None:
+            data["hr_drift%"] = round(self.work_hr_progression, 1)
+
+        # Cooldown
+        if self.cooldown_laps:
+            total_cooldown = sum(lap.duration_sec for lap in self.cooldown_laps)
+            data["cooldown"] = f"{total_cooldown / 60:.0f}min"
+
+        return json.dumps(data, separators=(",", ":"))
+
+    def get_summary(self) -> str:
+        """Get human-readable summary."""
+        if not self.is_interval_workout:
+            return f"Simple workout: {len(self.laps)} laps"
+
+        work_paces = [lap.pace_str for lap in self.work_intervals]
+        return (
+            f"Interval workout: {self.num_work_intervals}x "
+            f"{self.avg_work_duration_sec / 60:.0f}min work / "
+            f"{self.avg_rest_duration_sec / 60:.0f}min rest. "
+            f"Paces: {', '.join(work_paces)}"
+        )
 
 
 @dataclass
@@ -151,7 +396,9 @@ class DerivedMetrics:
                 "avg": round(self.hr_avg),
                 "max": self.hr_max,
                 "drift%": round(self.hr_drift_pct, 1) if self.hr_drift_pct else None,
-                "decoupling%": round(self.hr_decoupling_pct, 1) if self.hr_decoupling_pct else None,
+                "decoupling%": round(self.hr_decoupling_pct, 1)
+                if self.hr_decoupling_pct
+                else None,
             }
 
         # Pace section
@@ -174,18 +421,30 @@ class DerivedMetrics:
             data["power"] = {
                 "avg": self.power_avg,
                 "np": self.power_normalized,
-                "vi": round(self.power_variability_index, 2) if self.power_variability_index else None,
+                "vi": round(self.power_variability_index, 2)
+                if self.power_variability_index
+                else None,
             }
 
         # Running dynamics
         if self.stance_time_avg:
             data["dynamics"] = {
                 "stance_ms": round(self.stance_time_avg),
-                "stance_drift%": round(self.stance_time_drift_pct, 1) if self.stance_time_drift_pct else None,
-                "step_mm": round(self.step_length_avg) if self.step_length_avg else None,
-                "vert_osc_mm": round(self.vertical_oscillation_avg, 1) if self.vertical_oscillation_avg else None,
-                "vert_ratio%": round(self.vertical_ratio_avg, 1) if self.vertical_ratio_avg else None,
-                "balance%": round(self.ground_contact_balance, 1) if self.ground_contact_balance else None,
+                "stance_drift%": round(self.stance_time_drift_pct, 1)
+                if self.stance_time_drift_pct
+                else None,
+                "step_mm": round(self.step_length_avg)
+                if self.step_length_avg
+                else None,
+                "vert_osc_mm": round(self.vertical_oscillation_avg, 1)
+                if self.vertical_oscillation_avg
+                else None,
+                "vert_ratio%": round(self.vertical_ratio_avg, 1)
+                if self.vertical_ratio_avg
+                else None,
+                "balance%": round(self.ground_contact_balance, 1)
+                if self.ground_contact_balance
+                else None,
             }
 
         # Elevation
@@ -193,7 +452,9 @@ class DerivedMetrics:
             data["elevation"] = {
                 "ascent_m": round(self.total_ascent),
                 "descent_m": round(self.total_descent) if self.total_descent else None,
-                "impact": round(self.pace_vs_elevation_correlation, 2) if self.pace_vs_elevation_correlation else None,
+                "impact": round(self.pace_vs_elevation_correlation, 2)
+                if self.pace_vs_elevation_correlation
+                else None,
             }
 
         # Splits (simplified)
@@ -255,8 +516,14 @@ class ActivityMetricsCalculator:
             paces = [int(1000 / s) for s in speeds if s > 0.5]  # Filter walking
             if paces:
                 metrics.pace_avg_sec_km = int(statistics.mean(paces))
-                metrics.pace_std_sec_km = int(statistics.stdev(paces)) if len(paces) > 1 else 0
-                metrics.pace_cv = metrics.pace_std_sec_km / metrics.pace_avg_sec_km if metrics.pace_avg_sec_km else None
+                metrics.pace_std_sec_km = (
+                    int(statistics.stdev(paces)) if len(paces) > 1 else 0
+                )
+                metrics.pace_cv = (
+                    metrics.pace_std_sec_km / metrics.pace_avg_sec_km
+                    if metrics.pace_avg_sec_km
+                    else None
+                )
 
                 # Pace fade (positive = slowing down)
                 mid = len(paces) // 2
@@ -265,7 +532,9 @@ class ActivityMetricsCalculator:
                     second_half = statistics.mean(paces[mid:])
                     metrics.pace_first_half_sec_km = int(first_half)
                     metrics.pace_second_half_sec_km = int(second_half)
-                    metrics.pace_fade_pct = ((second_half - first_half) / first_half) * 100
+                    metrics.pace_fade_pct = (
+                        (second_half - first_half) / first_half
+                    ) * 100
 
         # HR:Pace decoupling
         if hrs and speeds and len(hrs) == len(speeds):
@@ -276,7 +545,11 @@ class ActivityMetricsCalculator:
         if cadences:
             metrics.cadence_avg = int(statistics.mean(cadences))
             metrics.cadence_std = statistics.stdev(cadences) if len(cadences) > 1 else 0
-            metrics.cadence_cv = metrics.cadence_std / metrics.cadence_avg if metrics.cadence_avg else None
+            metrics.cadence_cv = (
+                metrics.cadence_std / metrics.cadence_avg
+                if metrics.cadence_avg
+                else None
+            )
 
         # Power metrics
         powers = ts.powers
@@ -286,7 +559,9 @@ class ActivityMetricsCalculator:
             np = self._calculate_normalized_power(powers)
             if np:
                 metrics.power_normalized = np
-                metrics.power_variability_index = np / metrics.power_avg if metrics.power_avg else None
+                metrics.power_variability_index = (
+                    np / metrics.power_avg if metrics.power_avg else None
+                )
 
         # Running dynamics
         if ts.has_running_dynamics():
@@ -328,11 +603,11 @@ class ActivityMetricsCalculator:
 
         # First half ratio
         hr1 = statistics.mean(hrs[:mid])
-        pace1 = statistics.mean([1000/s for s in speeds[:mid] if s > 0.5])
+        pace1 = statistics.mean([1000 / s for s in speeds[:mid] if s > 0.5])
 
         # Second half ratio
         hr2 = statistics.mean(hrs[mid:])
-        pace2 = statistics.mean([1000/s for s in speeds[mid:] if s > 0.5])
+        pace2 = statistics.mean([1000 / s for s in speeds[mid:] if s > 0.5])
 
         if pace1 == 0 or pace2 == 0:
             return 0.0
@@ -342,7 +617,9 @@ class ActivityMetricsCalculator:
 
         return ((ratio2 - ratio1) / ratio1) * 100
 
-    def _calculate_normalized_power(self, powers: list[int], window: int = 30) -> int | None:
+    def _calculate_normalized_power(
+        self, powers: list[int], window: int = 30
+    ) -> int | None:
         """Calculate Normalized Power (cycling/running power metric)."""
         if len(powers) < window:
             return None
@@ -350,19 +627,23 @@ class ActivityMetricsCalculator:
         # Rolling 30-sec average
         rolling = []
         for i in range(len(powers) - window + 1):
-            rolling.append(statistics.mean(powers[i:i + window]))
+            rolling.append(statistics.mean(powers[i : i + window]))
 
         # 4th power average, then 4th root
-        fourth_powers = [p ** 4 for p in rolling]
+        fourth_powers = [p**4 for p in rolling]
         np = (statistics.mean(fourth_powers)) ** 0.25
 
         return int(np)
 
-    def _calculate_running_dynamics(self, ts: TimeSeriesData, metrics: DerivedMetrics) -> None:
+    def _calculate_running_dynamics(
+        self, ts: TimeSeriesData, metrics: DerivedMetrics
+    ) -> None:
         """Calculate running dynamics metrics."""
         stance_times = [p.stance_time for p in ts.points if p.stance_time]
         step_lengths = [p.step_length for p in ts.points if p.step_length]
-        vert_oscs = [p.vertical_oscillation for p in ts.points if p.vertical_oscillation]
+        vert_oscs = [
+            p.vertical_oscillation for p in ts.points if p.vertical_oscillation
+        ]
         vert_ratios = [p.vertical_ratio for p in ts.points if p.vertical_ratio]
         balances = [p.stance_time_balance for p in ts.points if p.stance_time_balance]
 
@@ -383,7 +664,9 @@ class ActivityMetricsCalculator:
         if balances:
             metrics.ground_contact_balance = statistics.mean(balances)
 
-    def _calculate_elevation_metrics(self, ts: TimeSeriesData, metrics: DerivedMetrics) -> None:
+    def _calculate_elevation_metrics(
+        self, ts: TimeSeriesData, metrics: DerivedMetrics
+    ) -> None:
         """Calculate elevation impact metrics."""
         alts = ts.altitudes
         speeds = ts.speeds
@@ -405,8 +688,8 @@ class ActivityMetricsCalculator:
         if len(alts) == len(speeds) and len(alts) > 20:
             try:
                 # Calculate altitude changes and corresponding paces
-                alt_changes = [alts[i] - alts[i-1] for i in range(1, len(alts))]
-                pace_values = [1000/s if s > 0.5 else 0 for s in speeds[1:]]
+                alt_changes = [alts[i] - alts[i - 1] for i in range(1, len(alts))]
+                pace_values = [1000 / s if s > 0.5 else 0 for s in speeds[1:]]
 
                 # Simple correlation
                 if alt_changes and pace_values:
@@ -464,21 +747,29 @@ class ActivityMetricsCalculator:
 
         return splits
 
-    def _detect_anomalies(self, ts: TimeSeriesData, metrics: DerivedMetrics) -> list[str]:
+    def _detect_anomalies(
+        self, ts: TimeSeriesData, metrics: DerivedMetrics
+    ) -> list[str]:
         """Detect notable patterns or issues."""
         anomalies = []
 
         # HR drift > 10% suggests poor pacing or fatigue
         if metrics.hr_drift_pct and metrics.hr_drift_pct > 10:
-            anomalies.append(f"HR drift élevé ({metrics.hr_drift_pct:.0f}%): fatigue ou pacing")
+            anomalies.append(
+                f"HR drift élevé ({metrics.hr_drift_pct:.0f}%): fatigue ou pacing"
+            )
 
         # Decoupling > 5% suggests aerobic fatigue
         if metrics.hr_decoupling_pct and metrics.hr_decoupling_pct > 5:
-            anomalies.append(f"Découplage cardiaque ({metrics.hr_decoupling_pct:.0f}%): efficacité aérobie réduite")
+            anomalies.append(
+                f"Découplage cardiaque ({metrics.hr_decoupling_pct:.0f}%): efficacité aérobie réduite"
+            )
 
         # Pace fade > 5% suggests pacing issue
         if metrics.pace_fade_pct and metrics.pace_fade_pct > 5:
-            anomalies.append(f"Allure en baisse ({metrics.pace_fade_pct:.0f}%): départ trop rapide?")
+            anomalies.append(
+                f"Allure en baisse ({metrics.pace_fade_pct:.0f}%): départ trop rapide?"
+            )
 
         # Cadence variability high
         if metrics.cadence_cv and metrics.cadence_cv > 0.1:
@@ -486,7 +777,9 @@ class ActivityMetricsCalculator:
 
         # Stance time drift (fatigue indicator)
         if metrics.stance_time_drift_pct and metrics.stance_time_drift_pct > 8:
-            anomalies.append(f"Temps de contact augmente ({metrics.stance_time_drift_pct:.0f}%): fatigue musculaire")
+            anomalies.append(
+                f"Temps de contact augmente ({metrics.stance_time_drift_pct:.0f}%): fatigue musculaire"
+            )
 
         # Asymmetry
         if metrics.ground_contact_balance:
