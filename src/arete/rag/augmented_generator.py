@@ -109,6 +109,7 @@ RÈGLES:
 - Cite sources avec [Source: ID]
 - Si ACWR>1.3 ou TSB<-15: SÉCURITÉ prioritaire
 - Quantifie (%, durées, zones)
+- Utilise les benchmarks de force si disponibles
 
 FORMAT JSON:
 {"seance":"...", "details":{"echauffement":"...", "corps":"...", "retour_calme":"..."}, "cible":{"fc":"Zone", "allure":"...", "duree_totale":"min"}, "justification":"...", "charge_prevue":"légère|modérée|intense", "sources_utilisees":["ID"], "avertissements":[]}"""
@@ -134,6 +135,11 @@ FORMAT JSON:
 
         # Risk/intent summary
         user_parts.append(f"Risque:{context.get_risk_level():.0%} Intent:{context.infer_intent()}")
+
+        # Strength benchmarks (compact)
+        strength_summary = context.get_strength_summary()
+        if strength_summary:
+            user_parts.append(f"Force: {strength_summary}")
 
         # Compact knowledge (limited chars per doc)
         if docs:
@@ -248,6 +254,12 @@ FORMAT JSON:
             "rag_enabled": True,
         }
 
+        # Add strength context if available
+        if context.strength_benchmarks:
+            response["_metadata"]["strength_benchmarks_count"] = len(
+                context.strength_benchmarks
+            )
+
         return response
 
 
@@ -256,3 +268,50 @@ def create_augmented_generator() -> AugmentedGenerator:
     kb = KnowledgeBase()
     retriever = Retriever(kb)
     return AugmentedGenerator(knowledge_base=kb, retriever=retriever)
+
+
+def enrich_context_with_strength(
+    context: UserContext,
+    db_path: str = "data/arete.duckdb",
+) -> UserContext:
+    """Enrich UserContext with strength training benchmarks.
+
+    Fetches personal records and recent volume from strength module.
+
+    Args:
+        context: Existing user context
+        db_path: Path to DuckDB database
+
+    Returns:
+        Enriched UserContext with strength data
+    """
+    from arete.rag.retriever import StrengthBenchmark
+    from arete.strength.repository import StrengthRepository
+
+    try:
+        repo = StrengthRepository(db_path)
+
+        # Get all PRs
+        prs = repo.get_all_prs_summary()
+        context.strength_benchmarks = [
+            StrengthBenchmark(
+                exercise=pr["exercise"],
+                category=pr["category"],
+                muscle=pr["muscle"],
+                estimated_1rm=pr["estimated_1rm"],
+                weight_kg=pr["weight_kg"],
+                reps=pr["reps"],
+            )
+            for pr in prs
+        ]
+
+        # Get 30-day trends
+        trends = repo.get_strength_trends(days=30)
+        context.strength_session_count_30d = trends["session_count"]
+        context.strength_total_volume_30d = trends["total_volume_kg"]
+        context.strength_volume_by_muscle = trends["volume_by_muscle"]
+
+    except Exception as e:
+        logger.warning(f"Failed to load strength benchmarks: {e}")
+
+    return context

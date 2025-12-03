@@ -571,3 +571,101 @@ class StrengthRepository:
             result["max_volume_date"] = str(vdate) if vdate else None
 
         return result
+
+    def get_all_prs_summary(self) -> list[dict]:
+        """Get summary of personal records for all exercises with data.
+
+        Returns list of dicts with exercise name, category, and estimated 1RM.
+        Useful for RAG context enrichment.
+        """
+        conn = self._get_connection()
+
+        results = conn.execute(
+            """
+            WITH best_sets AS (
+                SELECT
+                    se.exercise_id,
+                    es.weight_kg,
+                    es.reps,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY se.exercise_id
+                        ORDER BY es.weight_kg * (1 + es.reps / 30.0) DESC
+                    ) as rn
+                FROM app.exercise_sets es
+                JOIN app.session_exercises se ON es.session_exercise_id = se.id
+                WHERE NOT es.is_warmup AND es.weight_kg > 0
+            )
+            SELECT
+                e.name,
+                e.category,
+                e.primary_muscle,
+                bs.weight_kg,
+                bs.reps,
+                ROUND(bs.weight_kg * (1 + bs.reps / 30.0), 1) as estimated_1rm
+            FROM best_sets bs
+            JOIN app.exercises e ON bs.exercise_id = e.id
+            WHERE bs.rn = 1
+            ORDER BY e.category, estimated_1rm DESC
+            """,
+        ).fetchall()
+        conn.close()
+
+        return [
+            {
+                "exercise": row[0],
+                "category": row[1],
+                "muscle": row[2],
+                "weight_kg": row[3],
+                "reps": row[4],
+                "estimated_1rm": row[5],
+            }
+            for row in results
+        ]
+
+    def get_strength_trends(self, days: int = 30) -> dict:
+        """Get strength training trends for context.
+
+        Returns volume trends, session count, and muscle distribution.
+        """
+        conn = self._get_connection()
+        cutoff_date = date.today().isoformat()
+
+        # Total volume and sessions
+        stats = conn.execute(
+            f"""
+            SELECT
+                COUNT(DISTINCT ss.id) as session_count,
+                SUM(es.reps * COALESCE(es.weight_kg, 0)) as total_volume
+            FROM app.strength_sessions ss
+            JOIN app.session_exercises se ON ss.id = se.session_id
+            JOIN app.exercise_sets es ON se.id = es.session_exercise_id
+            WHERE ss.date >= date '{cutoff_date}' - INTERVAL '{days} days'
+                AND NOT es.is_warmup
+            """,
+        ).fetchone()
+
+        # Volume per muscle group
+        muscle_volume = conn.execute(
+            f"""
+            SELECT
+                e.primary_muscle,
+                SUM(es.reps * COALESCE(es.weight_kg, 0)) as volume
+            FROM app.strength_sessions ss
+            JOIN app.session_exercises se ON ss.id = se.session_id
+            JOIN app.exercise_sets es ON se.id = es.session_exercise_id
+            JOIN app.exercises e ON se.exercise_id = e.id
+            WHERE ss.date >= date '{cutoff_date}' - INTERVAL '{days} days'
+                AND NOT es.is_warmup
+            GROUP BY e.primary_muscle
+            ORDER BY volume DESC
+            """,
+        ).fetchall()
+
+        conn.close()
+
+        return {
+            "period_days": days,
+            "session_count": stats[0] if stats else 0,
+            "total_volume_kg": round(stats[1], 0) if stats and stats[1] else 0,
+            "volume_by_muscle": {row[0]: round(row[1], 0) for row in muscle_volume},
+        }

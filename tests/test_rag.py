@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from arete.rag.knowledge_base import Document, KnowledgeBase, RetrievedDocument
-from arete.rag.retriever import Retriever, UserContext
+from arete.rag.retriever import Retriever, StrengthBenchmark, UserContext
 from arete.rag.seed_knowledge import seed_knowledge_base
 
 
@@ -193,3 +193,67 @@ class TestRetrievedDocument:
         assert doc.id == "ret_id"
         assert doc.relevance_score == 0.85
         assert doc.collection == "scientific"
+
+
+class TestStrengthBenchmarkIntegration:
+    """Tests for strength benchmark integration in UserContext."""
+
+    def test_strength_benchmark_dataclass(self):
+        """Test StrengthBenchmark creation."""
+        bench = StrengthBenchmark(
+            exercise="Back Squat",
+            category="SQUAT",
+            muscle="QUADS",
+            estimated_1rm=120.0,
+            weight_kg=100.0,
+            reps=5,
+        )
+        assert bench.exercise == "Back Squat"
+        assert bench.estimated_1rm == 120.0
+
+    def test_context_with_strength_benchmarks(self):
+        """Test context with strength benchmarks."""
+        benchmarks = [
+            StrengthBenchmark("Squat", "SQUAT", "QUADS", 120.0, 100.0, 5),
+            StrengthBenchmark("Bench", "PUSH_HORIZONTAL", "CHEST", 80.0, 70.0, 4),
+        ]
+        context = UserContext(
+            strength_benchmarks=benchmarks,
+            strength_session_count_30d=8,
+            strength_total_volume_30d=15000.0,
+        )
+        assert len(context.strength_benchmarks) == 2
+        assert context.strength_session_count_30d == 8
+        assert context.strength_total_volume_30d == 15000.0
+
+    def test_strength_summary_generation(self):
+        """Test compact strength summary for prompts."""
+        benchmarks = [
+            StrengthBenchmark("Back Squat", "SQUAT", "QUADS", 120.0, 100.0, 5),
+            StrengthBenchmark("Bench Press", "PUSH_HORIZONTAL", "CHEST", 80.0, 70.0, 4),
+            StrengthBenchmark("Deadlift", "HINGE", "GLUTES", 140.0, 120.0, 4),
+        ]
+        context = UserContext(
+            strength_benchmarks=benchmarks,
+            strength_session_count_30d=10,
+            strength_total_volume_30d=20000.0,
+        )
+        summary = context.get_strength_summary()
+
+        # Should include key lifts
+        assert "Squat:120kg" in summary or "Back Squat:120kg" in summary
+        assert "20000kg" in summary
+        assert "10sess" in summary
+
+    def test_empty_strength_summary(self):
+        """Test that empty benchmarks returns empty string."""
+        context = UserContext()
+        assert context.get_strength_summary() == ""
+
+    def test_strength_default_values(self):
+        """Test default strength values in context."""
+        context = UserContext()
+        assert context.strength_benchmarks == []
+        assert context.strength_session_count_30d == 0
+        assert context.strength_total_volume_30d == 0.0
+        assert context.strength_volume_by_muscle == {}

@@ -6,12 +6,24 @@ Implements intelligent retrieval based on user context and metrics.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from arete.rag.knowledge_base import KnowledgeBase, RetrievedDocument
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class StrengthBenchmark:
+    """Strength training benchmark for a single exercise."""
+
+    exercise: str
+    category: str
+    muscle: str
+    estimated_1rm: float
+    weight_kg: float
+    reps: int
 
 
 @dataclass
@@ -34,6 +46,12 @@ class UserContext:
 
     # Inferred intent
     intent: str | None = None
+
+    # Strength benchmarks
+    strength_benchmarks: list[StrengthBenchmark] = field(default_factory=list)
+    strength_session_count_30d: int = 0
+    strength_total_volume_30d: float = 0.0
+    strength_volume_by_muscle: dict[str, float] = field(default_factory=dict)
 
     def infer_intent(self) -> str:
         """Infer user intent from metrics."""
@@ -67,6 +85,26 @@ class UserContext:
             risk = max(risk, 0.6)
 
         return risk
+
+    def get_strength_summary(self) -> str:
+        """Get compact strength summary for prompts."""
+        if not self.strength_benchmarks:
+            return ""
+
+        parts = []
+
+        # Top lifts by category (max 4 for token efficiency)
+        seen_cats = set()
+        for bench in self.strength_benchmarks:
+            if bench.category not in seen_cats and len(seen_cats) < 4:
+                parts.append(f"{bench.exercise}:{bench.estimated_1rm:.0f}kg")
+                seen_cats.add(bench.category)
+
+        # Volume trend
+        if self.strength_session_count_30d > 0:
+            parts.append(f"Vol30d:{self.strength_total_volume_30d:.0f}kg({self.strength_session_count_30d}sess)")
+
+        return " ".join(parts)
 
 
 class Retriever:
