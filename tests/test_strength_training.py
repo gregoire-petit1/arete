@@ -212,7 +212,6 @@ class TestStrengthSessionModel:
 @pytest.fixture
 def strength_repo(tmp_path, monkeypatch):
     """Create a repository with temporary test database."""
-    import os
 
     # Point to temp database
     db_path = str(tmp_path / "test_strength.duckdb")
