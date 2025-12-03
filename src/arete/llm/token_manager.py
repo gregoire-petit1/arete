@@ -28,7 +28,7 @@ class GroqLimits:
     tokens_per_day: int
 
     @classmethod
-    def for_model(cls, model: str) -> "GroqLimits":
+    def for_model(cls, model: str) -> GroqLimits:
         """Get limits for a specific model."""
         # Groq free tier limits (as of Dec 2024)
         limits = {
@@ -214,7 +214,9 @@ class TokenManager:
                     "percent_day": round(tokens_today / limits.tokens_per_day * 100, 1),
                     "minute": tokens_minute,
                     "limit_minute": limits.tokens_per_minute,
-                    "percent_minute": round(tokens_minute / limits.tokens_per_minute * 100, 1),
+                    "percent_minute": round(
+                        tokens_minute / limits.tokens_per_minute * 100, 1
+                    ),
                 },
                 "requests": {
                     "today": requests_today,

@@ -462,11 +462,15 @@ def get_recommendations(
             acwr_zone=workload.acwr_zone.value if workload.acwr_zone else None,
             acwr_ewma=round(workload.acwr_ewma, 3) if workload.acwr_ewma else None,
             monotony=round(workload.monotony, 2) if workload.monotony else None,
-            monotony_zone=workload.monotony_zone.value if workload.monotony_zone else None,
+            monotony_zone=workload.monotony_zone.value
+            if workload.monotony_zone
+            else None,
             strain=round(workload.strain, 1) if workload.strain else None,
             strain_zone=workload.strain_zone.value if workload.strain_zone else None,
             acute_load=round(workload.acute_load, 1),
-            chronic_load=round(workload.chronic_load, 1) if workload.chronic_load else None,
+            chronic_load=round(workload.chronic_load, 1)
+            if workload.chronic_load
+            else None,
             days_analyzed=len([load for load in loads if load.duration_min > 0]),
         )
 

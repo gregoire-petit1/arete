@@ -2,8 +2,6 @@
 
 from datetime import date, timedelta
 
-import pytest
-
 from arete.features.fitness import (
     DailyTSS,
     FormZone,
@@ -32,7 +30,9 @@ class TestCTL:
     def test_ctl_basic(self) -> None:
         """CTL calculation gives reasonable values."""
         today = date.today()
-        tss_values = [DailyTSS(date=today - timedelta(days=i), tss=50) for i in range(42)]
+        tss_values = [
+            DailyTSS(date=today - timedelta(days=i), tss=50) for i in range(42)
+        ]
         ctl = calculate_ctl(tss_values, today)
         assert ctl > 0
         assert ctl < 100  # Should be below daily TSS for constant load
@@ -54,7 +54,9 @@ class TestATL:
     def test_atl_basic(self) -> None:
         """ATL calculation gives reasonable values."""
         today = date.today()
-        tss_values = [DailyTSS(date=today - timedelta(days=i), tss=50) for i in range(14)]
+        tss_values = [
+            DailyTSS(date=today - timedelta(days=i), tss=50) for i in range(14)
+        ]
         atl = calculate_atl(tss_values, today)
         assert atl > 0
 
@@ -122,7 +124,8 @@ class TestRampRate:
         today = date.today()
         # Increasing TSS over time
         tss_values = [
-            DailyTSS(date=today - timedelta(days=i), tss=50 + (42 - i)) for i in range(50)
+            DailyTSS(date=today - timedelta(days=i), tss=50 + (42 - i))
+            for i in range(50)
         ]
         ramp = calculate_ramp_rate(tss_values, today)
         assert ramp is not None
@@ -191,7 +194,9 @@ class TestFitnessMetrics:
     def test_complete_metrics(self) -> None:
         """calculate_fitness_metrics returns all fields."""
         today = date.today()
-        tss_values = [DailyTSS(date=today - timedelta(days=i), tss=50) for i in range(50)]
+        tss_values = [
+            DailyTSS(date=today - timedelta(days=i), tss=50) for i in range(50)
+        ]
         metrics = calculate_fitness_metrics(tss_values, today)
 
         assert metrics.ctl > 0
@@ -222,7 +227,8 @@ class TestPerformanceModel:
         """compute_performance_model returns all fields."""
         today = date.today()
         tss_values = [
-            DailyTSS(date=today - timedelta(days=i), tss=50 + (i % 20)) for i in range(60)
+            DailyTSS(date=today - timedelta(days=i), tss=50 + (i % 20))
+            for i in range(60)
         ]
         model = compute_performance_model(tss_values, today)
 

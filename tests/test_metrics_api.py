@@ -1,6 +1,5 @@
 """Tests for the metrics API endpoints."""
 
-import pytest
 from fastapi.testclient import TestClient
 
 from arete.api.main import app

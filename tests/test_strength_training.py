@@ -144,7 +144,10 @@ class TestStrengthSessionModel:
         ]
 
         ex2 = SessionExercise()
-        ex2.sets = [ExerciseSet(reps=10, weight_kg=50), ExerciseSet(reps=10, weight_kg=50)]
+        ex2.sets = [
+            ExerciseSet(reps=10, weight_kg=50),
+            ExerciseSet(reps=10, weight_kg=50),
+        ]
 
         session.exercises = [ex1, ex2]
 

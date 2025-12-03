@@ -135,7 +135,9 @@ class SessionMatcher:
 
         for actual in sorted_actual:
             # Only consider pending planned sessions
-            pending = [p for p in available_planned if p.status == SessionStatus.PENDING]
+            pending = [
+                p for p in available_planned if p.status == SessionStatus.PENDING
+            ]
 
             match = self.find_match(actual, pending)
             matches.append(match)
@@ -303,7 +305,4 @@ class SessionMatcher:
             {"long_run", "long", "lsd"},
         ]
 
-        for group in similar_groups:
-            if type1 in group and type2 in group:
-                return True
-        return False
+        return any(type1 in group and type2 in group for group in similar_groups)

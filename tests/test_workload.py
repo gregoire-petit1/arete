@@ -2,8 +2,6 @@
 
 from datetime import date, timedelta
 
-import pytest
-
 from arete.features.workload import (
     ACWRZone,
     DailyLoad,
@@ -51,7 +49,8 @@ class TestAcuteLoad:
         """Acute load is sum of last 7 days."""
         today = date.today()
         loads = [
-            DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5) for i in range(7)
+            DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5)
+            for i in range(7)
         ]
         acute = calculate_acute_load(loads, today)
         assert acute == 7 * 300  # 7 days × (60 × 5)
@@ -76,7 +75,8 @@ class TestChronicLoad:
         today = date.today()
         # Create 28 days of data, each day has load of 300
         loads = [
-            DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5) for i in range(28)
+            DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5)
+            for i in range(28)
         ]
         chronic = calculate_chronic_load(loads, today)
         # 7 days per week × 300 = 2100 per week, avg = 2100
@@ -140,7 +140,8 @@ class TestEWMA:
         """EWMA calculation gives reasonable values."""
         today = date.today()
         loads = [
-            DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5) for i in range(7)
+            DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5)
+            for i in range(7)
         ]
         ewma = calculate_ewma_load(loads, today, days=7)
         assert ewma > 0
@@ -149,7 +150,8 @@ class TestEWMA:
         """EWMA-based ACWR works."""
         today = date.today()
         loads = [
-            DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5) for i in range(28)
+            DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5)
+            for i in range(28)
         ]
         acwr = calculate_acwr_ewma(loads, today)
         assert acwr is not None
@@ -179,7 +181,8 @@ class TestMonotony:
         """Identical training daily has high monotony."""
         today = date.today()
         loads = [
-            DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5) for i in range(7)
+            DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5)
+            for i in range(7)
         ]
         monotony = calculate_monotony(loads, today)
         # All same loads means std = 0, returns None
@@ -244,9 +247,13 @@ class TestUtilityFunctions:
         # Week 1: load 300 each day, Week 2 (current): load 330 each day
         loads = []
         for i in range(7):
-            loads.append(DailyLoad(date=today - timedelta(days=i), duration_min=66, rpe=5))
+            loads.append(
+                DailyLoad(date=today - timedelta(days=i), duration_min=66, rpe=5)
+            )
         for i in range(7, 14):
-            loads.append(DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5))
+            loads.append(
+                DailyLoad(date=today - timedelta(days=i), duration_min=60, rpe=5)
+            )
 
         change = calculate_load_change_percent(loads, today)
         assert change is not None

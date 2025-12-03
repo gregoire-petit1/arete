@@ -542,7 +542,9 @@ def generate_recommendations(
 
     # Gather all recommendations
     recommendations.extend(_recommendations_acwr(acwr, acwr_zone, sport_type))
-    recommendations.extend(_recommendations_monotony(monotony, monotony_zone, sport_type))
+    recommendations.extend(
+        _recommendations_monotony(monotony, monotony_zone, sport_type)
+    )
     recommendations.extend(_recommendations_strain(strain, strain_zone))
 
     if tsb is not None and form_zone is not None:

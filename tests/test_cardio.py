@@ -1,7 +1,5 @@
 """Tests for cardio module."""
 
-import pytest
-
 from arete.features.cardio import (
     HRZone,
     Sex,

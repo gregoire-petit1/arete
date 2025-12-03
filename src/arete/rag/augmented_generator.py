@@ -69,7 +69,9 @@ class AugmentedGenerator:
             model = token_manager.get_best_model(estimated_tokens=2000)
 
         # Check if we can make request
-        can_proceed, reason = token_manager.can_make_request(model, estimated_tokens=2000)
+        can_proceed, reason = token_manager.can_make_request(
+            model, estimated_tokens=2000
+        )
         if not can_proceed:
             logger.warning(f"Rate limit: {reason}, using fallback")
             return self._fallback_response()
@@ -134,7 +136,9 @@ FORMAT JSON:
             user_parts.append(" ".join(metrics))
 
         # Risk/intent summary
-        user_parts.append(f"Risque:{context.get_risk_level():.0%} Intent:{context.infer_intent()}")
+        user_parts.append(
+            f"Risque:{context.get_risk_level():.0%} Intent:{context.infer_intent()}"
+        )
 
         # Strength benchmarks (compact)
         strength_summary = context.get_strength_summary()

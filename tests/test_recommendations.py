@@ -1,16 +1,13 @@
 """Tests for recommendations module."""
 
-import pytest
-
+from arete.features.fitness import FormZone
 from arete.features.recommendations import (
     Category,
     Priority,
-    Recommendation,
     generate_recommendations,
     generate_week_plan,
 )
 from arete.features.workload import ACWRZone, MonotonyZone, StrainZone
-from arete.features.fitness import FormZone
 
 
 class TestACWRRecommendations:
@@ -26,7 +23,9 @@ class TestACWRRecommendations:
             strain=None,
             strain_zone=None,
         )
-        critical_recs = [r for r in report.recommendations if r.priority == Priority.CRITICAL]
+        critical_recs = [
+            r for r in report.recommendations if r.priority == Priority.CRITICAL
+        ]
         assert len(critical_recs) > 0
         assert report.risk_level == "high"
 
@@ -54,7 +53,9 @@ class TestACWRRecommendations:
             strain=None,
             strain_zone=None,
         )
-        progression_recs = [r for r in report.recommendations if r.category == Category.PROGRESSION]
+        progression_recs = [
+            r for r in report.recommendations if r.category == Category.PROGRESSION
+        ]
         assert len(progression_recs) > 0
 
 
@@ -72,7 +73,9 @@ class TestMonotonyRecommendations:
             strain_zone=None,
             sport_type="cardio",
         )
-        variety_recs = [r for r in report.recommendations if r.category == Category.VARIETY]
+        variety_recs = [
+            r for r in report.recommendations if r.category == Category.VARIETY
+        ]
         assert len(variety_recs) > 0
 
     def test_strength_specific_variety(self) -> None:
@@ -86,10 +89,15 @@ class TestMonotonyRecommendations:
             strain_zone=None,
             sport_type="strength",
         )
-        variety_recs = [r for r in report.recommendations if r.category == Category.VARIETY]
+        variety_recs = [
+            r for r in report.recommendations if r.category == Category.VARIETY
+        ]
         assert len(variety_recs) > 0
         # Should mention strength-specific suggestions
-        assert any("répétitions" in r.actions[0] or "lourdes" in r.actions[0] for r in variety_recs)
+        assert any(
+            "répétitions" in r.actions[0] or "lourdes" in r.actions[0]
+            for r in variety_recs
+        )
 
 
 class TestStrainRecommendations:
@@ -105,7 +113,9 @@ class TestStrainRecommendations:
             strain=7000,
             strain_zone=StrainZone.CRITICAL,
         )
-        recovery_recs = [r for r in report.recommendations if r.category == Category.RECOVERY]
+        recovery_recs = [
+            r for r in report.recommendations if r.category == Category.RECOVERY
+        ]
         assert len(recovery_recs) > 0
         assert any(r.priority == Priority.CRITICAL for r in recovery_recs)
 
@@ -125,7 +135,9 @@ class TestFormRecommendations:
             tsb=-30,
             form_zone=FormZone.EXHAUSTED,
         )
-        critical_recs = [r for r in report.recommendations if r.priority == Priority.CRITICAL]
+        critical_recs = [
+            r for r in report.recommendations if r.priority == Priority.CRITICAL
+        ]
         assert len(critical_recs) > 0
 
     def test_fresh_form_performance(self) -> None:
@@ -140,7 +152,9 @@ class TestFormRecommendations:
             tsb=15,
             form_zone=FormZone.FRESH,
         )
-        perf_recs = [r for r in report.recommendations if r.category == Category.PERFORMANCE]
+        perf_recs = [
+            r for r in report.recommendations if r.category == Category.PERFORMANCE
+        ]
         assert len(perf_recs) > 0
 
 

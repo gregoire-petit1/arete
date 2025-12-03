@@ -146,17 +146,17 @@ def get_protocol_documents() -> list[Document]:
             - TSB < -20
             - Monotonie > 2.0 prolongée
             - Fatigue subjective > 7/10
-            
+
             Implémentation:
             - Réduire le volume de 40-50%
             - Réduire l'intensité de 20-30%
             - Maintenir la fréquence (éviter le repos complet)
             - Durée: 5-7 jours
-            
+
             Exemple running:
             - Semaine normale: 50km avec 2 séances qualité
             - Semaine deload: 25-30km en endurance fondamentale uniquement
-            
+
             ACWR cible après deload: retour vers 0.8-1.0""",
             metadata={
                 "type": "protocol",
@@ -170,19 +170,19 @@ def get_protocol_documents() -> list[Document]:
             id="proto_build_phase",
             content="""Phase de construction (Build Phase) en périodisation:
             Objectif: Augmenter progressivement la charge pour développer la fitness.
-            
+
             Durée typique: 3-4 semaines de montée + 1 semaine deload
-            
+
             Progression recommandée:
             - Semaine 1: 100% (baseline)
             - Semaine 2: 105-110%
             - Semaine 3: 110-120%
             - Semaine 4: 115-125%
             - Semaine 5: DELOAD (60-70%)
-            
+
             ACWR cible: 1.0-1.2 (zone optimale haute)
             Monotonie cible: < 1.8
-            
+
             Surveillance:
             - Si ACWR > 1.3: réduire la progression
             - Si TSB < -25: insérer récupération
@@ -200,21 +200,21 @@ def get_protocol_documents() -> list[Document]:
             id="proto_recovery_session",
             content="""Séance de récupération active:
             Objectif: Favoriser récupération sans accumulation de fatigue.
-            
+
             Indications:
             - Jour après séance intense
             - TSB très négatif (< -15)
             - Fatigue ressentie > 6/10
             - ACWR élevé nécessitant réduction
-            
+
             Structure type (45-60 min):
             - Échauffement: 10-15' très progressif
             - Corps: 25-35' en Z1 (< 65% FCM)
             - Retour au calme: 10-15' avec étirements
-            
+
             Intensité: RPE 2-3/10, conversation aisée
             Éviter: toute accélération, dénivelé, terrain difficile
-            
+
             Alternative: 30-40' vélo / natation / marche
             Contribution ACWR: minimale (charge très faible)""",
             metadata={
@@ -229,26 +229,26 @@ def get_protocol_documents() -> list[Document]:
             id="proto_interval_training",
             content="""Entraînement par intervalles (fractionné):
             Objectif: Développer VO2max et vitesse maximale aérobie.
-            
+
             Types principaux:
             1. Courts (30/30, 200m): développement VO2max
                - 10-12 × 30" rapide / 30" récup
                - Allure: 100-110% VMA
                - Charge ACWR: modérée-haute
-            
+
             2. Moyens (400-800m): seuil anaérobie
                - 6-8 × 400m récup 1'30
                - Allure: 95-100% VMA
                - Charge ACWR: haute
-            
+
             3. Longs (1000-2000m): endurance spécifique
                - 4-5 × 1000m récup 2-3'
                - Allure: 90-95% VMA
                - Charge ACWR: très haute
-            
+
             Fréquence: 1-2×/semaine selon niveau
             Prérequis: base aérobie solide (6-8 semaines endurance)
-            
+
             Précautions si ACWR > 1.2:
             - Réduire nombre de répétitions
             - Augmenter temps de récupération
@@ -270,22 +270,22 @@ def get_exercise_documents() -> list[Document]:
             id="ex_footing_z2",
             content="""Footing en Zone 2 (Endurance Fondamentale):
             Description: Course à allure modérée permettant une conversation.
-            
+
             Caractéristiques:
             - FC: 65-75% FCM (ou 60-70% FCR)
             - RPE: 3-4/10
             - Respiration: confortable, phrases complètes possibles
             - Durée typique: 40-90 minutes
-            
+
             Bénéfices:
             - Développement aérobie de base
             - Oxydation des graisses
             - Récupération active
             - Faible stress mécanique
-            
-            Erreur fréquente: Aller trop vite ! 
+
+            Erreur fréquente: Aller trop vite !
             La majorité de l'entraînement (80%) devrait être en Z2.
-            
+
             Contribution charge: faible-modérée
             Fréquence recommandée: 3-5×/semaine""",
             metadata={
@@ -301,27 +301,27 @@ def get_exercise_documents() -> list[Document]:
             id="ex_tempo_run",
             content="""Course au tempo (seuil lactique):
             Description: Course soutenue à allure "inconfortablement confortable".
-            
+
             Caractéristiques:
             - FC: 85-90% FCM (seuil lactique)
             - RPE: 6-7/10
             - Respiration: difficile, phrases courtes seulement
             - Allure: environ allure semi-marathon
             - Durée: 20-40 minutes
-            
+
             Bénéfices:
             - Repousse le seuil lactique
             - Améliore l'économie de course
             - Prépare aux courses longues
-            
+
             Structure type:
             - 15' échauffement progressif
             - 20-30' tempo continu
             - 10' retour au calme
-            
+
             Contribution charge: haute
             Fréquence: 1×/semaine max
-            
+
             Précaution: Éviter si ACWR > 1.2 ou TSB < -15""",
             metadata={
                 "type": "exercise",
@@ -336,27 +336,27 @@ def get_exercise_documents() -> list[Document]:
             id="ex_long_run",
             content="""Sortie longue (Long Run):
             Description: Course longue durée à allure modérée.
-            
+
             Caractéristiques:
             - FC: 65-75% FCM (Z2, parfois toucher Z3)
             - RPE: 4-5/10 au départ, 6-7/10 en fin
             - Durée: 90 min à 3h selon objectif
             - Allure: marathon +30-60 sec/km
-            
+
             Bénéfices:
             - Adaptation cardiovasculaire
             - Résistance à la fatigue
             - Gestion énergétique
             - Renforcement mental
-            
+
             Progression:
             - Débutant: 60-90 min
             - Intermédiaire: 90-120 min
             - Marathon: jusqu'à 2h30-3h
-            
+
             Contribution charge: très haute
             Fréquence: 1×/semaine (week-end)
-            
+
             Récupération nécessaire: 48-72h
             Impact ACWR: significatif, planifier en conséquence""",
             metadata={
@@ -372,21 +372,21 @@ def get_exercise_documents() -> list[Document]:
             id="ex_strength_squat",
             content="""Back Squat (Squat arrière):
             Description: Exercice fondamental de force pour le bas du corps.
-            
+
             Muscles ciblés: Quadriceps, fessiers, ischio-jambiers, core.
-            
+
             Zones d'entraînement:
             - Endurance: 60-70% 1RM, 12-15 reps
             - Hypertrophie: 70-80% 1RM, 8-12 reps
             - Force: 80-90% 1RM, 4-6 reps
             - Force max: 90%+ 1RM, 1-3 reps
-            
+
             INOL (Intensity Number of Lifts):
             - < 0.75: léger (récupération)
             - 0.75-1.0: optimal pour progression
             - 1.0-2.0: élevé, fatigue importante
             - > 2.0: très élevé, risque surentraînement
-            
+
             Variations si douleur/fatigue:
             - Goblet squat (moins de charge lombaire)
             - Front squat (moins de charge lombaire)

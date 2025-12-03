@@ -1,17 +1,17 @@
 """Tests for LLM client module."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from datetime import datetime
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+
 from arete.llm.client import (
     TrainingContext,
-    generate_plan,
-    _generate_fallback_plan,
     _build_user_prompt,
+    _generate_fallback_plan,
+    generate_plan,
     get_client,
 )
-from arete.llm.token_manager import TokenManager, GroqLimits
+from arete.llm.token_manager import GroqLimits, TokenManager
 
 
 class TestTrainingContext:
@@ -226,7 +226,9 @@ class TestGeneratePlan:
 
         with (
             patch("arete.llm.client.get_client", return_value=mock_client),
-            patch("arete.llm.client.get_token_manager", return_value=mock_token_manager),
+            patch(
+                "arete.llm.client.get_token_manager", return_value=mock_token_manager
+            ),
         ):
             ctx = TrainingContext(
                 date="2025-12-02",
@@ -248,7 +250,9 @@ class TestGeneratePlan:
 
         with (
             patch("arete.llm.client.get_client", return_value=mock_client),
-            patch("arete.llm.client.get_token_manager", return_value=mock_token_manager),
+            patch(
+                "arete.llm.client.get_token_manager", return_value=mock_token_manager
+            ),
         ):
             ctx = TrainingContext(
                 date="2025-12-02",
@@ -272,7 +276,9 @@ class TestGeneratePlan:
 
         with (
             patch("arete.llm.client.get_client", return_value=MagicMock()),
-            patch("arete.llm.client.get_token_manager", return_value=mock_token_manager),
+            patch(
+                "arete.llm.client.get_token_manager", return_value=mock_token_manager
+            ),
         ):
             ctx = TrainingContext(
                 date="2025-12-02",

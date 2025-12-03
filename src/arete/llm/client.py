@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 
 # Groq configuration
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"  # Best quality/speed for French text generation
+DEFAULT_MODEL = (
+    "llama-3.3-70b-versatile"  # Best quality/speed for French text generation
+)
 
 # Token budget per request (prompt + completion)
 MAX_PROMPT_TOKENS = 800  # Reduced from ~1500

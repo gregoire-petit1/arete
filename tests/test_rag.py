@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from arete.rag.knowledge_base import Document, KnowledgeBase, RetrievedDocument
-from arete.rag.retriever import Retriever, CardioBenchmark, StrengthBenchmark, UserContext
+from arete.rag.retriever import (
+    CardioBenchmark,
+    Retriever,
+    StrengthBenchmark,
+    UserContext,
+)
 from arete.rag.seed_knowledge import seed_knowledge_base
 
 

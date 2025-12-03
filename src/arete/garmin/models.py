@@ -220,7 +220,9 @@ class SessionMatch:
     @property
     def is_matched(self) -> bool:
         """Whether a match was found."""
-        return self.planned_session is not None and self.confidence != MatchConfidence.NONE
+        return (
+            self.planned_session is not None and self.confidence != MatchConfidence.NONE
+        )
 
     def summary(self) -> str:
         """Human-readable summary."""

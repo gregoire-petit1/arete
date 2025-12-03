@@ -113,7 +113,11 @@ class ZoneDistribution:
     def total_min(self) -> float:
         """Total time across all zones."""
         return (
-            self.zone_1_min + self.zone_2_min + self.zone_3_min + self.zone_4_min + self.zone_5_min
+            self.zone_1_min
+            + self.zone_2_min
+            + self.zone_3_min
+            + self.zone_4_min
+            + self.zone_5_min
         )
 
     def as_percentages(self) -> dict[HRZone, float]:

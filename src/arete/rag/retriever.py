@@ -121,7 +121,9 @@ class UserContext:
 
         # Volume trend
         if self.strength_session_count_30d > 0:
-            parts.append(f"Vol30d:{self.strength_total_volume_30d:.0f}kg({self.strength_session_count_30d}sess)")
+            parts.append(
+                f"Vol30d:{self.strength_total_volume_30d:.0f}kg({self.strength_session_count_30d}sess)"
+            )
 
         return " ".join(parts)
 
@@ -329,7 +331,9 @@ class Retriever:
             other_words = set(other.content.lower().split())
             if not doc_words or not other_words:
                 continue
-            overlap = len(doc_words & other_words) / min(len(doc_words), len(other_words))
+            overlap = len(doc_words & other_words) / min(
+                len(doc_words), len(other_words)
+            )
             if overlap > threshold:
                 return True
 

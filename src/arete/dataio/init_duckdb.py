@@ -100,46 +100,46 @@ CREATE TABLE IF NOT EXISTS app.actual_sessions (
     date                DATE NOT NULL,
     sport               VARCHAR NOT NULL DEFAULT 'running',
     session_type        VARCHAR,               -- auto-detected or manual
-    
+
     -- Core metrics
     duration_sec        INTEGER NOT NULL,
     distance_m          DOUBLE,
     calories            INTEGER,
-    
+
     -- Heart rate
     avg_hr              INTEGER,
     max_hr              INTEGER,
     hr_zones_json       VARCHAR,               -- JSON: {"Z1": 300, "Z2": 1200, ...} seconds per zone
-    
+
     -- Pace/Speed
     avg_pace_sec_km     INTEGER,               -- seconds per km
     avg_speed_mps       DOUBLE,                -- meters per second
     max_speed_mps       DOUBLE,
-    
+
     -- Elevation
     ascent_m            DOUBLE,
     descent_m           DOUBLE,
-    
+
     -- GPS (optional, for route analysis)
     start_lat           DOUBLE,
     start_lon           DOUBLE,
-    
+
     -- Source tracking
     source              VARCHAR NOT NULL,      -- 'fit_file', 'garmin_connect', 'manual', 'strava'
     source_file         VARCHAR,               -- original filename
     garmin_activity_id  VARCHAR,               -- Garmin Connect activity ID
-    
+
     -- Running dynamics (from Garmin sensors)
     avg_cadence         INTEGER,               -- steps per minute (running) or RPM (cycling)
     max_cadence         INTEGER,
     avg_vertical_oscillation DOUBLE,           -- mm (running only)
     avg_ground_contact_time  INTEGER,          -- ms (running only)
     avg_stride_length   DOUBLE,                -- meters
-    
+
     -- Computed adherence (filled by matching logic)
     adherence_score     DOUBLE,                -- 0-100: how well it matched the plan
     intensity_deviation DOUBLE,                -- % deviation from planned intensity
-    
+
     -- Timestamps
     start_time          TIMESTAMP,
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP

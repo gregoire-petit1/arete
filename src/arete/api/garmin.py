@@ -241,7 +241,9 @@ def delete_planned_session(session_id: int):
 @router.post("/upload-fit", response_model=FITUploadResponse)
 async def upload_fit_file(
     file: UploadFile = File(..., description="FIT file from Garmin device"),
-    auto_match: bool = Query(True, description="Automatically match to planned session"),
+    auto_match: bool = Query(
+        True, description="Automatically match to planned session"
+    ),
 ):
     """Upload a FIT file and parse the activity.
 
@@ -274,7 +276,9 @@ async def upload_fit_file(
         parsed.source_file = Path(file.filename).name
     except Exception as e:
         logger.error(f"Failed to parse FIT file: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to parse FIT file: {e}")
+        raise HTTPException(
+            status_code=400, detail=f"Failed to parse FIT file: {e}"
+        ) from e
 
     # Convert parsed activity to ActualSession
     actual = ActualSession(
@@ -406,7 +410,9 @@ def unmatch_session(session_id: int):
 
     if actual.planned_session_id:
         # Reset planned session status
-        _repo.update_planned_session_status(actual.planned_session_id, SessionStatus.PENDING)
+        _repo.update_planned_session_status(
+            actual.planned_session_id, SessionStatus.PENDING
+        )
 
     success = _repo.update_actual_session_match(session_id, None)
     if not success:
@@ -465,7 +471,9 @@ class AnalysisResponse(BaseModel):
 def analyze_activity(
     session_id: int,
     force: bool = Query(False, description="Force re-analysis"),
-    detailed: bool = Query(False, description="Enable in-depth analysis with time series metrics"),
+    detailed: bool = Query(
+        False, description="Enable in-depth analysis with time series metrics"
+    ),
 ):
     """Analyze an actual session using LLM.
 
@@ -488,25 +496,21 @@ def analyze_activity(
     if not actual:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Determine cache key (include detailed flag)
-    cache_type = "detailed" if detailed else None
-
     # Check for cached analysis
     if not force:
         cached = _repo.get_analysis(session_id)
-        if cached:
-            # Only use cache if analysis type matches request
-            if (detailed and cached["analysis_type"] == "detailed") or (
-                not detailed and cached["analysis_type"] != "detailed"
-            ):
-                return AnalysisResponse(
-                    actual_session_id=session_id,
-                    analysis_type=cached["analysis_type"],
-                    insights=cached["insights"],
-                    recommendations=cached["recommendations"] or "",
-                    generated_by=cached["generated_by"],
-                    cached=True,
-                )
+        if cached and (
+            (detailed and cached["analysis_type"] == "detailed")
+            or (not detailed and cached["analysis_type"] != "detailed")
+        ):
+            return AnalysisResponse(
+                actual_session_id=session_id,
+                analysis_type=cached["analysis_type"],
+                insights=cached["insights"],
+                recommendations=cached["recommendations"] or "",
+                generated_by=cached["generated_by"],
+                cached=True,
+            )
 
     # Get matched planned session if exists
     planned = None
@@ -527,7 +531,9 @@ def analyze_activity(
             from pathlib import Path
 
             data_dir = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "..", "data"
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+                "..",
+                "data",
             )
             # Sanitize filename to prevent path traversal
             safe_filename = Path(actual.source_file).name
@@ -538,14 +544,17 @@ def analyze_activity(
                 # Try with full filename
                 for ext in [".fit", ".FIT"]:
                     test_path = os.path.join(
-                        data_dir, safe_filename.replace(".fit", ext).replace(".FIT", ext)
+                        data_dir,
+                        safe_filename.replace(".fit", ext).replace(".FIT", ext),
                     )
                     if os.path.exists(test_path):
                         fit_path = test_path
                         break
 
         if not fit_path:
-            logger.warning(f"FIT file not found for detailed analysis: {actual.source_file}")
+            logger.warning(
+                f"FIT file not found for detailed analysis: {actual.source_file}"
+            )
             raise HTTPException(
                 status_code=400,
                 detail="FIT file not found. Detailed analysis requires the original file.",

@@ -244,7 +244,9 @@ def get_exercise(exercise_id: int):
     return _exercise_to_response(exercise)
 
 
-@router.get("/exercises/{exercise_id}/history", response_model=list[ExerciseHistoryResponse])
+@router.get(
+    "/exercises/{exercise_id}/history", response_model=list[ExerciseHistoryResponse]
+)
 def get_exercise_history(exercise_id: int, limit: int = Query(20, ge=1, le=100)):
     """Get performance history for an exercise."""
     exercise = _repo.get_exercise(exercise_id)

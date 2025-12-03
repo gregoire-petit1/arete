@@ -172,8 +172,12 @@ class KnowledgeBase:
                 retrieved.append(
                     RetrievedDocument(
                         id=doc_id,
-                        content=results["documents"][0][i] if results["documents"] else "",
-                        metadata=results["metadatas"][0][i] if results["metadatas"] else {},
+                        content=results["documents"][0][i]
+                        if results["documents"]
+                        else "",
+                        metadata=results["metadatas"][0][i]
+                        if results["metadatas"]
+                        else {},
                         relevance_score=similarity,
                         collection=collection,
                     )

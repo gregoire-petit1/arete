@@ -1,7 +1,5 @@
 """Tests for strength module."""
 
-import pytest
-
 from arete.features.strength import (
     Exercise,
     ExerciseSet,
