@@ -324,15 +324,19 @@ def enrich_context_with_strength(
 
 def enrich_context_with_cardio(
     context: UserContext,
-    db_path: str = "data/arete.duckdb",
+    db_path: str = "data/arete.duckdb",  # Kept for API consistency; GarminRepository uses ARETE_DB env
 ) -> UserContext:
     """Enrich UserContext with cardio/running benchmarks.
 
     Fetches cadence, vertical oscillation, pace benchmarks from Garmin data.
 
+    Note:
+        GarminRepository uses the ARETE_DB environment variable for the database path.
+        The db_path parameter is maintained for API consistency with enrich_context_with_strength.
+
     Args:
         context: Existing user context
-        db_path: Path to DuckDB database
+        db_path: Path to DuckDB database (unused; for API consistency)
 
     Returns:
         Enriched UserContext with cardio data

@@ -493,12 +493,14 @@ class TestGarminRepositoryRagMethods:
         )
         session_id = garmin_repo.create_actual_session(session)
 
-        drift = garmin_repo.get_hr_drift_analysis(days=30)
+        try:
+            drift = garmin_repo.get_hr_drift_analysis(days=30)
 
-        # Should detect this session
-        flagged = [d for d in drift if d["session_id"] == session_id]
-        if flagged:  # May not be flagged if date issues
-            assert flagged[0]["hr_spread_pct"] > 15
-
-        # Cleanup
-        garmin_repo.delete_actual_session(session_id)
+            # Should detect this session with >20% spread flagged as potential fatigue
+            flagged = [d for d in drift if d["session_id"] == session_id]
+            assert len(flagged) == 1, f"Expected session to be flagged, got {len(flagged)} matches"
+            assert flagged[0]["hr_spread_pct"] > 20, "HR spread should exceed 20% threshold"
+            assert flagged[0]["flag"] == "potential_fatigue"
+        finally:
+            # Cleanup
+            garmin_repo.delete_actual_session(session_id)
