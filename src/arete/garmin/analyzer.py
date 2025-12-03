@@ -541,8 +541,6 @@ def _generate_fallback_interval_analysis(
     workout: WorkoutStructure,
 ) -> ActivityAnalysis:
     """Generate rule-based interval workout analysis."""
-    import json as json_module
-
     insights = {
         "execution": {"note": "B", "respect_structure": "oui", "regularite": "bonne"},
         "intervalles": {
@@ -554,9 +552,9 @@ def _generate_fallback_interval_analysis(
         "recuperations": {"analyse": "", "adequates": "oui"},
         "physiologie": {"hr_evolution": "", "recup_cardiaque": "moyenne"},
         "recommendation_prioritaire": "",
-        "_metrics": json_module.loads(metrics.to_compact_json()),
+        "_metrics": json.loads(metrics.to_compact_json()),
         "_anomalies": metrics.anomalies,
-        "_workout_structure": json_module.loads(workout.to_compact_json()),
+        "_workout_structure": json.loads(workout.to_compact_json()),
         "_is_interval_workout": True,
     }
 

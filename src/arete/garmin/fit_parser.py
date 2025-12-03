@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
@@ -272,11 +272,11 @@ class FITParser:
         last_timestamp: datetime | None = None
 
         # Time series data (only if detailed=True)
-        time_series_points: list[Any] = [] if detailed else []
+        time_series_points: list[Any] = []
         start_time: datetime | None = None
 
         # Lap data (only if detailed=True)
-        lap_records: list[dict[str, Any]] = [] if detailed else []
+        lap_records: list[dict[str, Any]] = []
 
         for record in fit_file.get_messages():
             record_type = record.name
@@ -525,7 +525,7 @@ class FITParser:
             "avg_vertical_oscillation": fields.get("avg_vertical_oscillation"),
         }
 
-    def _build_workout_structure(self, lap_records: list[dict[str, Any]]) -> "WorkoutStructure":
+    def _build_workout_structure(self, lap_records: list[dict[str, Any]]) -> WorkoutStructure:
         """Build workout structure from lap records.
 
         Args:
@@ -537,15 +537,17 @@ class FITParser:
         from arete.garmin.time_series import LapData, LapIntensity, WorkoutStructure
 
         structure = WorkoutStructure()
+        lap_counter = 0
 
-        for i, lap_data in enumerate(lap_records):
+        for lap_data in lap_records:
             # Skip session_end laps
             trigger = str(lap_data.get("lap_trigger", "")).lower()
             if trigger == "session_end":
                 continue
 
+            lap_counter += 1
             lap = LapData(
-                lap_number=i + 1,
+                lap_number=lap_counter,
                 intensity=LapIntensity.from_fit_value(lap_data.get("intensity")),
                 trigger=trigger,
                 duration_sec=lap_data.get("duration_sec", 0),

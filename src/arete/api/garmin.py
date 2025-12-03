@@ -18,8 +18,8 @@ from pydantic import BaseModel, Field
 from arete.garmin.fit_parser import FITParser
 from arete.garmin.matcher import SessionMatcher
 from arete.garmin.models import (
-    ActualSession,
     ActivitySource,
+    ActualSession,
     PlannedSession,
     SessionStatus,
     SessionType,
@@ -249,15 +249,29 @@ async def upload_fit_file(
     to a planned session based on date and activity type.
     """
     import io
+    from pathlib import Path
 
     if not file.filename or not file.filename.lower().endswith(".fit"):
         raise HTTPException(status_code=400, detail="File must be a .fit file")
 
+    # Read with size limit (10MB for typical FIT files)
+    MAX_FIT_SIZE = 10 * 1024 * 1024  # 10MB
+    content = bytearray()
+    total_size = 0
+
+    while chunk := await file.read(8192):
+        total_size += len(chunk)
+        if total_size > MAX_FIT_SIZE:
+            raise HTTPException(status_code=413, detail="FIT file too large (max 10MB)")
+        content.extend(chunk)
+
+    content = bytes(content)
+
     try:
-        content = await file.read()
         parser = FITParser()
         parsed = parser.parse_stream(io.BytesIO(content))
-        parsed.source_file = file.filename
+        # Sanitize filename to prevent path traversal
+        parsed.source_file = Path(file.filename).name
     except Exception as e:
         logger.error(f"Failed to parse FIT file: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to parse FIT file: {e}")
@@ -510,18 +524,21 @@ def analyze_activity(
         if actual.source_file:
             # Try to find the FIT file
             import os
+            from pathlib import Path
 
             data_dir = os.path.join(
                 os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "..", "data"
             )
-            potential_path = os.path.join(data_dir, actual.source_file)
+            # Sanitize filename to prevent path traversal
+            safe_filename = Path(actual.source_file).name
+            potential_path = os.path.join(data_dir, safe_filename)
             if os.path.exists(potential_path):
                 fit_path = potential_path
             else:
                 # Try with full filename
                 for ext in [".fit", ".FIT"]:
                     test_path = os.path.join(
-                        data_dir, actual.source_file.replace(".fit", ext).replace(".FIT", ext)
+                        data_dir, safe_filename.replace(".fit", ext).replace(".FIT", ext)
                     )
                     if os.path.exists(test_path):
                         fit_path = test_path
@@ -531,7 +548,7 @@ def analyze_activity(
             logger.warning(f"FIT file not found for detailed analysis: {actual.source_file}")
             raise HTTPException(
                 status_code=400,
-                detail=f"FIT file not found: {actual.source_file}. Detailed analysis requires the original file.",
+                detail="FIT file not found. Detailed analysis requires the original file.",
             )
 
         analysis = analyze_activity_detailed(actual, planned, fit_path)

@@ -1,20 +1,19 @@
 """Tests for Garmin pipeline module."""
 
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 
 import pytest
 
 from arete.garmin.matcher import SessionMatcher
 from arete.garmin.models import (
-    ActualSession,
     ActivitySource,
+    ActualSession,
     MatchConfidence,
     PlannedSession,
     SessionStatus,
     SessionType,
 )
 from arete.garmin.repository import GarminRepository
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # Model Tests
@@ -292,6 +291,9 @@ class TestGarminRepository:
         assert retrieved.duration_sec == 2700
         assert retrieved.avg_hr == 145
 
+        # Cleanup
+        repo.delete_actual_session(session_id)
+
     def test_match_actual_to_planned(self, repo):
         """Test matching actual session to planned session."""
         # Create planned session
@@ -319,6 +321,7 @@ class TestGarminRepository:
         assert updated.adherence_score == 95.0
 
         # Cleanup
+        repo.delete_actual_session(actual_id)
         repo.delete_planned_session(planned_id)
 
     def test_get_matches_summary(self, repo):
@@ -417,5 +420,6 @@ class TestGarminIntegration:
         assert summary["adherence_rate"] > 0
 
         # Cleanup
+        repo.delete_actual_session(actual_id)
         for pid in planned_ids:
             repo.delete_planned_session(pid)

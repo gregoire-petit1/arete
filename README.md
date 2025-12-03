@@ -173,6 +173,7 @@ curl -X POST "http://localhost:8000/garmin/actual/1/analyze?detailed=true"
 | `/garmin/actual/{id}/analyze`  | POST   | Run LLM analysis             |
 | `/garmin/actual/{id}/analysis` | GET    | Get cached analysis          |
 | `/garmin/summary`              | GET    | Matching statistics          |
+| `/garmin/unmatched`            | GET    | Unmatched sessions           |
 
 ## Features Engineering Module
 

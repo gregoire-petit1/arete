@@ -1,10 +1,11 @@
 """Data models for Garmin pipeline.
 
-Pydantic models for planned/actual sessions and matching results.
+Dataclass models for planned/actual sessions and matching results.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import Enum
@@ -235,11 +236,12 @@ class SessionAnalysis:
     @property
     def insights(self) -> dict[str, Any]:
         """Parse insights JSON."""
-        import json
-
-        if self.insights_json:
+        if not self.insights_json:
+            return {}
+        try:
             return json.loads(self.insights_json)
-        return {}
+        except json.JSONDecodeError:
+            return {}
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for DB insertion."""

@@ -78,7 +78,7 @@ class SessionMatcher:
                 planned_session=None,
                 confidence=MatchConfidence.NONE,
                 adherence_score=0.0,
-                duration_deviation_pct=0.0,
+                duration_deviation_pct=None,
                 intensity_deviation_pct=None,
                 notes=["Aucune séance planifiée pour cette date"],
             )
@@ -274,7 +274,8 @@ class SessionMatcher:
         if planned_zone not in zone_to_hr_pct:
             return None
 
-        # Assume HR max of 190 for now (should come from user profile)
+        # TODO: HR max should come from user profile, not hardcoded
+        # Hardcoded value can significantly skew intensity calculations
         hr_max = 190
         actual_hr_pct = actual.avg_hr / hr_max
         planned_hr_pct = zone_to_hr_pct[planned_zone]

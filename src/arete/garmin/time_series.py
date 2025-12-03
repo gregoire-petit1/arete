@@ -603,11 +603,17 @@ class ActivityMetricsCalculator:
 
         # First half ratio
         hr1 = statistics.mean(hrs[:mid])
-        pace1 = statistics.mean([1000 / s for s in speeds[:mid] if s > 0.5])
+        paces_first = [1000 / s for s in speeds[:mid] if s > 0.5]
+        if not paces_first:
+            return 0.0
+        pace1 = statistics.mean(paces_first)
 
         # Second half ratio
         hr2 = statistics.mean(hrs[mid:])
-        pace2 = statistics.mean([1000 / s for s in speeds[mid:] if s > 0.5])
+        paces_second = [1000 / s for s in speeds[mid:] if s > 0.5]
+        if not paces_second:
+            return 0.0
+        pace2 = statistics.mean(paces_second)
 
         if pace1 == 0 or pace2 == 0:
             return 0.0

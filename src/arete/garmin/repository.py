@@ -7,8 +7,8 @@ import duckdb
 
 from arete.dataio.db import connect
 from arete.garmin.models import (
-    ActualSession,
     ActivitySource,
+    ActualSession,
     PlannedSession,
     SessionStatus,
     SessionType,
@@ -339,6 +339,15 @@ class GarminRepository:
             RETURNING id
             """,
             [planned_id, adherence_score, actual_id],
+        ).fetchone()
+        conn.close()
+        return result is not None
+
+    def delete_actual_session(self, session_id: int) -> bool:
+        """Delete an actual session by ID."""
+        conn = self._get_connection()
+        result = conn.execute(
+            "DELETE FROM actual_sessions WHERE id = ? RETURNING id", [session_id]
         ).fetchone()
         conn.close()
         return result is not None
