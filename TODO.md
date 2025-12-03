@@ -2,63 +2,34 @@
 
 *Last updated: 3 December 2025*
 
-## 📋 Today's Session
+## 📋 Completed
 
-### 1. ✅ LLM Analysis Enhancement (DONE)
+### 1. ✅ LLM Analysis Enhancement
 - [x] Basic activity analysis
 - [x] Detailed time series analysis
 - [x] Lap-based interval workout detection
 - [ ] **Future**: Chart/visual analysis when available
 
----
+### 2. ✅ Data Formatting Fixes
+- [x] `duration_min` formatted as MM:SS
+- [x] `distance_km` rounded to 2 decimals
 
-### 2. 🔧 Data Formatting Fixes
-**Issue**: `duration_min` and `distance_km` display ugly floats
-```json
-"duration_min": 43.416666666666664,
-"distance_km": 6.686229999999999
-```
-**Solution**: Round to 1-2 decimals in API responses
+### 3. ✅ Strength Training Module
+- [x] Create `src/arete/strength/models.py` (Exercise, ExerciseSet, StrengthSession)
+- [x] Create `src/arete/strength/repository.py` (full CRUD + PRs + trends)
+- [x] Add DB tables in `init_duckdb.py` (exercises, exercise_sets, strength_sessions)
+- [x] Create API endpoints `/strength/*` (12 endpoints)
+- [x] 25 tests passing
 
-**Files to update**:
-- [ ] `src/arete/api/garmin.py` - Response models
-- [ ] `src/arete/garmin/models.py` - `ActualSession` properties
-
----
-
-### 3. 🏋️ Strength Training Module
-**Goal**: Record strength sessions with structured data
-
-**Data to capture**:
-- Exercise name
-- Sets × Reps
-- Load (kg)
-- RPE (1-10)
-- Rest time
-- Notes
-
-**Implementation**:
-- [ ] Create `src/arete/strength/models.py`
-- [ ] Create `src/arete/strength/repository.py`
-- [ ] Add DB tables in `init_duckdb.py`
-- [ ] Create API endpoints `/strength/*`
+### 4. ✅ RAG Enrichment
+- [x] Strength benchmarks (PRs, 30d volume by muscle group)
+- [x] Cardio benchmarks (cadence, vertical osc, stride length, pace)
+- [x] HR drift detection (>20% spread = potential fatigue flag)
+- [x] `enrich_context_full()` helper for comprehensive context
 
 ---
 
-### 4. 🧠 RAG Enrichment
-**Goal**: Personalize analysis with user benchmarks
-
-**Data sources to add**:
-- [ ] Personal benchmarks (cadence EF, vertical osc baseline)
-- [ ] Reference patterns ("HR drift >10% = glycogen depletion")
-- [ ] Historical analysis trends
-
-**Implementation**:
-- [ ] Create user profile with physiological baselines
-- [ ] Add pattern library to RAG collection
-- [ ] Track analysis history for trend detection
-
----
+## 📋 Next Up
 
 ### 5. 🎨 UI/UX Improvements
 **Reference**: `prompt_front.txt`
@@ -67,12 +38,9 @@
 - [ ] Dashboard enhancements
 - [ ] Activity visualization
 
----
-
-### 6. 🔄 Phase 2 (Optional) - Garmin Connect Sync
+### 6. 🔄 Garmin Connect Sync
 **Goal**: Auto-sync via `garth` library
 
-**Features**:
 - [ ] OAuth with Garmin Connect
 - [ ] Auto-download activities
 - [ ] Runalyze backup integration
@@ -80,13 +48,18 @@
 ---
 
 ## 📊 Priority Order
-1. **Data Formatting** (quick win)
-2. **Strength Module** (new feature)
-3. **RAG Enrichment** (improves analysis quality)
+1. ~~Data Formatting~~ ✅
+2. ~~Strength Module~~ ✅
+3. ~~RAG Enrichment~~ ✅
 4. **UI/UX** (frontend work)
 5. **Garmin Sync** (nice to have)
 
 ---
+
+## 🔗 Related Files
+- `prompt_front.txt` - Frontend specs
+- `STATUS.md` - Project status
+- `README.md` - Documentation
 
 ## 🔗 Related Files
 - `prompt_front.txt` - Frontend specs

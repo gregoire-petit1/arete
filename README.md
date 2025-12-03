@@ -9,16 +9,17 @@
 
 ## 🚧 Status
 
-Active development — Garmin Pipeline & LLM Analysis complete.
+Active development — Strength Module & RAG Enrichment complete.
 
 ## Goals
 
 - Personalized workout planner
 - Smart memory of previous sessions
-- RAG-based recommendations
+- RAG-based recommendations with personal benchmarks
 - AI Agent to orchestrate planning and adaptation
 - **Scientific training metrics** (ACWR, CTL/ATL/TSB, TRIMP, 1RM estimation)
 - **Garmin FIT file analysis** with interval detection and LLM coaching
+- **Strength training tracking** with PRs and volume analysis
 
 ## Stack
 
@@ -108,11 +109,12 @@ arete/
 │   ├── features/        # Feature engineering (workload, cardio, strength, fitness)
 │   ├── garmin/          # Garmin FIT parsing, analysis, LLM coaching
 │   ├── llm/             # LLM client, token management
-│   ├── rag/             # RAG system with ChromaDB
+│   ├── rag/             # RAG system with ChromaDB + personal benchmarks
+│   ├── strength/        # Strength training module (exercises, sets, PRs)
 │   ├── models/          # ML models (coming soon)
 │   ├── rules/           # Business rules (coming soon)
 │   └── utils/           # Utility functions
-├── tests/               # Test suite
+├── tests/               # Test suite (248 tests)
 ├── data/                # Data files (not in git)
 ├── notebooks/           # Jupyter notebooks
 └── experiments/         # MLflow experiments
@@ -310,6 +312,20 @@ The API exposes training metrics via REST endpoints:
 | `/rag/search` | GET    | Search knowledge base         |
 | `/rag/stats`  | GET    | Collection statistics         |
 | `/rag/seed`   | POST   | Seed knowledge base           |
+
+### Strength Endpoints
+
+| Endpoint                     | Method | Description                  |
+| ---------------------------- | ------ | ---------------------------- |
+| `/strength/exercises`        | POST   | Create exercise              |
+| `/strength/exercises`        | GET    | List exercises (filterable)  |
+| `/strength/sessions`         | POST   | Create session with sets     |
+| `/strength/sessions`         | GET    | List sessions                |
+| `/strength/sessions/{id}`    | GET    | Session details              |
+| `/strength/prs`              | GET    | All personal records         |
+| `/strength/prs/{exercise}`   | GET    | PR for specific exercise     |
+| `/strength/trends`           | GET    | 30-day training trends       |
+| `/strength/volume-by-muscle` | GET    | Volume by muscle group       |
 
 ### Example API Calls
 

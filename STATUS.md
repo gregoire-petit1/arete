@@ -13,6 +13,7 @@
 - Environnement : Python 3.11 via uv, arbo `src/arete/...`, `.env` / `.env.example` OK, `.gitignore` couvre data/venv.
 - Base : DuckDB avec helper `arete.dataio.db.connect`; DDL dans `arete.dataio.init_duckdb` crée `app.training_log`, `app.sessions`, `app.users`, `app.objectives`, `app.personal_records`.
 - DuckDB 1.4.2 ne supporte pas `IDENTITY`/PK, IDs gérés applicatif (`COALESCE(MAX(id)+1)`).
+- **248 tests** passants, CI GitHub Actions
 
 ### API
 
@@ -305,11 +306,97 @@ curl -X POST "http://localhost:8000/garmin/actual/1/analyze?detailed=true"
 - ✅ Ingestion CSV : CAST avec whitelist `ALLOWED_COLUMNS`, pas de TRY_CAST
 - ✅ Contraintes NOT NULL ajoutées au schéma DDL
 
+### Strength Training Module ✅ NEW (2025-12-03)
+
+Module complet `src/arete/strength/` pour l'entraînement musculaire :
+
+#### Architecture du module
+
+| Fichier         | Description                                          |
+| --------------- | ---------------------------------------------------- |
+| `models.py`     | Dataclasses Exercise, ExerciseSet, StrengthSession   |
+| `repository.py` | CRUD complet + PRs + trends + volume par muscle      |
+
+#### Modèles de données
+
+**Exercise** - Bibliothèque d'exercices :
+- name, category (compound/isolation/accessory), primary_muscle, secondary_muscles
+- equipment, instructions, default_rest_seconds
+
+**ExerciseSet** - Série individuelle :
+- exercise_id, weight_kg, reps, rpe (1-10), rest_seconds, notes, tempo
+
+**StrengthSession** - Session complète :
+- date, exercises avec sets, duration_min, notes, fatigue_level
+
+#### Repository Features
+
+- `create_exercise()`, `get_exercise()`, `list_exercises()`
+- `create_strength_session()` avec sets atomiques
+- `get_personal_record()` - meilleur 1RM estimé par exercice
+- `get_all_prs_summary()` - tous les PRs avec métadonnées
+- `get_strength_trends(days=30)` - volume par muscle, session count
+
+#### Strength API (`src/arete/api/strength.py`)
+
+| Endpoint                     | Méthode | Description                    |
+| ---------------------------- | ------- | ------------------------------ |
+| `/strength/exercises`        | POST    | Créer exercice                 |
+| `/strength/exercises`        | GET     | Lister exercices (filtrable)   |
+| `/strength/exercises/{id}`   | GET     | Détail exercice                |
+| `/strength/sessions`         | POST    | Créer session avec sets        |
+| `/strength/sessions`         | GET     | Lister sessions                |
+| `/strength/sessions/{id}`    | GET     | Détail session                 |
+| `/strength/prs`              | GET     | Tous les PRs                   |
+| `/strength/prs/{exercise}`   | GET     | PR pour un exercice            |
+| `/strength/trends`           | GET     | Tendances 30 jours             |
+| `/strength/volume-by-muscle` | GET     | Volume par groupe musculaire   |
+
+### RAG Enrichment ✅ NEW (2025-12-03)
+
+Enrichissement du contexte RAG avec données personnelles :
+
+#### Strength Benchmarks (`retriever.py`)
+
+**StrengthBenchmark** dataclass :
+- exercise, category, muscle
+- estimated_1rm, weight_kg, reps
+
+**UserContext enrichi** :
+- `strength_benchmarks: list[StrengthBenchmark]`
+- `strength_session_count_30d`, `strength_total_volume_30d`
+- `strength_volume_by_muscle: dict[str, float]`
+
+#### Cardio Benchmarks (`retriever.py`)
+
+**CardioBenchmark** dataclass :
+- avg_cadence_spm, avg_vertical_oscillation_mm
+- avg_ground_contact_time_ms, avg_stride_length_m
+- avg_easy_hr, avg_easy_pace, best_pace
+- total_distance_km_90d, session_count_90d
+
+**HR Drift Detection** :
+- Détection sessions avec spread HR >20% (potential_fatigue flag)
+- `hr_drift_flags: list[str]` dans UserContext
+
+#### Helper Functions (`augmented_generator.py`)
+
+- `enrich_context_with_strength(context, db_path)` - ajoute PRs et volume
+- `enrich_context_with_cardio(context, db_path)` - ajoute running dynamics
+- `enrich_context_full(context, db_path)` - combine les deux
+
+#### Prompt Integration
+
+Le prompt RAG inclut maintenant :
+- Résumé strength (PRs principaux, volume 30j)
+- Résumé cardio (cadence, pace, sessions récentes)
+- Flags de fatigue HR drift
+
 ### Qualité & Tests
 
 - ✅ ruff (lint + format) configuré dans pyproject.toml
 - ✅ mypy configuré et 100% clean sur features/ et api/
-- ✅ pytest avec **190 tests** (API + repository + features + metrics API + LLM + RAG + TokenManager)
+- ✅ pytest avec **248 tests** (API + repository + features + metrics API + LLM + RAG + TokenManager + Strength + Garmin)
 - ✅ GitHub Actions CI (.github/workflows/ci.yml) : lint, test, typecheck
 
 ### Données
@@ -353,6 +440,8 @@ uv run ruff format src tests
 3. ~~**LLM integration** : connexion Groq/Llama pour génération de recommandations personnalisées.~~ ✅ **DONE**
 4. ~~**RAG roadmap** : indexation ChromaDB avec littérature scientifique, intégration dans `/plan/jour`.~~ ✅ **DONE**
 5. ~~**Garmin Pipeline** : parsing FIT, matching planned/actual, analyse LLM détaillée + intervalles.~~ ✅ **DONE**
-6. **Garmin OAuth** : sync automatique via Garmin Connect API (Health API ou Web Scraping).
-7. **Front/UX** : mini UI ou collection HTTP (Insomnia/Postman) prête à l'emploi.
-8. **Déploiement** : Docker, fly.io ou Render pour démo live.
+6. ~~**Strength Module** : module muscu avec exercices, sets, PRs, volume tracking.~~ ✅ **DONE**
+7. ~~**RAG Enrichment** : benchmarks personnels (strength + cardio) dans le contexte RAG.~~ ✅ **DONE**
+8. **Garmin OAuth** : sync automatique via Garmin Connect API (Health API ou Web Scraping).
+9. **Front/UX** : mini UI ou collection HTTP (Insomnia/Postman) prête à l'emploi.
+10. **Déploiement** : Docker, fly.io ou Render pour démo live.
