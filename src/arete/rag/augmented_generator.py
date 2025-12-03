@@ -117,7 +117,9 @@ FORMAT JSON:
         user_parts = []
 
         # Essential context only
-        user_parts.append(f"Sport:{context.primary_sport} Niveau:{context.experience} Fatigue:{context.fatigue}/10")
+        user_parts.append(
+            f"Sport:{context.primary_sport} Niveau:{context.experience} Fatigue:{context.fatigue}/10"
+        )
 
         # Key metrics on one line
         metrics = []
