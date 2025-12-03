@@ -148,6 +148,72 @@ CREATE TABLE IF NOT EXISTS app.session_analysis (
     generated_by        VARCHAR DEFAULT 'llm', -- 'llm', 'rules', 'manual'
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ============================================================
+-- Strength Training Tables
+-- ============================================================
+
+-- Sequences for strength tables
+CREATE SEQUENCE IF NOT EXISTS app.exercises_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS app.strength_sessions_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS app.session_exercises_seq START 1;
+CREATE SEQUENCE IF NOT EXISTS app.exercise_sets_seq START 1;
+
+-- Exercise library (reusable exercise definitions)
+CREATE TABLE IF NOT EXISTS app.exercises (
+    id                      INTEGER PRIMARY KEY DEFAULT nextval('app.exercises_seq'),
+    name                    VARCHAR NOT NULL,
+    category                VARCHAR NOT NULL,          -- 'squat', 'hinge', 'push_horizontal', etc.
+    primary_muscle          VARCHAR NOT NULL,          -- 'quads', 'chest', 'back', etc.
+    secondary_muscles_json  VARCHAR,                   -- JSON array of muscle groups
+    equipment               VARCHAR,                   -- 'barbell', 'dumbbell', 'cable', 'bodyweight'
+    is_unilateral           BOOLEAN DEFAULT FALSE,
+    notes                   VARCHAR,
+    created_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Strength training sessions
+CREATE TABLE IF NOT EXISTS app.strength_sessions (
+    id              INTEGER PRIMARY KEY DEFAULT nextval('app.strength_sessions_seq'),
+    user_id         INTEGER NOT NULL DEFAULT 1,
+    date            DATE NOT NULL,
+    name            VARCHAR,                   -- 'Push Day', 'Upper A', etc.
+    program         VARCHAR,                   -- 'PPL', '531', 'GZCLP', etc.
+    duration_min    INTEGER,
+    overall_rpe     DOUBLE,                    -- Session RPE (1-10)
+    fatigue_level   INTEGER,                   -- Pre-workout fatigue (1-5)
+    sleep_quality   INTEGER,                   -- Night before (1-5)
+    notes           VARCHAR,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Exercises performed in a session (junction table)
+CREATE TABLE IF NOT EXISTS app.session_exercises (
+    id              INTEGER PRIMARY KEY DEFAULT nextval('app.session_exercises_seq'),
+    session_id      INTEGER NOT NULL,          -- FK to strength_sessions
+    exercise_id     INTEGER NOT NULL,          -- FK to exercises
+    exercise_order  INTEGER NOT NULL DEFAULT 1,
+    target_sets     INTEGER,
+    target_reps     VARCHAR,                   -- '8-12' or '5'
+    target_rpe      DOUBLE,
+    notes           VARCHAR
+);
+
+-- Individual sets within a session exercise
+CREATE TABLE IF NOT EXISTS app.exercise_sets (
+    id                  INTEGER PRIMARY KEY DEFAULT nextval('app.exercise_sets_seq'),
+    session_exercise_id INTEGER NOT NULL,      -- FK to session_exercises
+    set_number          INTEGER NOT NULL,
+    reps                INTEGER NOT NULL,
+    weight_kg           DOUBLE,
+    rpe                 DOUBLE,                -- 1-10 scale
+    rir                 INTEGER,               -- Reps In Reserve
+    rest_sec            INTEGER,               -- Rest after this set
+    tempo               VARCHAR,               -- '3-1-1-0' format
+    is_warmup           BOOLEAN DEFAULT FALSE,
+    is_failure          BOOLEAN DEFAULT FALSE,
+    notes               VARCHAR
+);
 """
 
 

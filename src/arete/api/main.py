@@ -157,3 +157,8 @@ app.include_router(rag_router)
 from arete.api.garmin import router as garmin_router
 
 app.include_router(garmin_router)
+
+# Routes Strength (exercises, strength sessions, sets, PRs)
+from arete.api.strength import router as strength_router
+
+app.include_router(strength_router)
