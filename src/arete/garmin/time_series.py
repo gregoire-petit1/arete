@@ -589,7 +589,7 @@ class ActivityMetricsCalculator:
         second_avg = statistics.mean(values[mid:])
         if first_avg == 0:
             return 0.0
-        return ((second_avg - first_avg) / first_avg) * 100
+        return float(((second_avg - first_avg) / first_avg) * 100)
 
     def _calculate_decoupling(self, hrs: list[int], speeds: list[float]) -> float:
         """Calculate HR:Pace decoupling (aerobic efficiency indicator).
@@ -721,7 +721,7 @@ class ActivityMetricsCalculator:
         if denom_x * denom_y == 0:
             return 0.0
 
-        return numerator / (denom_x * denom_y)
+        return float(numerator / (denom_x * denom_y))
 
     def _calculate_splits(self, ts: TimeSeriesData, num_splits: int = 5) -> list[dict]:
         """Calculate per-km or equal splits."""

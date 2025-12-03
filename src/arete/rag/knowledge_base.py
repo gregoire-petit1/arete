@@ -121,10 +121,11 @@ class KnowledgeBase:
         metadatas = [self._sanitize_metadata(doc.metadata) for doc in documents]
 
         # Upsert to ChromaDB (ChromaDB generates embeddings automatically)
+        # Cast metadatas to expected type for chromadb
         coll.upsert(
             ids=ids,
             documents=contents,
-            metadatas=metadatas,
+            metadatas=metadatas,  # type: ignore[arg-type]
         )
 
         logger.info(f"Added {len(documents)} documents to {collection}")
@@ -169,15 +170,14 @@ class KnowledgeBase:
                 distance = results["distances"][0][i] if results["distances"] else 0
                 similarity = 1 / (1 + distance)  # Convert distance to similarity
 
+                meta = results["metadatas"][0][i] if results["metadatas"] else {}
                 retrieved.append(
                     RetrievedDocument(
                         id=doc_id,
                         content=results["documents"][0][i]
                         if results["documents"]
                         else "",
-                        metadata=results["metadatas"][0][i]
-                        if results["metadatas"]
-                        else {},
+                        metadata=dict(meta),
                         relevance_score=similarity,
                         collection=collection,
                     )

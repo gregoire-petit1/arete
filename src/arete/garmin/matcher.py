@@ -78,7 +78,7 @@ class SessionMatcher:
                 planned_session=None,
                 confidence=MatchConfidence.NONE,
                 adherence_score=0.0,
-                duration_deviation_pct=None,
+                duration_deviation_pct=0.0,
                 intensity_deviation_pct=None,
                 notes=["Aucune séance planifiée pour cette date"],
             )
@@ -107,7 +107,7 @@ class SessionMatcher:
             planned_session=best_planned,
             confidence=confidence,
             adherence_score=best_score,
-            duration_deviation_pct=duration_dev,
+            duration_deviation_pct=duration_dev or 0.0,
             intensity_deviation_pct=intensity_dev,
             notes=notes,
         )

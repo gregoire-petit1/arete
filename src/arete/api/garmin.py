@@ -114,7 +114,7 @@ class MatchSummaryResponse(BaseModel):
 def _planned_to_response(session: PlannedSession) -> PlannedSessionResponse:
     """Convert PlannedSession model to response."""
     return PlannedSessionResponse(
-        id=session.id,
+        id=session.id or 0,
         date=session.date,
         sport=session.sport,
         session_type=session.session_type.value
@@ -135,7 +135,7 @@ def _planned_to_response(session: PlannedSession) -> PlannedSessionResponse:
 def _actual_to_response(session: ActualSession) -> ActualSessionResponse:
     """Convert ActualSession model to response."""
     return ActualSessionResponse(
-        id=session.id,
+        id=session.id or 0,
         planned_session_id=session.planned_session_id,
         date=session.date,
         sport=session.sport,
@@ -178,6 +178,8 @@ def create_planned_session(session: PlannedSessionCreate):
 
     session_id = _repo.create_planned_session(planned)
     created = _repo.get_planned_session(session_id)
+    if created is None:
+        raise HTTPException(status_code=500, detail="Failed to create session")
 
     logger.info(f"Created planned session {session_id} for {session.date}")
     return _planned_to_response(created)
@@ -267,11 +269,11 @@ async def upload_fit_file(
             raise HTTPException(status_code=413, detail="FIT file too large (max 10MB)")
         content.extend(chunk)
 
-    content = bytes(content)
+    content_bytes = bytes(content)
 
     try:
         parser = FITParser()
-        parsed = parser.parse_stream(io.BytesIO(content))
+        parsed = parser.parse_stream(io.BytesIO(content_bytes))
         # Sanitize filename to prevent path traversal
         parsed.source_file = Path(file.filename).name
     except Exception as e:
@@ -314,19 +316,21 @@ async def upload_fit_file(
         if planned_sessions:
             matcher = SessionMatcher()
             match = matcher.find_match(actual, planned_sessions)
-            if match.is_matched:
-                actual.planned_session_id = match.planned_session.id
+            if match.is_matched and match.planned_session is not None:
+                planned_id = match.planned_session.id
+                actual.planned_session_id = planned_id
                 actual.adherence_score = match.adherence_score
                 match_result = {
-                    "planned_session_id": match.planned_session.id,
+                    "planned_session_id": planned_id,
                     "confidence": match.confidence.value,
                     "adherence_score": match.adherence_score,
                     "summary": match.summary(),
                 }
                 # Update planned session status
-                _repo.update_planned_session_status(
-                    match.planned_session.id, SessionStatus.COMPLETED
-                )
+                if planned_id is not None:
+                    _repo.update_planned_session_status(
+                        planned_id, SessionStatus.COMPLETED
+                    )
 
     # Save actual session
     activity_id = _repo.create_actual_session(actual)

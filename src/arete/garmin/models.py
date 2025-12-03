@@ -235,6 +235,8 @@ class SessionMatch:
             MatchConfidence.LOW: "faible",
         }
 
+        if self.planned_session is None:
+            return f"Pas de correspondance - Adhérence: {self.adherence_score:.0f}%"
         return (
             f"Match {confidence_fr.get(self.confidence, 'inconnue')} avec "
             f"'{self.planned_session.description or self.planned_session.session_type.value}' - "
@@ -260,13 +262,14 @@ class SessionAnalysis:
         if not self.insights_json:
             return {}
         try:
-            return json.loads(self.insights_json)
+            parsed: dict[str, Any] = json.loads(self.insights_json)
+            return parsed
         except json.JSONDecodeError:
             return {}
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for DB insertion."""
-        return {
+        result: dict[str, Any] = {
             "id": self.id,
             "actual_session_id": self.actual_session_id,
             "analysis_type": self.analysis_type,
@@ -274,3 +277,4 @@ class SessionAnalysis:
             "recommendations": self.recommendations,
             "generated_by": self.generated_by,
         }
+        return result

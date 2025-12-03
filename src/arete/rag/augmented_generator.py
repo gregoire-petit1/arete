@@ -215,7 +215,8 @@ FORMAT JSON:
 
             content = response.choices[0].message.content
             if content:
-                return json.loads(content)
+                result: dict[str, Any] = json.loads(content)
+                return result
             return self._fallback_response()
 
         except Exception as e:

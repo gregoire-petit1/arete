@@ -8,9 +8,12 @@ from arete.dataio.db import connect
 
 # ---------- Helpers ----------
 def _next_id(con, table_qualified: str) -> int:
-    return con.execute(
+    result = con.execute(
         f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table_qualified}"
-    ).fetchone()[0]
+    ).fetchone()
+    if result is None:
+        return 1
+    return int(result[0])
 
 
 def _session_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
@@ -74,6 +77,8 @@ def create_session(
             """,
             [new_id, session_date, objective, duration, fatigue, rpe_avg7d],
         ).fetchone()
+        if row is None:
+            raise RuntimeError("Failed to insert session")
         return _session_from_row(row)
     finally:
         con.close()
@@ -82,7 +87,8 @@ def create_session(
 def list_sessions(skip: int, limit: int) -> tuple[int, list[dict[str, Any]]]:
     con = connect(True)
     try:
-        total = con.execute("SELECT COUNT(*) FROM app.sessions").fetchone()[0]
+        count_row = con.execute("SELECT COUNT(*) FROM app.sessions").fetchone()
+        total = int(count_row[0]) if count_row else 0
         rows = con.execute(
             """
             SELECT id, date, objective, duration, fatigue, rpe_avg7d
@@ -191,7 +197,8 @@ def create_user(
         # we detect it by checking count before insert in a transaction
         con.execute("BEGIN TRANSACTION")
         try:
-            existing = con.execute("SELECT COUNT(*) FROM app.users").fetchone()[0]
+            existing_row = con.execute("SELECT COUNT(*) FROM app.users").fetchone()
+            existing = int(existing_row[0]) if existing_row else 0
             if existing:
                 con.execute("ROLLBACK")
                 raise ValueError("User already exists")
@@ -206,6 +213,8 @@ def create_user(
                 [new_id, sex, age, height, weight, desired_training_load],
             ).fetchone()
             con.execute("COMMIT")
+            if row is None:
+                raise RuntimeError("Failed to insert user")
             return _user_from_row(row)
         except Exception:
             con.execute("ROLLBACK")
@@ -251,6 +260,8 @@ def create_objective(*, sport: str, name: str, priority: int) -> dict[str, Any]:
             """,
             [new_id, sport, name, priority],
         ).fetchone()
+        if row is None:
+            raise RuntimeError("Failed to insert objective")
         return _objective_from_row(row)
     finally:
         con.close()
@@ -259,7 +270,8 @@ def create_objective(*, sport: str, name: str, priority: int) -> dict[str, Any]:
 def list_objectives(skip: int, limit: int) -> tuple[int, list[dict[str, Any]]]:
     con = connect(True)
     try:
-        total = con.execute("SELECT COUNT(*) FROM app.objectives").fetchone()[0]
+        count_row = con.execute("SELECT COUNT(*) FROM app.objectives").fetchone()
+        total = int(count_row[0]) if count_row else 0
         rows = con.execute(
             """
             SELECT id, sport, name, priority
@@ -325,6 +337,8 @@ def create_record(
             """,
             [new_id, sport, event, performance, unit],
         ).fetchone()
+        if row is None:
+            raise RuntimeError("Failed to insert record")
         return _record_from_row(row)
     finally:
         con.close()
@@ -333,7 +347,8 @@ def create_record(
 def list_records(skip: int, limit: int) -> tuple[int, list[dict[str, Any]]]:
     con = connect(True)
     try:
-        total = con.execute("SELECT COUNT(*) FROM app.personal_records").fetchone()[0]
+        count_row = con.execute("SELECT COUNT(*) FROM app.personal_records").fetchone()
+        total = int(count_row[0]) if count_row else 0
         rows = con.execute(
             """
             SELECT id, sport, event, performance, unit

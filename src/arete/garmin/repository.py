@@ -68,7 +68,9 @@ class GarminRepository:
             ],
         ).fetchone()
         conn.close()
-        return result[0]
+        if result is None:
+            raise RuntimeError("Failed to insert planned session")
+        return int(result[0])
 
     def get_planned_session(self, session_id: int) -> PlannedSession | None:
         """Get a planned session by ID."""
@@ -242,7 +244,9 @@ class GarminRepository:
             ],
         ).fetchone()
         conn.close()
-        return result[0]
+        if result is None:
+            raise RuntimeError("Failed to insert actual session")
+        return int(result[0])
 
     def get_actual_session(self, session_id: int) -> ActualSession | None:
         """Get an actual session by ID."""
@@ -402,15 +406,16 @@ class GarminRepository:
         conn = self._get_connection()
 
         # Count totals
-        total_planned = conn.execute(
+        planned_row = conn.execute(
             "SELECT COUNT(*) FROM planned_sessions"
-        ).fetchone()[0]
-        total_actual = conn.execute("SELECT COUNT(*) FROM actual_sessions").fetchone()[
-            0
-        ]
-        total_matched = conn.execute(
+        ).fetchone()
+        total_planned = int(planned_row[0]) if planned_row else 0
+        actual_row = conn.execute("SELECT COUNT(*) FROM actual_sessions").fetchone()
+        total_actual = int(actual_row[0]) if actual_row else 0
+        matched_row = conn.execute(
             "SELECT COUNT(*) FROM actual_sessions WHERE planned_session_id IS NOT NULL"
-        ).fetchone()[0]
+        ).fetchone()
+        total_matched = int(matched_row[0]) if matched_row else 0
 
         conn.close()
 
@@ -467,7 +472,9 @@ class GarminRepository:
             ],
         ).fetchone()
         conn.close()
-        return result[0]
+        if result is None:
+            raise RuntimeError("Failed to insert analysis")
+        return int(result[0])
 
     def get_analysis(self, actual_session_id: int) -> dict | None:
         """Get the latest analysis for a session.

@@ -10,7 +10,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from arete.garmin.models import ActualSession, PlannedSession
 from arete.llm.client import get_client
@@ -239,34 +239,37 @@ def _generate_fallback_analysis(
     planned: PlannedSession | None,
 ) -> ActivityAnalysis:
     """Rule-based fallback when LLM unavailable."""
-    insights = {
-        "adherence": {
-            "score": 0,
-            "durée": "n/a",
-            "distance": "n/a",
-            "intensité": "n/a",
-        },
-        "points_positifs": [],
-        "points_amelioration": [],
-        "recommendation": "",
+    points_positifs: list[str] = []
+    points_amelioration: list[str] = []
+    recommendation: str = ""
+    adherence: dict[str, Any] = {
+        "score": 0,
+        "durée": "n/a",
+        "distance": "n/a",
+        "intensité": "n/a",
     }
 
     if planned is None:
         # No planned session - just summarize
-        insights["points_positifs"].append("Séance réalisée")
-        if actual.duration_min >= 30:
-            insights["points_positifs"].append("Durée correcte")
+        points_positifs.append("Séance réalisée")
+        if actual.duration_min_raw >= 30:
+            points_positifs.append("Durée correcte")
         if actual.avg_hr and actual.avg_hr < 160:
-            insights["points_positifs"].append("FC modérée")
-        insights["recommendation"] = (
+            points_positifs.append("FC modérée")
+        recommendation = (
             "Continuez à planifier vos séances pour un meilleur suivi"
         )
 
         return ActivityAnalysis(
             actual_session_id=actual.id or 0,
             analysis_type="summary",
-            insights=insights,
-            recommendations=insights["recommendation"],
+            insights={
+                "adherence": adherence,
+                "points_positifs": points_positifs,
+                "points_amelioration": points_amelioration,
+                "recommendation": recommendation,
+            },
+            recommendations=recommendation,
             generated_by="rules",
         )
 
@@ -275,63 +278,68 @@ def _generate_fallback_analysis(
 
     # Duration comparison
     if planned.target_duration_min:
-        ratio = actual.duration_min / planned.target_duration_min
+        ratio = actual.duration_min_raw / planned.target_duration_min
         if 0.85 <= ratio <= 1.15:
-            insights["adherence"]["durée"] = "ok"
-            insights["points_positifs"].append("Durée respectée")
+            adherence["durée"] = "ok"
+            points_positifs.append("Durée respectée")
         elif ratio < 0.85:
-            insights["adherence"]["durée"] = "court"
-            insights["points_amelioration"].append(
-                f"Séance écourtée ({actual.duration_min:.0f}/{planned.target_duration_min} min)"
+            adherence["durée"] = "court"
+            points_amelioration.append(
+                f"Séance écourtée ({actual.duration_min_raw:.0f}/{planned.target_duration_min} min)"
             )
             score -= 15
         else:
-            insights["adherence"]["durée"] = "long"
-            insights["points_positifs"].append("Séance plus longue que prévu")
+            adherence["durée"] = "long"
+            points_positifs.append("Séance plus longue que prévu")
             score -= 5
 
     # Distance comparison
     if planned.target_distance_km and actual.distance_km:
         ratio = actual.distance_km / planned.target_distance_km
         if 0.85 <= ratio <= 1.15:
-            insights["adherence"]["distance"] = "ok"
-            insights["points_positifs"].append("Distance respectée")
+            adherence["distance"] = "ok"
+            points_positifs.append("Distance respectée")
         elif ratio < 0.85:
-            insights["adherence"]["distance"] = "court"
+            adherence["distance"] = "court"
             score -= 15
         else:
-            insights["adherence"]["distance"] = "long"
+            adherence["distance"] = "long"
             score -= 5
 
     # Intensity (simplified based on HR if available)
     if actual.avg_hr:
         if actual.avg_hr < 140:
-            insights["adherence"]["intensité"] = "facile"
+            adherence["intensité"] = "facile"
         elif actual.avg_hr < 165:
-            insights["adherence"]["intensité"] = "ok"
+            adherence["intensité"] = "ok"
         else:
-            insights["adherence"]["intensité"] = "dur"
+            adherence["intensité"] = "dur"
             if planned.target_intensity == "easy":
-                insights["points_amelioration"].append(
+                points_amelioration.append(
                     "Intensité plus élevée que prévu"
                 )
                 score -= 10
 
-    insights["adherence"]["score"] = max(0, score)
+    adherence["score"] = max(0, score)
 
     # Generate recommendation
     if score >= 85:
-        insights["recommendation"] = "Excellent travail, continuez ainsi!"
+        recommendation = "Excellent travail, continuez ainsi!"
     elif score >= 70:
-        insights["recommendation"] = "Bonne séance, quelques ajustements possibles"
+        recommendation = "Bonne séance, quelques ajustements possibles"
     else:
-        insights["recommendation"] = "Revoyez la planification pour mieux vous y tenir"
+        recommendation = "Revoyez la planification pour mieux vous y tenir"
 
     return ActivityAnalysis(
         actual_session_id=actual.id or 0,
         analysis_type="adherence",
-        insights=insights,
-        recommendations=insights["recommendation"],
+        insights={
+            "adherence": adherence,
+            "points_positifs": points_positifs,
+            "points_amelioration": points_amelioration,
+            "recommendation": recommendation,
+        },
+        recommendations=recommendation,
         generated_by="rules",
     )
 

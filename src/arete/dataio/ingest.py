@@ -79,7 +79,8 @@ def ingest_csv(csv_path: str | pathlib.Path) -> int:
         )
         """
         con.execute(q)
-        total = con.execute("SELECT COUNT(*) FROM app.training_log").fetchone()[0]
+        count_row = con.execute("SELECT COUNT(*) FROM app.training_log").fetchone()
+        total = int(count_row[0]) if count_row else 0
         logger.info(f"Ingestion OK. Total rows: {total}")
         print(f"Ingestion OK. Total lignes: {total}")
         return total

@@ -113,7 +113,7 @@ class UserContext:
         parts = []
 
         # Top lifts by category (max 4 for token efficiency)
-        seen_cats = set()
+        seen_cats: set[str] = set()
         for bench in self.strength_benchmarks:
             if bench.category not in seen_cats and len(seen_cats) < 4:
                 parts.append(f"{bench.exercise}:{bench.estimated_1rm:.0f}kg")
@@ -295,7 +295,7 @@ class Retriever:
         k: int,
     ) -> list[RetrievedDocument]:
         """Ensure diversity in results (different collections, topics)."""
-        diverse = []
+        diverse: list[RetrievedDocument] = []
         collection_counts: dict[str, int] = {}
         max_per_collection = max(2, k // 2)
 

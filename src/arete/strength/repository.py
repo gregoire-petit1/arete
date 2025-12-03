@@ -57,7 +57,9 @@ class StrengthRepository:
             ],
         ).fetchone()
         conn.close()
-        return result[0]
+        if result is None:
+            raise RuntimeError("Failed to insert exercise")
+        return int(result[0])
 
     def get_exercise(self, exercise_id: int) -> Exercise | None:
         """Get an exercise by ID."""
@@ -172,7 +174,9 @@ class StrengthRepository:
                 datetime.now(),
             ],
         ).fetchone()
-        session_id = result[0]
+        if result is None:
+            raise RuntimeError("Failed to insert session")
+        session_id: int = result[0]
 
         # Create exercises and sets
         for ex in session.exercises:
@@ -204,7 +208,9 @@ class StrengthRepository:
                 exercise.notes,
             ],
         ).fetchone()
-        session_exercise_id = result[0]
+        if result is None:
+            raise RuntimeError("Failed to insert session exercise")
+        session_exercise_id: int = result[0]
 
         # Create sets
         for s in exercise.sets:
@@ -239,7 +245,9 @@ class StrengthRepository:
                 exercise_set.notes,
             ],
         ).fetchone()
-        return result[0]
+        if result is None:
+            raise RuntimeError("Failed to insert set")
+        return int(result[0])
 
     def get_session(self, session_id: int) -> StrengthSession | None:
         """Get a strength session with all exercises and sets."""
@@ -547,7 +555,7 @@ class StrengthRepository:
 
         conn.close()
 
-        result = {
+        result: dict[str, str | float | int | None] = {
             "max_weight": None,
             "max_weight_reps": None,
             "max_weight_date": None,

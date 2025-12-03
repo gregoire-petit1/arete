@@ -342,6 +342,8 @@ def list_sessions(
     # We need to fetch full details for summary stats
     result = []
     for s in sessions:
+        if s.id is None:
+            continue
         full_session = _repo.get_session(s.id)
         if full_session:
             result.append(_session_to_summary_response(full_session))
@@ -388,7 +390,7 @@ def get_volume_by_muscle(
 def _exercise_to_response(exercise: Exercise) -> ExerciseResponse:
     """Convert Exercise to response model."""
     return ExerciseResponse(
-        id=exercise.id,
+        id=exercise.id or 0,
         name=exercise.name,
         category=exercise.category.value,
         primary_muscle=exercise.primary_muscle.value,
@@ -402,7 +404,7 @@ def _exercise_to_response(exercise: Exercise) -> ExerciseResponse:
 def _session_to_summary_response(session: StrengthSession) -> StrengthSessionResponse:
     """Convert StrengthSession to summary response."""
     return StrengthSessionResponse(
-        id=session.id,
+        id=session.id or 0,
         date=session.date,
         name=session.name,
         program=session.program,
@@ -424,7 +426,7 @@ def _session_to_detail_response(
     for ex in session.exercises:
         sets_response = [
             SetResponse(
-                id=s.id,
+                id=s.id or 0,
                 set_number=s.set_number,
                 reps=s.reps,
                 weight_kg=s.weight_kg,
@@ -447,7 +449,7 @@ def _session_to_detail_response(
 
         exercises_response.append(
             SessionExerciseResponse(
-                id=ex.id,
+                id=ex.id or 0,
                 order=ex.order,
                 exercise=exercise_response,
                 target_sets=ex.target_sets,
@@ -462,7 +464,7 @@ def _session_to_detail_response(
         )
 
     return StrengthSessionDetailResponse(
-        id=session.id,
+        id=session.id or 0,
         date=session.date,
         name=session.name,
         program=session.program,
