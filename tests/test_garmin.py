@@ -56,14 +56,18 @@ class TestActualSession:
         assert session.source == ActivitySource.FIT_FILE
 
     def test_duration_min(self):
-        """Test duration_min property."""
+        """Test duration_min property returns formatted string."""
         session = ActualSession(duration_sec=3600)
-        assert session.duration_min == 60.0
+        assert session.duration_min == "60:00"
+        assert session.duration_min_raw == 60.0
 
     def test_distance_km(self):
-        """Test distance_km property."""
+        """Test distance_km property rounds to 2 decimals."""
         session = ActualSession(distance_m=10000)
         assert session.distance_km == 10.0
+        # Test rounding
+        session2 = ActualSession(distance_m=6686.229999)
+        assert session2.distance_km == 6.69
 
     def test_avg_pace_min_km(self):
         """Test average pace formatting."""

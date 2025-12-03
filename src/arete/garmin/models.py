@@ -137,14 +137,21 @@ class ActualSession:
     created_at: datetime | None = None
 
     @property
-    def duration_min(self) -> float:
-        """Duration in minutes."""
+    def duration_min_raw(self) -> float:
+        """Duration in minutes (raw float)."""
         return self.duration_sec / 60.0
 
     @property
+    def duration_min(self) -> str:
+        """Duration as MM:SS string."""
+        total_minutes = int(self.duration_sec // 60)
+        remaining_seconds = int(self.duration_sec % 60)
+        return f"{total_minutes}:{remaining_seconds:02d}"
+
+    @property
     def distance_km(self) -> float | None:
-        """Distance in kilometers."""
-        return self.distance_m / 1000.0 if self.distance_m else None
+        """Distance in kilometers (rounded to 2 decimals)."""
+        return round(self.distance_m / 1000.0, 2) if self.distance_m else None
 
     @property
     def avg_pace_min_km(self) -> str | None:

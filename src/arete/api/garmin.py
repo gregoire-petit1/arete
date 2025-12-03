@@ -77,8 +77,8 @@ class ActualSessionResponse(BaseModel):
     date: date
     sport: str
     session_type: str | None
-    duration_min: float
-    distance_km: float | None
+    duration_min: str  # Format: "MM:SS"
+    distance_km: float | None  # Rounded to 2 decimals
     avg_hr: int | None
     max_hr: int | None
     avg_pace: str | None
