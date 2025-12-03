@@ -210,13 +210,20 @@ class TestStrengthSessionModel:
 
 
 @pytest.fixture
-def strength_repo():
-    """Create a repository with test database."""
-    # Initialize tables
+def strength_repo(tmp_path, monkeypatch):
+    """Create a repository with temporary test database."""
+    import os
+
+    # Point to temp database
+    db_path = str(tmp_path / "test_strength.duckdb")
+    monkeypatch.setenv("ARETE_DB", db_path)
+
+    # Initialize tables using the real init_duckdb
     from arete.dataio.init_duckdb import main as init_db
 
     init_db()
-    return StrengthRepository()
+
+    return StrengthRepository(db_path)
 
 
 class TestStrengthRepository:
