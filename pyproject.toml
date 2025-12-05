@@ -9,6 +9,7 @@ dependencies = [
     "duckdb>=1.4.2",
     "fastapi>=0.119.0",
     "fitparse>=1.2.0",
+    "garth>=0.5.19",
     "openai>=1.82.0",
     "pydantic>=2",
     "python-dotenv>=1.1.1",

@@ -611,3 +611,221 @@ def get_analysis(session_id: int):
         generated_by=cached["generated_by"],
         cached=True,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Sync Endpoints (Garmin Connect + Runalyze)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class SyncStatusResponse(BaseModel):
+    """Sync status response."""
+
+    garmin_authenticated: bool
+    runalyze_configured: bool
+    last_sync: str | None = None
+    activities_synced: int = 0
+
+
+class SyncRequest(BaseModel):
+    """Sync request parameters."""
+
+    start_date: date | None = None
+    end_date: date | None = None
+    download_fit: bool = True
+    max_activities: int = 50
+
+
+class SyncResponse(BaseModel):
+    """Sync result response."""
+
+    success: bool
+    activities_synced: int
+    activities_skipped: int
+    errors: list[str]
+    last_activity_date: str | None = None
+
+
+class BackupResponse(BaseModel):
+    """Backup result response."""
+
+    success: bool
+    activities_backed_up: int
+    export_path: str | None = None
+    errors: list[str]
+
+
+@router.get("/sync/status", response_model=SyncStatusResponse)
+def get_sync_status():
+    """Get current sync status and authentication state."""
+    from arete.garmin.backup import RunalyzeClient
+    from arete.garmin.sync import GarminSyncClient
+
+    garmin_client = GarminSyncClient()
+    runalyze_client = RunalyzeClient()
+
+    return SyncStatusResponse(
+        garmin_authenticated=garmin_client.is_authenticated(),
+        runalyze_configured=runalyze_client.is_configured(),
+        activities_synced=len(_repo.list_actual_sessions(limit=10000)),
+    )
+
+
+@router.post("/sync/login")
+def garmin_login(email: str | None = None, password: str | None = None):
+    """Authenticate with Garmin Connect.
+
+    Credentials can be passed directly or via environment variables:
+    - GARMIN_EMAIL
+    - GARMIN_PASSWORD
+
+    Tokens are stored locally for subsequent requests.
+    """
+    from arete.garmin.sync import GarminSyncClient
+
+    client = GarminSyncClient()
+
+    try:
+        success = client.login(email=email, password=password)
+        return {
+            "success": success,
+            "message": "Successfully authenticated with Garmin Connect",
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.error(f"Garmin login failed: {e}")
+        raise HTTPException(
+            status_code=401, detail=f"Authentication failed: {e}"
+        ) from e
+
+
+@router.post("/sync/logout")
+def garmin_logout():
+    """Clear Garmin Connect authentication tokens."""
+    from arete.garmin.sync import GarminSyncClient
+
+    client = GarminSyncClient()
+    client.logout()
+    return {"success": True, "message": "Logged out from Garmin Connect"}
+
+
+@router.post("/sync/activities", response_model=SyncResponse)
+def sync_activities(request: SyncRequest):
+    """Sync activities from Garmin Connect.
+
+    Requires prior authentication via /sync/login or GARMIN_EMAIL/GARMIN_PASSWORD env vars.
+    """
+    from arete.garmin.sync import GarminSyncClient
+
+    client = GarminSyncClient(repository=_repo)
+
+    if not client.is_authenticated():
+        try:
+            client.login()
+        except Exception as e:
+            raise HTTPException(
+                status_code=401,
+                detail=f"Not authenticated. Login first or set GARMIN_EMAIL/GARMIN_PASSWORD: {e}",
+            ) from e
+
+    result = client.sync_activities(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        download_fit=request.download_fit,
+        max_activities=request.max_activities,
+    )
+
+    return SyncResponse(
+        success=result.success,
+        activities_synced=result.activities_synced,
+        activities_skipped=result.activities_skipped,
+        errors=result.errors,
+        last_activity_date=str(result.last_activity_date)
+        if result.last_activity_date
+        else None,
+    )
+
+
+@router.get("/sync/user")
+def get_garmin_user():
+    """Get Garmin Connect user profile."""
+    from arete.garmin.sync import GarminSyncClient
+
+    client = GarminSyncClient()
+
+    if not client.is_authenticated():
+        raise HTTPException(
+            status_code=401, detail="Not authenticated with Garmin Connect"
+        )
+
+    return client.get_user_summary()
+
+
+@router.post("/backup/runalyze", response_model=BackupResponse)
+def backup_runalyze(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    format: Literal["json", "csv"] = "json",
+):
+    """Export activities from Runalyze as backup.
+
+    Requires RUNALYZE_TOKEN environment variable.
+    Get your token from: https://runalyze.com/settings/account/api
+    """
+
+    from arete.garmin.backup import RunalyzeClient
+
+    client = RunalyzeClient()
+
+    if not client.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Runalyze not configured. Set RUNALYZE_TOKEN environment variable.",
+        )
+
+    try:
+        result = client.export_activities(
+            start_date=start_date,
+            end_date=end_date,
+            format=format,
+        )
+
+        return BackupResponse(
+            success=result.success,
+            activities_backed_up=result.activities_backed_up,
+            export_path=str(result.export_path) if result.export_path else None,
+            errors=result.errors,
+        )
+    except Exception as e:
+        logger.error(f"Runalyze backup failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    finally:
+        client.close()
+
+
+@router.get("/backup/compare")
+def compare_garmin_runalyze():
+    """Compare synced Garmin data with Runalyze for validation.
+
+    Useful to verify sync completeness and data integrity.
+    """
+    from arete.garmin.backup import RunalyzeClient
+
+    client = RunalyzeClient()
+
+    if not client.is_configured():
+        raise HTTPException(
+            status_code=400,
+            detail="Runalyze not configured. Set RUNALYZE_TOKEN environment variable.",
+        )
+
+    try:
+        garmin_sessions = _repo.list_actual_sessions(limit=500)
+        comparison = client.compare_with_garmin(garmin_sessions)
+        return comparison
+    except Exception as e:
+        logger.error(f"Comparison failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    finally:
+        client.close()

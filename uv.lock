@@ -48,6 +48,7 @@ dependencies = [
     { name = "duckdb" },
     { name = "fastapi" },
     { name = "fitparse" },
+    { name = "garth" },
     { name = "openai" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -87,6 +88,7 @@ requires-dist = [
     { name = "duckdb", specifier = ">=1.4.2" },
     { name = "fastapi", specifier = ">=0.119.0" },
     { name = "fitparse", specifier = ">=1.2.0" },
+    { name = "garth", specifier = ">=0.5.19" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
     { name = "mlflow", marker = "extra == 'ml'", specifier = ">=3.6.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.19.0" },
@@ -596,6 +598,20 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/24/7f/2747c0d332b9acfa75dc84447a066fdf812b5a6b8d30472b74d309bfe8cb/fsspec-2025.10.0.tar.gz", hash = "sha256:b6789427626f068f9a83ca4e8a3cc050850b6c0f71f99ddb4f542b8266a26a59", size = 309285, upload-time = "2025-10-30T14:58:44.036Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/02/a6b21098b1d5d6249b7c5ab69dde30108a71e4e819d4a9778f1de1d5b70d/fsspec-2025.10.0-py3-none-any.whl", hash = "sha256:7c7712353ae7d875407f97715f0e1ffcc21e33d5b24556cb1e090ae9409ec61d", size = 200966, upload-time = "2025-10-30T14:58:42.53Z" },
+]
+
+[[package]]
+name = "garth"
+version = "0.5.19"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "requests-oauthlib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/cb/cf/d41d67ba538af0a731114fc54a7f333090be7e9be4e10270bd090bfe0333/garth-0.5.19.tar.gz", hash = "sha256:9e8f6ac43b64ea4e585ce13015fc0f25be04ca541128e1a8ad5220be1c1de1d6", size = 1817845, upload-time = "2025-10-31T17:49:58.74Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/43/fb/9ad278c4dad4b80d5ec176f459d5781fdcb12f3d6b3c9cfff9170b89e626/garth-0.5.19-py3-none-any.whl", hash = "sha256:43de822f8c546ac45ecef19baaf88fd2c5b7ef16ae06e8c4c654ef83582c0eb1", size = 33142, upload-time = "2025-10-31T17:49:56.956Z" },
 ]
 
 [[package]]
