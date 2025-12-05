@@ -10,7 +10,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -76,7 +76,7 @@ class GarminActivity:
                 data["startTimeLocal"].replace("Z", "+00:00")
             )
             if "startTimeLocal" in data
-            else datetime.now(),
+            else datetime.now(UTC),
             duration_sec=int(data.get("duration", 0)),
             distance_m=data.get("distance"),
             avg_hr=data.get("averageHR"),
@@ -423,13 +423,18 @@ class GarminSyncClient:
 
     def _is_already_synced(self, activity_id: int) -> bool:
         """Check if activity is already in database."""
-        # Query by garmin_activity_id
-        sessions = self.repository.list_actual_sessions(limit=1000)
-        return any(
-            s.garmin_activity_id == str(activity_id)
-            for s in sessions
-            if s.garmin_activity_id
-        )
+        # Use cached synced IDs for O(1) lookup instead of O(n)
+        if not hasattr(self, "_synced_ids_cache"):
+            sessions = self.repository.list_actual_sessions(limit=1000)
+            self._synced_ids_cache: set[str] = {
+                s.garmin_activity_id for s in sessions if s.garmin_activity_id
+            }
+        return str(activity_id) in self._synced_ids_cache
+
+    def _add_to_synced_cache(self, activity_id: int) -> None:
+        """Add activity ID to synced cache after successful sync."""
+        if hasattr(self, "_synced_ids_cache"):
+            self._synced_ids_cache.add(str(activity_id))
 
     def _enrich_from_fit(self, session: ActualSession, fit_path: Path) -> ActualSession:
         """Enrich session with detailed data from FIT file."""

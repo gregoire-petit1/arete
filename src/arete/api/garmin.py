@@ -655,6 +655,13 @@ class BackupResponse(BaseModel):
     errors: list[str]
 
 
+class GarminLoginRequest(BaseModel):
+    """Garmin login credentials (secure, not logged)."""
+
+    email: str | None = Field(None, repr=False)
+    password: str | None = Field(None, repr=False)
+
+
 @router.get("/sync/status", response_model=SyncStatusResponse)
 def get_sync_status():
     """Get current sync status and authentication state."""
@@ -667,15 +674,15 @@ def get_sync_status():
     return SyncStatusResponse(
         garmin_authenticated=garmin_client.is_authenticated(),
         runalyze_configured=runalyze_client.is_configured(),
-        activities_synced=len(_repo.list_actual_sessions(limit=10000)),
+        activities_synced=_repo.count_actual_sessions(),
     )
 
 
 @router.post("/sync/login")
-def garmin_login(email: str | None = None, password: str | None = None):
+def garmin_login(request: GarminLoginRequest | None = None):
     """Authenticate with Garmin Connect.
 
-    Credentials can be passed directly or via environment variables:
+    Credentials can be passed in request body or via environment variables:
     - GARMIN_EMAIL
     - GARMIN_PASSWORD
 
@@ -686,7 +693,10 @@ def garmin_login(email: str | None = None, password: str | None = None):
     client = GarminSyncClient()
 
     try:
-        success = client.login(email=email, password=password)
+        success = client.login(
+            email=request.email if request else None,
+            password=request.password if request else None,
+        )
         return {
             "success": success,
             "message": "Successfully authenticated with Garmin Connect",
@@ -695,9 +705,7 @@ def garmin_login(email: str | None = None, password: str | None = None):
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.error(f"Garmin login failed: {e}")
-        raise HTTPException(
-            status_code=401, detail=f"Authentication failed: {e}"
-        ) from e
+        raise HTTPException(status_code=401, detail="Authentication failed") from e
 
 
 @router.post("/sync/logout")

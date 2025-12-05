@@ -377,6 +377,13 @@ class GarminRepository:
         conn.close()
         return result is not None
 
+    def count_actual_sessions(self) -> int:
+        """Return total count of actual sessions (efficient query)."""
+        conn = self._get_connection()
+        result = conn.execute("SELECT COUNT(*) FROM actual_sessions").fetchone()
+        conn.close()
+        return int(result[0]) if result else 0
+
     # ─────────────────────────────────────────────────────────────────────
     # Matching Operations
     # ─────────────────────────────────────────────────────────────────────

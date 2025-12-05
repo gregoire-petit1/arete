@@ -52,7 +52,7 @@ class RunalyzeActivity:
             name=data.get("title", ""),
             datetime_start=datetime.fromisoformat(data["datetime"])
             if "datetime" in data
-            else datetime.now(),
+            else datetime.now(),  # Fallback for missing datetime - consider raising error
             duration_sec=int(data.get("s", 0)),  # Runalyze uses 's' for seconds
             distance_m=float(data["distance"]) * 1000 if data.get("distance") else None,
             avg_hr=data.get("hrAvg"),
@@ -315,11 +315,14 @@ class RunalyzeClient:
 
         matches = []
         garmin_only = []
-        runalyze_only = list(runalyze_activities)
+
+        matched_runalyze_indices: set[int] = set()
 
         for garmin in garmin_activities:
             matched = False
-            for i, runalyze in enumerate(runalyze_only):
+            for i, runalyze in enumerate(runalyze_activities):
+                if i in matched_runalyze_indices:
+                    continue
                 # Match by date and approximate time
                 if garmin.date == runalyze.datetime_start.date() and garmin.start_time:
                     time_diff = abs(
@@ -333,11 +336,12 @@ class RunalyzeClient:
                                 "garmin_duration": garmin.duration_sec,
                                 "runalyze_duration": runalyze.duration_sec,
                                 "duration_diff": abs(
-                                    garmin.duration_sec - runalyze.duration_sec
+                                    (garmin.duration_sec or 0)
+                                    - (runalyze.duration_sec or 0)
                                 ),
                             }
                         )
-                        runalyze_only.pop(i)
+                        matched_runalyze_indices.add(i)
                         matched = True
                         break
 
@@ -350,17 +354,24 @@ class RunalyzeClient:
                     }
                 )
 
+        # Compute runalyze_only from unmatched indices
+        runalyze_only_filtered = [
+            r
+            for i, r in enumerate(runalyze_activities)
+            if i not in matched_runalyze_indices
+        ]
+
         return {
             "total_garmin": len(garmin_activities),
             "total_runalyze": len(runalyze_activities),
             "matched": len(matches),
             "garmin_only": len(garmin_only),
-            "runalyze_only": len(runalyze_only),
+            "runalyze_only": len(runalyze_only_filtered),
             "match_details": matches[:10],  # First 10 for preview
             "garmin_only_details": garmin_only[:10],
             "runalyze_only_details": [
                 {"id": r.id, "date": str(r.datetime_start.date()), "sport": r.sport}
-                for r in runalyze_only[:10]
+                for r in runalyze_only_filtered[:10]
             ],
         }
 
