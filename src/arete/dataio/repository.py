@@ -391,3 +391,117 @@ def delete_record(rec_id: int) -> bool:
         return result is not None
     finally:
         con.close()
+
+
+# ---------- User Settings ----------
+def _settings_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
+    return {
+        "user_id": row[0],
+        "display_name": row[1],
+        "email": row[2],
+        "timezone": row[3],
+        "weekly_training_goal": row[4],
+        "rest_day_preference": row[5].split(",") if row[5] else [],
+        "fatigue_threshold": row[6],
+        "fitness_goal": row[7],
+        "notifications_enabled": row[8],
+        "theme": row[9],
+    }
+
+
+def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
+    """Get user settings by user_id."""
+    con = connect(True)
+    try:
+        row = con.execute(
+            """
+            SELECT user_id, display_name, email, timezone, weekly_training_goal,
+                   rest_day_preference, fatigue_threshold, fitness_goal,
+                   notifications_enabled, theme
+            FROM app.user_settings
+            WHERE user_id = ?
+            """,
+            [user_id],
+        ).fetchone()
+        return _settings_from_row(row) if row else None
+    finally:
+        con.close()
+
+
+def upsert_user_settings(
+    user_id: int = 1,
+    *,
+    display_name: str,
+    email: str | None,
+    timezone: str,
+    weekly_training_goal: int,
+    rest_day_preference: list[str],
+    fatigue_threshold: int,
+    fitness_goal: str,
+    notifications_enabled: bool,
+    theme: str,
+) -> dict[str, Any]:
+    """Create or update user settings."""
+    con = connect(False)
+    rest_days_str = ",".join(rest_day_preference) if rest_day_preference else ""
+    try:
+        # Try update first
+        row = con.execute(
+            """
+            UPDATE app.user_settings
+            SET display_name = ?, email = ?, timezone = ?, weekly_training_goal = ?,
+                rest_day_preference = ?, fatigue_threshold = ?, fitness_goal = ?,
+                notifications_enabled = ?, theme = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = ?
+            RETURNING user_id, display_name, email, timezone, weekly_training_goal,
+                      rest_day_preference, fatigue_threshold, fitness_goal,
+                      notifications_enabled, theme
+            """,
+            [
+                display_name,
+                email,
+                timezone,
+                weekly_training_goal,
+                rest_days_str,
+                fatigue_threshold,
+                fitness_goal,
+                notifications_enabled,
+                theme,
+                user_id,
+            ],
+        ).fetchone()
+
+        if row:
+            return _settings_from_row(row)
+
+        # Insert if not exists
+        row = con.execute(
+            """
+            INSERT INTO app.user_settings (
+                user_id, display_name, email, timezone, weekly_training_goal,
+                rest_day_preference, fatigue_threshold, fitness_goal,
+                notifications_enabled, theme
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING user_id, display_name, email, timezone, weekly_training_goal,
+                      rest_day_preference, fatigue_threshold, fitness_goal,
+                      notifications_enabled, theme
+            """,
+            [
+                user_id,
+                display_name,
+                email,
+                timezone,
+                weekly_training_goal,
+                rest_days_str,
+                fatigue_threshold,
+                fitness_goal,
+                notifications_enabled,
+                theme,
+            ],
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("Failed to insert user settings")
+        return _settings_from_row(row)
+    finally:
+        con.close()

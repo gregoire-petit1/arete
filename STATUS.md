@@ -6,14 +6,43 @@
 - Stack cible : FastAPI, DuckDB (`app.*`), uv (Python 3.11), ingestion CSV, endpoints `/health`, `/plan/jour`, `/log/recent`, CRUD persistance.
 - Qualité : ruff, mypy, pytest ; `.env` + `.env.example` ; lancement via `uv run uvicorn arete.api.main:app --reload --app-dir src`.
 
-## État actuel (mise à jour 2025-12-03)
+## État actuel (mise à jour 2025-12-07)
 
 ### Infrastructure
 
 - Environnement : Python 3.11 via uv, arbo `src/arete/...`, `.env` / `.env.example` OK, `.gitignore` couvre data/venv.
-- Base : DuckDB avec helper `arete.dataio.db.connect`; DDL dans `arete.dataio.init_duckdb` crée `app.training_log`, `app.sessions`, `app.users`, `app.objectives`, `app.personal_records`.
+- Base : DuckDB avec helper `arete.dataio.db.connect`; DDL dans `arete.dataio.init_duckdb` crée `app.training_log`, `app.sessions`, `app.users`, `app.objectives`, `app.personal_records`, `app.user_settings`.
 - DuckDB 1.4.2 ne supporte pas `IDENTITY`/PK, IDs gérés applicatif (`COALESCE(MAX(id)+1)`).
 - **248 tests** passants, CI GitHub Actions
+
+### Settings & User Preferences ✅ NEW (2025-12-07)
+
+Nouvelle table `app.user_settings` et endpoints API :
+
+| Endpoint    | Méthode | Description                               |
+| ----------- | ------- | ----------------------------------------- |
+| `/settings` | GET     | Récupère les préférences utilisateur      |
+| `/settings` | PUT     | Sauvegarde les préférences utilisateur    |
+
+Fonctionnalités :
+- Display name, email, timezone
+- Weekly training goal, rest day preferences
+- Fatigue threshold, fitness goal (maintenance/build/peak/recovery)
+- Theme (dark/darker/abyss) avec application dynamique
+- Notifications enabled
+
+Frontend :
+- `SettingsContext` pour état global des settings
+- Application du thème en temps réel via CSS variables
+- Display name utilisé dans Neural Link ("BIENVENUE, {nom}")
+
+### UI Polish ✅ NEW (2025-12-07)
+
+- Uniformisation des polices : `font-display` (Inter) pour titres, `font-mono` (JetBrains Mono) pour corps/labels
+- Alignement des barres de status (HP/MP/XP) avec largeurs fixes
+- Suppression des emojis dans Matrix, FitDropzone, NeuralLink
+- Suppression du dégradé violet sur SystemMessage
+- Titre onglet navigateur : "frontend" → "Arete"
 
 ### API
 

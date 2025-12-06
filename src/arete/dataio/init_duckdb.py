@@ -221,6 +221,28 @@ CREATE TABLE IF NOT EXISTS app.exercise_sets (
     is_failure          BOOLEAN DEFAULT FALSE,
     notes               VARCHAR
 );
+
+-- ============================================================
+-- User Settings
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS app.user_settings (
+    user_id                 INTEGER PRIMARY KEY DEFAULT 1,
+    display_name            VARCHAR NOT NULL DEFAULT 'HUNTER',
+    email                   VARCHAR,
+    timezone                VARCHAR DEFAULT 'Europe/Paris',
+    weekly_training_goal    INTEGER DEFAULT 6,
+    rest_day_preference     VARCHAR DEFAULT 'monday',  -- comma-separated days
+    fatigue_threshold       INTEGER DEFAULT 85,
+    fitness_goal            VARCHAR DEFAULT 'build',   -- 'maintenance', 'build', 'peak', 'recovery'
+    notifications_enabled   BOOLEAN DEFAULT TRUE,
+    theme                   VARCHAR DEFAULT 'dark',    -- 'dark', 'darker', 'abyss'
+    updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default settings if not exists
+INSERT INTO app.user_settings (user_id) 
+SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM app.user_settings WHERE user_id = 1);
 """
 
 

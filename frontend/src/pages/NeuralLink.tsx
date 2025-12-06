@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ragApi } from '@/lib/api';
+import { useSettings } from '@/contexts';
 import type { RAGResponse, RAGSessionPlan, RAGExerciseInfo, RAGAnalysis, RAGGeneral, RAGSource } from '@/types';
 
 interface Message {
@@ -38,12 +39,15 @@ const SYSTEM_PROMPTS = [
 ];
 
 export function NeuralLinkPage() {
+  const { settings } = useSettings();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [bootSequence, setBootSequence] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const displayName = settings?.display_name ?? 'HUNTER';
 
   // Boot sequence animation
   useEffect(() => {
@@ -107,11 +111,11 @@ export function NeuralLinkPage() {
     // Just return a simple indicator - the actual formatting is in AssistantMessage
     switch (data.type) {
       case 'session_plan':
-        return `📋 ${data.titre}`;
+        return `[SESSION] ${data.titre}`;
       case 'exercise_info':
-        return `💪 ${data.exercice}`;
+        return `[EXERCISE] ${data.exercice}`;
       case 'analysis':
-        return `📊 ${data.titre}`;
+        return `[ANALYSIS] ${data.titre}`;
       case 'general':
       default:
         return data.reponse || 'Réponse générée';
@@ -190,7 +194,7 @@ export function NeuralLinkPage() {
           >
             <Sparkles className="w-12 h-12 text-neon-purple mx-auto mb-4" />
             <h2 className="text-xl font-display text-text-primary mb-2">
-              BIENVENUE, HUNTER
+              BIENVENUE, {displayName.toUpperCase()}
             </h2>
             <p className="text-sm text-text-muted font-mono mb-6">
               Posez-moi des questions sur vos entraînements, performances, et récupération.

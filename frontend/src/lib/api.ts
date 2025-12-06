@@ -200,3 +200,30 @@ export const healthApi = {
   check: () =>
     fetchAPI<{ status: string; database: string; rag: string }>("/health"),
 };
+
+// ========================= //
+// SETTINGS API             //
+// ========================= //
+
+export interface UserSettings {
+  user_id: number;
+  display_name: string;
+  email: string | null;
+  timezone: string;
+  weekly_training_goal: number;
+  rest_day_preference: string[];
+  fatigue_threshold: number;
+  fitness_goal: "maintenance" | "build" | "peak" | "recovery";
+  notifications_enabled: boolean;
+  theme: "dark" | "darker" | "abyss";
+}
+
+export const settingsApi = {
+  get: () => fetchAPI<UserSettings>("/settings"),
+
+  update: (settings: Omit<UserSettings, "user_id">) =>
+    fetchAPI<UserSettings>("/settings", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
+};

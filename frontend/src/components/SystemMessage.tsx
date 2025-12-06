@@ -54,11 +54,7 @@ export function SystemMessage({
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className={cn(
-        'relative glass-panel border-2 border-neon-purple/50 p-6',
-        'before:absolute before:inset-0 before:bg-gradient-to-r',
-        'before:from-neon-purple/10 before:to-transparent before:rounded'
-      )}
+      className="glass-panel border-2 border-neon-purple/50 p-6"
     >
       {/* Header */}
       <div className="flex items-center gap-3 mb-4">
@@ -79,7 +75,7 @@ export function SystemMessage({
       </div>
 
       {/* Content */}
-      <div className="text-text-primary font-sans leading-relaxed min-h-[60px]">
+      <div className="text-text-primary font-mono leading-relaxed min-h-[60px]">
         {isLoading ? (
           <motion.span
             animate={{ opacity: [1, 0.5, 1] }}
@@ -129,7 +125,7 @@ export function SystemMessage({
             {actions.map((action, idx) => (
               <li
                 key={idx}
-                className="text-sm text-text-secondary flex items-center gap-2"
+                className="text-sm text-text-secondary font-mono flex items-center gap-2"
               >
                 <span className="text-neon-cyan">›</span>
                 {action}

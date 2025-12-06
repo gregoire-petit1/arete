@@ -77,9 +77,9 @@ export function StatusBar({
       </div>
 
       {/* Values */}
-      <div className="min-w-[100px] text-right">
+      <div className="w-[160px] text-right shrink-0">
         <span className="font-mono text-sm text-text-primary">
-          {current.toFixed(0)}/{max}
+          {current.toLocaleString()}/{max.toLocaleString()}
         </span>
         {showPercentage && (
           <span className="font-mono text-xs text-text-muted ml-2">
@@ -90,7 +90,7 @@ export function StatusBar({
 
       {/* Subtitle */}
       {subtitle && (
-        <span className="text-xs text-text-muted font-mono min-w-[80px]">
+        <span className="text-xs text-text-muted font-mono w-[100px] text-right shrink-0">
           {subtitle}
         </span>
       )}

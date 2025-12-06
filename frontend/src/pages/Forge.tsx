@@ -108,19 +108,19 @@ export function ForgePage() {
                   <div className="text-2xl font-mono font-bold text-neon-cyan">
                     {(weeklyVolume / 1000).toFixed(1)}k
                   </div>
-                  <div className="text-xs text-text-muted">Total Volume (kg)</div>
+                  <div className="text-xs text-text-muted font-mono">Total Volume (kg)</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-mono font-bold text-neon-purple">
                     {weeklySets}
                   </div>
-                  <div className="text-xs text-text-muted">Total Sets</div>
+                  <div className="text-xs text-text-muted font-mono">Total Sets</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-mono font-bold text-warning-orange">
                     {avgRpe.toFixed(1)}
                   </div>
-                  <div className="text-xs text-text-muted">Avg RPE</div>
+                  <div className="text-xs text-text-muted font-mono">Avg RPE</div>
                 </div>
               </div>
               <div className="h-2 bg-shadow rounded overflow-hidden">
@@ -129,7 +129,7 @@ export function ForgePage() {
                   style={{ width: `${Math.min(100, (weeklyVolume / 20000) * 100)}%` }}
                 />
               </div>
-              <div className="text-xs text-text-muted mt-2 text-right">
+              <div className="text-xs text-text-muted font-mono mt-2 text-right">
                 {((weeklyVolume / 20000) * 100).toFixed(0)}% of weekly target (20,000 kg)
               </div>
             </motion.div>
@@ -337,7 +337,7 @@ function PRCard({
     <div className="p-3 bg-abyss rounded border border-neon-gold/30 text-center">
       <div className="text-xs text-text-muted font-mono mb-1 uppercase tracking-wider">[{exercise}]</div>
       <div className="text-2xl font-mono font-bold text-neon-gold">{weight} kg</div>
-      <div className="text-xs text-text-muted">Est 1RM</div>
+      <div className="text-xs text-text-muted font-mono">Est 1RM</div>
       <div
         className={cn(
           'flex items-center justify-center gap-1 mt-2 text-xs font-mono',

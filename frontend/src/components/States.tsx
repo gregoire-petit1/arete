@@ -86,7 +86,7 @@ export function EmptyState({
       </div>
       <span className="font-mono text-sm text-text-muted">{message}</span>
       {action && (
-        <span className="mt-2 text-xs text-text-muted/70">{action}</span>
+        <span className="mt-2 text-xs text-text-muted/70 font-mono">{action}</span>
       )}
     </motion.div>
   );

@@ -216,7 +216,7 @@ export function QuestLogPage() {
             {/* Completion Rate */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-text-muted">Completion Rate</span>
+                <span className="text-xs text-text-muted font-mono">Completion Rate</span>
                 <span className="text-lg font-mono text-text-primary">
                   {((summary?.completion_rate || 0) * 100).toFixed(0)}%
                 </span>
@@ -227,7 +227,7 @@ export function QuestLogPage() {
             {/* This Week */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-text-muted">This Week</span>
+                <span className="text-xs text-text-muted font-mono">This Week</span>
                 <span className="text-sm font-mono text-text-secondary">
                   {summary?.matched || 0} / {summary?.total_planned || 0}
                 </span>
@@ -256,7 +256,7 @@ export function QuestLogPage() {
                 <div className="text-2xl font-mono font-bold text-warning-orange">
                   {streak}
                 </div>
-                <div className="text-xs text-text-muted">days streak</div>
+                <div className="text-xs text-text-muted font-mono">days streak</div>
               </div>
             </div>
           </div>

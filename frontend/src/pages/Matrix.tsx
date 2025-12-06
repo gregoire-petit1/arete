@@ -202,9 +202,9 @@ export function MatrixPage() {
                       <CheckCircle className="w-4 h-4" />
                       {syncStatus.user_email ? `Authenticated as ${syncStatus.user_email}` : 'Authenticated'}
                     </div>
-                    <div className="text-xs text-text-muted mt-1">
+                    <div className="text-xs text-text-muted mt-1 font-mono">
                       Last sync: {syncStatus.last_sync || 'Never'}
-                      {' │ '}
+                      {' \u2502 '}
                       Activities synced: {syncStatus.activities_synced}
                     </div>
                   </div>
@@ -336,7 +336,7 @@ function StatusRow({
   return (
     <div className="flex items-center gap-3">
       <span className="text-text-muted">{icon}</span>
-      <span className="text-text-secondary flex-1">{label}</span>
+      <span className="text-text-secondary font-mono flex-1">{label}</span>
       <div className="flex items-center gap-2">
         {status === 'loading' ? (
           <div className="w-3 h-3 rounded-full bg-warning-orange animate-pulse" />
@@ -389,7 +389,7 @@ function SyncOptionsForm({
       <div className="grid grid-cols-2 gap-4 text-sm">
         <div>
           <label className="text-xs text-text-muted font-mono block mb-1">
-            📅 Date range
+            Date range
           </label>
           <select
             value={days}
@@ -404,7 +404,7 @@ function SyncOptionsForm({
         </div>
         <div>
           <label className="text-xs text-text-muted font-mono block mb-1">
-            📊 Max activities
+            Max activities
           </label>
           <input
             type="number"
@@ -422,7 +422,7 @@ function SyncOptionsForm({
             className="accent-neon-cyan"
           />
           <label htmlFor="downloadFit" className="text-xs text-text-muted font-mono">
-            ⬇️ Download FIT files
+            Download FIT files
           </label>
         </div>
       </div>

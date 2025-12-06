@@ -96,9 +96,9 @@ export function FitDropzone({ onUpload, isUploading = false, recentUploads = [] 
               'text-sm font-mono',
               isDragOver ? 'text-neon-cyan' : 'text-text-muted'
             )}>
-              {isUploading ? 'UPLOADING...' : '⬆️ DRAG & DROP .FIT FILE HERE'}
+              {isUploading ? 'UPLOADING...' : 'DRAG & DROP .FIT FILE HERE'}
             </span>
-            <div className="text-xs text-text-muted/70 mt-1">
+            <div className="text-xs text-text-muted/70 mt-1 font-mono">
               or click to browse
             </div>
           </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
@@ -18,18 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LoadingState } from '@/components';
-
-interface UserSettings {
-  display_name: string;
-  email: string;
-  timezone: string;
-  weekly_training_goal: number;
-  rest_day_preference: string[];
-  fatigue_threshold: number;
-  fitness_goal: 'maintenance' | 'build' | 'peak' | 'recovery';
-  notifications_enabled: boolean;
-  theme: 'dark' | 'darker' | 'abyss';
-}
+import { settingsApi, type UserSettings } from '@/lib/api';
 
 const TABS = [
   { id: 'profile', label: 'PROFILE', icon: User },
@@ -45,10 +34,16 @@ export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('profile');
   const queryClient = useQueryClient();
 
-  // Mock settings data
-  const [settings, setSettings] = useState<UserSettings>({
+  // Fetch settings from API
+  const { data: savedSettings, isLoading } = useQuery({
+    queryKey: ['settings'],
+    queryFn: settingsApi.get,
+  });
+
+  // Local state for editing
+  const [settings, setSettings] = useState<Omit<UserSettings, 'user_id'>>({
     display_name: 'HUNTER',
-    email: 'hunter@arete.io',
+    email: null,
     timezone: 'Europe/Paris',
     weekly_training_goal: 6,
     rest_day_preference: ['monday'],
@@ -58,17 +53,61 @@ export function SettingsPage() {
     theme: 'dark',
   });
 
-  const [hasChanges, setHasChanges] = useState(false);
+  // Sync local state with fetched settings
+  useEffect(() => {
+    if (savedSettings) {
+      const { user_id, ...rest } = savedSettings;
+      setSettings(rest);
+    }
+  }, [savedSettings]);
 
-  const updateSetting = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
+  const [hasChanges, setHasChanges] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // Check for changes
+  useEffect(() => {
+    if (savedSettings) {
+      const { user_id, ...saved } = savedSettings;
+      const changed = JSON.stringify(saved) !== JSON.stringify(settings);
+      setHasChanges(changed);
+    }
+  }, [settings, savedSettings]);
+
+  // Save mutation
+  const saveMutation = useMutation({
+    mutationFn: settingsApi.update,
+    onMutate: () => {
+      setSaveStatus('saving');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    },
+    onError: () => {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    },
+  });
+
+  const updateSetting = <K extends keyof Omit<UserSettings, 'user_id'>>(
+    key: K,
+    value: Omit<UserSettings, 'user_id'>[K]
+  ) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
-    setHasChanges(true);
   };
 
   const handleSave = () => {
-    // TODO: Save to API
-    setHasChanges(false);
+    saveMutation.mutate(settings);
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-void p-6 flex items-center justify-center">
+        <LoadingState message="Loading settings..." />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-void p-6">
@@ -87,15 +126,36 @@ export function SettingsPage() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               onClick={handleSave}
+              disabled={saveStatus === 'saving'}
               className={cn(
                 'flex items-center gap-2 px-4 py-2 rounded',
                 'bg-success-green/20 border border-success-green/30',
                 'text-success-green font-mono text-sm',
-                'hover:bg-success-green/30 transition-all'
+                'hover:bg-success-green/30 transition-all',
+                'disabled:opacity-50 disabled:cursor-not-allowed'
               )}
             >
-              <Save className="w-4 h-4" />
-              SAVE CHANGES
+              {saveStatus === 'saving' ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-success-green border-t-transparent rounded-full animate-spin" />
+                  SAVING...
+                </>
+              ) : saveStatus === 'saved' ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  SAVED!
+                </>
+              ) : saveStatus === 'error' ? (
+                <>
+                  <X className="w-4 h-4 text-danger-red" />
+                  ERROR
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  SAVE CHANGES
+                </>
+              )}
             </motion.button>
           )}
         </motion.header>
@@ -152,12 +212,14 @@ export function SettingsPage() {
   );
 }
 
+type LocalSettings = Omit<UserSettings, 'user_id'>;
+
 function ProfileTab({
   settings,
   updateSetting,
 }: {
-  settings: UserSettings;
-  updateSetting: <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => void;
+  settings: LocalSettings;
+  updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
 }) {
   return (
     <div className="space-y-6">
@@ -186,8 +248,8 @@ function ProfileTab({
           </label>
           <input
             type="email"
-            value={settings.email}
-            onChange={(e) => updateSetting('email', e.target.value)}
+            value={settings.email ?? ''}
+            onChange={(e) => updateSetting('email', e.target.value || null)}
             className={cn(
               'w-full bg-abyss border border-text-muted/30 rounded px-4 py-2',
               'text-text-primary font-mono',
@@ -224,8 +286,8 @@ function GoalsTab({
   settings,
   updateSetting,
 }: {
-  settings: UserSettings;
-  updateSetting: <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => void;
+  settings: LocalSettings;
+  updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
 }) {
   const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const GOALS = [
@@ -258,7 +320,7 @@ function GoalsTab({
                 )}
               >
                 <div className="font-mono text-sm mb-1">{goal.label}</div>
-                <div className="text-xs opacity-70">{goal.desc}</div>
+                <div className="text-xs opacity-70 font-mono">{goal.desc}</div>
               </button>
             ))}
           </div>
@@ -331,7 +393,7 @@ function GoalsTab({
               {settings.fatigue_threshold}
             </span>
           </div>
-          <p className="text-xs text-text-muted mt-1">
+          <p className="text-xs text-text-muted mt-1 font-mono">
             System will warn when fatigue exceeds this level
           </p>
         </div>
@@ -686,7 +748,7 @@ function DataTab() {
             <Download className="w-5 h-5 text-neon-cyan" />
             <div>
               <div className="font-mono text-sm text-text-primary">Export Data</div>
-              <div className="text-xs text-text-muted">Download all your training data</div>
+              <div className="text-xs text-text-muted font-mono">Download all your training data</div>
             </div>
           </div>
           <div className="flex gap-2 mt-3">
@@ -717,7 +779,7 @@ function DataTab() {
             <AlertTriangle className="w-5 h-5 text-danger-red" />
             <div>
               <div className="font-mono text-sm text-danger-red">Danger Zone</div>
-              <div className="text-xs text-text-muted">Irreversible actions</div>
+              <div className="text-xs text-text-muted font-mono">Irreversible actions</div>
             </div>
           </div>
           <div className="flex gap-2 mt-3">
@@ -750,8 +812,8 @@ function AppearanceTab({
   settings,
   updateSetting,
 }: {
-  settings: UserSettings;
-  updateSetting: <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => void;
+  settings: LocalSettings;
+  updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
 }) {
   const THEMES = [
     { value: 'dark', label: 'DARK', color: 'bg-[#0a0f1a]' },
@@ -773,7 +835,7 @@ function AppearanceTab({
             {THEMES.map((theme) => (
               <button
                 key={theme.value}
-                onClick={() => updateSetting('theme', theme.value as UserSettings['theme'])}
+                onClick={() => updateSetting('theme', theme.value as LocalSettings['theme'])}
                 className={cn(
                   'flex flex-col items-center gap-2 p-3 rounded border transition-all',
                   settings.theme === theme.value
@@ -810,7 +872,7 @@ function AppearanceTab({
             />
             <div className="flex-1 text-left">
               <div className="font-mono text-sm text-text-primary">Push Notifications</div>
-              <div className="text-xs text-text-muted">Receive alerts and reminders</div>
+              <div className="text-xs text-text-muted font-mono">Receive alerts and reminders</div>
             </div>
             <div
               className={cn(

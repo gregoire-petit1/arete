@@ -1,6 +1,6 @@
 # TODO - Arete Development
 
-_Last updated: 6 December 2025_
+_Last updated: 7 December 2025_
 
 ## 📋 Completed
 
@@ -65,44 +65,36 @@ _Last updated: 6 December 2025_
 - [x] Modular frontend components for each response type
 - [x] SessionPlanView, ExerciseInfoView, AnalysisView, GeneralView
 
+### 9. ✅ UI Polish & Font Fixes
+
+- [x] Uniformisation polices : `font-display` (Inter) pour titres, `font-mono` (JetBrains Mono) pour corps/labels
+- [x] Titre onglet navigateur : "frontend" → "Arete"
+- [x] Alignement barres XP (largeur fixe pour valeurs et subtitles)
+- [x] Suppression des emojis (Matrix, FitDropzone, NeuralLink)
+- [x] Suppression du dégradé violet sur SystemMessage
+
+### 10. ✅ Settings Persistence
+
+- [x] Table `user_settings` dans DuckDB
+- [x] Endpoints API `GET/PUT /settings`
+- [x] SettingsContext pour état global
+- [x] Sauvegarde persistante (display name, theme, goals, etc.)
+- [x] Thème dynamique (dark/darker/abyss) appliqué en temps réel
+- [x] Display name utilisé dans Neural Link
+
 ---
 
 ## 📋 Next Up
 
-### 8. 🎨 UI Polish & Font Fixes
-
-**Goal**: Uniformiser les polices et corriger les détails visuels
-
-#### Polices à passer en Inter (titres/labels) :
-
-- [ ] **HUD** : texte sous SYSTEM SAYS, sous SUGGESTED ACTIONS
-- [ ] **Quest Log** : sous ADHERENCE DASHBOARD (completion rate, this week, days streak)
-- [ ] **The Forge** :
-  - Sous WEEKLY VOLUME TRACKER (total volume, total sets, avg rpe, % of weekly target)
-  - Sous NO SESSIONS YET ("start forging your strength")
-  - Onglet PR : tous les Est 1RM, les dates
-- [ ] **Neural Link** : corps des réponses système
-- [ ] **Matrix** (+ supprimer les emojis) :
-  - Sous SYSTEM STATUS (API Health, DuckDB, ChromaDB, Garmin Connect)
-  - Sous GARMIN SYNC CENTER (Last sync, Activities synced)
-  - Sous DRAG & DROP ("or click to browse")
-- [ ] **Settings** : descriptions sous les goals, "System will warn when fatigue exceeds this level"
-
-#### Autres corrections :
-
-- [ ] Alignement barre XP (doit arriver au même niveau que les éléments au-dessus)
-- [ ] Titre onglet navigateur : "frontend" → "Arete"
-
-### 9. 🔧 Fonctionnalités à implémenter
+### 11. 🔧 Fonctionnalités à implémenter
 
 **Goal**: Rendre fonctionnels les éléments UI actuellement non-fonctionnels
 
-- [ ] **Settings** : sauvegarde des changements (display name, thème, goals)
 - [ ] **Quest Log** : bouton NEW QUEST, bouton VIEW dans RECENT QUESTS
 - [ ] **The Forge** : bouton NEW SESSION (clarifier différence avec NEW QUEST)
 - [ ] **Matrix** : bouton Refresh
 
-### 10. 🔄 Training Session Parser
+### 12. 🔄 Training Session Parser
 
 **Goal**: Parse user training notes into structured sessions
 
@@ -111,20 +103,20 @@ _Last updated: 6 December 2025_
 - [ ] Calculate session volume and store in DuckDB
 - [ ] Connect to muscle heatmap visualization
 
-### 11. 📊 Enhanced Analytics
+### 13. 📊 Enhanced Analytics
 
 - [ ] Weekly/monthly volume trends by muscle group
 - [ ] PR tracking with progression charts
 - [ ] Recovery recommendations based on muscle fatigue
 - [ ] Integration of cardio + strength load for ACWR
 
-### 12. 🎯 Goal Tracking
+### 14. 🎯 Goal Tracking
 
 - [ ] Define user goals (5K sub-20, bench 140kg 1RM, marathon)
 - [ ] Progress tracking towards goals
 - [ ] AI-generated training blocks to reach goals
 
-### 13. 🏋️ Import Séances Muscu
+### 15. 🏋️ Import Séances Muscu
 
 - [ ] Format d'import à définir (CSV, JSON, formulaire)
 - [ ] Parsing et validation des données
@@ -141,12 +133,13 @@ _Last updated: 6 December 2025_
 5. ~~Garmin Sync~~ ✅
 6. ~~Exercise Knowledge Base~~ ✅
 7. ~~RAG Response Refactor~~ ✅
-8. **UI Polish & Font Fixes** (next)
-9. **Fonctionnalités à implémenter**
-10. **Training Session Parser**
-11. **Enhanced Analytics**
-12. **Goal Tracking**
-13. **Import Séances Muscu**
+8. ~~UI Polish & Font Fixes~~ ✅
+9. ~~Settings Persistence~~ ✅
+10. **Fonctionnalités à implémenter** (next)
+11. **Training Session Parser**
+12. **Enhanced Analytics**
+13. **Goal Tracking**
+14. **Import Séances Muscu**
 
 ---
 
