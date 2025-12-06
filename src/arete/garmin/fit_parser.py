@@ -514,12 +514,12 @@ class FITParser:
             "start_time": fields.get("start_time"),
             "duration_sec": float(fields.get("total_timer_time", 0)),
             "distance_m": float(fields.get("total_distance", 0)),
-            # Use enhanced_avg_speed if available, fallback to avg_speed
-            "avg_speed_mps": fields.get("enhanced_avg_speed") or fields.get("avg_speed"),
-            "max_speed_mps": fields.get("enhanced_max_speed") or fields.get("max_speed"),
+            # Use enhanced_avg_speed if available, fallback to avg_speed (None check to preserve 0 values)
+            "avg_speed_mps": fields.get("enhanced_avg_speed") if fields.get("enhanced_avg_speed") is not None else fields.get("avg_speed"),
+            "max_speed_mps": fields.get("enhanced_max_speed") if fields.get("enhanced_max_speed") is not None else fields.get("max_speed"),
             "avg_hr": fields.get("avg_heart_rate"),
             "max_hr": fields.get("max_heart_rate"),
-            "avg_cadence": fields.get("avg_cadence") or fields.get("avg_running_cadence"),
+            "avg_cadence": fields.get("avg_cadence") if fields.get("avg_cadence") is not None else fields.get("avg_running_cadence"),
             "avg_power": fields.get("avg_power"),
             "avg_stance_time": fields.get("avg_stance_time"),
             "avg_vertical_oscillation": fields.get("avg_vertical_oscillation"),

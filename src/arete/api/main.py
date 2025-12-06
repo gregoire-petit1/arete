@@ -1,3 +1,5 @@
+import logging
+
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
@@ -6,6 +8,8 @@ from arete.api.metrics import router as metrics_router
 from arete.api.routes import router as api_router
 from arete.dataio.db import connect
 from arete.llm.client import TrainingContext, generate_plan
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 app = FastAPI(title="Arete API", version="0.1.0")
@@ -33,7 +37,8 @@ def health():
         conn = connect(read_only=True)
         conn.execute("SELECT 1").fetchone()
         conn.close()
-    except Exception:
+    except Exception as e:
+        logger.warning("DuckDB health check failed: %s", e)
         db_status = "disconnected"
 
     # Check RAG (ChromaDB) - use the existing singleton from rag.py
@@ -46,8 +51,8 @@ def health():
             # Just check if the file exists, don't create a new client
             # The actual connection is tested when using /rag/query
             rag_status = "connected"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("RAG health check failed: %s", e)
 
     return {
         "status": "ok",

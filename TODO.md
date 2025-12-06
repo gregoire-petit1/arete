@@ -69,7 +69,7 @@ _Last updated: 6 December 2025_
 
 ## 📋 Next Up
 
-### 9. 🔄 Training Session Parser
+### 8. 🔄 Training Session Parser
 
 **Goal**: Parse user training notes into structured sessions
 
@@ -78,14 +78,14 @@ _Last updated: 6 December 2025_
 - [ ] Calculate session volume and store in DuckDB
 - [ ] Connect to muscle heatmap visualization
 
-### 10. 📊 Enhanced Analytics
+### 9. 📊 Enhanced Analytics
 
 - [ ] Weekly/monthly volume trends by muscle group
 - [ ] PR tracking with progression charts
 - [ ] Recovery recommendations based on muscle fatigue
 - [ ] Integration of cardio + strength load for ACWR
 
-### 11. 🎯 Goal Tracking
+### 10. 🎯 Goal Tracking
 
 - [ ] Define user goals (5K sub-20, bench 140kg 1RM, marathon)
 - [ ] Progress tracking towards goals

@@ -20,7 +20,7 @@ const navItems = [
 
 export function Navigation() {
   return (
-    <nav className="sticky top-0 z-50 bg-void/95 backdrop-blur-sm border-b border-text-muted/20">
+    <nav aria-label="Main navigation" className="sticky top-0 z-50 bg-void/95 backdrop-blur-sm border-b border-text-muted/20">
       <div className="max-w-7xl mx-auto px-4">
         <div className="flex items-center justify-between h-14">
           {/* Logo */}

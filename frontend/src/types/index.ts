@@ -75,7 +75,8 @@ export interface SessionLogRow {
   id: number;
   date: string;
   sport: string;
-  duration: number;
+  /** Duration in seconds (matches ActualSession) */
+  duration_seconds: number;
   rpe: number | null;
   tss: number | null;
   notes: string | null;
@@ -243,7 +244,7 @@ export interface RAGQueryRequest {
   ctl?: number;
   monotony?: number;
   strain?: number;
-  experience?: "beginner" | "intermediate" | "advanced";
+  experience?: "beginner" | "intermediate" | "advanced" | "elite";
   primary_sport?: string;
   fatigue?: number;
 }

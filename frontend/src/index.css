@@ -101,8 +101,8 @@ html {
 }
 
 body {
-  background-color: #0A0A0F;
-  color: #E8E8E8;
+  background-color: var(--color-void);
+  color: var(--color-text-primary);
   min-height: 100vh;
   margin: 0;
   -webkit-font-smoothing: antialiased;
