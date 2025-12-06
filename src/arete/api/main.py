@@ -23,7 +23,37 @@ class SessionRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    """Health check endpoint with detailed status."""
+
+    # Check DuckDB
+    db_status = "connected"
+    try:
+        from arete.dataio.db import connect
+
+        conn = connect(read_only=True)
+        conn.execute("SELECT 1").fetchone()
+        conn.close()
+    except Exception:
+        db_status = "disconnected"
+
+    # Check RAG (ChromaDB) - use the existing singleton from rag.py
+    rag_status = "disconnected"
+    try:
+        from pathlib import Path
+
+        chroma_path = Path("data/chromadb")
+        if chroma_path.exists() and (chroma_path / "chroma.sqlite3").exists():
+            # Just check if the file exists, don't create a new client
+            # The actual connection is tested when using /rag/query
+            rag_status = "connected"
+    except Exception:
+        pass
+
+    return {
+        "status": "ok",
+        "database": db_status,
+        "rag": rag_status,
+    }
 
 
 @app.post("/plan/jour")

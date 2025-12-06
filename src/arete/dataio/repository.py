@@ -8,9 +8,7 @@ from arete.dataio.db import connect
 
 # ---------- Helpers ----------
 def _next_id(con, table_qualified: str) -> int:
-    result = con.execute(
-        f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table_qualified}"
-    ).fetchone()
+    result = con.execute(f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table_qualified}").fetchone()
     if result is None:
         return 1
     return int(result[0])
@@ -286,9 +284,7 @@ def list_objectives(skip: int, limit: int) -> tuple[int, list[dict[str, Any]]]:
         con.close()
 
 
-def update_objective(
-    obj_id: int, *, sport: str, name: str, priority: int
-) -> dict[str, Any] | None:
+def update_objective(obj_id: int, *, sport: str, name: str, priority: int) -> dict[str, Any] | None:
     con = connect(False)
     try:
         row = con.execute(
@@ -323,9 +319,7 @@ def delete_objective(obj_id: int) -> bool:
 
 
 # ---------- Personal records ----------
-def create_record(
-    *, sport: str, event: str, performance: float, unit: str
-) -> dict[str, Any]:
+def create_record(*, sport: str, event: str, performance: float, unit: str) -> dict[str, Any]:
     con = connect(False)
     try:
         new_id = _next_id(con, "app.personal_records")

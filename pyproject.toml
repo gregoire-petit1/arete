@@ -66,7 +66,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"src/arete/api/main.py" = ["E402"]  # imports at bottom to avoid circular imports
+"src/arete/api/main.py" = ["E402"] # imports at bottom to avoid circular imports
 
 [tool.ruff.format]
 quote-style = "double"

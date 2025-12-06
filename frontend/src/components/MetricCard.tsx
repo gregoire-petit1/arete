@@ -1,0 +1,100 @@
+import { motion } from 'framer-motion';
+import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface MetricCardProps {
+  title: string;
+  value: number | string;
+  zone: string;
+  zoneColor: 'green' | 'orange' | 'red' | 'cyan';
+  subtitle?: string;
+  trend?: 'up' | 'down' | 'stable';
+}
+
+const zoneColorMap = {
+  green: {
+    border: 'border-success-green/50',
+    badge: 'bg-success-green/20 text-success-green',
+    glow: 'hover:shadow-[0_0_20px_rgba(0,255,136,0.3)]',
+  },
+  orange: {
+    border: 'border-warning-orange/50',
+    badge: 'bg-warning-orange/20 text-warning-orange',
+    glow: 'hover:shadow-[0_0_20px_rgba(255,140,0,0.3)]',
+  },
+  red: {
+    border: 'border-danger-red/50',
+    badge: 'bg-danger-red/20 text-danger-red',
+    glow: 'hover:shadow-[0_0_20px_rgba(255,59,59,0.3)]',
+  },
+  cyan: {
+    border: 'border-neon-cyan/50',
+    badge: 'bg-neon-cyan/20 text-neon-cyan',
+    glow: 'hover:shadow-[0_0_20px_rgba(0,240,255,0.3)]',
+  },
+};
+
+export function MetricCard({
+  title,
+  value,
+  zone,
+  zoneColor,
+  subtitle,
+  trend,
+}: MetricCardProps) {
+  const colors = zoneColorMap[zoneColor];
+  
+  const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      whileHover={{ scale: 1.02 }}
+      className={cn(
+        'glass-panel p-4 transition-all duration-300',
+        colors.border,
+        colors.glow
+      )}
+    >
+      {/* Title */}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs font-mono text-text-muted uppercase tracking-wider">
+          {title}
+        </span>
+        {trend && (
+          <TrendIcon
+            className={cn(
+              'w-4 h-4',
+              trend === 'up' && 'text-success-green',
+              trend === 'down' && 'text-danger-red',
+              trend === 'stable' && 'text-text-muted'
+            )}
+          />
+        )}
+      </div>
+
+      {/* Value */}
+      <div className="text-3xl font-mono font-bold text-text-primary mb-2">
+        {value}
+      </div>
+
+      {/* Zone Badge */}
+      <div
+        className={cn(
+          'inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono uppercase',
+          colors.badge
+        )}
+      >
+        {zone.replace('_', ' ')}
+        {zoneColor === 'green' && ' ✓'}
+        {zoneColor === 'red' && ' ⚠'}
+      </div>
+
+      {/* Subtitle */}
+      {subtitle && (
+        <div className="mt-2 text-xs text-text-muted">{subtitle}</div>
+      )}
+    </motion.div>
+  );
+}

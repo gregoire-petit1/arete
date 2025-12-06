@@ -61,6 +61,9 @@ class AugmentedGenerator:
         Returns:
             Structured plan with citations
         """
+        # Detect intent for adaptive response format
+        intent = self._detect_query_intent(query)
+
         # Token management
         token_manager = get_token_manager()
 
@@ -69,12 +72,10 @@ class AugmentedGenerator:
             model = token_manager.get_best_model(estimated_tokens=2000)
 
         # Check if we can make request
-        can_proceed, reason = token_manager.can_make_request(
-            model, estimated_tokens=2000
-        )
+        can_proceed, reason = token_manager.can_make_request(model, estimated_tokens=2000)
         if not can_proceed:
             logger.warning(f"Rate limit: {reason}, using fallback")
-            return self._fallback_response()
+            return self._fallback_response(intent)
 
         # Retrieve relevant knowledge (reduced count for token efficiency)
         retrieved_docs = self.retriever.retrieve(query, context, k=MAX_DOCS_FOR_CONTEXT)
@@ -83,12 +84,62 @@ class AugmentedGenerator:
         prompt = self._build_augmented_prompt(query, context, retrieved_docs)
 
         # Generate with LLM
-        response = self._call_llm(prompt, model)
+        response = self._call_llm(prompt, model, intent)
 
         # Structure response with metadata
         result = self._structure_response(response, retrieved_docs, context)
 
         return result
+
+    def _detect_query_intent(self, query: str) -> str:
+        """Detect the intent of the query to adapt response format.
+
+        Returns:
+            One of: 'session_plan', 'exercise_info', 'analysis', 'general'
+        """
+        query_lower = query.lower()
+
+        # Session planning keywords
+        session_keywords = [
+            "séance",
+            "entrainement",
+            "entraînement",
+            "programme",
+            "planifie",
+            "propose",
+            "aujourd'hui",
+            "demain",
+        ]
+        if any(kw in query_lower for kw in session_keywords):
+            return "session_plan"
+
+        # Exercise information keywords
+        exercise_keywords = [
+            "muscle",
+            "travaille",
+            "cible",
+            "exercice",
+            "comment faire",
+            "technique",
+            "exécution",
+        ]
+        if any(kw in query_lower for kw in exercise_keywords):
+            return "exercise_info"
+
+        # Analysis keywords
+        analysis_keywords = [
+            "analyse",
+            "charge",
+            "récupération",
+            "fatigue",
+            "performance",
+            "progression",
+            "tendance",
+        ]
+        if any(kw in query_lower for kw in analysis_keywords):
+            return "analysis"
+
+        return "general"
 
     def _build_augmented_prompt(
         self,
@@ -103,18 +154,40 @@ class AugmentedGenerator:
         Returns:
             Tuple of (system_prompt, user_prompt)
         """
-        # Compact system prompt (~250 tokens)
-        system_prompt = """Expert science du sport. Plans basés sur preuves.
+        intent = self._detect_query_intent(query)
+
+        # Base system prompt
+        base_rules = """Expert science du sport. Réponses basées sur preuves.
 
 RÈGLES:
-- JSON valide uniquement
+- JSON valide uniquement  
 - Cite sources avec [Source: ID]
-- Si ACWR>1.3 ou TSB<-15: SÉCURITÉ prioritaire
-- Quantifie (%, durées, zones)
-- Utilise les benchmarks de force si disponibles
+- Sois concis et actionnable"""
 
-FORMAT JSON:
-{"seance":"...", "details":{"echauffement":"...", "corps":"...", "retour_calme":"..."}, "cible":{"fc":"Zone", "allure":"...", "duree_totale":"min"}, "justification":"...", "charge_prevue":"légère|modérée|intense", "sources_utilisees":["ID"], "avertissements":[]}"""
+        # Format adapté selon l'intention
+        if intent == "session_plan":
+            format_spec = """
+FORMAT JSON (plan de séance):
+{"type":"session_plan", "titre":"...", "sections":[{"nom":"Échauffement", "contenu":"...", "duree":"X min"}, {"nom":"Corps de séance", "contenu":"...", "duree":"X min"}, {"nom":"Retour au calme", "contenu":"...", "duree":"X min"}], "cibles":{"fc":"Zone X", "allure":"...", "rpe":"X/10"}, "charge_prevue":"légère|modérée|intense", "justification":"...", "sources_utilisees":["ID"], "avertissements":[]}
+
+Si ACWR>1.3 ou TSB<-15: SÉCURITÉ prioritaire"""
+
+        elif intent == "exercise_info":
+            format_spec = """
+FORMAT JSON (info exercice):
+{"type":"exercise_info", "exercice":"nom", "muscles_principaux":["muscle1", "muscle2"], "muscles_secondaires":["muscle3"], "description":"explication courte", "conseils":["conseil1", "conseil2"], "variantes":["variante1"], "sources_utilisees":["ID"]}"""
+
+        elif intent == "analysis":
+            format_spec = """
+FORMAT JSON (analyse):
+{"type":"analysis", "titre":"...", "resume":"synthèse en 1-2 phrases", "points_cles":[{"label":"...", "valeur":"...", "interpretation":"bon|attention|alerte"}], "recommandations":["action1", "action2"], "sources_utilisees":["ID"]}"""
+
+        else:
+            format_spec = """
+FORMAT JSON (réponse générale):
+{"type":"general", "reponse":"ta réponse claire et concise", "points_cles":["point1", "point2"], "sources_utilisees":["ID"]}"""
+
+        system_prompt = base_rules + format_spec
 
         # Compact user prompt
         user_parts = []
@@ -136,9 +209,7 @@ FORMAT JSON:
             user_parts.append(" ".join(metrics))
 
         # Risk/intent summary
-        user_parts.append(
-            f"Risque:{context.get_risk_level():.0%} Intent:{context.infer_intent()}"
-        )
+        user_parts.append(f"Risque:{context.get_risk_level():.0%} Intent:{context.infer_intent()}")
 
         # Strength benchmarks (compact)
         strength_summary = context.get_strength_summary()
@@ -169,6 +240,7 @@ FORMAT JSON:
         self,
         prompt: tuple[str, str],
         model: str,
+        intent: str = "general",
     ) -> dict[str, Any]:
         """Call Groq LLM for generation with token tracking."""
         import os
@@ -180,7 +252,7 @@ FORMAT JSON:
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             logger.warning("GROQ_API_KEY not set, using fallback")
-            return self._fallback_response()
+            return self._fallback_response(intent)
 
         client = OpenAI(
             api_key=api_key,
@@ -217,30 +289,42 @@ FORMAT JSON:
             if content:
                 result: dict[str, Any] = json.loads(content)
                 return result
-            return self._fallback_response()
+            return self._fallback_response(intent)
 
         except Exception as e:
             logger.error(f"LLM call failed: {e}")
-            return self._fallback_response()
+            return self._fallback_response(intent)
 
-    def _fallback_response(self) -> dict[str, Any]:
+    def _fallback_response(self, intent: str = "general") -> dict[str, Any]:
         """Fallback when LLM unavailable."""
+        if intent == "session_plan":
+            return {
+                "type": "session_plan",
+                "titre": "Endurance fondamentale",
+                "sections": [
+                    {"nom": "Échauffement", "contenu": "10' footing progressif", "duree": "10 min"},
+                    {"nom": "Corps de séance", "contenu": "30-40' footing Z2", "duree": "35 min"},
+                    {
+                        "nom": "Retour au calme",
+                        "contenu": "10' marche + étirements",
+                        "duree": "10 min",
+                    },
+                ],
+                "cibles": {
+                    "fc": "Z2 (65-75% FCM)",
+                    "allure": "Conversation possible",
+                    "rpe": "4/10",
+                },
+                "charge_prevue": "modérée",
+                "justification": "Plan générique (LLM non disponible)",
+                "sources_utilisees": [],
+                "avertissements": ["Recommandation générique sans personnalisation"],
+            }
         return {
-            "seance": "Endurance fondamentale",
-            "details": {
-                "echauffement": "10' footing progressif",
-                "corps": "30-40' footing Z2",
-                "retour_calme": "10' retour au calme + étirements",
-            },
-            "cible": {
-                "fc": "Z2 (65-75% FCM)",
-                "allure": "Conversation possible",
-                "duree_totale": "50-60",
-            },
-            "justification": "Plan générique (LLM non disponible)",
-            "charge_prevue": "modérée",
+            "type": "general",
+            "reponse": "Service temporairement indisponible. Réessayez dans quelques instants.",
+            "points_cles": [],
             "sources_utilisees": [],
-            "avertissements": ["Recommandation générique sans personnalisation"],
         }
 
     def _structure_response(
@@ -266,9 +350,7 @@ FORMAT JSON:
 
         # Add strength context if available
         if context.strength_benchmarks:
-            response["_metadata"]["strength_benchmarks_count"] = len(
-                context.strength_benchmarks
-            )
+            response["_metadata"]["strength_benchmarks_count"] = len(context.strength_benchmarks)
 
         return response
 
@@ -369,9 +451,7 @@ def enrich_context_with_cardio(
         # Get HR drift flags for fatigue detection
         drift_data = repo.get_hr_drift_analysis(days=14)
         context.hr_drift_flags = [
-            f"{d['date']}: {d['flag']}"
-            for d in drift_data
-            if d.get("flag") == "potential_fatigue"
+            f"{d['date']}: {d['flag']}" for d in drift_data if d.get("flag") == "potential_fatigue"
         ]
 
     except Exception as e:

@@ -265,9 +265,7 @@ class TestGarminRepository:
         session_id = repo.create_planned_session(session)
 
         # Update status
-        success = repo.update_planned_session_status(
-            session_id, SessionStatus.COMPLETED
-        )
+        success = repo.update_planned_session_status(session_id, SessionStatus.COMPLETED)
         assert success
 
         # Verify
@@ -318,9 +316,7 @@ class TestGarminRepository:
         actual_id = repo.create_actual_session(actual)
 
         # Match them
-        success = repo.update_actual_session_match(
-            actual_id, planned_id, adherence_score=95.0
-        )
+        success = repo.update_actual_session_match(actual_id, planned_id, adherence_score=95.0)
         assert success
 
         # Verify
@@ -419,12 +415,8 @@ class TestGarminIntegration:
         assert match.adherence_score > 80  # Should be good adherence
 
         # 4. Save the match
-        repo.update_actual_session_match(
-            actual_id, match.planned_session.id, match.adherence_score
-        )
-        repo.update_planned_session_status(
-            match.planned_session.id, SessionStatus.COMPLETED
-        )
+        repo.update_actual_session_match(actual_id, match.planned_session.id, match.adherence_score)
+        repo.update_planned_session_status(match.planned_session.id, SessionStatus.COMPLETED)
 
         # 5. Check summary
         summary = repo.get_matches_summary()
@@ -506,12 +498,8 @@ class TestGarminRepositoryRagMethods:
 
             # Should detect this session with >20% spread flagged as potential fatigue
             flagged = [d for d in drift if d["session_id"] == session_id]
-            assert len(flagged) == 1, (
-                f"Expected session to be flagged, got {len(flagged)} matches"
-            )
-            assert flagged[0]["hr_spread_pct"] > 20, (
-                "HR spread should exceed 20% threshold"
-            )
+            assert len(flagged) == 1, f"Expected session to be flagged, got {len(flagged)} matches"
+            assert flagged[0]["hr_spread_pct"] > 20, "HR spread should exceed 20% threshold"
             assert flagged[0]["flag"] == "potential_fatigue"
         finally:
             # Cleanup

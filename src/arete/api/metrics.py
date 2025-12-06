@@ -251,9 +251,18 @@ def get_workload_metrics(
     # Check if there's any training data
     has_data = any(load.duration_min > 0 for load in loads)
     if not has_data:
-        raise HTTPException(
-            status_code=404,
-            detail="No training data found for the specified period",
+        # Return default values when no data
+        return WorkloadMetricsOut(
+            acwr=None,
+            acwr_zone="unknown",
+            acwr_ewma=None,
+            monotony=None,
+            monotony_zone="unknown",
+            strain=None,
+            strain_zone="unknown",
+            acute_load=0.0,
+            chronic_load=None,
+            days_analyzed=0,
         )
 
     metrics = compute_workload_metrics(loads, target_date)
@@ -289,9 +298,16 @@ def get_fitness_metrics(
     # Check for data
     has_data = any(tss.tss > 0 for tss in tss_history)
     if not has_data:
-        raise HTTPException(
-            status_code=404,
-            detail="No training data found for the specified period",
+        # Return default values when no data
+        return FitnessMetricsOut(
+            ctl=0.0,
+            atl=0.0,
+            tsb=0.0,
+            form_zone="neutral",
+            readiness_score=50.0,
+            readiness_level="moderate",
+            ramp_rate=None,
+            days_analyzed=0,
         )
 
     model = compute_performance_model(tss_history, target_date)
@@ -426,13 +442,7 @@ def get_recommendations(
     except Exception:
         logger.warning("Failed to compute fitness metrics", exc_info=True)
 
-    if not workload and not fitness:
-        raise HTTPException(
-            status_code=404,
-            detail="No training data available for recommendations",
-        )
-
-    # Generate recommendations
+    # Generate recommendations even without data (will give default advice)
     report: RecommendationReport = generate_recommendations(
         acwr=workload.acwr if workload else None,
         acwr_zone=workload.acwr_zone if workload else ACWRZone.UNKNOWN,
@@ -462,15 +472,11 @@ def get_recommendations(
             acwr_zone=workload.acwr_zone.value if workload.acwr_zone else None,
             acwr_ewma=round(workload.acwr_ewma, 3) if workload.acwr_ewma else None,
             monotony=round(workload.monotony, 2) if workload.monotony else None,
-            monotony_zone=workload.monotony_zone.value
-            if workload.monotony_zone
-            else None,
+            monotony_zone=workload.monotony_zone.value if workload.monotony_zone else None,
             strain=round(workload.strain, 1) if workload.strain else None,
             strain_zone=workload.strain_zone.value if workload.strain_zone else None,
             acute_load=round(workload.acute_load, 1),
-            chronic_load=round(workload.chronic_load, 1)
-            if workload.chronic_load
-            else None,
+            chronic_load=round(workload.chronic_load, 1) if workload.chronic_load else None,
             days_analyzed=len([load for load in loads if load.duration_min > 0]),
         )
 

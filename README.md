@@ -9,7 +9,7 @@
 
 ## 🚧 Status
 
-Active development — Strength Module & RAG Enrichment complete.
+Active development — Frontend React "Hunter" theme + RAG with adaptive responses complete.
 
 ## Goals
 
@@ -20,16 +20,23 @@ Active development — Strength Module & RAG Enrichment complete.
 - **Scientific training metrics** (ACWR, CTL/ATL/TSB, TRIMP, 1RM estimation)
 - **Garmin FIT file analysis** with interval detection and LLM coaching
 - **Strength training tracking** with PRs and volume analysis
+- **React frontend** with "Hunter" dark theme (Solo Leveling inspired)
 
 ## Stack
+
+### Backend
 
 - Python 3.11 (via [uv](https://github.com/astral-sh/uv))
 - FastAPI + Pydantic v2
 - DuckDB (analytical database)
-- Pandas / Polars
-- MLflow + Optuna
-- PyTorch (CPU)
-- LLM/RAG (à venir)
+- ChromaDB (RAG vector store)
+- Groq LLaMA 3.3 70B (LLM)
+
+### Frontend
+
+- React 19 + Vite 7
+- TailwindCSS 4 + Framer Motion
+- TanStack Query + React Router
 
 ## Getting Started
 
@@ -64,12 +71,23 @@ uv run uvicorn arete.api.main:app --reload
 # OpenAPI docs at http://localhost:8000/docs
 ```
 
+### Running the Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+
+# Access frontend at http://localhost:5173
+```
+
 ### Environment Variables
 
 Create a `.env` file (optional):
 
 ```bash
 ARETE_DB=data/arete.duckdb  # Database path
+GROQ_API_KEY=your_groq_key  # For LLM/RAG features
 ```
 
 ## Development
@@ -315,17 +333,17 @@ The API exposes training metrics via REST endpoints:
 
 ### Strength Endpoints
 
-| Endpoint                     | Method | Description                  |
-| ---------------------------- | ------ | ---------------------------- |
-| `/strength/exercises`        | POST   | Create exercise              |
-| `/strength/exercises`        | GET    | List exercises (filterable)  |
-| `/strength/sessions`         | POST   | Create session with sets     |
-| `/strength/sessions`         | GET    | List sessions                |
-| `/strength/sessions/{id}`    | GET    | Session details              |
-| `/strength/prs`              | GET    | All personal records         |
-| `/strength/prs/{exercise}`   | GET    | PR for specific exercise     |
-| `/strength/trends`           | GET    | 30-day training trends       |
-| `/strength/volume-by-muscle` | GET    | Volume by muscle group       |
+| Endpoint                     | Method | Description                 |
+| ---------------------------- | ------ | --------------------------- |
+| `/strength/exercises`        | POST   | Create exercise             |
+| `/strength/exercises`        | GET    | List exercises (filterable) |
+| `/strength/sessions`         | POST   | Create session with sets    |
+| `/strength/sessions`         | GET    | List sessions               |
+| `/strength/sessions/{id}`    | GET    | Session details             |
+| `/strength/prs`              | GET    | All personal records        |
+| `/strength/prs/{exercise}`   | GET    | PR for specific exercise    |
+| `/strength/trends`           | GET    | 30-day training trends      |
+| `/strength/volume-by-muscle` | GET    | Volume by muscle group      |
 
 ### Example API Calls
 
