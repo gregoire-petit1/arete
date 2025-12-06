@@ -68,13 +68,18 @@ class GarminActivity:
     @classmethod
     def from_api_response(cls, data: dict[str, Any]) -> GarminActivity:
         """Create from Garmin Connect API response."""
+        # Warn if startTimeLocal is missing (fallback to now is a data quality issue)
+        if "startTimeLocal" not in data:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Missing startTimeLocal for activity %s, using current time",
+                data.get("activityId", "unknown")
+            )
         return cls(
             activity_id=data["activityId"],
             activity_name=data.get("activityName", ""),
             activity_type=data.get("activityType", {}).get("typeKey", "unknown"),
-            start_time=datetime.fromisoformat(
-                data["startTimeLocal"].replace("Z", "+00:00")
-            )
+            start_time=datetime.fromisoformat(data["startTimeLocal"].replace("Z", "+00:00"))
             if "startTimeLocal" in data
             else datetime.now(UTC),
             duration_sec=int(data.get("duration", 0)),
@@ -288,9 +293,7 @@ class GarminSyncClient:
                 time.sleep(RATE_LIMITS["delay_after_429"])
             raise
 
-    def download_fit_file(
-        self, activity_id: int, output_dir: Path | None = None
-    ) -> Path | None:
+    def download_fit_file(self, activity_id: int, output_dir: Path | None = None) -> Path | None:
         """Download original FIT file for an activity.
 
         Args:
@@ -349,9 +352,7 @@ class GarminSyncClient:
         """
         result = SyncResult(success=False)
         effective_max: int = (
-            max_activities
-            if max_activities
-            else int(RATE_LIMITS["max_activities_per_sync"])
+            max_activities if max_activities else int(RATE_LIMITS["max_activities_per_sync"])
         )
 
         # Default to syncing from last activity
@@ -393,10 +394,7 @@ class GarminSyncClient:
                     result.activities_synced += 1
                     result.last_activity_date = activity.start_time.date()
 
-                    logger.info(
-                        f"Synced: {activity.activity_name} "
-                        f"({activity.start_time.date()})"
-                    )
+                    logger.info(f"Synced: {activity.activity_name} ({activity.start_time.date()})")
 
                 except Exception as e:
                     error_msg = f"Failed to sync activity {activity.activity_id}: {e}"

@@ -219,9 +219,7 @@ class StrengthRepository:
 
         return session_exercise_id
 
-    def _create_set(
-        self, conn: duckdb.DuckDBPyConnection, exercise_set: ExerciseSet
-    ) -> int:
+    def _create_set(self, conn: duckdb.DuckDBPyConnection, exercise_set: ExerciseSet) -> int:
         """Create an exercise set."""
         result = conn.execute(
             """
@@ -303,12 +301,8 @@ class StrengthRepository:
                 exercise = Exercise(
                     id=ex_row[7],
                     name=ex_row[8],
-                    category=ExerciseCategory(ex_row[9])
-                    if ex_row[9]
-                    else ExerciseCategory.OTHER,
-                    primary_muscle=MuscleGroup(ex_row[10])
-                    if ex_row[10]
-                    else MuscleGroup.FULL_BODY,
+                    category=ExerciseCategory(ex_row[9]) if ex_row[9] else ExerciseCategory.OTHER,
+                    primary_muscle=MuscleGroup(ex_row[10]) if ex_row[10] else MuscleGroup.FULL_BODY,
                     secondary_muscles=[MuscleGroup(m) for m in secondary],
                     equipment=ex_row[12],
                     is_unilateral=ex_row[13],
@@ -429,9 +423,7 @@ class StrengthRepository:
         )
 
         # Delete session exercises
-        conn.execute(
-            "DELETE FROM app.session_exercises WHERE session_id = ?", [session_id]
-        )
+        conn.execute("DELETE FROM app.session_exercises WHERE session_id = ?", [session_id])
 
         # Delete session
         result = conn.execute(
@@ -490,13 +482,26 @@ class StrengthRepository:
         self,
         start_date: date | None = None,
         end_date: date | None = None,
+        include_secondary: bool = True,
+        secondary_weight: float = 0.5,
     ) -> dict[str, float]:
-        """Get total volume grouped by primary muscle."""
+        """Get total volume grouped by muscle, including secondary muscles.
+
+        Args:
+            start_date: Filter sessions from this date
+            end_date: Filter sessions until this date
+            include_secondary: Whether to include secondary muscles (weighted)
+            secondary_weight: Weight for secondary muscle volume (default 0.5)
+
+        Returns:
+            Dict mapping muscle name to volume in kg
+        """
         conn = self._get_connection()
 
+        # Get all sets with exercise info
         query = """
-            SELECT e.primary_muscle,
-                   SUM(es.reps * COALESCE(es.weight_kg, 0)) as volume
+            SELECT e.id, e.name, e.primary_muscle, e.secondary_muscles,
+                   es.reps, COALESCE(es.weight_kg, 0) as weight
             FROM app.exercise_sets es
             JOIN app.session_exercises se ON es.session_exercise_id = se.id
             JOIN app.exercises e ON se.exercise_id = e.id
@@ -512,12 +517,43 @@ class StrengthRepository:
             query += " AND ss.date <= ?"
             params.append(end_date)
 
-        query += " GROUP BY e.primary_muscle ORDER BY volume DESC"
-
         results = conn.execute(query, params).fetchall()
         conn.close()
 
-        return {row[0]: round(row[1], 1) for row in results}
+        # Calculate volume per muscle
+        muscle_volume: dict[str, float] = {}
+
+        for row in results:
+            primary_muscle = row[2]
+            secondary_muscles_json = row[3]  # JSON string or None
+            reps = row[4]
+            weight = row[5]
+
+            set_volume = reps * weight
+
+            # Primary muscle gets full volume
+            if primary_muscle:
+                muscle_volume[primary_muscle] = muscle_volume.get(primary_muscle, 0) + set_volume
+
+            # Secondary muscles get weighted volume
+            if include_secondary and secondary_muscles_json:
+                import json
+
+                try:
+                    secondary_muscles = (
+                        json.loads(secondary_muscles_json)
+                        if isinstance(secondary_muscles_json, str)
+                        else secondary_muscles_json
+                    )
+                    if isinstance(secondary_muscles, list):
+                        for muscle in secondary_muscles:
+                            muscle_volume[muscle] = (
+                                muscle_volume.get(muscle, 0) + set_volume * secondary_weight
+                            )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        return {k: round(v, 1) for k, v in sorted(muscle_volume.items(), key=lambda x: -x[1])}
 
     def get_personal_records(self, exercise_id: int) -> dict:
         """Get personal records for an exercise."""

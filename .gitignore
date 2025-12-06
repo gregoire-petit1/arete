@@ -12,7 +12,7 @@ dist/
 build/
 
 # Données locales (ne pas versionner)
-data/
+/data/
 *.db
 *.duckdb
 mlruns/
@@ -34,3 +34,13 @@ Thumbs.db
 # Logs
 *.log
 logs/
+/tmp/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# ChromaDB local
+chromadb/

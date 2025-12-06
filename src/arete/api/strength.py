@@ -204,9 +204,7 @@ def create_exercise(data: ExerciseCreate):
     # Check if exercise already exists
     existing = _repo.get_exercise_by_name(data.name)
     if existing:
-        raise HTTPException(
-            status_code=400, detail=f"Exercise '{data.name}' already exists"
-        )
+        raise HTTPException(status_code=400, detail=f"Exercise '{data.name}' already exists")
 
     exercise = Exercise(
         name=data.name,
@@ -244,9 +242,7 @@ def get_exercise(exercise_id: int):
     return _exercise_to_response(exercise)
 
 
-@router.get(
-    "/exercises/{exercise_id}/history", response_model=list[ExerciseHistoryResponse]
-)
+@router.get("/exercises/{exercise_id}/history", response_model=list[ExerciseHistoryResponse])
 def get_exercise_history(exercise_id: int, limit: int = Query(20, ge=1, le=100)):
     """Get performance history for an exercise."""
     exercise = _repo.get_exercise(exercise_id)

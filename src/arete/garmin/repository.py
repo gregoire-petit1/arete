@@ -158,9 +158,7 @@ class GarminRepository:
             for row in results
         ]
 
-    def update_planned_session_status(
-        self, session_id: int, status: SessionStatus
-    ) -> bool:
+    def update_planned_session_status(self, session_id: int, status: SessionStatus) -> bool:
         """Update the status of a planned session."""
         conn = self._get_connection()
         result = conn.execute(
@@ -430,9 +428,7 @@ class GarminRepository:
             "total_matched": total_matched,
             "total_unmatched": total_actual - total_matched,
             "adherence_rate": (
-                round(total_matched / total_planned * 100, 1)
-                if total_planned > 0
-                else 0
+                round(total_matched / total_planned * 100, 1) if total_planned > 0 else 0
             ),
         }
 
@@ -588,15 +584,9 @@ class GarminRepository:
             "period_days": days,
             "session_count": result[6] if result else 0,
             "avg_cadence_spm": round(result[0]) if result and result[0] else None,
-            "avg_vertical_oscillation_mm": round(result[1], 1)
-            if result and result[1]
-            else None,
-            "avg_ground_contact_time_ms": round(result[2])
-            if result and result[2]
-            else None,
-            "avg_stride_length_m": round(result[3], 2)
-            if result and result[3]
-            else None,
+            "avg_vertical_oscillation_mm": round(result[1], 1) if result and result[1] else None,
+            "avg_ground_contact_time_ms": round(result[2]) if result and result[2] else None,
+            "avg_stride_length_m": round(result[3], 2) if result and result[3] else None,
             "avg_easy_hr": round(result[4]) if result and result[4] else None,
             "avg_easy_pace": _pace_str(result[5]) if result else None,
             "best_pace": _pace_str(best_pace[0]) if best_pace else None,
@@ -652,9 +642,7 @@ class GarminRepository:
                         "avg_hr": avg_hr,
                         "max_hr": max_hr,
                         "hr_spread_pct": round(hr_spread_pct, 1),
-                        "flag": "potential_fatigue"
-                        if hr_spread_pct > 20
-                        else "monitor",
+                        "flag": "potential_fatigue" if hr_spread_pct > 20 else "monitor",
                     }
                 )
 

@@ -259,9 +259,7 @@ class TestGarminSyncClient:
             },
         ]
 
-        activities = client.get_activities(
-            start_date=date(2025, 12, 1), end_date=date(2025, 12, 5)
-        )
+        activities = client.get_activities(start_date=date(2025, 12, 1), end_date=date(2025, 12, 5))
 
         # Only activity 2 should match
         assert len(activities) == 1

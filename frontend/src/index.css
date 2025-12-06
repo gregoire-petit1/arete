@@ -1,0 +1,242 @@
+@import "tailwindcss";
+
+/* ========================= */
+/* FONTS - LOCAL HOSTING    */
+/* ========================= */
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/JetBrainsMono-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./assets/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('./assets/fonts/Inter-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('./assets/fonts/Inter-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('./assets/fonts/Inter-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Inter';
+  src: url('./assets/fonts/Inter-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ========================= */
+/* TAILWIND THEME CONFIG    */
+/* ========================= */
+
+@theme {
+  /* Colors - Solo Leveling Theme */
+  --color-void: #0A0A0F;
+  --color-abyss: #12121A;
+  --color-shadow: #1A1A24;
+  --color-neon-cyan: #00F0FF;
+  --color-neon-purple: #9D4EDD;
+  --color-neon-gold: #FFD700;
+  --color-success-green: #00FF88;
+  --color-warning-orange: #FF8C00;
+  --color-danger-red: #FF3B3B;
+  --color-text-primary: #E8E8E8;
+  --color-text-secondary: #A0A0A0;
+  --color-text-muted: #606060;
+
+  /* Fonts */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-display: 'Inter', system-ui, sans-serif;
+
+  /* Shadows */
+  --shadow-neon-cyan: 0 0 20px rgba(0, 240, 255, 0.3);
+  --shadow-neon-purple: 0 0 20px rgba(157, 78, 221, 0.3);
+  --shadow-neon-gold: 0 0 20px rgba(255, 215, 0, 0.3);
+}
+
+/* ========================= */
+/* BASE STYLES              */
+/* ========================= */
+
+html {
+  background-color: var(--color-void);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+}
+
+body {
+  background-color: var(--color-void);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ========================= */
+/* GLASSMORPHISM PANEL      */
+/* ========================= */
+
+.glass-panel {
+  background: rgba(18, 18, 26, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 240, 255, 0.15);
+  border-radius: 4px;
+}
+
+.glass-panel-hover:hover {
+  box-shadow: 0 0 30px rgba(0, 240, 255, 0.4);
+  border-color: rgba(0, 240, 255, 0.5);
+  transition: all 0.3s ease;
+}
+
+/* ========================= */
+/* SCAN LINES EFFECT        */
+/* ========================= */
+
+.scan-lines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 240, 255, 0.03) 2px,
+    rgba(0, 240, 255, 0.03) 4px
+  );
+  pointer-events: none;
+}
+
+/* ========================= */
+/* SYSTEM TEXT EFFECT       */
+/* ========================= */
+
+.system-text {
+  color: var(--color-neon-cyan);
+  font-family: var(--font-mono);
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+  animation: blink 2s infinite;
+}
+
+@keyframes blink {
+  0%, 50%, 100% { opacity: 1; }
+  25%, 75% { opacity: 0.7; }
+}
+
+/* ========================= */
+/* GLOW EFFECTS             */
+/* ========================= */
+
+.glow-cyan {
+  box-shadow: var(--shadow-neon-cyan);
+}
+
+.glow-purple {
+  box-shadow: var(--shadow-neon-purple);
+}
+
+.glow-gold {
+  box-shadow: var(--shadow-neon-gold);
+}
+
+.text-glow-cyan {
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+}
+
+.text-glow-purple {
+  text-shadow: 0 0 10px rgba(157, 78, 221, 0.5);
+}
+
+.text-glow-gold {
+  text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+/* ========================= */
+/* SCROLLBAR STYLING        */
+/* ========================= */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-void);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-shadow);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neon-cyan);
+}
+
+/* ========================= */
+/* PROGRESS BAR ANIMATIONS  */
+/* ========================= */
+
+@keyframes fillBar {
+  from {
+    width: 0%;
+  }
+}
+
+.animate-fill {
+  animation: fillBar 0.8s ease-out forwards;
+}
+
+/* ========================= */
+/* PULSE ANIMATION          */
+/* ========================= */
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(0, 240, 255, 0);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}

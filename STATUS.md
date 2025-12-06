@@ -312,21 +312,24 @@ Module complet `src/arete/strength/` pour l'entraînement musculaire :
 
 #### Architecture du module
 
-| Fichier         | Description                                          |
-| --------------- | ---------------------------------------------------- |
-| `models.py`     | Dataclasses Exercise, ExerciseSet, StrengthSession   |
-| `repository.py` | CRUD complet + PRs + trends + volume par muscle      |
+| Fichier         | Description                                        |
+| --------------- | -------------------------------------------------- |
+| `models.py`     | Dataclasses Exercise, ExerciseSet, StrengthSession |
+| `repository.py` | CRUD complet + PRs + trends + volume par muscle    |
 
 #### Modèles de données
 
 **Exercise** - Bibliothèque d'exercices :
+
 - name, category (compound/isolation/accessory), primary_muscle, secondary_muscles
 - equipment, instructions, default_rest_seconds
 
 **ExerciseSet** - Série individuelle :
+
 - exercise_id, weight_kg, reps, rpe (1-10), rest_seconds, notes, tempo
 
 **StrengthSession** - Session complète :
+
 - date, exercises avec sets, duration_min, notes, fatigue_level
 
 #### Repository Features
@@ -339,18 +342,18 @@ Module complet `src/arete/strength/` pour l'entraînement musculaire :
 
 #### Strength API (`src/arete/api/strength.py`)
 
-| Endpoint                     | Méthode | Description                    |
-| ---------------------------- | ------- | ------------------------------ |
-| `/strength/exercises`        | POST    | Créer exercice                 |
-| `/strength/exercises`        | GET     | Lister exercices (filtrable)   |
-| `/strength/exercises/{id}`   | GET     | Détail exercice                |
-| `/strength/sessions`         | POST    | Créer session avec sets        |
-| `/strength/sessions`         | GET     | Lister sessions                |
-| `/strength/sessions/{id}`    | GET     | Détail session                 |
-| `/strength/prs`              | GET     | Tous les PRs                   |
-| `/strength/prs/{exercise}`   | GET     | PR pour un exercice            |
-| `/strength/trends`           | GET     | Tendances 30 jours             |
-| `/strength/volume-by-muscle` | GET     | Volume par groupe musculaire   |
+| Endpoint                     | Méthode | Description                  |
+| ---------------------------- | ------- | ---------------------------- |
+| `/strength/exercises`        | POST    | Créer exercice               |
+| `/strength/exercises`        | GET     | Lister exercices (filtrable) |
+| `/strength/exercises/{id}`   | GET     | Détail exercice              |
+| `/strength/sessions`         | POST    | Créer session avec sets      |
+| `/strength/sessions`         | GET     | Lister sessions              |
+| `/strength/sessions/{id}`    | GET     | Détail session               |
+| `/strength/prs`              | GET     | Tous les PRs                 |
+| `/strength/prs/{exercise}`   | GET     | PR pour un exercice          |
+| `/strength/trends`           | GET     | Tendances 30 jours           |
+| `/strength/volume-by-muscle` | GET     | Volume par groupe musculaire |
 
 ### RAG Enrichment ✅ NEW (2025-12-03)
 
@@ -359,10 +362,12 @@ Enrichissement du contexte RAG avec données personnelles :
 #### Strength Benchmarks (`retriever.py`)
 
 **StrengthBenchmark** dataclass :
+
 - exercise, category, muscle
 - estimated_1rm, weight_kg, reps
 
 **UserContext enrichi** :
+
 - `strength_benchmarks: list[StrengthBenchmark]`
 - `strength_session_count_30d`, `strength_total_volume_30d`
 - `strength_volume_by_muscle: dict[str, float]`
@@ -370,12 +375,14 @@ Enrichissement du contexte RAG avec données personnelles :
 #### Cardio Benchmarks (`retriever.py`)
 
 **CardioBenchmark** dataclass :
+
 - avg_cadence_spm, avg_vertical_oscillation_mm
 - avg_ground_contact_time_ms, avg_stride_length_m
 - avg_easy_hr, avg_easy_pace, best_pace
 - total_distance_km_90d, session_count_90d
 
 **HR Drift Detection** :
+
 - Détection sessions avec spread HR >20% (potential_fatigue flag)
 - `hr_drift_flags: list[str]` dans UserContext
 
@@ -388,9 +395,121 @@ Enrichissement du contexte RAG avec données personnelles :
 #### Prompt Integration
 
 Le prompt RAG inclut maintenant :
+
 - Résumé strength (PRs principaux, volume 30j)
 - Résumé cardio (cadence, pace, sessions récentes)
 - Flags de fatigue HR drift
+
+### Frontend React ✅ NEW (2025-12-06)
+
+Application React avec thème "Hunter" (Solo Leveling inspired).
+
+#### Stack Frontend
+
+| Technologie    | Version | Usage         |
+| -------------- | ------- | ------------- |
+| React          | 19.1.0  | UI Framework  |
+| Vite           | 7.2.5   | Build tool    |
+| TailwindCSS    | 4.1.7   | Styling       |
+| Framer Motion  | 12.15.0 | Animations    |
+| TanStack Query | 6.0.0   | Data fetching |
+| Lucide React   | 0.513.0 | Icons         |
+| React Router   | 7.6.1   | Navigation    |
+
+#### Pages
+
+| Page        | Route          | Description                            |
+| ----------- | -------------- | -------------------------------------- |
+| HUD         | `/`            | Dashboard fitness (CTL/ATL/TSB, ACWR)  |
+| Forge       | `/forge`       | Strength training + anatomical heatmap |
+| Matrix      | `/matrix`      | Calendar view sessions                 |
+| Quest Log   | `/quest-log`   | Planned sessions list                  |
+| Neural Link | `/neural-link` | RAG chat interface                     |
+| Settings    | `/settings`    | User preferences                       |
+
+#### Composants clés
+
+- **AnatomicalHeatmap** : Vue corps avant/arrière style Garmin avec muscles colorés par volume
+- **FitDropzone** : Upload fichiers FIT par drag & drop
+- **LoadChart** : Graphique charge (ATL/CTL/TSB)
+- **MetricCard** : Cards métriques avec animations
+- **SessionTimeline** : Timeline sessions sur 7 jours
+- **StatusBar** : Barre de statut système
+
+#### Thème Hunter
+
+- Palette dark : `void (#0a0a0f)`, `neon-purple`, `neon-cyan`, `warning-orange`, `danger-red`
+- Fonts : Inter (sans), JetBrains Mono (mono)
+- Glass panels avec blur et bordures subtiles
+- Animations fluides (Framer Motion)
+
+### Exercise Knowledge Base ✅ NEW (2025-12-06)
+
+Module `src/arete/data/` avec catalogue d'exercices et seeding.
+
+#### Catalogue (`exercises_catalog.py`)
+
+- **46 exercices** avec mappings muscles primaires/secondaires
+- **20 groupes musculaires** organisés par région (chest, back, shoulders, arms, legs)
+- **Alias d'exercices** : bp → bench_press, pu → pull_up, dl → deadlift, etc.
+- Catégories : chest, back, shoulders, arms, legs
+
+#### Seeding (`seed_exercises.py`)
+
+- Crée tables DuckDB : `app.muscles`, `app.exercises`
+- Seed ChromaDB : collection `exercises` (46 docs), collection `protocols` (muscle groups)
+- Script idempotent (INSERT OR REPLACE)
+
+#### Volume Calculation Update
+
+`strength/repository.py` mis à jour :
+
+- `get_volume_by_muscle()` inclut muscles secondaires (pondérés à 50%)
+- Lookup via `EXERCISES_BY_ID` pour mappings précis
+
+### RAG Response Format Refactor ✅ NEW (2025-12-06)
+
+Système de réponse RAG adaptatif selon l'intention de la question.
+
+#### Intent Detection
+
+`augmented_generator.py` détecte automatiquement :
+
+| Intent        | Mots-clés                              | Format réponse     |
+| ------------- | -------------------------------------- | ------------------ |
+| session_plan  | séance, entraînement, programme        | Plan structuré     |
+| exercise_info | muscle, travaille, exercice, technique | Info exercice      |
+| analysis      | analyse, charge, récupération, fatigue | Points clés + reco |
+| general       | (autres)                               | Réponse libre      |
+
+#### Formats de réponse
+
+**session_plan** :
+
+```json
+{"type": "session_plan", "titre": "...", "sections": [...], "cibles": {...}, "charge_prevue": "..."}
+```
+
+**exercise_info** :
+
+```json
+{"type": "exercise_info", "exercice": "...", "muscles_principaux": [...], "muscles_secondaires": [...], "conseils": [...]}
+```
+
+**analysis** :
+
+```json
+{"type": "analysis", "titre": "...", "resume": "...", "points_cles": [...], "recommandations": [...]}
+```
+
+#### Frontend Components
+
+Composants React modulaires dans `NeuralLink.tsx` :
+
+- `SessionPlanView` : affiche sections, cibles, charge
+- `ExerciseInfoView` : affiche muscles (rouge primaire, orange secondaire), conseils, variantes
+- `AnalysisView` : affiche points clés colorés (bon/attention/alerte), recommandations
+- `GeneralView` : affiche réponse texte + points clés
 
 ### Qualité & Tests
 
@@ -442,6 +561,10 @@ uv run ruff format src tests
 5. ~~**Garmin Pipeline** : parsing FIT, matching planned/actual, analyse LLM détaillée + intervalles.~~ ✅ **DONE**
 6. ~~**Strength Module** : module muscu avec exercices, sets, PRs, volume tracking.~~ ✅ **DONE**
 7. ~~**RAG Enrichment** : benchmarks personnels (strength + cardio) dans le contexte RAG.~~ ✅ **DONE**
-8. **Garmin OAuth** : sync automatique via Garmin Connect API (Health API ou Web Scraping).
-9. **Front/UX** : mini UI ou collection HTTP (Insomnia/Postman) prête à l'emploi.
-10. **Déploiement** : Docker, fly.io ou Render pour démo live.
+8. ~~**Frontend React** : UI "Hunter" theme avec dashboard, heatmap musculaire, chat RAG.~~ ✅ **DONE**
+9. ~~**Exercise Knowledge Base** : catalogue 46 exercices avec muscles primaires/secondaires, seeding ChromaDB.~~ ✅ **DONE**
+10. ~~**RAG Response Refactor** : détection d'intent (session_plan, exercise_info, analysis) et formats adaptatifs.~~ ✅ **DONE**
+11. **Training Session Parser** : parsing des notes d'entraînement utilisateur vers sessions structurées.
+12. **Enhanced Analytics** : tendances volume par muscle, tracking PRs, recommandations récupération.
+13. **Goal Tracking** : définition d'objectifs, suivi de progression, blocs d'entraînement IA.
+14. **Déploiement** : Docker, fly.io ou Render pour démo live.
