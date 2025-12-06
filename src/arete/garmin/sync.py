@@ -71,9 +71,10 @@ class GarminActivity:
         # Warn if startTimeLocal is missing (fallback to now is a data quality issue)
         if "startTimeLocal" not in data:
             import logging
+
             logging.getLogger(__name__).warning(
                 "Missing startTimeLocal for activity %s, using current time",
-                data.get("activityId", "unknown")
+                data.get("activityId", "unknown"),
             )
         return cls(
             activity_id=data["activityId"],
