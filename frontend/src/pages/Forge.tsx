@@ -1,25 +1,68 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
-  Plus,
   TrendingUp,
   TrendingDown,
   Minus,
   X,
   Wrench,
+  Check,
+  Sparkles,
+  AlertCircle,
+  Link,
+  Unlink,
 } from 'lucide-react';
 import { LoadingState, EmptyState, StrengthIcon } from '@/components';
 import { AnatomicalHeatmap } from '@/components/AnatomicalHeatmap';
 import { strengthApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { StrengthSession, Exercise } from '@/types';
+import type { StrengthSession } from '@/types';
+
+// Parsed workout types
+interface ParsedSet {
+  set_number: number;
+  reps: number | null;  // null for failure sets
+  weight_kg: number | null;
+  rpe: number | null;
+  is_warmup: boolean;
+  is_failure: boolean;
+}
+
+interface ParsedExercise {
+  name: string;
+  exercise_id: string | null;
+  exercise_matched: boolean;
+  sets: ParsedSet[];
+  notes: string | null;
+}
+
+interface ParseResult {
+  success: boolean;
+  date: string;
+  name: string | null;
+  exercises: ParsedExercise[];
+  duration_min: number | null;
+  overall_rpe: number | null;
+  notes: string | null;
+  session_id: number | null;
+  message: string | null;
+}
 
 export function ForgePage() {
+  const queryClient = useQueryClient();
   const [exerciseSearch, setExerciseSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [showComingSoon, setShowComingSoon] = useState<string | null>(null);
+  const [showNewSession, setShowNewSession] = useState(false);
+  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
+
+  // Workout parsing state
+  const [workoutText, setWorkoutText] = useState('');
+  const [workoutDate, setWorkoutDate] = useState(new Date().toISOString().split('T')[0]);
+  const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [parseStep, setParseStep] = useState<'input' | 'preview' | 'saved'>('input');
 
   // Queries
   const { data: volumeByMuscle, isLoading: volumeLoading } = useQuery({
@@ -32,14 +75,88 @@ export function ForgePage() {
     queryFn: () => strengthApi.getSessions(10),
   });
 
+  // Query for selected session details
+  const { data: selectedSession, isLoading: sessionDetailLoading } = useQuery({
+    queryKey: ['strengthSession', selectedSessionId],
+    queryFn: () => strengthApi.getSession(selectedSessionId!),
+    enabled: selectedSessionId !== null,
+  });
+
   const { data: exercises } = useQuery({
-    queryKey: ['exercises', categoryFilter, exerciseSearch],
+    queryKey: ['exercises', exerciseSearch],
     queryFn: () =>
       strengthApi.getExercises({
-        category: categoryFilter || undefined,
         search: exerciseSearch || undefined,
       }),
   });
+
+  // Filter exercises by category group (frontend-side filtering)
+  const CATEGORY_GROUPS: Record<string, string[]> = {
+    push: ['push_horizontal', 'push_vertical'],
+    pull: ['pull_horizontal', 'pull_vertical'],
+    legs: ['squat', 'hinge'],
+    isolation: ['isolation'],
+  };
+
+  const filteredExercises = exercises?.filter((ex) => {
+    if (!categoryFilter) return true;
+    const categories = CATEGORY_GROUPS[categoryFilter];
+    return categories?.includes(ex.category) ?? true;
+  });
+
+  // Parse workout mutation
+  const parseWorkoutMutation = useMutation({
+    mutationFn: ({ text, date, save }: { text: string; date: string; save: boolean }) =>
+      strengthApi.parseWorkout(text, date, save),
+    onSuccess: (data) => {
+      setParseResult(data);
+      if (data.session_id) {
+        // Session was saved
+        setParseStep('saved');
+        queryClient.invalidateQueries({ queryKey: ['strengthSessions'] });
+        queryClient.invalidateQueries({ queryKey: ['volumeByMuscle'] });
+      } else {
+        // Show preview
+        setParseStep('preview');
+      }
+    },
+  });
+
+  // Delete session mutation
+  const deleteSessionMutation = useMutation({
+    mutationFn: (sessionId: number) => strengthApi.deleteSession(sessionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['strengthSessions'] });
+      queryClient.invalidateQueries({ queryKey: ['volumeByMuscle'] });
+      setSelectedSessionId(null);
+    },
+  });
+
+  // Query for Garmin candidates when viewing a session
+  const { data: garminCandidates } = useQuery({
+    queryKey: ['garminCandidates', selectedSessionId],
+    queryFn: () => strengthApi.getGarminCandidates(selectedSessionId!),
+    enabled: selectedSessionId !== null,
+  });
+
+  // Link to Garmin mutation
+  const linkGarminMutation = useMutation({
+    mutationFn: ({ sessionId, garminId }: { sessionId: number; garminId: number | null }) =>
+      strengthApi.linkToGarmin(sessionId, garminId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['strengthSession', selectedSessionId] });
+      queryClient.invalidateQueries({ queryKey: ['garminCandidates', selectedSessionId] });
+    },
+  });
+
+  // Reset modal state
+  const resetModal = () => {
+    setShowNewSession(false);
+    setWorkoutText('');
+    setWorkoutDate(new Date().toISOString().split('T')[0]);
+    setParseResult(null);
+    setParseStep('input');
+  };
 
   // Calculate weekly stats
   const weeklyVolume = sessions?.reduce((sum, s) => sum + (s.total_volume || 0), 0) || 0;
@@ -65,16 +182,16 @@ export function ForgePage() {
             THE FORGE
           </h1>
           <button
-            onClick={() => setShowComingSoon('Créer une nouvelle session de musculation')}
+            onClick={() => setShowNewSession(true)}
             className={cn(
               'flex items-center gap-2 px-4 py-2 rounded',
-              'bg-neon-cyan/10 border border-neon-cyan/30',
-              'text-neon-cyan font-mono text-sm',
-              'hover:bg-neon-cyan/20 transition-all duration-200'
+              'bg-neon-gold/10 border border-neon-gold/30',
+              'text-neon-gold font-mono text-sm',
+              'hover:bg-neon-gold/20 transition-all duration-200'
             )}
           >
-            <Plus className="w-4 h-4" />
-            NEW SESSION
+            <Sparkles className="w-4 h-4" />
+            LOG SESSION
           </button>
         </motion.header>
 
@@ -188,7 +305,12 @@ export function ForgePage() {
               </h3>
               <div className="space-y-3">
                 {sessions?.slice(0, 5).map((session) => (
-                  <SessionRow key={session.id} session={session} />
+                  <SessionRow 
+                    key={session.id} 
+                    session={session} 
+                    onView={() => setSelectedSessionId(session.id)}
+                    onDelete={() => deleteSessionMutation.mutate(session.id)}
+                  />
                 ))}
                 {(!sessions || sessions.length === 0) && (
                   <EmptyState message="NO SESSIONS YET" action="Start forging your strength" />
@@ -221,19 +343,24 @@ export function ForgePage() {
                 className="w-full bg-shadow border border-text-muted/30 rounded pl-10 pr-3 py-2 text-text-primary font-mono text-sm placeholder:text-text-muted"
               />
             </div>
-            <div className="flex gap-1">
-              {['compound', 'isolation', 'cardio', 'mobility'].map((cat) => (
+            <div className="flex gap-1 flex-wrap">
+              {[
+                { key: 'push', label: 'PUSH', categories: ['push_horizontal', 'push_vertical'] },
+                { key: 'pull', label: 'PULL', categories: ['pull_horizontal', 'pull_vertical'] },
+                { key: 'legs', label: 'LEGS', categories: ['squat', 'hinge'] },
+                { key: 'isolation', label: 'ISO', categories: ['isolation'] },
+              ].map((filter) => (
                 <button
-                  key={cat}
-                  onClick={() => setCategoryFilter(categoryFilter === cat ? null : cat)}
+                  key={filter.key}
+                  onClick={() => setCategoryFilter(categoryFilter === filter.key ? null : filter.key)}
                   className={cn(
                     'px-3 py-1.5 rounded text-xs font-mono uppercase transition-all',
-                    categoryFilter === cat
+                    categoryFilter === filter.key
                       ? 'bg-neon-cyan/20 text-neon-cyan border border-neon-cyan/30'
                       : 'bg-abyss text-text-muted border border-text-muted/20 hover:text-text-secondary'
                   )}
                 >
-                  {cat}
+                  {filter.label}
                 </button>
               ))}
             </div>
@@ -241,7 +368,7 @@ export function ForgePage() {
 
           {/* Exercise Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
-            {exercises?.slice(0, 10).map((exercise) => (
+            {filteredExercises?.map((exercise) => (
               <div
                 key={exercise.id}
                 className={cn(
@@ -250,9 +377,14 @@ export function ForgePage() {
                 )}
               >
                 <div className="text-sm text-text-primary truncate">{exercise.name}</div>
-                <div className="text-xs text-text-muted capitalize">{exercise.muscle_primary}</div>
+                <div className="text-xs text-text-muted capitalize">{exercise.primary_muscle}</div>
               </div>
             ))}
+            {filteredExercises?.length === 0 && (
+              <div className="col-span-full text-center text-text-muted text-sm py-4">
+                No exercises found
+              </div>
+            )}
           </div>
 
           <button 
@@ -263,6 +395,235 @@ export function ForgePage() {
           </button>
         </motion.div>
       </div>
+
+      {/* Log Session Modal - Paste & Parse */}
+      <AnimatePresence>
+        {showNewSession && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-void/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={resetModal}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="glass-panel p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-neon-gold" />
+                  <h3 className="text-lg font-display text-neon-gold">LOG SESSION</h3>
+                </div>
+                <button 
+                  onClick={resetModal}
+                  className="p-1 hover:bg-text-muted/20 rounded transition-colors"
+                >
+                  <X className="w-5 h-5 text-text-muted" />
+                </button>
+              </div>
+
+              {/* Step 1: Input */}
+              {parseStep === 'input' && (
+                <div className="space-y-4">
+                  <p className="text-sm text-text-muted font-mono">
+                    Colle ta séance ci-dessous. L'IA va parser automatiquement les exercices, sets et poids.
+                  </p>
+
+                  {/* Date */}
+                  <div>
+                    <label className="text-xs font-mono text-text-muted uppercase block mb-2">
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={workoutDate}
+                      onChange={(e) => setWorkoutDate(e.target.value)}
+                      className={cn(
+                        'w-full bg-abyss border border-text-muted/30 rounded px-4 py-2',
+                        'text-text-primary font-mono',
+                        'focus:border-neon-gold/50 outline-none transition-colors'
+                      )}
+                    />
+                  </div>
+
+                  {/* Workout Text */}
+                  <div>
+                    <label className="text-xs font-mono text-text-muted uppercase block mb-2">
+                      Workout Log
+                    </label>
+                    <textarea
+                      value={workoutText}
+                      onChange={(e) => setWorkoutText(e.target.value)}
+                      placeholder={`Bench press 4x8 80kg
+Incline DB press 3x12 30kg
+Cable flies 3x15
+Triceps pushdown 4x12 RPE 8`}
+                      rows={8}
+                      className={cn(
+                        'w-full bg-abyss border border-text-muted/30 rounded px-4 py-2',
+                        'text-text-primary font-mono text-sm resize-none',
+                        'focus:border-neon-gold/50 outline-none transition-colors',
+                        'placeholder:text-text-muted/50'
+                      )}
+                    />
+                  </div>
+
+                  {/* Parse Button */}
+                  <button
+                    onClick={() => parseWorkoutMutation.mutate({ 
+                      text: workoutText, 
+                      date: workoutDate, 
+                      save: false 
+                    })}
+                    disabled={!workoutText.trim() || parseWorkoutMutation.isPending}
+                    className={cn(
+                      'w-full flex items-center justify-center gap-2 px-4 py-3 rounded',
+                      'bg-neon-gold/20 border border-neon-gold/50',
+                      'text-neon-gold font-mono text-sm',
+                      'hover:bg-neon-gold/30 transition-all',
+                      'disabled:opacity-50 disabled:cursor-not-allowed'
+                    )}
+                  >
+                    {parseWorkoutMutation.isPending ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-neon-gold border-t-transparent rounded-full animate-spin" />
+                        PARSING...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        PARSE WORKOUT
+                      </>
+                    )}
+                  </button>
+
+                  {parseWorkoutMutation.isError && (
+                    <div className="flex items-center gap-2 text-danger-red text-sm font-mono">
+                      <AlertCircle className="w-4 h-4" />
+                      {parseWorkoutMutation.error?.message || 'Parsing failed'}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Step 2: Preview */}
+              {parseStep === 'preview' && parseResult && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-success-green text-sm font-mono">
+                    <Check className="w-4 h-4" />
+                    {parseResult.exercises.length} exercice(s) détecté(s)
+                  </div>
+
+                  {/* Parsed Exercises */}
+                  <div className="space-y-3 max-h-[40vh] overflow-y-auto">
+                    {parseResult.exercises.map((ex, i) => (
+                      <div 
+                        key={i}
+                        className={cn(
+                          'p-3 rounded border',
+                          ex.exercise_matched 
+                            ? 'bg-abyss border-success-green/30' 
+                            : 'bg-abyss border-warning-orange/30'
+                        )}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-mono text-sm text-text-primary">
+                            {ex.name}
+                          </span>
+                          {ex.exercise_matched ? (
+                            <span className="text-[10px] font-mono text-success-green">
+                              ✓ MATCHED
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-mono text-warning-orange">
+                              ⚠ UNMATCHED
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs font-mono text-text-muted">
+                          {ex.sets.length} sets • 
+                          {ex.sets[0]?.weight_kg && ` ${ex.sets[0].weight_kg}kg`}
+                          {ex.sets[0]?.is_failure 
+                            ? ' × failure' 
+                            : ex.sets[0]?.reps && ` × ${ex.sets[0].reps} reps`}
+                          {ex.sets[0]?.rpe && ` @ RPE ${ex.sets[0].rpe}`}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setParseStep('input')}
+                      className={cn(
+                        'flex-1 px-4 py-2 rounded',
+                        'bg-abyss border border-text-muted/30',
+                        'text-text-muted font-mono text-sm',
+                        'hover:border-text-muted/50 transition-all'
+                      )}
+                    >
+                      ← EDIT
+                    </button>
+                    <button
+                      onClick={() => parseWorkoutMutation.mutate({ 
+                        text: workoutText, 
+                        date: workoutDate, 
+                        save: true 
+                      })}
+                      disabled={parseWorkoutMutation.isPending}
+                      className={cn(
+                        'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded',
+                        'bg-neon-gold/20 border border-neon-gold/50',
+                        'text-neon-gold font-mono text-sm',
+                        'hover:bg-neon-gold/30 transition-all',
+                        'disabled:opacity-50'
+                      )}
+                    >
+                      {parseWorkoutMutation.isPending ? (
+                        <div className="w-4 h-4 border-2 border-neon-gold border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                      SAVE
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Saved */}
+              {parseStep === 'saved' && parseResult && (
+                <div className="space-y-4 text-center">
+                  <div className="w-16 h-16 mx-auto rounded-full bg-success-green/20 flex items-center justify-center">
+                    <Check className="w-8 h-8 text-success-green" />
+                  </div>
+                  <div>
+                    <h4 className="font-display text-lg text-success-green">SESSION SAVED</h4>
+                    <p className="text-sm font-mono text-text-muted mt-1">
+                      {parseResult.message || `${parseResult.exercises.length} exercice(s) enregistré(s)`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={resetModal}
+                    className={cn(
+                      'w-full px-4 py-3 rounded',
+                      'bg-abyss border border-text-muted/30',
+                      'text-text-primary font-mono text-sm',
+                      'hover:border-neon-cyan/50 transition-all'
+                    )}
+                  >
+                    CLOSE
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Coming Soon Modal */}
       <AnimatePresence>
@@ -312,6 +673,227 @@ export function ForgePage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Session Detail Modal */}
+      <AnimatePresence>
+        {selectedSessionId !== null && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-abyss/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setSelectedSessionId(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="glass-panel p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-lg font-mono text-neon-gold uppercase tracking-wider">
+                  SESSION DETAILS
+                </h2>
+                <button
+                  onClick={() => setSelectedSessionId(null)}
+                  className="p-2 hover:bg-white/5 rounded transition-colors"
+                >
+                  <X className="w-5 h-5 text-text-muted" />
+                </button>
+              </div>
+
+              {sessionDetailLoading ? (
+                <LoadingState />
+              ) : selectedSession ? (
+                <div className="space-y-6">
+                  {/* Session Header */}
+                  <div className="flex items-center justify-between border-b border-text-muted/20 pb-4">
+                    <div>
+                      <div className="text-sm font-mono text-text-muted">
+                        {new Date(selectedSession.date).toLocaleDateString('fr-FR', {
+                          weekday: 'long',
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric',
+                        })}
+                      </div>
+                      <div className="text-xl font-mono text-text-primary mt-1">
+                        {selectedSession.name || 'Session'}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {selectedSession.duration_min && (
+                        <div className="text-sm font-mono text-text-muted">
+                          {selectedSession.duration_min} min
+                        </div>
+                      )}
+                      {selectedSession.overall_rpe && (
+                        <div className={cn(
+                          'text-sm font-mono mt-1',
+                          selectedSession.overall_rpe <= 6 && 'text-success-green',
+                          selectedSession.overall_rpe > 6 && selectedSession.overall_rpe <= 8 && 'text-warning-orange',
+                          selectedSession.overall_rpe > 8 && 'text-danger-red'
+                        )}>
+                          RPE {selectedSession.overall_rpe}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="text-center p-3 bg-abyss rounded border border-text-muted/20">
+                      <div className="text-2xl font-mono text-neon-cyan">
+                        {selectedSession.exercises_count || selectedSession.exercises?.length || 0}
+                      </div>
+                      <div className="text-xs font-mono text-text-muted uppercase">Exercises</div>
+                    </div>
+                    <div className="text-center p-3 bg-abyss rounded border border-text-muted/20">
+                      <div className="text-2xl font-mono text-neon-gold">
+                        {selectedSession.total_sets || 0}
+                      </div>
+                      <div className="text-xs font-mono text-text-muted uppercase">Sets</div>
+                    </div>
+                    <div className="text-center p-3 bg-abyss rounded border border-text-muted/20">
+                      <div className="text-2xl font-mono text-success-green">
+                        {((selectedSession.total_volume || 0) / 1000).toFixed(1)}k
+                      </div>
+                      <div className="text-xs font-mono text-text-muted uppercase">Volume (kg)</div>
+                    </div>
+                  </div>
+
+                  {/* Exercises List */}
+                  {selectedSession.exercises && selectedSession.exercises.length > 0 && (
+                    <div>
+                      <h3 className="text-sm font-mono text-text-muted uppercase tracking-wider mb-3">
+                        Exercises
+                      </h3>
+                      <div className="space-y-3">
+                        {selectedSession.exercises.map((ex, idx) => (
+                          <div
+                            key={idx}
+                            className="p-3 bg-abyss rounded border border-text-muted/20"
+                          >
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="font-mono text-text-primary">
+                                {ex.exercise?.name || `Exercise #${ex.exercise_id}`}
+                              </span>
+                              <span className="text-xs font-mono text-text-muted">
+                                {ex.sets?.length || 0} sets
+                              </span>
+                            </div>
+                            {ex.sets && ex.sets.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                {ex.sets.map((set, setIdx) => (
+                                  <div
+                                    key={setIdx}
+                                    className={cn(
+                                      'px-2 py-1 rounded text-xs font-mono',
+                                      set.is_warmup 
+                                        ? 'bg-info-blue/20 text-info-blue' 
+                                        : 'bg-neon-gold/10 text-neon-gold'
+                                    )}
+                                  >
+                                    {set.weight_kg && `${set.weight_kg}kg × `}
+                                    {set.reps !== null ? `${set.reps}` : 'failure'}
+                                    {set.rpe && ` @${set.rpe}`}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Notes */}
+                  {selectedSession.notes && (
+                    <div>
+                      <h3 className="text-sm font-mono text-text-muted uppercase tracking-wider mb-2">
+                        Notes
+                      </h3>
+                      <p className="text-sm text-text-secondary font-mono">
+                        {selectedSession.notes}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Garmin Link Section */}
+                  <div className="border-t border-text-muted/20 pt-4">
+                    <h3 className="text-sm font-mono text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
+                      <Link className="w-4 h-4" />
+                      Garmin Sync
+                    </h3>
+                    
+                    {selectedSession.garmin_activity_id ? (
+                      <div className="flex items-center justify-between p-3 bg-success-green/10 rounded border border-success-green/30">
+                        <div className="flex items-center gap-2">
+                          <Check className="w-4 h-4 text-success-green" />
+                          <span className="text-sm font-mono text-success-green">
+                            Linked to Garmin #{selectedSession.garmin_activity_id}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => linkGarminMutation.mutate({ 
+                            sessionId: selectedSessionId!, 
+                            garminId: null 
+                          })}
+                          disabled={linkGarminMutation.isPending}
+                          className="p-2 hover:bg-danger-red/20 rounded text-danger-red transition-colors"
+                          title="Unlink"
+                        >
+                          <Unlink className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : garminCandidates?.candidates && garminCandidates.candidates.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="text-xs text-text-muted font-mono mb-2">
+                          Found {garminCandidates.candidates.length} matching Garmin activity(s):
+                        </p>
+                        {garminCandidates.candidates.map((candidate) => (
+                          <button
+                            key={candidate.id}
+                            onClick={() => linkGarminMutation.mutate({ 
+                              sessionId: selectedSessionId!, 
+                              garminId: candidate.id 
+                            })}
+                            disabled={linkGarminMutation.isPending}
+                            className="w-full p-3 bg-abyss hover:bg-neon-cyan/10 rounded border border-text-muted/20 hover:border-neon-cyan/50 transition-colors text-left"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="text-sm font-mono text-text-primary">
+                                  {candidate.date}
+                                </span>
+                                <span className="text-xs font-mono text-text-muted ml-2">
+                                  ({Math.round(candidate.duration_seconds / 60)} min)
+                                </span>
+                              </div>
+                              <span className="text-xs font-mono text-neon-cyan uppercase">
+                                [LINK]
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-3 bg-abyss rounded border border-text-muted/20">
+                        <p className="text-sm font-mono text-text-muted text-center">
+                          No matching Garmin activities found
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <EmptyState message="Session not found" />
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -356,7 +938,7 @@ function PRCard({
   );
 }
 
-function SessionRow({ session }: { session: StrengthSession }) {
+function SessionRow({ session, onView, onDelete }: { session: StrengthSession; onView: () => void; onDelete: () => void }) {
   return (
     <div
       className={cn(
@@ -364,6 +946,7 @@ function SessionRow({ session }: { session: StrengthSession }) {
         'bg-abyss/50 border border-text-muted/10',
         'hover:border-neon-cyan/30 transition-all cursor-pointer'
       )}
+      onClick={onView}
     >
       <StrengthIcon size="md" className="text-warning-orange" />
       <div className="flex-1">
@@ -380,7 +963,7 @@ function SessionRow({ session }: { session: StrengthSession }) {
           </span>
         </div>
         <div className="text-xs font-mono text-text-muted mt-1">
-          {session.duration_minutes && `${session.duration_minutes}min`}
+          {session.duration_min && `${session.duration_min}min`}
           {' │ '}
           Volume: {(session.total_volume / 1000).toFixed(1)}k kg
           {' │ '}
@@ -399,8 +982,25 @@ function SessionRow({ session }: { session: StrengthSession }) {
           RPE {session.overall_rpe}
         </div>
       )}
-      <button className="text-xs font-mono text-neon-cyan hover:underline">
+      <button 
+        className="text-xs font-mono text-neon-cyan hover:underline"
+        onClick={(e) => {
+          e.stopPropagation();
+          onView();
+        }}
+      >
         [VIEW]
+      </button>
+      <button 
+        className="text-xs font-mono text-danger-red hover:underline"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (confirm('Delete this session?')) {
+            onDelete();
+          }
+        }}
+      >
+        [DEL]
       </button>
     </div>
   );

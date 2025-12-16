@@ -219,6 +219,7 @@ class StrengthSession:
     notes: str | None = None
     exercises: list[SessionExercise] = field(default_factory=list)
     created_at: datetime | None = None
+    garmin_activity_id: int | None = None  # Link to Garmin activity
 
     @property
     def total_volume(self) -> float:

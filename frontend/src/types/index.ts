@@ -142,26 +142,43 @@ export interface ActivityAnalysis {
 export interface Exercise {
   id: number;
   name: string;
-  category: "compound" | "isolation" | "cardio" | "mobility";
-  muscle_primary: string;
-  muscle_secondary: string[] | null;
+  category: string;
+  primary_muscle: string;
+  secondary_muscles: string[];
   equipment: string | null;
-  is_custom: boolean;
+  is_unilateral: boolean;
+  notes: string | null;
 }
 
 export interface ExerciseSet {
   id: number;
-  session_id: number;
-  exercise_id: number;
   set_number: number;
   reps: number | null;
   weight_kg: number | null;
   rpe: number | null;
-  rest_seconds: number | null;
+  rir: number | null;
+  rest_sec: number | null;
+  tempo: string | null;
   is_warmup: boolean;
   is_failure: boolean;
-  notes: string | null;
+  volume: number | null;
   estimated_1rm: number | null;
+  notes: string | null;
+}
+
+export interface SessionExercise {
+  id: number;
+  order: number;
+  exercise: Exercise;
+  exercise_id?: number;
+  target_sets: number | null;
+  target_reps: number | null;
+  target_rpe: number | null;
+  sets: ExerciseSet[];
+  total_volume: number;
+  working_sets_count: number;
+  avg_rpe: number | null;
+  notes: string | null;
 }
 
 export interface StrengthSession {
@@ -169,13 +186,17 @@ export interface StrengthSession {
   date: string;
   name: string | null;
   program: string | null;
-  duration_minutes: number | null;
+  duration_min: number | null;
   overall_rpe: number | null;
   fatigue_level: number | null;
+  sleep_quality: number | null;
   notes: string | null;
   total_volume: number;
   total_sets: number;
-  exercises: ExerciseSet[];
+  exercises_count?: number;
+  muscles_worked?: string[];
+  exercises?: SessionExercise[];
+  garmin_activity_id?: number | null;
 }
 
 export interface PersonalRecord {

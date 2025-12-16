@@ -6,10 +6,12 @@ CRUD operations for exercises, sets, and strength sessions.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date, datetime
 
 import duckdb
 
+from arete.data.exercises_catalog import EXERCISES_CATALOG
 from arete.strength.models import (
     Exercise,
     ExerciseCategory,
@@ -131,6 +133,176 @@ class StrengthRepository:
         conn.close()
 
         return [self._row_to_exercise(row) for row in results]
+
+    def remove_duplicate_exercises(self) -> int:
+        """Remove duplicate exercises, keeping the one with lowest ID.
+        
+        Returns the number of removed duplicates.
+        """
+        conn = self._get_connection()
+        
+        # Count duplicates first
+        dup_count = conn.execute(
+            """
+            SELECT COUNT(*) FROM app.exercises
+            WHERE id NOT IN (
+                SELECT MIN(id) FROM app.exercises GROUP BY LOWER(name)
+            )
+            """
+        ).fetchone()[0]
+        
+        # Delete duplicates
+        conn.execute(
+            """
+            DELETE FROM app.exercises
+            WHERE id NOT IN (
+                SELECT MIN(id) FROM app.exercises GROUP BY LOWER(name)
+            )
+            """
+        )
+        
+        conn.close()
+        
+        return dup_count
+
+    def get_exercise_by_catalog_id(self, catalog_id: str) -> Exercise | None:
+        """Get an exercise by its catalog ID (from exercises_catalog.py).
+
+        First checks notes field for 'Auto-created from catalog: <catalog_id>',
+        then tries name matching.
+        """
+        conn = self._get_connection()
+        
+        # First: check notes for exact catalog_id match (most reliable)
+        result = conn.execute(
+            """
+            SELECT id, name, category, primary_muscle, secondary_muscles_json,
+                   equipment, is_unilateral, notes
+            FROM app.exercises 
+            WHERE notes LIKE ?
+            LIMIT 1
+            """,
+            [f"%Auto-created from catalog: {catalog_id}%"],
+        ).fetchone()
+
+        if not result:
+            # Convert catalog_id to expected name format
+            name_from_id = catalog_id.replace("_", " ").title()
+            # Try exact name match
+            result = conn.execute(
+                """
+                SELECT id, name, category, primary_muscle, secondary_muscles_json,
+                       equipment, is_unilateral, notes
+                FROM app.exercises 
+                WHERE LOWER(name) = LOWER(?) OR LOWER(name) = LOWER(?)
+                LIMIT 1
+                """,
+                [name_from_id, catalog_id],
+            ).fetchone()
+
+        conn.close()
+
+        if not result:
+            return None
+
+        return self._row_to_exercise(result)
+
+    def get_or_create_exercise_from_catalog(self, catalog_id: str) -> Exercise | None:
+        """Get or create an exercise from the catalog by its ID.
+
+        If the exercise doesn't exist in DB but is in the catalog,
+        create it automatically.
+        """
+        logger = logging.getLogger(__name__)
+
+        # First try to find in DB
+        exercise = self.get_exercise_by_catalog_id(catalog_id)
+        if exercise:
+            return exercise
+
+        # Not in DB - look up in catalog and create
+        catalog_entry = None
+        for ex in EXERCISES_CATALOG:
+            if ex["id"] == catalog_id:
+                catalog_entry = ex
+                break
+
+        if not catalog_entry:
+            logger.warning(f"Exercise {catalog_id} not found in catalog")
+            return None
+
+        # Map catalog category to ExerciseCategory based on movement pattern
+        movement = catalog_entry.get("movement_pattern", "")
+        category_map = {
+            "horizontal_push": ExerciseCategory.PUSH_HORIZONTAL,
+            "vertical_push": ExerciseCategory.PUSH_VERTICAL,
+            "horizontal_pull": ExerciseCategory.PULL_HORIZONTAL,
+            "vertical_pull": ExerciseCategory.PULL_VERTICAL,
+            "hip_hinge": ExerciseCategory.HINGE,
+            "squat": ExerciseCategory.SQUAT,
+            "isolation": ExerciseCategory.ISOLATION,
+            "core": ExerciseCategory.CORE,
+            "carry": ExerciseCategory.CARRY,
+        }
+        category = category_map.get(movement, ExerciseCategory.OTHER)
+
+        # Map primary muscle (take first one)
+        muscle_map = {
+            "chest": MuscleGroup.CHEST,
+            "front_delts": MuscleGroup.SHOULDERS,
+            "side_delts": MuscleGroup.SHOULDERS,
+            "rear_delts": MuscleGroup.SHOULDERS,
+            "triceps": MuscleGroup.TRICEPS,
+            "biceps": MuscleGroup.BICEPS,
+            "lats": MuscleGroup.BACK,
+            "traps": MuscleGroup.BACK,
+            "rhomboids": MuscleGroup.BACK,
+            "lower_back": MuscleGroup.LOWER_BACK,
+            "quads": MuscleGroup.QUADS,
+            "hamstrings": MuscleGroup.HAMSTRINGS,
+            "glutes": MuscleGroup.GLUTES,
+            "calves": MuscleGroup.CALVES,
+            "abs": MuscleGroup.ABS,
+            "obliques": MuscleGroup.OBLIQUES,
+            "forearms": MuscleGroup.FOREARMS,
+            "adductors": MuscleGroup.ADDUCTORS,
+        }
+
+        primary_muscles = catalog_entry.get("primary_muscles", [])
+        primary_muscle = (
+            muscle_map.get(primary_muscles[0], MuscleGroup.FULL_BODY)
+            if primary_muscles
+            else MuscleGroup.FULL_BODY
+        )
+
+        secondary_muscles = [
+            muscle_map.get(m, MuscleGroup.FULL_BODY)
+            for m in catalog_entry.get("secondary_muscles", [])
+            if m in muscle_map
+        ]
+
+        equipment = catalog_entry.get("equipment", [])
+        equipment_str = equipment[0] if equipment else None
+
+        # Create the exercise
+        new_exercise = Exercise(
+            name=catalog_entry["name"],
+            category=category,
+            primary_muscle=primary_muscle,
+            secondary_muscles=secondary_muscles,
+            equipment=equipment_str,
+            is_unilateral=False,
+            notes=f"Auto-created from catalog: {catalog_id}",
+        )
+
+        try:
+            exercise_id = self.create_exercise(new_exercise)
+            new_exercise.id = exercise_id
+            logger.info(f"Created exercise {catalog_entry['name']} (id={exercise_id}) from catalog")
+            return new_exercise
+        except Exception as e:
+            logger.error(f"Failed to create exercise from catalog: {e}")
+            return None
 
     def _row_to_exercise(self, row: tuple) -> Exercise:
         """Convert a database row to an Exercise."""
@@ -255,7 +427,8 @@ class StrengthRepository:
         session_row = conn.execute(
             """
             SELECT id, user_id, date, name, program, duration_min,
-                   overall_rpe, fatigue_level, sleep_quality, notes, created_at
+                   overall_rpe, fatigue_level, sleep_quality, notes, created_at,
+                   garmin_activity_id
             FROM app.strength_sessions WHERE id = ?
             """,
             [session_id],
@@ -277,6 +450,7 @@ class StrengthRepository:
             sleep_quality=session_row[8],
             notes=session_row[9],
             created_at=session_row[10],
+            garmin_activity_id=session_row[11],
         )
 
         # Get exercises
@@ -500,7 +674,7 @@ class StrengthRepository:
 
         # Get all sets with exercise info
         query = """
-            SELECT e.id, e.name, e.primary_muscle, e.secondary_muscles,
+            SELECT e.id, e.name, e.primary_muscle, e.secondary_muscles_json,
                    es.reps, COALESCE(es.weight_kg, 0) as weight
             FROM app.exercise_sets es
             JOIN app.session_exercises se ON es.session_exercise_id = se.id
@@ -712,4 +886,66 @@ class StrengthRepository:
             "session_count": stats[0] if stats else 0,
             "total_volume_kg": round(stats[1], 0) if stats and stats[1] else 0,
             "volume_by_muscle": {row[0]: round(row[1], 0) for row in muscle_volume},
+        }
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Garmin linking methods
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def link_to_garmin_activity(self, session_id: int, garmin_id: int) -> bool:
+        """Link a strength session to a Garmin activity."""
+        conn = self._get_connection()
+        
+        # Check if session exists
+        result = conn.execute(
+            "SELECT id FROM app.strength_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        
+        if not result:
+            conn.close()
+            return False
+        
+        conn.execute(
+            "UPDATE app.strength_sessions SET garmin_activity_id = ? WHERE id = ?",
+            (garmin_id, session_id),
+        )
+        conn.close()
+        return True
+
+    def unlink_from_garmin(self, session_id: int) -> bool:
+        """Unlink a strength session from Garmin activity."""
+        conn = self._get_connection()
+        conn.execute(
+            "UPDATE app.strength_sessions SET garmin_activity_id = NULL WHERE id = ?",
+            (session_id,),
+        )
+        conn.close()
+        return True
+
+    def get_session_with_garmin_id(self, session_id: int) -> dict | None:
+        """Get session with its linked Garmin activity ID."""
+        conn = self._get_connection()
+        result = conn.execute(
+            """
+            SELECT id, date, name, program, duration_min, overall_rpe, 
+                   notes, garmin_activity_id
+            FROM app.strength_sessions 
+            WHERE id = ?
+            """,
+            (session_id,),
+        ).fetchone()
+        conn.close()
+        
+        if not result:
+            return None
+            
+        return {
+            "id": result[0],
+            "date": result[1],
+            "name": result[2],
+            "program": result[3],
+            "duration_min": result[4],
+            "overall_rpe": result[5],
+            "notes": result[6],
+            "garmin_activity_id": result[7],
         }

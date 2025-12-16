@@ -1,6 +1,6 @@
 # TODO - Arete Development
 
-_Last updated: 7 December 2025_
+_Last updated: 16 December 2025_
 
 ## 📋 Completed
 
@@ -82,45 +82,106 @@ _Last updated: 7 December 2025_
 - [x] Thème dynamique (dark/darker/abyss) appliqué en temps réel
 - [x] Display name utilisé dans Neural Link
 
+### 11. ✅ Strength Session Parser (Paste & Parse)
+
+- [x] Hybrid regex + LLM parser for workout text
+- [x] Circuit format support (`5x(ex1, ex2)` multipliers)
+- [x] Fuzzy exercise matching with abbreviations (db, bb, ohp, rdl)
+- [x] Auto-create exercises from catalog when saving
+- [x] Fix duplicate exercises in library (search by catalog_id in notes)
+- [x] Session saving to database
+- [x] Session delete functionality (`[DEL]` button with confirmation)
+- [x] Session detail modal (`[VIEW]` button)
+- [x] Heatmap connected to strength sessions (volume by muscle)
+- [x] Link Forge sessions to Garmin activities (link/unlink in VIEW modal)
+
 ---
 
 ## 📋 Next Up
 
-### 11. 🔧 Fonctionnalités à implémenter
+### 12. 🔧 UI Fonctionnalités à implémenter
 
 **Goal**: Rendre fonctionnels les éléments UI actuellement non-fonctionnels
 
-- [ ] **Quest Log** : bouton NEW QUEST, bouton VIEW dans RECENT QUESTS
-- [ ] **The Forge** : bouton NEW SESSION (clarifier différence avec NEW QUEST)
-- [ ] **Matrix** : bouton Refresh
+- [ ] **The Forge** :
+  - [x] NEW SESSION (paste & parse) ✅
+  - [x] VIEW session details ✅
+  - [x] DELETE session ✅
+  - [x] Filtres exercices : mapping catégories corrigé (PUSH/PULL/LEGS/ISO)
+  - [x] Link session to Garmin activity ✅
+  - [ ] Afficher catégorie dans exercise card
 
-### 12. 🔄 Training Session Parser
+- [ ] **Quest Log** :
+  - [ ] Bouton NEW QUEST fonctionnel
+  - [ ] Bouton VIEW dans RECENT QUESTS
+  - [ ] Clarifier différence Quest vs Session (Quest = planifié, Session = réalisé ?)
 
-**Goal**: Parse user training notes into structured sessions
+- [ ] **Matrix** :
+  - [ ] Bouton Refresh fonctionnel
+  - [ ] Afficher sessions strength dans calendrier
 
-- [ ] Parse training notation (e.g., "3x10 bp db 30kg r90")
-- [ ] Match exercises to catalog (aliases: bp → bench_press)
-- [ ] Calculate session volume and store in DuckDB
-- [ ] Connect to muscle heatmap visualization
+### 13. 🏋️ Import Séances Muscu - Notations personnelles
 
-### 13. 📊 Enhanced Analytics
+**Goal**: Parser les notations spécifiques de l'utilisateur
 
-- [ ] Weekly/monthly volume trends by muscle group
-- [ ] PR tracking with progression charts
-- [ ] Recovery recommendations based on muscle fatigue
-- [ ] Integration of cardio + strength load for ACWR
+- [x] Format circuit : `5x(8-10 weighted pull ups @20kg, 15 db lateral raises @20) r2'`
+- [ ] Gérer range de reps (`8-10` → stocker min/max ou target)
+- [ ] Parser temps de repos (`r2'`, `r1'30`)
+- [ ] Support notation "to failure" (`xF`, `AMRAP`)
+- [ ] Date dans le texte (`05/12/25:`)
+- [ ] Notes par exercice
 
-### 14. 🎯 Goal Tracking
+### 14. 📊 Heatmap Integration Complete
 
-- [ ] Define user goals (5K sub-20, bench 140kg 1RM, marathon)
-- [ ] Progress tracking towards goals
-- [ ] AI-generated training blocks to reach goals
+- [x] Strength sessions → heatmap (volume by muscle)
+- [ ] Running → heatmap (quads, calves, hamstrings, hip flexors)
+- [ ] Rowing → heatmap (back, biceps, legs)
+- [ ] Impact musculaire basé sur durée/intensité cardio
 
-### 15. 🏋️ Import Séances Muscu
+### 15. 🎯 Programmation & Objectifs
 
-- [ ] Format d'import à définir (CSV, JSON, formulaire)
-- [ ] Parsing et validation des données
-- [ ] Intégration avec le calendrier (Matrix)
+**Goal**: Planification intelligente basée sur les objectifs
+
+- [ ] Définir objectifs utilisateur (Settings)
+- [ ] Vue hebdomadaire/mensuelle de la charge prévue
+- [ ] Contexte conservé entre sessions de planification
+- [ ] Suggestions IA pour atteindre les objectifs
+- [ ] Blocs d'entraînement générés
+
+### 16. 📈 HUD Enhancements
+
+- [ ] Ajout VO2max (depuis Garmin ou estimé)
+- [ ] Volume hebdo/mensuel running (vue calendrier style Strava)
+- [ ] Heures d'entraînement hebdo par sport (breakdown)
+- [ ] Graphiques de progression
+
+### 17. 🏆 Gestion des PRs (Personal Records)
+
+- [x] API PRs existe (`/strength/exercises/{id}/prs`)
+- [ ] UI dédiée pour afficher les PRs
+- [ ] Historique des PRs par exercice
+- [ ] Notifications/célébration nouveau PR
+
+### 18. 🆕 Gestion Exercices
+
+- [x] Fuzzy matching avec abréviations (db, bb, ohp, rdl)
+- [x] Auto-create depuis catalog quand sauvegarde
+- [ ] UI pour ajouter un exercice manuellement
+- [ ] Fusion/matching exercices similaires (même exo écrit différemment)
+- [ ] Suggestions d'exercices équivalents
+
+### 19. 📅 Heatmap Période Sélectionnable
+
+- [x] Affiche volume total actuel
+- [ ] Sélecteur de période (7j / 30j / 90j)
+- [ ] Comparaison période précédente
+- [ ] Tendance par muscle group
+
+### 20. 🎨 Branding & Polish
+
+- [x] Changer favicon/logo onglet web (favicon.png)
+- [ ] Splash screen au chargement ?
+- [ ] Animations de transition entre pages
 
 ---
 
@@ -135,11 +196,16 @@ _Last updated: 7 December 2025_
 7. ~~RAG Response Refactor~~ ✅
 8. ~~UI Polish & Font Fixes~~ ✅
 9. ~~Settings Persistence~~ ✅
-10. **Fonctionnalités à implémenter** (next)
-11. **Training Session Parser**
-12. **Enhanced Analytics**
-13. **Goal Tracking**
-14. **Import Séances Muscu**
+10. ~~Strength Session Parser~~ ✅
+11. **UI Fonctionnalités** (Quest Log, Matrix)
+12. **Import Séances Muscu avancé** (repos, range reps, failure)
+13. **Heatmap Integration Complete** (cardio impact)
+14. **Programmation & Objectifs**
+15. **HUD Enhancements** (VO2max, volume running, heures/sport)
+16. **Gestion PRs** (UI dédiée)
+17. **Gestion Exercices** (ajout manuel, fusion)
+18. **Heatmap Période** (sélecteur 7j/30j/90j)
+19. **Branding & Polish**
 
 ---
 

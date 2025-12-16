@@ -15,12 +15,20 @@ from typing import Any
 class SessionType(str, Enum):
     """Types of training sessions."""
 
+    # Cardio types
     RECOVERY = "recovery"
     ENDURANCE = "endurance"
     TEMPO = "tempo"
     INTERVALS = "intervals"
     LONG_RUN = "long_run"
+
+    # Strength types
     STRENGTH = "strength"
+    HYPERTROPHY = "hypertrophy"
+    POWER = "power"
+    DELOAD = "deload"
+
+    # General types
     CROSS_TRAINING = "cross_training"
     RACE = "race"
     OTHER = "other"

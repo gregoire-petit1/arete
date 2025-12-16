@@ -6,18 +6,18 @@ import { cn } from '@/lib/utils';
 export const MUSCLE_GROUPS = {
   // Front upper body
   chest: { id: 'chest', label: 'Chest', aliases: ['pectorals', 'pecs'] },
-  front_delts: { id: 'front_delts', label: 'Front Delts', aliases: ['anterior_deltoid'] },
-  side_delts: { id: 'side_delts', label: 'Side Delts', aliases: ['lateral_deltoid'] },
+  front_delts: { id: 'front_delts', label: 'Front Delts', aliases: ['anterior_deltoid', 'shoulders'] },
+  side_delts: { id: 'side_delts', label: 'Side Delts', aliases: ['lateral_deltoid', 'shoulders'] },
   biceps: { id: 'biceps', label: 'Biceps', aliases: ['biceps_brachii'] },
   forearms: { id: 'forearms', label: 'Forearms', aliases: ['brachioradialis', 'wrist_flexors'] },
   abs: { id: 'abs', label: 'Abs', aliases: ['rectus_abdominis', 'core'] },
   obliques: { id: 'obliques', label: 'Obliques', aliases: ['external_obliques'] },
   
   // Back upper body
-  traps: { id: 'traps', label: 'Traps', aliases: ['trapezius', 'upper_back'] },
-  rear_delts: { id: 'rear_delts', label: 'Rear Delts', aliases: ['posterior_deltoid'] },
-  lats: { id: 'lats', label: 'Lats', aliases: ['latissimus_dorsi'] },
-  rhomboids: { id: 'rhomboids', label: 'Rhomboids', aliases: ['mid_back'] },
+  traps: { id: 'traps', label: 'Traps', aliases: ['trapezius', 'upper_back', 'back'] },
+  rear_delts: { id: 'rear_delts', label: 'Rear Delts', aliases: ['posterior_deltoid', 'shoulders'] },
+  lats: { id: 'lats', label: 'Lats', aliases: ['latissimus_dorsi', 'back'] },
+  rhomboids: { id: 'rhomboids', label: 'Rhomboids', aliases: ['mid_back', 'back'] },
   lower_back: { id: 'lower_back', label: 'Lower Back', aliases: ['erector_spinae', 'spinal_erectors'] },
   triceps: { id: 'triceps', label: 'Triceps', aliases: ['triceps_brachii'] },
   

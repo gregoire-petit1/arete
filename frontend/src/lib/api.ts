@@ -55,6 +55,18 @@ export const logApi = {
 // GARMIN API               //
 // ========================= //
 
+export interface PlannedSessionCreate {
+  date: string;
+  sport?: string;
+  session_type: string;
+  target_duration_min?: number;
+  target_distance_km?: number;
+  target_hr_zone?: string;
+  target_intensity?: string;
+  description?: string;
+  source?: string;
+}
+
 export const garminApi = {
   getPlanned: (startDate?: string, endDate?: string) => {
     const params = new URLSearchParams();
@@ -64,6 +76,15 @@ export const garminApi = {
       `/garmin/planned?${params}`
     );
   },
+
+  createPlanned: (session: PlannedSessionCreate) =>
+    fetchAPI<import("@/types").PlannedSession>("/garmin/planned", {
+      method: "POST",
+      body: JSON.stringify(session),
+    }),
+
+  deletePlanned: (id: number) =>
+    fetchAPI<void>(`/garmin/planned/${id}`, { method: "DELETE" }),
 
   getActual: (unmatchedOnly = false) => {
     const params = new URLSearchParams();
@@ -150,10 +171,62 @@ export const strengthApi = {
   getSession: (id: number) =>
     fetchAPI<import("@/types").StrengthSession>(`/strength/sessions/${id}`),
 
-  createSession: (session: Partial<import("@/types").StrengthSession>) =>
+  deleteSession: (id: number) =>
+    fetchAPI<{ message: string }>(`/strength/sessions/${id}`, {
+      method: "DELETE",
+    }),
+
+  createSession: (session: {
+    date: string;
+    name?: string | null;
+    program?: string | null;
+    duration_min?: number | null;
+    overall_rpe?: number | null;
+    fatigue_level?: number | null;
+    notes?: string | null;
+    exercises?: Array<{
+      exercise_id: number;
+      order: number;
+      sets?: Array<{
+        set_number: number;
+        reps: number;
+        weight_kg?: number;
+        rpe?: number;
+      }>;
+    }>;
+  }) =>
     fetchAPI<import("@/types").StrengthSession>("/strength/sessions", {
       method: "POST",
       body: JSON.stringify(session),
+    }),
+
+  parseWorkout: (text: string, date?: string, save = false) =>
+    fetchAPI<{
+      success: boolean;
+      date: string;
+      name: string | null;
+      exercises: Array<{
+        name: string;
+        exercise_id: string | null;
+        exercise_matched: boolean;
+        sets: Array<{
+          set_number: number;
+          reps: number | null; // null for failure sets
+          weight_kg: number | null;
+          rpe: number | null;
+          is_warmup: boolean;
+          is_failure: boolean;
+        }>;
+        notes: string | null;
+      }>;
+      duration_min: number | null;
+      overall_rpe: number | null;
+      notes: string | null;
+      session_id: number | null;
+      message: string | null;
+    }>("/strength/sessions/parse", {
+      method: "POST",
+      body: JSON.stringify({ text, date, save }),
     }),
 
   getVolumeByMuscle: (startDate?: string, endDate?: string) => {
@@ -169,6 +242,26 @@ export const strengthApi = {
     fetchAPI<import("@/types").PersonalRecord[]>(
       `/strength/exercises/${exerciseId}/prs`
     ),
+
+  // Garmin linking
+  getGarminCandidates: (sessionId: number) =>
+    fetchAPI<{
+      candidates: Array<{
+        id: number;
+        date: string;
+        sport: string;
+        activity_type: string;
+        duration_seconds: number;
+        source: string;
+      }>;
+      session_date: string;
+    }>(`/strength/sessions/${sessionId}/garmin-candidates`),
+
+  linkToGarmin: (sessionId: number, garminActivityId: number | null) =>
+    fetchAPI<{ message: string }>(`/strength/sessions/${sessionId}/link-garmin`, {
+      method: "POST",
+      body: JSON.stringify({ garmin_activity_id: garminActivityId }),
+    }),
 };
 
 // ========================= //

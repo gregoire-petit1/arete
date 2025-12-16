@@ -19,12 +19,13 @@
 
 Nouvelle table `app.user_settings` et endpoints API :
 
-| Endpoint    | Méthode | Description                               |
-| ----------- | ------- | ----------------------------------------- |
-| `/settings` | GET     | Récupère les préférences utilisateur      |
-| `/settings` | PUT     | Sauvegarde les préférences utilisateur    |
+| Endpoint    | Méthode | Description                            |
+| ----------- | ------- | -------------------------------------- |
+| `/settings` | GET     | Récupère les préférences utilisateur   |
+| `/settings` | PUT     | Sauvegarde les préférences utilisateur |
 
 Fonctionnalités :
+
 - Display name, email, timezone
 - Weekly training goal, rest day preferences
 - Fatigue threshold, fitness goal (maintenance/build/peak/recovery)
@@ -32,6 +33,7 @@ Fonctionnalités :
 - Notifications enabled
 
 Frontend :
+
 - `SettingsContext` pour état global des settings
 - Application du thème en temps réel via CSS variables
 - Display name utilisé dans Neural Link ("BIENVENUE, {nom}")

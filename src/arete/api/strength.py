@@ -9,7 +9,8 @@ Endpoints for:
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date as date_type
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -92,7 +93,7 @@ class SessionExerciseCreate(BaseModel):
 class StrengthSessionCreate(BaseModel):
     """Create a strength training session."""
 
-    date: date
+    date: date_type
     name: str | None = Field(None, max_length=100)
     program: str | None = Field(None, max_length=50)
     duration_min: int | None = Field(None, ge=1)
@@ -107,7 +108,7 @@ class StrengthSessionResponse(BaseModel):
     """Strength session response (summary)."""
 
     id: int
-    date: date
+    date: date_type
     name: str | None
     program: str | None
     duration_min: int | None
@@ -156,7 +157,7 @@ class StrengthSessionDetailResponse(BaseModel):
     """Full strength session with all exercises and sets."""
 
     id: int
-    date: date
+    date: date_type
     name: str | None
     program: str | None
     duration_min: int | None
@@ -168,6 +169,7 @@ class StrengthSessionDetailResponse(BaseModel):
     total_volume: float
     total_sets: int
     muscles_worked: list[str]
+    garmin_activity_id: int | None = None
 
 
 class ExerciseHistoryResponse(BaseModel):
@@ -262,6 +264,13 @@ def get_exercise_prs(exercise_id: int):
     return _repo.get_personal_records(exercise_id)
 
 
+@router.delete("/exercises/duplicates")
+def remove_duplicate_exercises():
+    """Remove duplicate exercises, keeping the one with lowest ID."""
+    removed_count = _repo.remove_duplicate_exercises()
+    return {"message": f"Removed {removed_count} duplicate exercises"}
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Strength Session Endpoints
 # ─────────────────────────────────────────────────────────────────────────
@@ -325,8 +334,8 @@ def create_session(data: StrengthSessionCreate):
 
 @router.get("/sessions", response_model=list[StrengthSessionResponse])
 def list_sessions(
-    start_date: date | None = None,
-    end_date: date | None = None,
+    start_date: date_type | None = None,
+    end_date: date_type | None = None,
     program: str | None = None,
     limit: int = Query(50, ge=1, le=200),
 ):
@@ -364,6 +373,56 @@ def delete_session(session_id: int):
     return {"message": "Session deleted"}
 
 
+class LinkGarminRequest(BaseModel):
+    """Request to link a strength session to a Garmin activity."""
+    garmin_activity_id: int | None = Field(None, description="Garmin activity ID to link (null to unlink)")
+
+
+@router.post("/sessions/{session_id}/link-garmin")
+def link_session_to_garmin(session_id: int, data: LinkGarminRequest):
+    """Link a strength session to a Garmin activity."""
+    success = _repo.link_to_garmin_activity(session_id, data.garmin_activity_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"message": "Session linked" if data.garmin_activity_id else "Session unlinked"}
+
+
+@router.get("/sessions/{session_id}/garmin-candidates")
+def get_garmin_candidates(session_id: int):
+    """Get Garmin activities that could be linked to this strength session.
+    
+    Returns strength activities from the same date or nearby dates.
+    """
+    session = _repo.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # Get actual sessions from Garmin for the same date range
+    from arete.dataio.repository import get_actual_sessions
+    from datetime import timedelta
+    
+    start = session.date - timedelta(days=1)
+    end = session.date + timedelta(days=1)
+    
+    actual_sessions = get_actual_sessions(start.isoformat(), end.isoformat())
+    
+    # Filter to strength activities
+    candidates = [
+        {
+            "id": s.id,
+            "date": s.date.isoformat() if hasattr(s.date, 'isoformat') else str(s.date),
+            "sport": s.sport,
+            "activity_type": s.activity_type,
+            "duration_seconds": s.duration_seconds,
+            "source": s.source,
+        }
+        for s in actual_sessions
+        if s.sport == "strength"
+    ]
+    
+    return {"candidates": candidates, "session_date": session.date.isoformat()}
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Statistics Endpoints
 # ─────────────────────────────────────────────────────────────────────────
@@ -371,8 +430,8 @@ def delete_session(session_id: int):
 
 @router.get("/stats/volume-by-muscle")
 def get_volume_by_muscle(
-    start_date: date | None = None,
-    end_date: date | None = None,
+    start_date: date_type | None = None,
+    end_date: date_type | None = None,
 ):
     """Get total volume grouped by muscle group."""
     return _repo.get_volume_by_muscle(start_date=start_date, end_date=end_date)
@@ -473,4 +532,157 @@ def _session_to_detail_response(
         total_volume=round(session.total_volume, 1),
         total_sets=session.total_sets,
         muscles_worked=[m.value for m in session.muscles_worked],
+        garmin_activity_id=getattr(session, 'garmin_activity_id', None),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Workout Text Parsing (LLM)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class WorkoutParseRequest(BaseModel):
+    """Request to parse workout text."""
+
+    text: str = Field(..., min_length=5, description="Free-form workout text to parse")
+    date: date_type | None = Field(default=None, description="Workout date (defaults to today)")
+    save: bool = Field(default=False, description="Whether to save the parsed session to DB")
+
+
+class ParsedSetResponse(BaseModel):
+    """Parsed set response."""
+
+    set_number: int
+    reps: int | None = None  # None for "to failure" sets
+    weight_kg: float | None = None
+    rpe: float | None = None
+    is_warmup: bool = False
+    is_failure: bool = False
+
+
+class ParsedExerciseResponse(BaseModel):
+    """Parsed exercise response."""
+
+    name: str
+    exercise_id: str | None
+    exercise_matched: bool
+    sets: list[ParsedSetResponse]
+    notes: str | None
+
+
+class WorkoutParseResponse(BaseModel):
+    """Response from workout parsing."""
+
+    success: bool
+    date: date_type
+    name: str | None
+    exercises: list[ParsedExerciseResponse]
+    duration_min: int | None
+    overall_rpe: float | None
+    notes: str | None
+    session_id: int | None = None  # Set if saved
+    message: str | None = None
+
+
+@router.post("/sessions/parse", response_model=WorkoutParseResponse)
+def parse_workout_text_endpoint(request: WorkoutParseRequest):
+    """Parse free-form workout text into structured session data.
+
+    Supports formats like:
+    - "Bench press 4x8 80kg"
+    - "Squat 3x5 @100kg RPE 8"
+    - "Pull ups 4x10"
+
+    Uses LLM for complex parsing, with regex fallback.
+    """
+    from arete.llm.workout_parser import parse_workout_text, ParsedWorkout
+
+    try:
+        parsed = parse_workout_text(text=request.text, workout_date=request.date, use_llm=True)
+
+        # Convert to response
+        exercises_response = []
+        for ex in parsed.exercises:
+            sets_response = [
+                ParsedSetResponse(
+                    set_number=s.set_number,
+                    reps=s.reps,
+                    weight_kg=s.weight_kg,
+                    rpe=s.rpe,
+                    is_warmup=s.is_warmup,
+                    is_failure=getattr(s, "is_failure", False),
+                )
+                for s in ex.sets
+            ]
+            exercises_response.append(
+                ParsedExerciseResponse(
+                    name=ex.name,
+                    exercise_id=ex.exercise_id,
+                    exercise_matched=ex.exercise_id is not None,
+                    sets=sets_response,
+                    notes=ex.notes,
+                )
+            )
+
+        session_id = None
+        message = None
+
+        # Optionally save to database
+        if request.save and parsed.exercises:
+            try:
+                # Build session create data
+                session = StrengthSession(
+                    date=parsed.date,
+                    name=parsed.name,
+                    duration_min=parsed.duration_min,
+                    overall_rpe=parsed.overall_rpe,
+                    notes=parsed.notes,
+                )
+
+                for i, ex in enumerate(parsed.exercises):
+                    if ex.exercise_id:
+                        # Get or create exercise from catalog
+                        exercise = _repo.get_or_create_exercise_from_catalog(ex.exercise_id)
+                        if exercise:
+                            session_exercise = SessionExercise(
+                                exercise_id=exercise.id,
+                                exercise=exercise,
+                                order=i + 1,
+                            )
+                            for s in ex.sets:
+                                session_exercise.sets.append(
+                                    ExerciseSet(
+                                        set_number=s.set_number,
+                                        reps=s.reps,
+                                        weight_kg=s.weight_kg,
+                                        rpe=s.rpe,
+                                        is_warmup=s.is_warmup,
+                                    )
+                                )
+                            session.exercises.append(session_exercise)
+
+                if session.exercises:
+                    session_id = _repo.create_session(session)
+                    message = f"Session saved with {len(session.exercises)} exercises"
+                else:
+                    message = "No exercises matched - session not saved"
+
+            except Exception as e:
+                logger.error(f"Failed to save parsed session: {e}")
+                message = f"Parsing succeeded but save failed: {str(e)}"
+
+        return WorkoutParseResponse(
+            success=True,
+            date=parsed.date,
+            name=parsed.name,
+            exercises=exercises_response,
+            duration_min=parsed.duration_min,
+            overall_rpe=parsed.overall_rpe,
+            notes=parsed.notes,
+            session_id=session_id,
+            message=message,
+        )
+
+    except Exception as e:
+        logger.error(f"Workout parsing failed: {e}")
+        raise HTTPException(status_code=400, detail=str(e))

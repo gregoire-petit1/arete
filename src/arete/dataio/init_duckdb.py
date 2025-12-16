@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS app.strength_sessions (
     fatigue_level   INTEGER,                   -- Pre-workout fatigue (1-5)
     sleep_quality   INTEGER,                   -- Night before (1-5)
     notes           VARCHAR,
+    garmin_activity_id INTEGER,                -- FK to actual_sessions (optional link)
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

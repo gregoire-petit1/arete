@@ -505,3 +505,48 @@ def upsert_user_settings(
         return _settings_from_row(row)
     finally:
         con.close()
+
+
+# ---------- Actual Sessions (Garmin Activities) ----------
+from dataclasses import dataclass
+
+
+@dataclass
+class ActualSessionRow:
+    """Simple representation of an actual session from Garmin."""
+    id: int
+    date: date
+    sport: str
+    activity_type: str | None
+    duration_seconds: int
+    source: str
+    garmin_activity_id: str | None
+
+
+def get_actual_sessions(start_date: str, end_date: str) -> list[ActualSessionRow]:
+    """Get actual sessions (Garmin activities) within a date range."""
+    con = connect(True)
+    try:
+        rows = con.execute(
+            """
+            SELECT id, date, sport, session_type, duration_sec, source, garmin_activity_id
+            FROM app.actual_sessions
+            WHERE date >= ? AND date <= ?
+            ORDER BY date DESC
+            """,
+            [start_date, end_date],
+        ).fetchall()
+        return [
+            ActualSessionRow(
+                id=row[0],
+                date=row[1],
+                sport=row[2],
+                activity_type=row[3],
+                duration_seconds=row[4],
+                source=row[5],
+                garmin_activity_id=row[6],
+            )
+            for row in rows
+        ]
+    finally:
+        con.close()
