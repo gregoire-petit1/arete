@@ -10,12 +10,10 @@ import {
   CheckCircle,
   XCircle,
   LogOut,
-  Download,
-  Copy,
 } from 'lucide-react';
-import { FitDropzone, LoadingState, SystemAlert } from '@/components';
+import { FitDropzone, SystemAlert } from '@/components';
 import { garminApi, healthApi, ragApi } from '@/lib/api';
-import { cn, formatDuration } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 
 export function MatrixPage() {
   const queryClient = useQueryClient();

@@ -52,23 +52,32 @@ export interface PlannedSession {
 
 export interface ActualSession {
   id: number;
-  garmin_activity_id: string | null;
+  planned_session_id: number | null;
+  garmin_activity_id?: string | null;
   date: string;
   sport: string;
-  activity_type: string | null;
-  duration_seconds: number;
-  distance_meters: number | null;
+  activity_type?: string | null;
+  session_type?: string | null;
+  duration_seconds?: number;
+  duration_min?: string | null;
+  distance_meters?: number | null;
+  distance_km?: number | null;
   avg_hr: number | null;
   max_hr: number | null;
-  avg_power: number | null;
-  normalized_power: number | null;
-  tss: number | null;
-  rpe: number | null;
-  fit_file_path: string | null;
-  analysis_json: string | null;
-  llm_summary: string | null;
-  matched_planned_id: number | null;
-  created_at: string;
+  avg_pace?: string | null;
+  avg_power?: number | null;
+  normalized_power?: number | null;
+  ascent_m?: number | null;
+  calories?: number | null;
+  tss?: number | null;
+  rpe?: number | null;
+  source?: string | null;
+  fit_file_path?: string | null;
+  analysis_json?: string | null;
+  llm_summary?: string | null;
+  matched_planned_id?: number | null;
+  adherence_score?: number | null;
+  created_at?: string;
 }
 
 export interface SessionLogRow {
@@ -236,18 +245,6 @@ export interface SyncResult {
 // ========================= //
 // RAG / CHAT TYPES         //
 // ========================= //
-
-export interface RAGQueryRequest {
-  query: string;
-  acwr?: number;
-  acwr_zone?: string;
-  tsb?: number;
-  form_zone?: string;
-  ctl?: number;
-  experience?: string;
-  primary_sport?: string;
-  fatigue?: number;
-}
 
 export interface RAGSource {
   id: string;

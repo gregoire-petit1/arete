@@ -20,7 +20,7 @@ export function SessionTimeline({ sessions, onSessionClick }: SessionTimelinePro
   return (
     <div className="space-y-3">
       {sessions.map((session, idx) => {
-        const xp = calculateXP(session.rpe, session.duration / 60);
+        const xp = calculateXP(session.rpe, session.duration_seconds / 60);
         const icon = getSportIcon(session.sport);
 
         return (
@@ -63,7 +63,7 @@ export function SessionTimeline({ sessions, onSessionClick }: SessionTimelinePro
 
             {/* Duration */}
             <div className="text-sm font-mono text-text-secondary">
-              {formatDuration(session.duration)}
+              {formatDuration(session.duration_seconds)}
             </div>
 
             {/* RPE */}

@@ -15,6 +15,18 @@ load_dotenv()
 app = FastAPI(title="Arete API", version="0.1.0")
 
 
+@app.on_event("startup")
+def startup_init_db():
+    """Initialize DuckDB schema on startup if needed."""
+    try:
+        from arete.dataio.init_duckdb import main as init_schema
+
+        init_schema()
+        logger.info("Database schema initialized")
+    except Exception as e:
+        logger.warning("Database init failed (non-fatal): %s", e)
+
+
 class SessionRequest(BaseModel):
     """Request for daily training plan generation."""
 

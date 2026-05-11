@@ -377,7 +377,20 @@ export function ForgePage() {
                 )}
               >
                 <div className="text-sm text-text-primary truncate">{exercise.name}</div>
-                <div className="text-xs text-text-muted capitalize">{exercise.primary_muscle}</div>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className={cn(
+                    'text-[10px] px-1.5 py-0.5 rounded uppercase font-mono',
+                    exercise.category?.includes('push') && 'bg-danger-red/20 text-danger-red',
+                    exercise.category?.includes('pull') && 'bg-neon-cyan/20 text-neon-cyan',
+                    exercise.category === 'squat' && 'bg-neon-purple/20 text-neon-purple',
+                    exercise.category === 'hinge' && 'bg-warning-orange/20 text-warning-orange',
+                    exercise.category === 'isolation' && 'bg-text-muted/20 text-text-muted',
+                    !exercise.category && 'bg-text-muted/20 text-text-muted'
+                  )}>
+                    {exercise.category?.replace('_', ' ') || 'other'}
+                  </span>
+                  <span className="text-xs text-text-muted capitalize truncate">{exercise.primary_muscle}</span>
+                </div>
               </div>
             ))}
             {filteredExercises?.length === 0 && (
@@ -901,7 +914,7 @@ Triceps pushdown 4x12 RPE 8`}
 function PRCard({
   exercise,
   weight,
-  estimated1RM,
+  estimated1RM: _estimated1RM,
   trend,
   trendValue,
   date,

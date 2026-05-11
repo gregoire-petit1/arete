@@ -54,8 +54,8 @@ function CalendarDay({ date, planned, actual, isToday, onClick }: CalendarDayPro
       {allSessions.length > 0 ? (
         <div className="flex-1 flex flex-col gap-1">
           {allSessions.slice(0, 3).map((session, idx) => {
-            const IconComponent = getSportIconComponent(session.sport);
-            const colorClass = getSportColor(session.sport);
+            const IconComponent = getSportIconComponent(session.sport ?? '');
+            const colorClass = getSportColor(session.sport ?? '');
             const isComplete = session.type === 'actual' || 
               (session.type === 'planned' && actual.some(a => 
                 a.sport === session.data.sport || a.activity_type === (session.data as PlannedSession).session_type
@@ -72,7 +72,7 @@ function CalendarDay({ date, planned, actual, isToday, onClick }: CalendarDayPro
                 )}
               >
                 <IconComponent size="sm" className={cn(isComplete ? 'text-success-green' : colorClass)} />
-                <span className="truncate capitalize">{session.sport.toLowerCase()}</span>
+                <span className="truncate capitalize">{session.sport?.toLowerCase()}</span>
                 {isComplete && <span className="ml-auto">✓</span>}
               </div>
             );

@@ -21,7 +21,7 @@ import {
 import { cn } from '@/lib/utils';
 import { ragApi } from '@/lib/api';
 import { useSettings } from '@/contexts';
-import type { RAGResponse, RAGSessionPlan, RAGExerciseInfo, RAGAnalysis, RAGGeneral, RAGSource } from '@/types';
+import type { RAGResponse, RAGSessionPlan, RAGExerciseInfo, RAGAnalysis, RAGGeneral } from '@/types';
 
 interface Message {
   id: string;

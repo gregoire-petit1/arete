@@ -6,11 +6,9 @@ import {
   Target,
   Watch,
   Database,
-  Shield,
   Bell,
   Palette,
   Download,
-  Trash2,
   Save,
   Check,
   X,
@@ -409,7 +407,7 @@ function ConnectionsTab() {
   const [connectionAlert, setConnectionAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Fetch real Garmin sync status
-  const { data: syncStatus, isLoading } = useQuery({
+  const { data: syncStatus } = useQuery({
     queryKey: ['garminSyncStatus'],
     queryFn: async () => {
       const res = await fetch('/api/garmin/sync/status');

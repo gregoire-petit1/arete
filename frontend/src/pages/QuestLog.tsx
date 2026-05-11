@@ -7,14 +7,13 @@ import {
   AdherenceBar,
   FitDropzone,
   LoadingState,
-  ErrorState,
   FlameIcon,
   getSportIconComponent,
   getSportColor,
 } from '@/components';
-import { garminApi, type PlannedSessionCreate } from '@/lib/api';
+import { garminApi, strengthApi, type PlannedSessionCreate } from '@/lib/api';
 import { cn, formatDuration } from '@/lib/utils';
-import type { ActualSession, PlannedSession } from '@/types';
+import type { ActualSession } from '@/types';
 
 // Session types per sport category
 const CARDIO_SESSION_TYPES = [
@@ -131,6 +130,38 @@ export function QuestLogPage() {
     queryFn: () => garminApi.getActual(),
   });
 
+  // Get strength sessions from Forge (to merge with actual sessions)
+  const { data: strengthSessions } = useQuery({
+    queryKey: ['strengthSessions'],
+    queryFn: () => strengthApi.getSessions(50),
+  });
+
+  // Merge actual sessions with unlinked strength sessions
+  const mergedActualSessions = useMemo(() => {
+    const actuals = actualSessions || [];
+    const strengths = strengthSessions || [];
+    
+    // Convert unlinked strength sessions to ActualSession format
+    const unlinkedStrength = strengths
+      .filter(s => !s.garmin_activity_id)
+      .map(s => ({
+        id: -s.id, // Negative ID to avoid conflicts
+        planned_session_id: null,
+        date: s.date,
+        sport: 'strength',
+        session_type: s.name || 'strength_training',
+        duration_min: s.duration_min ? `${s.duration_min}:00` : null,
+        avg_hr: null,
+        max_hr: null,
+        source: 'forge',
+      } as ActualSession));
+    
+    // Combine: actual sessions + unlinked forge sessions
+    return [...actuals, ...unlinkedStrength].sort((a, b) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  }, [actualSessions, strengthSessions]);
+
   const { data: summary } = useQuery({
     queryKey: ['matchSummary'],
     queryFn: garminApi.getSummary,
@@ -197,8 +228,8 @@ export function QuestLogPage() {
     [uploadMutation]
   );
 
-  // Filter sessions for current week
-  const weekActual = actualSessions?.filter(s => {
+  // Filter sessions for current week (using merged sessions)
+  const weekActual = mergedActualSessions?.filter(s => {
     const date = s.date.split('T')[0];
     return date >= weekStart && date <= weekEnd;
   }) || [];
@@ -368,7 +399,7 @@ export function QuestLogPage() {
           </div>
         </motion.div>
 
-        {/* Recent Quests */}
+        {/* Recent Sessions (completed workouts) */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -376,7 +407,7 @@ export function QuestLogPage() {
           className="glass-panel p-4 mb-8"
         >
           <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
-            RECENT QUESTS
+            RECENT SESSIONS
           </h3>
           <div className="space-y-3">
             {actualSessions?.slice(0, 5).map((session) => (
@@ -388,7 +419,7 @@ export function QuestLogPage() {
             ))}
             {(!actualSessions || actualSessions.length === 0) && (
               <div className="text-center py-6 text-text-muted font-mono text-sm">
-                NO QUESTS COMPLETED YET
+                NO SESSIONS COMPLETED YET
               </div>
             )}
           </div>
@@ -608,7 +639,7 @@ export function QuestLogPage() {
                   })()}
                   <div>
                     <h3 className="text-lg font-display text-text-primary capitalize">
-                      {selectedSession.activity_type || selectedSession.sport}
+                      {selectedSession.activity_type || selectedSession.session_type || selectedSession.sport}
                     </h3>
                     <p className="text-sm font-mono text-text-muted">
                       {new Date(selectedSession.date).toLocaleDateString('fr-FR', {
@@ -633,14 +664,14 @@ export function QuestLogPage() {
                 <div className="bg-abyss/50 rounded p-3">
                   <div className="text-xs font-mono text-text-muted uppercase mb-1">Duration</div>
                   <div className="text-lg font-mono text-text-primary">
-                    {formatDuration(selectedSession.duration_seconds)}
+                    {selectedSession.duration_min || (selectedSession.duration_seconds ? formatDuration(selectedSession.duration_seconds) : '-')}
                   </div>
                 </div>
-                {selectedSession.distance_meters && (
+                {(selectedSession.distance_km || selectedSession.distance_meters) && (
                   <div className="bg-abyss/50 rounded p-3">
                     <div className="text-xs font-mono text-text-muted uppercase mb-1">Distance</div>
                     <div className="text-lg font-mono text-text-primary">
-                      {(selectedSession.distance_meters / 1000).toFixed(2)} km
+                      {selectedSession.distance_km ?? (selectedSession.distance_meters ? (selectedSession.distance_meters / 1000).toFixed(2) : '-')} km
                     </div>
                   </div>
                 )}
@@ -681,12 +712,12 @@ export function QuestLogPage() {
               {/* Match Status */}
               <div className={cn(
                 'p-3 rounded border',
-                selectedSession.matched_planned_id 
+                (selectedSession.matched_planned_id || selectedSession.planned_session_id)
                   ? 'bg-success-green/10 border-success-green/30' 
                   : 'bg-warning-orange/10 border-warning-orange/30'
               )}>
                 <div className="flex items-center gap-2">
-                  {selectedSession.matched_planned_id ? (
+                  {(selectedSession.matched_planned_id || selectedSession.planned_session_id) ? (
                     <>
                       <Check className="w-4 h-4 text-success-green" />
                       <span className="text-sm font-mono text-success-green">
@@ -721,7 +752,7 @@ export function QuestLogPage() {
 function RecentQuestRow({ session, onView }: { session: ActualSession; onView: () => void }) {
   const SportIcon = getSportIconComponent(session.sport);
   const sportColor = getSportColor(session.sport);
-  const isMatched = session.matched_planned_id !== null;
+  const isMatched = session.matched_planned_id !== null || session.planned_session_id !== null;
   
   return (
     <div
@@ -756,22 +787,22 @@ function RecentQuestRow({ session, onView }: { session: ActualSession; onView: (
           </span>
           <span className="text-text-muted">—</span>
           <span className="text-sm font-mono text-text-secondary capitalize">
-            {session.activity_type || session.sport}
+            {session.activity_type || session.session_type || session.sport}
           </span>
         </div>
         <div className="text-xs font-mono text-text-muted mt-1">
-          {formatDuration(session.duration_seconds)}
-          {session.distance_meters && (
-            <> │ {(session.distance_meters / 1000).toFixed(2)} km</>
+          {session.duration_min || (session.duration_seconds ? formatDuration(session.duration_seconds) : '')}
+          {(session.distance_km || session.distance_meters) && (
+            <> │ {session.distance_km ?? (session.distance_meters ? (session.distance_meters / 1000).toFixed(2) : '')} km</>
           )}
           {session.avg_hr && <> │ avg HR {session.avg_hr}</>}
         </div>
       </div>
 
       {/* Adherence */}
-      {isMatched && (
+      {isMatched && session.adherence_score && (
         <div className="w-24">
-          <AdherenceBar score={85} size="sm" />
+          <AdherenceBar score={session.adherence_score} size="sm" />
         </div>
       )}
 
