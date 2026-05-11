@@ -514,6 +514,7 @@ from dataclasses import dataclass
 @dataclass
 class ActualSessionRow:
     """Simple representation of an actual session from Garmin."""
+
     id: int
     date: date
     sport: str

@@ -175,6 +175,26 @@ EXERCISES_CATALOG: list[ExerciseDefinition] = [
         "movement_pattern": "isolation",
     },
     {
+        "id": "kettlebell_swing",
+        "name": "Kettlebell Swing",
+        "name_fr": "Swing kettlebell",
+        "category": "compound",
+        "equipment": ["kettlebell"],
+        "primary_muscles": ["glutes", "hamstrings"],
+        "secondary_muscles": ["lower_back", "abs", "front_delts", "quads"],
+        "movement_pattern": "hip_hinge",
+    },
+    {
+        "id": "barbell_strict_swing",
+        "name": "Barbell Strict Swing",
+        "name_fr": "Swing barre stricte",
+        "category": "push",
+        "equipment": ["barbell"],
+        "primary_muscles": ["front_delts"],
+        "secondary_muscles": ["side_delts", "traps", "abs"],
+        "movement_pattern": "vertical_push",
+    },
+    {
         "id": "upright_rows",
         "name": "Upright Rows",
         "name_fr": "Rowing menton",
@@ -472,6 +492,26 @@ EXERCISES_CATALOG: list[ExerciseDefinition] = [
         "secondary_muscles": [],
         "movement_pattern": "isolation",
     },
+    {
+        "id": "cable_triceps_extension",
+        "name": "Cable Triceps Extension",
+        "name_fr": "Extension triceps poulie",
+        "category": "push",
+        "equipment": ["cable"],
+        "primary_muscles": ["triceps"],
+        "secondary_muscles": [],
+        "movement_pattern": "isolation",
+    },
+    {
+        "id": "treadmill",
+        "name": "Treadmill",
+        "name_fr": "Tapis de course",
+        "category": "cardio",
+        "equipment": ["machine"],
+        "primary_muscles": ["quads", "hamstrings", "calves", "glutes"],
+        "secondary_muscles": ["hip_flexors", "abs", "tibialis"],
+        "movement_pattern": "compound",
+    },
     # =========================================
     # CORE
     # =========================================
@@ -724,6 +764,29 @@ EXERCISE_ALIASES = {
     # Muscle ups
     "mu": "muscle_ups",
     "muscle ups": "muscle_ups",
+    # Kettlebell
+    "kb swing": "kettlebell_swing",
+    "kettlebell swing": "kettlebell_swing",
+    # Barbell strict swing (overhead front raise)
+    "bb swing": "barbell_strict_swing",
+    "strict bb swing": "barbell_strict_swing",
+    "barbell swing": "barbell_strict_swing",
+    "barbell strict swing": "barbell_strict_swing",
+    # RDL variants
+    "kb rdl": "rdl",
+    "kettlebell rdl": "rdl",
+    # Triceps cable
+    "cable triceps extension": "cable_triceps_extension",
+    "cable triceps extensions": "cable_triceps_extension",
+    "triceps cable": "cable_triceps_extension",
+    # Treadmill
+    "treadmill": "treadmill",
+    "treamill": "treadmill",  # Common typo
+    # Wide pull ups
+    "wide pu": "wide_pull_ups",
+    "wide pullups": "wide_pull_ups",
+    # Pulls ups typo
+    "pulls ups": "pull_ups",
 }
 
 

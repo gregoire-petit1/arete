@@ -136,11 +136,11 @@ class StrengthRepository:
 
     def remove_duplicate_exercises(self) -> int:
         """Remove duplicate exercises, keeping the one with lowest ID.
-        
+
         Returns the number of removed duplicates.
         """
         conn = self._get_connection()
-        
+
         # Count duplicates first
         dup_count = conn.execute(
             """
@@ -150,7 +150,7 @@ class StrengthRepository:
             )
             """
         ).fetchone()[0]
-        
+
         # Delete duplicates
         conn.execute(
             """
@@ -160,9 +160,9 @@ class StrengthRepository:
             )
             """
         )
-        
+
         conn.close()
-        
+
         return dup_count
 
     def get_exercise_by_catalog_id(self, catalog_id: str) -> Exercise | None:
@@ -172,7 +172,7 @@ class StrengthRepository:
         then tries name matching.
         """
         conn = self._get_connection()
-        
+
         # First: check notes for exact catalog_id match (most reliable)
         result = conn.execute(
             """
@@ -895,16 +895,16 @@ class StrengthRepository:
     def link_to_garmin_activity(self, session_id: int, garmin_id: int) -> bool:
         """Link a strength session to a Garmin activity."""
         conn = self._get_connection()
-        
+
         # Check if session exists
         result = conn.execute(
             "SELECT id FROM app.strength_sessions WHERE id = ?", (session_id,)
         ).fetchone()
-        
+
         if not result:
             conn.close()
             return False
-        
+
         conn.execute(
             "UPDATE app.strength_sessions SET garmin_activity_id = ? WHERE id = ?",
             (garmin_id, session_id),
@@ -935,10 +935,10 @@ class StrengthRepository:
             (session_id,),
         ).fetchone()
         conn.close()
-        
+
         if not result:
             return None
-            
+
         return {
             "id": result[0],
             "date": result[1],

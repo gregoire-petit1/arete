@@ -258,10 +258,13 @@ export const strengthApi = {
     }>(`/strength/sessions/${sessionId}/garmin-candidates`),
 
   linkToGarmin: (sessionId: number, garminActivityId: number | null) =>
-    fetchAPI<{ message: string }>(`/strength/sessions/${sessionId}/link-garmin`, {
-      method: "POST",
-      body: JSON.stringify({ garmin_activity_id: garminActivityId }),
-    }),
+    fetchAPI<{ message: string }>(
+      `/strength/sessions/${sessionId}/link-garmin`,
+      {
+        method: "POST",
+        body: JSON.stringify({ garmin_activity_id: garminActivityId }),
+      }
+    ),
 };
 
 // ========================= //

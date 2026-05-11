@@ -103,40 +103,44 @@ _Last updated: 16 December 2025_
 
 **Goal**: Rendre fonctionnels les éléments UI actuellement non-fonctionnels
 
-- [ ] **The Forge** :
+- [x] **The Forge** :
+
   - [x] NEW SESSION (paste & parse) ✅
   - [x] VIEW session details ✅
   - [x] DELETE session ✅
   - [x] Filtres exercices : mapping catégories corrigé (PUSH/PULL/LEGS/ISO)
   - [x] Link session to Garmin activity ✅
-  - [ ] Afficher catégorie dans exercise card
+  - [x] Afficher catégorie dans exercise card ✅
 
-- [ ] **Quest Log** :
-  - [ ] Bouton NEW QUEST fonctionnel
-  - [ ] Bouton VIEW dans RECENT QUESTS
-  - [ ] Clarifier différence Quest vs Session (Quest = planifié, Session = réalisé ?)
+- [x] **Quest Log** :
 
-- [ ] **Matrix** :
-  - [ ] Bouton Refresh fonctionnel
-  - [ ] Afficher sessions strength dans calendrier
+  - [x] Bouton NEW QUEST fonctionnel (créer session planifiée)
+  - [x] Bouton VIEW dans RECENT SESSIONS (modal détail session)
+  - [x] Types ActualSession alignés avec API (duration_min, session_type, source)
+  - [x] Clarifier différence Quest vs Session (Quest = planifié, Session = réalisé) ✅
+
+- [x] **Matrix** :
+  - [x] Bouton Refresh fonctionnel (déjà implémenté)
+  - [x] Sessions strength mergées dans Quest Log calendar
 
 ### 13. 🏋️ Import Séances Muscu - Notations personnelles
 
 **Goal**: Parser les notations spécifiques de l'utilisateur
 
 - [x] Format circuit : `5x(8-10 weighted pull ups @20kg, 15 db lateral raises @20) r2'`
-- [ ] Gérer range de reps (`8-10` → stocker min/max ou target)
-- [ ] Parser temps de repos (`r2'`, `r1'30`)
-- [ ] Support notation "to failure" (`xF`, `AMRAP`)
-- [ ] Date dans le texte (`05/12/25:`)
+- [x] Gérer range de reps (`8-10` → `target_reps` sur ParsedExercise)
+- [x] Parser temps de repos (`r2'`, `r1'30` → `rest_sec` sur ParsedSet)
+- [x] Support notation "to failure" (`xF`, `AMRAP` → `is_failure: true`)
+- [x] Date dans le texte (`05/12/25:`) ✅
 - [ ] Notes par exercice
 
 ### 14. 📊 Heatmap Integration Complete
 
 - [x] Strength sessions → heatmap (volume by muscle)
-- [ ] Running → heatmap (quads, calves, hamstrings, hip flexors)
-- [ ] Rowing → heatmap (back, biceps, legs)
-- [ ] Impact musculaire basé sur durée/intensité cardio
+- [x] Running → heatmap (quads, calves, hamstrings, hip_flexors, tibialis, glutes, core)
+- [x] Rowing → heatmap (lats, quads, glutes, biceps, hamstrings, rhomboids, forearms, core)
+- [x] Impact musculaire basé sur durée cardio (volume_per_min × duration)
+- [x] Cycling/Indoor cycling support ajouté
 
 ### 15. 🎯 Programmation & Objectifs
 
