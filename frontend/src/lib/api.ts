@@ -314,6 +314,28 @@ export interface UserSettings {
   theme: "dark" | "darker" | "abyss";
 }
 
+export const tipsApi = {
+  getDaily: () =>
+    fetchAPI<{
+      tip: string;
+      priority: "info" | "warning" | "alert";
+      generated_at: string;
+    }>("/tips/daily"),
+
+  getPostSession: (
+    sessionType: "strength" | "cardio",
+    sessionId: number
+  ) =>
+    fetchAPI<{ feedback: string; highlights: string[] }>("/tips/post-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_type: sessionType,
+        session_id: sessionId,
+      }),
+    }),
+};
+
 export const settingsApi = {
   get: () => fetchAPI<UserSettings>("/settings"),
 
