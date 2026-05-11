@@ -14,3 +14,4 @@ export {
   AnatomicalHeatmapCompact,
   MUSCLE_GROUPS,
 } from "./AnatomicalHeatmap";
+export { GarminLoginModal } from "./GarminLoginModal";
