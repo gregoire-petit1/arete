@@ -7,7 +7,7 @@ import {
   ErrorState,
 } from '@/components';
 import { getSportIconComponent } from '@/components/SportIcons';
-import { metricsApi, garminApi, tipsApi } from '@/lib/api';
+import { metricsApi, garminApi, tipsApi, settingsApi } from '@/lib/api';
 import { cn, getZoneColor } from '@/lib/utils';
 
 function getTodayISO(): string {
@@ -25,6 +25,12 @@ const fadeUp = {
 
 export function DashboardPage() {
   const today = getTodayISO();
+
+  // User settings for greeting
+  const { data: userSettings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: settingsApi.get,
+  });
 
   // Block 1: Today's planned sessions
   const { data: allPlanned, isLoading: plannedLoading } = useQuery({
@@ -86,9 +92,14 @@ export function DashboardPage() {
           animate={{ opacity: 1, y: 0 }}
           className="flex justify-between items-center"
         >
-          <h1 className="text-lg sm:text-2xl font-display font-bold text-neon-cyan tracking-wider">
-            DASHBOARD
-          </h1>
+          <div>
+            <h1 className="text-lg sm:text-2xl font-display font-bold text-text-primary tracking-wider">
+              Hello, <span className="text-neon-cyan">{userSettings?.display_name || 'HUNTER'}</span>
+            </h1>
+            <p className="text-xs font-mono text-text-muted mt-0.5">
+              {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </p>
+          </div>
           {playerStats && (
             <motion.div
               whileHover={{ scale: 1.05 }}

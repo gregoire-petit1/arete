@@ -7,10 +7,13 @@ class TestHealth:
     """Tests for /health endpoint."""
 
     def test_health_returns_ok(self, client: TestClient):
-        """Health endpoint should return ok: true."""
+        """Health endpoint should return status ok with database and rag info."""
         response = client.get("/health")
         assert response.status_code == 200
-        assert response.json() == {"ok": True}
+        data = response.json()
+        assert data["status"] == "ok"
+        assert "database" in data
+        assert "rag" in data
 
 
 class TestPlanJour:
