@@ -35,6 +35,14 @@ export const metricsApi = {
     fetchAPI<import("@/types").RecommendationsResponse>(
       "/metrics/recommendations"
     ),
+
+  getPlayerStats: () =>
+    fetchAPI<{
+      hp: { current: number; max: number; label: string };
+      mp: { current: number; max: number; label: string };
+      xp: { current: number; max: number; label: string };
+      level: number;
+    }>("/metrics/player-stats"),
 };
 
 // ========================= //
