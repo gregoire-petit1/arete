@@ -1,137 +1,161 @@
-"""Tests for /tips/daily endpoint."""
+"""Tests for /tips endpoints (post-session feedback)."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from dataclasses import dataclass, field
+from datetime import date
+from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from arete.api.ai_tips import generate_daily_tip
+from arete.api.ai_tips import router
 
 
-# ---------- Unit tests for tip generation logic ----------
-class TestGenerateDailyTip:
-    """Test rule-based tip generation."""
-
-    def test_acwr_danger_returns_alert(self):
-        tip, priority = generate_daily_tip(acwr=1.6, tsb=0.0, readiness_score=50.0)
-        assert priority == "alert"
-        assert "1.60" in tip
-        assert "dangereux" in tip.lower()
-
-    def test_tsb_exhausted_returns_alert(self):
-        tip, priority = generate_daily_tip(acwr=1.0, tsb=-30.0, readiness_score=40.0)
-        assert priority == "alert"
-        assert "épuisement" in tip.lower()
-
-    def test_acwr_caution_returns_warning(self):
-        tip, priority = generate_daily_tip(acwr=1.4, tsb=0.0, readiness_score=50.0)
-        assert priority == "warning"
-        assert "1.40" in tip
-
-    def test_tsb_tired_returns_warning(self):
-        tip, priority = generate_daily_tip(acwr=1.0, tsb=-15.0, readiness_score=50.0)
-        assert priority == "warning"
-        assert "fatigue" in tip.lower()
-
-    def test_high_readiness_returns_info(self):
-        tip, priority = generate_daily_tip(acwr=1.0, tsb=5.0, readiness_score=85.0)
-        assert priority == "info"
-        assert "excellente forme" in tip.lower()
-
-    def test_optimal_acwr_returns_info(self):
-        tip, priority = generate_daily_tip(acwr=1.1, tsb=0.0, readiness_score=60.0)
-        assert priority == "info"
-        assert "optimale" in tip.lower()
-
-    def test_no_data_returns_fallback(self):
-        tip, priority = generate_daily_tip(acwr=None, tsb=None, readiness_score=None)
-        assert priority == "info"
-        assert "enregistrez" in tip.lower()
-
-    def test_alert_priority_over_warning(self):
-        """ACWR danger takes precedence over TSB tired."""
-        _, priority = generate_daily_tip(acwr=1.6, tsb=-15.0, readiness_score=50.0)
-        assert priority == "alert"
+@pytest.fixture()
+def client():
+    app = FastAPI()
+    app.include_router(router)
+    return TestClient(app)
 
 
-# ---------- Integration test for endpoint ----------
-class TestDailyTipEndpoint:
-    """Test the /tips/daily endpoint with mocked DB."""
+# ─── Strength tests ──────────────────────────────────────────────────
 
-    @pytest.fixture()
-    def client(self):
-        from arete.api.main import app
 
-        return TestClient(app)
+def _make_strength_session(exercises=None, overall_rpe=7):
+    """Build a minimal mock StrengthSession."""
+    session = MagicMock()
+    session.date = date(2025, 5, 10)
+    session.overall_rpe = overall_rpe
+    session.exercises = exercises or []
+    return session
 
-    def test_endpoint_returns_valid_response(self, client: TestClient):
-        """Endpoint returns 200 with correct schema even without DB."""
-        with (
-            patch(
-                "arete.api.ai_tips._get_training_loads", side_effect=Exception("no db")
-            ),
-            patch("arete.api.ai_tips._get_tss_history", side_effect=Exception("no db")),
-        ):
-            resp = client.get("/tips/daily")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert "tip" in data
-            assert data["priority"] in ("info", "warning", "alert")
-            assert "generated_at" in data
 
-    def test_endpoint_with_mocked_metrics(self, client: TestClient):
-        """Endpoint uses metrics when available."""
-        from datetime import date
+def _make_exercise(muscle_value: str, sets_data: list[tuple[int, float]]):
+    """Create a mock SessionExercise with sets.
 
-        from arete.features.fitness import (
-            DailyTSS,
-            FormZone,
-            PerformanceModel,
-            ReadinessLevel,
+    sets_data: list of (reps, weight_kg) tuples.
+    """
+    ex = MagicMock()
+    ex.exercise = MagicMock()
+    ex.exercise.primary_muscle = MagicMock()
+    ex.exercise.primary_muscle.value = muscle_value
+
+    sets = []
+    for reps, weight in sets_data:
+        s = MagicMock()
+        s.is_warmup = False
+        s.reps = reps
+        s.weight_kg = weight
+        sets.append(s)
+    ex.sets = sets
+    return ex
+
+
+class TestPostSessionStrength:
+    """POST /tips/post-session with session_type=strength."""
+
+    @patch("arete.api.ai_tips.StrengthRepository")
+    def test_strength_feedback_with_volume(self, mock_repo_cls, client):
+        repo = mock_repo_cls.return_value
+        exercises = [
+            _make_exercise("chest", [(10, 80), (10, 80), (8, 85)]),
+        ]
+        repo.get_session.return_value = _make_strength_session(exercises)
+        repo.get_volume_by_muscle.return_value = {"chest": 6000.0}
+
+        resp = client.post(
+            "/tips/post-session",
+            json={"session_type": "strength", "session_id": 1},
         )
-        from arete.features.workload import ACWRZone, DailyLoad, WorkloadMetrics
-
-        fake_loads = [DailyLoad(date=date.today(), duration_min=60, rpe=7)]
-        fake_workload = WorkloadMetrics(
-            date=date.today(),
-            acute_load=420,
-            chronic_load=300,
-            acwr=1.4,
-            acwr_zone=ACWRZone.CAUTION,
-            acwr_ewma=1.35,
-            monotony=1.2,
-            monotony_zone=None,
-            strain=504.0,
-            strain_zone=None,
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "feedback" in data
+        assert "pectoraux" in data["feedback"].lower() or any(
+            "pectoraux" in h.lower() for h in data["highlights"]
         )
-        fake_tss = [DailyTSS(date=date.today(), tss=80.0)]
-        fake_model = PerformanceModel(
-            date=date.today(),
-            ctl=50.0,
-            atl=60.0,
-            tsb=-10.0,
-            form_zone=FormZone.NEUTRAL,
-            readiness_score=55.0,
-            readiness_level=ReadinessLevel.MODERATE,
-            predicted_performance=90.0,
-            ramp_rate=3.0,
+        assert len(data["highlights"]) >= 1
+
+    @patch("arete.api.ai_tips.StrengthRepository")
+    def test_strength_not_found(self, mock_repo_cls, client):
+        repo = mock_repo_cls.return_value
+        repo.get_session.return_value = None
+
+        resp = client.post(
+            "/tips/post-session",
+            json={"session_type": "strength", "session_id": 999},
+        )
+        assert resp.status_code == 404
+
+
+# ─── Cardio tests ────────────────────────────────────────────────────
+
+
+def _make_actual_session(
+    avg_hr=145,
+    max_hr=172,
+    avg_pace_sec_km=330,
+    distance_m=10000,
+    calories=650,
+    sport="running",
+    duration_sec=3600,
+):
+    session = MagicMock()
+    session.sport = sport
+    session.duration_sec = duration_sec
+    session.avg_hr = avg_hr
+    session.max_hr = max_hr
+    session.avg_pace_sec_km = avg_pace_sec_km
+    session.distance_m = distance_m
+    session.calories = calories
+    return session
+
+
+class TestPostSessionCardio:
+    """POST /tips/post-session with session_type=cardio."""
+
+    @patch("arete.api.ai_tips.GarminRepository")
+    def test_cardio_feedback_with_hr_and_pace(self, mock_repo_cls, client):
+        repo = mock_repo_cls.return_value
+        repo.get_actual_session.return_value = _make_actual_session()
+
+        resp = client.post(
+            "/tips/post-session",
+            json={"session_type": "cardio", "session_id": 42},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "running" in data["feedback"].lower()
+        assert any("bpm" in h for h in data["highlights"])
+        assert any("/km" in h for h in data["highlights"])
+
+    @patch("arete.api.ai_tips.GarminRepository")
+    def test_cardio_not_found(self, mock_repo_cls, client):
+        repo = mock_repo_cls.return_value
+        repo.get_actual_session.return_value = None
+
+        resp = client.post(
+            "/tips/post-session",
+            json={"session_type": "cardio", "session_id": 999},
+        )
+        assert resp.status_code == 404
+
+    @patch("arete.api.ai_tips.GarminRepository")
+    def test_cardio_no_hr_data(self, mock_repo_cls, client):
+        repo = mock_repo_cls.return_value
+        repo.get_actual_session.return_value = _make_actual_session(
+            avg_hr=None,
+            max_hr=None,
+            avg_pace_sec_km=None,
+            distance_m=None,
+            calories=None,
         )
 
-        with (
-            patch("arete.api.ai_tips._get_training_loads", return_value=fake_loads),
-            patch(
-                "arete.api.ai_tips.compute_workload_metrics", return_value=fake_workload
-            ),
-            patch("arete.api.ai_tips._get_tss_history", return_value=fake_tss),
-            patch(
-                "arete.api.ai_tips.compute_performance_model", return_value=fake_model
-            ),
-        ):
-            resp = client.get("/tips/daily")
-            assert resp.status_code == 200
-            data = resp.json()
-            # ACWR 1.4 → warning
-            assert data["priority"] == "warning"
-            assert "1.40" in data["tip"]
+        resp = client.post(
+            "/tips/post-session",
+            json={"session_type": "cardio", "session_id": 10},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "Séance complétée" in data["highlights"][0]
