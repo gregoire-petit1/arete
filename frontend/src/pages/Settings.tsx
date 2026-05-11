@@ -13,10 +13,18 @@ import {
   Check,
   X,
   AlertTriangle,
+  Terminal,
+  RefreshCw,
+  Server,
+  Brain,
+  Cloud,
+  CheckCircle,
+  XCircle,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { LoadingState, GarminLoginModal } from '@/components';
-import { settingsApi, type UserSettings } from '@/lib/api';
+import { LoadingState, GarminLoginModal, SystemAlert } from '@/components';
+import { settingsApi, garminApi, healthApi, ragApi, type UserSettings } from '@/lib/api';
 
 const TABS = [
   { id: 'profile', label: 'PROFILE', icon: User },
@@ -24,6 +32,7 @@ const TABS = [
   { id: 'connections', label: 'CONNECTIONS', icon: Watch },
   { id: 'data', label: 'DATA', icon: Database },
   { id: 'appearance', label: 'APPEARANCE', icon: Palette },
+  { id: 'system', label: 'SYSTEM', icon: Terminal },
 ] as const;
 
 type TabId = typeof TABS[number]['id'];
@@ -198,17 +207,24 @@ export function SettingsPage() {
             {activeTab === 'goals' && (
               <GoalsTab settings={settings} updateSetting={updateSetting} />
             )}
-            {activeTab === 'connections' && <ConnectionsTab />}
+            {activeTab === 'connections' && (
+              <ConnectionsTab onGoToSystem={() => setActiveTab('system')} />
+            )}
             {activeTab === 'data' && <DataTab />}
             {activeTab === 'appearance' && (
               <AppearanceTab settings={settings} updateSetting={updateSetting} />
             )}
+            {activeTab === 'system' && <SystemTab />}
           </motion.div>
         </div>
       </div>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Sub-components (module-level)
+// ---------------------------------------------------------------------------
 
 type LocalSettings = Omit<UserSettings, 'user_id'>;
 
@@ -400,12 +416,7 @@ function GoalsTab({
   );
 }
 
-function ConnectionsTab() {
-  const queryClient = useQueryClient();
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [connectionAlert, setConnectionAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  // Fetch real Garmin sync status
+function ConnectionsTab({ onGoToSystem }: { onGoToSystem: () => void }) {
   const { data: syncStatus } = useQuery({
     queryKey: ['garminSyncStatus'],
     queryFn: async () => {
@@ -415,91 +426,33 @@ function ConnectionsTab() {
     },
   });
 
-  // Logout mutation
-  const logoutMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch('/api/garmin/sync/logout', { method: 'POST' });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.detail || 'Logout failed');
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      setConnectionAlert({ type: 'success', message: 'Disconnected from Garmin' });
-      queryClient.invalidateQueries({ queryKey: ['garminSyncStatus'] });
-    },
-    onError: (error) => {
-      setConnectionAlert({ type: 'error', message: `Logout failed: ${error}` });
-    },
-  });
-
-  const formatLastSync = (dateStr: string | null) => {
-    if (!dateStr) return null;
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours} hours ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return 'Yesterday';
-    return `${diffDays} days ago`;
-  };
-
-  const handleDisconnect = (serviceId: string) => {
-    if (serviceId === 'garmin') {
-      logoutMutation.mutate();
-    }
-  };
-
   const connections = [
     {
       id: 'garmin',
       name: 'Garmin Connect',
       icon: Watch,
       status: syncStatus?.garmin_authenticated ? 'connected' : 'disconnected',
-      lastSync: formatLastSync(syncStatus?.last_sync),
       email: syncStatus?.user_email || null,
     },
     {
       id: 'runalyze',
       name: 'Runalyze',
       icon: Database,
-      status: 'disconnected', // Not implemented yet
-      lastSync: null,
+      status: 'disconnected',
+      email: null,
     },
     {
       id: 'strava',
       name: 'Strava',
       icon: Target,
       status: 'disconnected',
-      lastSync: null,
+      email: null,
     },
   ];
 
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-display text-text-primary mb-4">CONNECTED SERVICES</h2>
-
-      {/* Connection Alert */}
-      {connectionAlert && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-          className={cn(
-            'p-3 rounded flex items-center justify-between text-sm',
-            connectionAlert.type === 'success'
-              ? 'bg-success-green/10 border border-success-green/30 text-success-green'
-              : 'bg-danger-red/10 border border-danger-red/30 text-danger-red'
-          )}
-        >
-          <span>{connectionAlert.message}</span>
-          <button onClick={() => setConnectionAlert(null)} className="hover:opacity-70">
-            <X className="w-4 h-4" />
-          </button>
-        </motion.div>
-      )}
 
       <div className="space-y-3">
         {connections.map((conn) => (
@@ -517,52 +470,31 @@ function ConnectionsTab() {
               {conn.email && (
                 <div className="text-xs text-neon-cyan">{conn.email}</div>
               )}
-              {conn.lastSync && (
-                <div className="text-xs text-text-muted">Last sync: {conn.lastSync}</div>
-              )}
             </div>
             {conn.status === 'connected' ? (
-              <>
-                <div className="flex items-center gap-1 text-xs text-success-green">
-                  <Check className="w-4 h-4" />
-                  Connected
-                </div>
-                <button
-                  onClick={() => handleDisconnect(conn.id)}
-                  disabled={logoutMutation.isPending}
-                  className="text-xs font-mono text-danger-red hover:underline disabled:opacity-50"
-                >
-                  {logoutMutation.isPending ? 'Disconnecting...' : 'Disconnect'}
-                </button>
-              </>
+              <div className="flex items-center gap-1 text-xs text-success-green">
+                <Check className="w-4 h-4" />
+                Connected
+              </div>
             ) : (
-              <button
-                onClick={() => conn.id === 'garmin' && setShowLoginModal(true)}
-                disabled={conn.id !== 'garmin'}
-                className={cn(
-                  'px-4 py-1.5 rounded text-xs font-mono',
-                  conn.id === 'garmin'
-                    ? 'bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan hover:bg-neon-cyan/20 transition-all'
-                    : 'bg-text-muted/10 border border-text-muted/20 text-text-muted cursor-not-allowed'
-                )}
-              >
-                {conn.id === 'garmin' ? 'Connect' : 'Coming Soon'}
-              </button>
+              <span className="text-xs font-mono text-text-muted">
+                {conn.id === 'garmin' ? 'Not connected' : 'Coming Soon'}
+              </span>
             )}
           </div>
         ))}
       </div>
 
-      {/* Login Modal */}
-      <GarminLoginModal
-        isOpen={showLoginModal}
-        onClose={() => setShowLoginModal(false)}
-        onSuccess={() => {
-          setShowLoginModal(false);
-          setConnectionAlert({ type: 'success', message: 'Garmin Connect authenticated!' });
-          queryClient.invalidateQueries({ queryKey: ['garminSyncStatus'] });
-        }}
-      />
+      <button
+        onClick={onGoToSystem}
+        className={cn(
+          'w-full px-4 py-3 rounded text-sm font-mono',
+          'bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan',
+          'hover:bg-neon-cyan/20 transition-all'
+        )}
+      >
+        Manage connections in System tab
+      </button>
     </div>
   );
 }
@@ -721,6 +653,353 @@ function AppearanceTab({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// System tab (absorbed from Matrix.tsx)
+// ---------------------------------------------------------------------------
+
+function SystemTab() {
+  const queryClient = useQueryClient();
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery({
+    queryKey: ['health'],
+    queryFn: healthApi.check,
+    retry: false,
+  });
+
+  const { data: syncStatus, isLoading: syncLoading, refetch: refetchSync } = useQuery({
+    queryKey: ['syncStatus'],
+    queryFn: garminApi.getSyncStatus,
+    refetchInterval: 30000,
+    retry: false,
+  });
+
+  const { data: collections } = useQuery({
+    queryKey: ['ragCollections'],
+    queryFn: ragApi.getCollections,
+    retry: false,
+  });
+
+  const logoutMutation = useMutation({
+    mutationFn: garminApi.logout,
+    onSuccess: () => {
+      setAlert({ type: 'success', message: 'LOGGED OUT' });
+      queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
+    },
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: (options: { start_date?: string; end_date?: string; download_fit?: boolean; max_activities?: number }) =>
+      garminApi.syncActivities(options),
+    onSuccess: (result) => {
+      setAlert({ type: 'success', message: `SYNCED ${result.synced} ACTIVITIES` });
+      queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['actual'] });
+    },
+    onError: (error) => {
+      setAlert({ type: 'error', message: `SYNC FAILED: ${error}` });
+    },
+  });
+
+  const seedMutation = useMutation({
+    mutationFn: ragApi.seedKnowledgeBase,
+    onSuccess: () => {
+      setAlert({ type: 'success', message: 'KNOWLEDGE BASE SEEDED' });
+      queryClient.invalidateQueries({ queryKey: ['ragCollections'] });
+    },
+  });
+
+  const handleRefresh = () => {
+    refetchHealth();
+    refetchSync();
+    queryClient.invalidateQueries({ queryKey: ['ragCollections'] });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-lg font-display text-text-primary">SYSTEM</h2>
+        <button
+          onClick={handleRefresh}
+          className={cn(
+            'flex items-center gap-2 px-3 py-1.5 rounded',
+            'bg-abyss border border-text-muted/30',
+            'text-text-secondary font-mono text-xs',
+            'hover:border-neon-cyan/50 hover:text-neon-cyan transition-all duration-200'
+          )}
+        >
+          <RefreshCw className="w-3 h-3" />
+          REFRESH
+        </button>
+      </div>
+
+      {/* Alert */}
+      {alert && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <SystemAlert
+            type={alert.type}
+            message={alert.message}
+            onDismiss={() => setAlert(null)}
+          />
+        </motion.div>
+      )}
+
+      {/* System Status */}
+      <div className="p-4 bg-abyss/50 rounded border border-text-muted/20">
+        <h3 className="text-xs font-mono text-text-muted mb-3 uppercase tracking-wider">
+          STATUS
+        </h3>
+        <div className="space-y-2">
+          <StatusRow
+            icon={<Server className="w-4 h-4" />}
+            label="API Health"
+            status={health?.status === 'ok' ? 'online' : healthLoading ? 'loading' : 'offline'}
+          />
+          <StatusRow
+            icon={<Database className="w-4 h-4" />}
+            label="DuckDB"
+            status={health?.database === 'connected' ? 'online' : 'offline'}
+          />
+          <StatusRow
+            icon={<Brain className="w-4 h-4" />}
+            label="ChromaDB (RAG)"
+            status={health?.rag === 'connected' ? 'online' : 'offline'}
+          />
+          <StatusRow
+            icon={<Cloud className="w-4 h-4" />}
+            label="Garmin Connect"
+            status={syncStatus?.garmin_authenticated ? 'online' : syncLoading ? 'loading' : 'offline'}
+          />
+        </div>
+      </div>
+
+      {/* Garmin Sync Center */}
+      <div className="p-4 bg-abyss/50 rounded border border-text-muted/20">
+        <h3 className="text-xs font-mono text-text-muted mb-3 uppercase tracking-wider">
+          GARMIN SYNC CENTER
+        </h3>
+
+        {syncStatus?.garmin_authenticated ? (
+          <div className="space-y-4">
+            <div className="p-3 rounded border border-success-green/30">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-success-green font-mono flex items-center gap-2">
+                    <CheckCircle className="w-4 h-4" />
+                    {syncStatus.user_email ? `Authenticated as ${syncStatus.user_email}` : 'Authenticated'}
+                  </div>
+                  <div className="text-xs text-text-muted mt-1 font-mono">
+                    Last sync: {syncStatus.last_sync || 'Never'}
+                    {' | '}
+                    Activities: {syncStatus.activities_synced}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => syncMutation.mutate({ max_activities: 50, download_fit: true })}
+                    disabled={syncMutation.isPending}
+                    className={cn(
+                      'px-3 py-1.5 rounded text-xs font-mono',
+                      'bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan',
+                      'hover:bg-neon-cyan/20 transition-all',
+                      syncMutation.isPending && 'opacity-50'
+                    )}
+                  >
+                    {syncMutation.isPending ? 'SYNCING...' : 'SYNC NOW'}
+                  </button>
+                  <button
+                    onClick={() => logoutMutation.mutate()}
+                    className="px-3 py-1.5 rounded text-xs font-mono bg-danger-red/10 border border-danger-red/30 text-danger-red hover:bg-danger-red/20 transition-all"
+                  >
+                    <LogOut className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <SyncOptionsForm onSync={(options) => syncMutation.mutate(options)} isLoading={syncMutation.isPending} />
+          </div>
+        ) : (
+          <div className="p-4 rounded border border-text-muted/30 text-center">
+            <XCircle className="w-6 h-6 text-danger-red mx-auto mb-2" />
+            <div className="text-sm text-text-muted font-mono">NOT CONNECTED</div>
+            <button
+              onClick={() => setShowLoginModal(true)}
+              className="mt-3 px-4 py-2 rounded text-sm font-mono bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan hover:bg-neon-cyan/20 transition-all"
+            >
+              [CONNECT]
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Knowledge Base */}
+      <div className="p-4 bg-abyss/50 rounded border border-text-muted/20">
+        <h3 className="text-xs font-mono text-text-muted mb-3 uppercase tracking-wider">
+          KNOWLEDGE BASE
+        </h3>
+        <table className="w-full text-sm font-mono">
+          <thead>
+            <tr className="text-text-muted text-left">
+              <th className="pb-2">Collection</th>
+              <th className="pb-2">Documents</th>
+            </tr>
+          </thead>
+          <tbody>
+            {collections?.collections.map((name: string) => (
+              <tr key={name} className="border-t border-text-muted/10">
+                <td className="py-2 text-text-primary">{name}</td>
+                <td className="py-2 text-text-secondary">
+                  {collections.document_counts[name] || 0}
+                </td>
+              </tr>
+            )) || (
+              <tr>
+                <td colSpan={2} className="py-4 text-center text-text-muted">
+                  No collections found
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+        <button
+          onClick={() => seedMutation.mutate()}
+          disabled={seedMutation.isPending}
+          className="mt-3 px-3 py-1.5 rounded text-xs font-mono bg-neon-purple/10 border border-neon-purple/30 text-neon-purple hover:bg-neon-purple/20 transition-all"
+        >
+          {seedMutation.isPending ? 'SEEDING...' : '[SEED KB]'}
+        </button>
+      </div>
+
+      {/* Login Modal */}
+      <GarminLoginModal
+        isOpen={showLoginModal}
+        onClose={() => setShowLoginModal(false)}
+        onSuccess={() => {
+          setShowLoginModal(false);
+          setAlert({ type: 'success', message: 'GARMIN CONNECT AUTHENTICATED' });
+          queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
+        }}
+      />
+    </div>
+  );
+}
+
+function StatusRow({
+  icon,
+  label,
+  status,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  status: 'online' | 'offline' | 'loading';
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="text-text-muted">{icon}</span>
+      <span className="text-text-secondary font-mono flex-1">{label}</span>
+      <div className="flex items-center gap-2">
+        {status === 'loading' ? (
+          <div className="w-3 h-3 rounded-full bg-warning-orange animate-pulse" />
+        ) : status === 'online' ? (
+          <div className="w-3 h-3 rounded-full bg-success-green" />
+        ) : (
+          <div className="w-3 h-3 rounded-full bg-danger-red" />
+        )}
+        <span
+          className={cn(
+            'text-xs font-mono uppercase',
+            status === 'online' && 'text-success-green',
+            status === 'offline' && 'text-danger-red',
+            status === 'loading' && 'text-warning-orange'
+          )}
+        >
+          {status === 'loading' ? 'CHECKING' : status.toUpperCase()}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SyncOptionsForm({
+  onSync,
+  isLoading,
+}: {
+  onSync: (options: { start_date?: string; end_date?: string; download_fit?: boolean; max_activities?: number }) => void;
+  isLoading: boolean;
+}) {
+  const [days, setDays] = useState(30);
+  const [downloadFit, setDownloadFit] = useState(true);
+  const [maxActivities, setMaxActivities] = useState(50);
+
+  const handleSync = () => {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    onSync({
+      start_date: startDate.toISOString().split('T')[0],
+      download_fit: downloadFit,
+      max_activities: maxActivities,
+    });
+  };
+
+  return (
+    <div className="p-3 rounded border border-text-muted/20">
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <label className="text-xs text-text-muted font-mono block mb-1">Date range</label>
+          <select
+            value={days}
+            onChange={(e) => setDays(Number(e.target.value))}
+            className="w-full bg-shadow border border-text-muted/30 rounded px-2 py-1 text-text-primary font-mono"
+          >
+            <option value={7}>Last 7 days</option>
+            <option value={30}>Last 30 days</option>
+            <option value={90}>Last 90 days</option>
+            <option value={365}>Last year</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-text-muted font-mono block mb-1">Max activities</label>
+          <input
+            type="number"
+            value={maxActivities}
+            onChange={(e) => setMaxActivities(Number(e.target.value))}
+            className="w-full bg-shadow border border-text-muted/30 rounded px-2 py-1 text-text-primary font-mono"
+          />
+        </div>
+        <div className="col-span-2 flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="systemDownloadFit"
+            checked={downloadFit}
+            onChange={(e) => setDownloadFit(e.target.checked)}
+            className="accent-neon-cyan"
+          />
+          <label htmlFor="systemDownloadFit" className="text-xs text-text-muted font-mono">
+            Download FIT files
+          </label>
+        </div>
+      </div>
+      <button
+        onClick={handleSync}
+        disabled={isLoading}
+        className={cn(
+          'mt-3 w-full px-4 py-2 rounded text-sm font-mono',
+          'bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan',
+          'hover:bg-neon-cyan/20 transition-all duration-200',
+          isLoading && 'opacity-50'
+        )}
+      >
+        {isLoading ? 'SYNCING...' : '[START SYNC]'}
+      </button>
     </div>
   );
 }
