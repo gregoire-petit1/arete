@@ -14,23 +14,15 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-# Groq uses OpenAI-compatible SDK
-from openai import OpenAI as OpenAIClient
-
 from arete.data.exercises_catalog import EXERCISES_CATALOG, EXERCISE_ALIASES
-from arete.llm.token_manager import get_token_manager
+from arete.llm.provider import get_default_model, get_llm_client
 
 logger = logging.getLogger(__name__)
-
-# Groq configuration
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
 
 
 @dataclass
@@ -69,13 +61,9 @@ class ParsedWorkout:
     notes: str | None = None
 
 
-def get_client() -> OpenAIClient | None:
-    """Get Groq client via OpenAI-compatible SDK."""
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        logger.warning("GROQ_API_KEY not set, LLM features disabled")
-        return None
-    return OpenAIClient(api_key=api_key, base_url=GROQ_BASE_URL)
+def get_client():
+    """Get LLM client via provider abstraction."""
+    return get_llm_client()
 
 
 def _get_exercise_list_for_prompt() -> str:
@@ -254,7 +242,9 @@ def _parse_simple_format(text: str) -> list[dict] | None:
 
     # Pattern for individual exercise in circuit: "8-10 pull ups @20kg", "10e dips", "15 db lateral raises @20"
     # Now supports "e" suffix for each side (unilateral)
-    exercise_pattern = r"(\d+)(?:-(\d+))?e?\s+(.+?)(?:\s*@\s*(\d+(?:\.\d+)?)\s*(?:kg)?)?$"
+    exercise_pattern = (
+        r"(\d+)(?:-(\d+))?e?\s+(.+?)(?:\s*@\s*(\d+(?:\.\d+)?)\s*(?:kg)?)?$"
+    )
 
     # Alternative pattern: "exercise name NxM @weight" (traditional)
     # Supports: "Pull ups 4x8", "Dips 3xF", "Bench 4x8-10 @80kg", "Rows 3xAMRAP", "5x20 leg raises"
@@ -271,7 +261,9 @@ def _parse_simple_format(text: str) -> list[dict] | None:
     emom_pattern = r"^EMOM\s*(\d+)['\"]?\s*\((.+)\)$"
     # Colon-separated: "bench press : 6@80kg, 4@100kg, 2x1@110kg r2'30"
     # Name : sets_part rest rpe
-    colon_pattern = r"^(.+?)\s*:\s*(.+?)(?:\s*r(\d+)'(\d+)?)?(?:\s*[-–]\s*rpe\s*[\d.-]+)?$"
+    colon_pattern = (
+        r"^(.+?)\s*:\s*(.+?)(?:\s*r(\d+)'(\d+)?)?(?:\s*[-–]\s*rpe\s*[\d.-]+)?$"
+    )
 
     # Mixed sets pattern for parsing "6@80kg, 4@100, 2x8@100, 3x1@110" etc.
     mixed_set_pattern = r"(\d+)(?:x(\d+))?@(\d+(?:\.\d+)?)(?:kg)?"
@@ -326,7 +318,9 @@ def _parse_simple_format(text: str) -> list[dict] | None:
                     is_failure = "failure" in name.lower() or "amrap" in name.lower()
                     reps = None if is_failure else int(reps_min_str)
                     if is_failure:
-                        name = re.sub(r"\b(failure|amrap)\b", "", name, flags=re.IGNORECASE).strip()
+                        name = re.sub(
+                            r"\b(failure|amrap)\b", "", name, flags=re.IGNORECASE
+                        ).strip()
 
                     # Build target_reps string (e.g., "8-10" or "8")
                     circuit_target_reps: str | None = reps_min_str
@@ -345,7 +339,9 @@ def _parse_simple_format(text: str) -> list[dict] | None:
                                 "rpe": None,
                                 "is_warmup": False,
                                 "is_failure": is_failure,
-                                "rest_sec": circuit_rest_sec if i < num_rounds - 1 else None,
+                                "rest_sec": circuit_rest_sec
+                                if i < num_rounds - 1
+                                else None,
                             }
                         )
 
@@ -528,7 +524,9 @@ def _parse_simple_format(text: str) -> list[dict] | None:
             parts = re.split(r",\s*", content)
             for part in parts:
                 # Match "odd: 10 pull ups" or "even: 10 chin ups"
-                part_match = re.match(r"(?:odd|even):\s*(\d+)\s+(.+)", part.strip(), re.IGNORECASE)
+                part_match = re.match(
+                    r"(?:odd|even):\s*(\d+)\s+(.+)", part.strip(), re.IGNORECASE
+                )
                 if part_match:
                     reps = int(part_match.group(1))
                     name = part_match.group(2).strip()
@@ -772,19 +770,14 @@ def parse_workout_text(
     # Use LLM for complex parsing
     client = get_client()
     if not client:
-        raise ValueError("GROQ_API_KEY not set and simple parsing failed")
+        raise ValueError("LLM not configured and simple parsing failed")
 
-    # Check token budget
-    token_manager = get_token_manager()
-    can_proceed, reason = token_manager.can_make_request(DEFAULT_MODEL, 800)
-    if not can_proceed:
-        raise ValueError(f"Token budget exceeded and simple parsing failed: {reason}")
-
+    model = get_default_model()
     system_prompt, user_prompt = _build_parser_prompt(text, date_str)
 
     try:
         response = client.chat.completions.create(
-            model=DEFAULT_MODEL,
+            model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -792,14 +785,6 @@ def parse_workout_text(
             max_tokens=800,
             temperature=0.1,  # Low temperature for consistent parsing
         )
-
-        # Track token usage
-        if response.usage:
-            token_manager.record_usage(
-                model=DEFAULT_MODEL,
-                prompt_tokens=response.usage.prompt_tokens,
-                completion_tokens=response.usage.completion_tokens,
-            )
 
         content = response.choices[0].message.content
         if not content:

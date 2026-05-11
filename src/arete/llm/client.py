@@ -1,33 +1,21 @@
-"""Groq LLM client for training plan generation.
+"""LLM client for training plan generation.
 
-Uses OpenAI-compatible API with Groq backend.
-Models: llama-3.3-70b-versatile (default), llama-4-scout-17b-16e-instruct
-
-Token usage is tracked and rate limits are enforced to stay within Groq free tier.
+Uses the provider abstraction layer for multi-backend support.
 """
 
 from __future__ import annotations
 
+import json
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any
 
-from openai import OpenAI
-
-from arete.llm.token_manager import get_token_manager
+from arete.llm.provider import generate, get_default_model
 
 logger = logging.getLogger(__name__)
 
-# Groq configuration
-GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-DEFAULT_MODEL = (
-    "llama-3.3-70b-versatile"  # Best quality/speed for French text generation
-)
-
 # Token budget per request (prompt + completion)
-MAX_PROMPT_TOKENS = 800  # Reduced from ~1500
-MAX_COMPLETION_TOKENS = 800  # Reduced from 1024
+MAX_COMPLETION_TOKENS = 800
 
 
 @dataclass
@@ -51,27 +39,8 @@ class TrainingContext:
     recommendations: list[str] | None = None
 
 
-def get_client() -> OpenAI | None:
-    """Get Groq client via OpenAI SDK.
-
-    Returns None if GROQ_API_KEY not set.
-    """
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        logger.warning("GROQ_API_KEY not set, LLM features disabled")
-        return None
-
-    return OpenAI(
-        api_key=api_key,
-        base_url=GROQ_BASE_URL,
-    )
-
-
 def _build_system_prompt() -> str:
-    """Build compact system prompt for training coach.
-
-    Optimized for token efficiency (~300 tokens vs 500 before).
-    """
+    """Build compact system prompt for training coach."""
     return """Coach expert course à pied. Génère plans personnalisés en JSON.
 
 RÈGLES:
@@ -97,7 +66,6 @@ def _build_user_prompt(ctx: TrainingContext) -> str:
     if ctx.rpe_moy7j is not None:
         lines.append(f"RPE moyen 7 jours : {ctx.rpe_moy7j:.1f}")
 
-    # Add metrics if available
     if ctx.acwr is not None:
         lines.append(f"ACWR : {ctx.acwr:.2f} ({ctx.acwr_zone or 'unknown'})")
 
@@ -125,73 +93,48 @@ def generate_plan(
     ctx: TrainingContext,
     model: str | None = None,
 ) -> dict[str, Any]:
-    """Generate training plan using Groq LLM.
+    """Generate training plan using the configured LLM provider.
 
     Args:
-        ctx: Training context with user data and metrics
-        model: Groq model to use (auto-selected if None)
+        ctx: Training context with user data and metrics.
+        model: Model override (uses provider default if None).
 
     Returns:
-        Parsed JSON plan or fallback if LLM unavailable
+        Parsed JSON plan or fallback if LLM unavailable.
     """
-    import json
+    system_prompt = _build_system_prompt()
+    user_prompt = _build_user_prompt(ctx)
 
-    client = get_client()
+    raw = generate(
+        system_prompt,
+        user_prompt,
+        model=model,
+        temperature=0.7,
+        max_tokens=MAX_COMPLETION_TOKENS,
+        json_mode=True,
+    )
 
-    if client is None:
-        # Fallback when no API key
+    if raw is None:
         return _generate_fallback_plan(ctx)
-
-    # Token management
-    token_manager = get_token_manager()
-
-    # Auto-select best available model
-    if model is None:
-        model = token_manager.get_best_model(estimated_tokens=1500)
-
-    # Check if we can make request
-    can_proceed, reason = token_manager.can_make_request(model, estimated_tokens=1500)
-    if not can_proceed:
-        logger.warning(f"Rate limit: {reason}, using fallback")
-        return _generate_fallback_plan(ctx)
-
-    # Wait if needed (per-minute limit)
-    token_manager.wait_if_needed(model, estimated_tokens=1500)
 
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": _build_system_prompt()},
-                {"role": "user", "content": _build_user_prompt(ctx)},
-            ],
-            temperature=0.7,
-            max_tokens=MAX_COMPLETION_TOKENS,
-            response_format={"type": "json_object"},
-        )
-
-        # Track token usage
-        if response.usage:
-            token_manager.record_usage(
-                model=model,
-                prompt_tokens=response.usage.prompt_tokens,
-                completion_tokens=response.usage.completion_tokens,
-            )
-
-        content = response.choices[0].message.content
-        if content:
-            result: dict[str, Any] = json.loads(content)
-            return result
+        result: dict[str, Any] = json.loads(raw)
+        return result
+    except (json.JSONDecodeError, TypeError):
+        logger.warning("LLM returned invalid JSON, using fallback")
         return _generate_fallback_plan(ctx)
 
-    except Exception as e:
-        logger.error(f"LLM generation failed: {e}")
-        return _generate_fallback_plan(ctx)
+
+# Legacy alias kept for backward compatibility
+def get_client():
+    """Legacy: return the LLM client. Prefer using provider.get_llm_client()."""
+    from arete.llm.provider import get_llm_client
+
+    return get_llm_client()
 
 
 def _generate_fallback_plan(ctx: TrainingContext) -> dict[str, Any]:
     """Generate rule-based fallback plan when LLM unavailable."""
-    # Determine intensity based on fatigue and metrics
     if ctx.fatigue >= 8:
         return {
             "seance": "Récupération active",

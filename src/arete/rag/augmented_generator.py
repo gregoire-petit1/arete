@@ -72,7 +72,9 @@ class AugmentedGenerator:
             model = token_manager.get_best_model(estimated_tokens=2000)
 
         # Check if we can make request
-        can_proceed, reason = token_manager.can_make_request(model, estimated_tokens=2000)
+        can_proceed, reason = token_manager.can_make_request(
+            model, estimated_tokens=2000
+        )
         if not can_proceed:
             logger.warning(f"Rate limit: {reason}, using fallback")
             return self._fallback_response(intent)
@@ -209,7 +211,9 @@ FORMAT JSON (réponse générale):
             user_parts.append(" ".join(metrics))
 
         # Risk/intent summary
-        user_parts.append(f"Risque:{context.get_risk_level():.0%} Intent:{context.infer_intent()}")
+        user_parts.append(
+            f"Risque:{context.get_risk_level():.0%} Intent:{context.infer_intent()}"
+        )
 
         # Strength benchmarks (compact)
         strength_summary = context.get_strength_summary()
@@ -242,57 +246,28 @@ FORMAT JSON (réponse générale):
         model: str,
         intent: str = "general",
     ) -> dict[str, Any]:
-        """Call Groq LLM for generation with token tracking."""
-        import os
-
-        from openai import OpenAI
-
-        from arete.llm.token_manager import get_token_manager
-
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            logger.warning("GROQ_API_KEY not set, using fallback")
-            return self._fallback_response(intent)
-
-        client = OpenAI(
-            api_key=api_key,
-            base_url="https://api.groq.com/openai/v1",
-        )
+        """Call LLM for generation via the provider abstraction."""
+        from arete.llm.provider import generate
 
         system_prompt, user_prompt = prompt
-        token_manager = get_token_manager()
 
-        # Wait if per-minute limit reached
-        token_manager.wait_if_needed(model, estimated_tokens=2000)
+        raw = generate(
+            system_prompt,
+            user_prompt,
+            model=model,
+            temperature=0.3,
+            max_tokens=MAX_COMPLETION_TOKENS,
+            json_mode=True,
+        )
 
-        try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ],
-                temperature=0.3,
-                max_tokens=MAX_COMPLETION_TOKENS,
-                response_format={"type": "json_object"},
-            )
-
-            # Track token usage
-            if response.usage:
-                token_manager.record_usage(
-                    model=model,
-                    prompt_tokens=response.usage.prompt_tokens,
-                    completion_tokens=response.usage.completion_tokens,
-                )
-
-            content = response.choices[0].message.content
-            if content:
-                result: dict[str, Any] = json.loads(content)
-                return result
+        if raw is None:
             return self._fallback_response(intent)
 
-        except Exception as e:
-            logger.error(f"LLM call failed: {e}")
+        try:
+            result: dict[str, Any] = json.loads(raw)
+            return result
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("LLM returned invalid JSON for RAG, using fallback")
             return self._fallback_response(intent)
 
     def _fallback_response(self, intent: str = "general") -> dict[str, Any]:
@@ -302,8 +277,16 @@ FORMAT JSON (réponse générale):
                 "type": "session_plan",
                 "titre": "Endurance fondamentale",
                 "sections": [
-                    {"nom": "Échauffement", "contenu": "10' footing progressif", "duree": "10 min"},
-                    {"nom": "Corps de séance", "contenu": "30-40' footing Z2", "duree": "35 min"},
+                    {
+                        "nom": "Échauffement",
+                        "contenu": "10' footing progressif",
+                        "duree": "10 min",
+                    },
+                    {
+                        "nom": "Corps de séance",
+                        "contenu": "30-40' footing Z2",
+                        "duree": "35 min",
+                    },
                     {
                         "nom": "Retour au calme",
                         "contenu": "10' marche + étirements",
@@ -350,7 +333,9 @@ FORMAT JSON (réponse générale):
 
         # Add strength context if available
         if context.strength_benchmarks:
-            response["_metadata"]["strength_benchmarks_count"] = len(context.strength_benchmarks)
+            response["_metadata"]["strength_benchmarks_count"] = len(
+                context.strength_benchmarks
+            )
 
         return response
 
@@ -451,7 +436,9 @@ def enrich_context_with_cardio(
         # Get HR drift flags for fatigue detection
         drift_data = repo.get_hr_drift_analysis(days=14)
         context.hr_drift_flags = [
-            f"{d['date']}: {d['flag']}" for d in drift_data if d.get("flag") == "potential_fatigue"
+            f"{d['date']}: {d['flag']}"
+            for d in drift_data
+            if d.get("flag") == "potential_fatigue"
         ]
 
     except Exception as e:

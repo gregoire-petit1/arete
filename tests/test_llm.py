@@ -163,28 +163,33 @@ class TestFallbackPlan:
 
 
 class TestGetClient:
-    """Test client initialization."""
+    """Test client initialization via provider abstraction."""
 
-    def test_no_api_key(self):
-        with patch.dict("os.environ", {}, clear=True):
-            # Remove GROQ_API_KEY if present
-            import os
+    def test_no_provider_configured(self):
+        """get_client returns None when no provider is configured."""
+        from arete.llm import provider
 
-            env_backup = os.environ.get("GROQ_API_KEY")
-            if "GROQ_API_KEY" in os.environ:
-                del os.environ["GROQ_API_KEY"]
-            try:
-                client = get_client()
-                assert client is None
-            finally:
-                if env_backup:
-                    os.environ["GROQ_API_KEY"] = env_backup
+        provider.reset_client()
+        with patch.dict("os.environ", {"LLM_PROVIDER": "openrouter"}, clear=True):
+            client = get_client()
+            # No OPENROUTER_API_KEY → returns None
+            assert client is None
+        provider.reset_client()
 
-    def test_with_api_key(self):
-        with patch.dict("os.environ", {"GROQ_API_KEY": "test_key"}):
+    def test_ollama_provider(self):
+        """get_client returns a client for ollama (no key needed)."""
+        from arete.llm import provider
+
+        provider.reset_client()
+        with patch.dict(
+            "os.environ",
+            {"LLM_PROVIDER": "ollama", "OLLAMA_BASE_URL": "http://test:11434/v1"},
+            clear=True,
+        ):
             client = get_client()
             assert client is not None
-            assert client.base_url.host == "api.groq.com"
+            assert "test" in str(client.base_url)
+        provider.reset_client()
 
 
 class TestGeneratePlan:
@@ -203,33 +208,10 @@ class TestGeneratePlan:
             assert "details" in plan
 
     def test_llm_success(self):
-        mock_response = MagicMock()
-        mock_response.choices = [
-            MagicMock(
-                message=MagicMock(
-                    content='{"seance": "Test séance", "details": {}, "cible": {}, "justification": "test", "charge_prevue": "modérée"}'
-                )
-            )
-        ]
-        mock_response.usage = MagicMock(
-            prompt_tokens=100,
-            completion_tokens=50,
-        )
+        """generate_plan returns LLM response when provider is available."""
+        json_response = '{"seance": "Test séance", "details": {}, "cible": {}, "justification": "test", "charge_prevue": "modérée"}'
 
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = mock_response
-
-        mock_token_manager = MagicMock()
-        mock_token_manager.get_best_model.return_value = "llama-3.3-70b-versatile"
-        mock_token_manager.can_make_request.return_value = (True, "OK")
-        mock_token_manager.wait_if_needed.return_value = 0.0
-
-        with (
-            patch("arete.llm.client.get_client", return_value=mock_client),
-            patch(
-                "arete.llm.client.get_token_manager", return_value=mock_token_manager
-            ),
-        ):
+        with patch("arete.llm.client.generate", return_value=json_response):
             ctx = TrainingContext(
                 date="2025-12-02",
                 objectif="marathon",
@@ -240,20 +222,8 @@ class TestGeneratePlan:
             assert plan["seance"] == "Test séance"
 
     def test_llm_error_fallback(self):
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = Exception("API Error")
-
-        mock_token_manager = MagicMock()
-        mock_token_manager.get_best_model.return_value = "llama-3.3-70b-versatile"
-        mock_token_manager.can_make_request.return_value = (True, "OK")
-        mock_token_manager.wait_if_needed.return_value = 0.0
-
-        with (
-            patch("arete.llm.client.get_client", return_value=mock_client),
-            patch(
-                "arete.llm.client.get_token_manager", return_value=mock_token_manager
-            ),
-        ):
+        """generate_plan falls back when provider.generate returns None."""
+        with patch("arete.llm.client.generate", return_value=None):
             ctx = TrainingContext(
                 date="2025-12-02",
                 objectif="marathon",
@@ -266,20 +236,8 @@ class TestGeneratePlan:
             assert "details" in plan
 
     def test_rate_limit_fallback(self):
-        """Test fallback when rate limit is reached."""
-        mock_token_manager = MagicMock()
-        mock_token_manager.get_best_model.return_value = "llama-3.3-70b-versatile"
-        mock_token_manager.can_make_request.return_value = (
-            False,
-            "Daily limit reached",
-        )
-
-        with (
-            patch("arete.llm.client.get_client", return_value=MagicMock()),
-            patch(
-                "arete.llm.client.get_token_manager", return_value=mock_token_manager
-            ),
-        ):
+        """Test fallback when LLM returns invalid JSON."""
+        with patch("arete.llm.client.generate", return_value="not valid json {{{"):
             ctx = TrainingContext(
                 date="2025-12-02",
                 objectif="marathon",

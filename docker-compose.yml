@@ -7,6 +7,8 @@ services:
     env_file: .env
     environment:
       - ARETE_DB=/app/data/arete.duckdb
+      # When using Ollama in Docker, point to the host or ollama service
+      # - OLLAMA_BASE_URL=http://ollama:11434/v1
     volumes:
       - arete-data:/app/data
     ports:
@@ -31,6 +33,18 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Uncomment to run Ollama as a Docker service:
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: arete-ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   restart: unless-stopped
+
 volumes:
   arete-data:
     driver: local
+  # ollama-data:
+  #   driver: local
