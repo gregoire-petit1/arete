@@ -131,6 +131,23 @@ class INOLResponse(BaseModel):
     classification: str = Field(description="INOL classification")
 
 
+class StatBar(BaseModel):
+    """A single stat bar (HP/MP/XP)."""
+
+    current: float = Field(description="Current value")
+    max: float = Field(description="Maximum value")
+    label: str = Field(description="Human-readable label")
+
+
+class PlayerStats(BaseModel):
+    """Player stats response (RPG-style HP/MP/XP/Level)."""
+
+    hp: StatBar = Field(description="Health Points (Recovery/Readiness)")
+    mp: StatBar = Field(description="Mana Points (Fitness/CTL)")
+    xp: StatBar = Field(description="Experience Points (Weekly Volume/TSS)")
+    level: int = Field(description="Player level (completed weeks at goal)")
+
+
 class RecommendationOut(BaseModel):
     """Single recommendation."""
 
@@ -234,6 +251,124 @@ def _get_tss_history(days: int = 42) -> list[DailyTSS]:
 
 
 # ---------- Endpoints ----------
+
+
+def _get_user_settings() -> dict:
+    """Fetch user settings or return defaults."""
+    con = connect(read_only=True)
+    try:
+        row = con.execute(
+            "SELECT * FROM app.user_settings WHERE user_id = 1"
+        ).fetchone()
+        if row:
+            columns = [desc[0] for desc in con.description]
+            return dict(zip(columns, row, strict=True))
+        return {}
+    except Exception:
+        return {}
+    finally:
+        con.close()
+
+
+def _compute_weekly_tss(start_monday: date, end_date: date) -> float:
+    """Sum TSS from start_monday to end_date (inclusive)."""
+    con = connect(read_only=True)
+    try:
+        row = con.execute(
+            """
+            SELECT COALESCE(SUM(
+                COALESCE(duree_min, 0) * POWER(COALESCE(rpe, 5) / 10.0, 2) / 0.36
+            ), 0)
+            FROM app.training_log
+            WHERE date >= ? AND date <= ?
+            """,
+            [start_monday, end_date],
+        ).fetchone()
+        return float(row[0]) if row else 0.0
+    except Exception:
+        return 0.0
+    finally:
+        con.close()
+
+
+def _compute_level(weekly_tss_goal: float) -> int:
+    """Count completed past weeks where weekly TSS >= goal."""
+    con = connect(read_only=True)
+    try:
+        today = date.today()
+        # Get the Monday of the current week
+        current_monday = today - timedelta(days=today.weekday())
+
+        # Get earliest training date
+        row = con.execute("SELECT MIN(date) FROM app.training_log").fetchone()
+        if not row or not row[0]:
+            return 0
+
+        earliest = row[0]
+        # Align to Monday
+        start_monday = earliest - timedelta(days=earliest.weekday())
+
+        level = 0
+        week_start = start_monday
+        while week_start < current_monday:
+            week_end = week_start + timedelta(days=6)
+            week_tss = _compute_weekly_tss(week_start, week_end)
+            if week_tss >= weekly_tss_goal:
+                level += 1
+            week_start += timedelta(days=7)
+
+        return level
+    except Exception:
+        return 0
+    finally:
+        con.close()
+
+
+@router.get("/player-stats", response_model=PlayerStats)
+def get_player_stats():
+    """Get RPG-style player stats (HP/MP/XP/Level).
+
+    - HP = Readiness score (0-100) from fitness-fatigue model
+    - MP = CTL progress toward target (0-100)
+    - XP = Weekly TSS accumulated this week
+    - Level = Count of past weeks where weekly TSS >= goal
+    """
+    today = date.today()
+
+    # --- Settings ---
+    settings = _get_user_settings()
+    target_ctl = float(settings.get("desired_training_load", 0) or 0) or 50.0
+    weekly_tss_goal = 300.0  # Default; not in user_settings schema
+
+    # --- HP: Readiness ---
+    tss_history = _get_tss_history(days=42)
+    has_data = any(tss.tss > 0 for tss in tss_history)
+    if has_data:
+        model = compute_performance_model(tss_history, today)
+        hp_current = round(model.readiness_score, 1)
+        ctl_value = model.ctl
+    else:
+        hp_current = 50.0
+        ctl_value = 0.0
+
+    # --- MP: Fitness (CTL / target) ---
+    mp_current = round(min(100.0, ctl_value / target_ctl * 100), 1)
+
+    # --- XP: Weekly TSS ---
+    monday = today - timedelta(days=today.weekday())
+    xp_current = round(_compute_weekly_tss(monday, today), 1)
+
+    # --- Level ---
+    level = _compute_level(weekly_tss_goal)
+
+    return PlayerStats(
+        hp=StatBar(current=hp_current, max=100, label="Recovery"),
+        mp=StatBar(current=mp_current, max=100, label="Fitness"),
+        xp=StatBar(current=xp_current, max=weekly_tss_goal, label="Weekly Volume"),
+        level=level,
+    )
+
+
 @router.get("/workload", response_model=WorkloadMetricsOut)
 def get_workload_metrics(
     days: int = Query(28, ge=7, le=90, description="Days to analyze"),
@@ -472,11 +607,15 @@ def get_recommendations(
             acwr_zone=workload.acwr_zone.value if workload.acwr_zone else None,
             acwr_ewma=round(workload.acwr_ewma, 3) if workload.acwr_ewma else None,
             monotony=round(workload.monotony, 2) if workload.monotony else None,
-            monotony_zone=workload.monotony_zone.value if workload.monotony_zone else None,
+            monotony_zone=workload.monotony_zone.value
+            if workload.monotony_zone
+            else None,
             strain=round(workload.strain, 1) if workload.strain else None,
             strain_zone=workload.strain_zone.value if workload.strain_zone else None,
             acute_load=round(workload.acute_load, 1),
-            chronic_load=round(workload.chronic_load, 1) if workload.chronic_load else None,
+            chronic_load=round(workload.chronic_load, 1)
+            if workload.chronic_load
+            else None,
             days_analyzed=len([load for load in loads if load.duration_min > 0]),
         )
 

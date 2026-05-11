@@ -267,3 +267,47 @@ class TestOpenAPISchema:
         assert "/metrics/strength/1rm" in paths
         assert "/metrics/strength/inol" in paths
         assert "/metrics/recommendations" in paths
+        assert "/metrics/player-stats" in paths
+
+
+class TestPlayerStatsEndpoint:
+    """Tests for GET /metrics/player-stats."""
+
+    def test_player_stats_returns_200(self) -> None:
+        """Endpoint should always return 200 with valid structure."""
+        response = client.get("/metrics/player-stats")
+        assert response.status_code == 200
+        data = response.json()
+        assert "hp" in data
+        assert "mp" in data
+        assert "xp" in data
+        assert "level" in data
+
+    def test_player_stats_structure(self) -> None:
+        """Each stat bar should have current, max, label."""
+        response = client.get("/metrics/player-stats")
+        assert response.status_code == 200
+        data = response.json()
+
+        for key in ("hp", "mp", "xp"):
+            bar = data[key]
+            assert "current" in bar
+            assert "max" in bar
+            assert "label" in bar
+            assert isinstance(bar["current"], (int, float))
+            assert isinstance(bar["max"], (int, float))
+            assert bar["max"] > 0
+
+    def test_player_stats_bounds(self) -> None:
+        """HP and MP should be 0-100, XP >= 0, level >= 0."""
+        response = client.get("/metrics/player-stats")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert 0 <= data["hp"]["current"] <= 100
+        assert data["hp"]["max"] == 100
+        assert 0 <= data["mp"]["current"] <= 100
+        assert data["mp"]["max"] == 100
+        assert data["xp"]["current"] >= 0
+        assert data["xp"]["max"] > 0
+        assert data["level"] >= 0
