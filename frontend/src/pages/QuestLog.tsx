@@ -242,15 +242,15 @@ export function QuestLogPage() {
   const streak = summary?.matched || 0;
 
   return (
-    <div className="min-h-screen bg-void p-6">
+    <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <motion.header
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center mb-8"
+          className="flex justify-between items-center mb-4 sm:mb-8"
         >
-          <h1 className="text-2xl font-display font-bold text-neon-cyan tracking-wider">
+          <h1 className="text-lg sm:text-2xl font-display font-bold text-neon-cyan tracking-wider">
             QUEST LOG
           </h1>
           <div className="flex items-center gap-2">
@@ -266,7 +266,7 @@ export function QuestLogPage() {
             <button
               onClick={() => setShowNewQuest(true)}
               className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded',
+                'flex items-center gap-2 px-3 py-1.5 sm:px-4 sm:py-2 rounded',
                 'bg-neon-cyan/10 border border-neon-cyan/30',
                 'text-neon-cyan font-mono text-sm',
                 'hover:bg-neon-cyan/20 transition-all duration-200'
@@ -282,7 +282,7 @@ export function QuestLogPage() {
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="flex items-center justify-between mb-6"
+          className="flex items-center justify-between mb-4 sm:mb-6"
         >
           <button
             onClick={() => setWeekOffset(prev => prev - 1)}
@@ -290,7 +290,7 @@ export function QuestLogPage() {
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <span className="font-mono text-text-secondary">
+          <span className="font-mono text-xs sm:text-sm text-text-secondary">
             {new Date(weekStart).toLocaleDateString('fr-FR', {
               day: 'numeric',
               month: 'short',
@@ -320,7 +320,7 @@ export function QuestLogPage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-panel p-4 mb-8"
+          className="glass-panel p-3 sm:p-4 mb-4 sm:mb-8 overflow-x-auto"
         >
           <CalendarWeek
             startDate={weekStart}
@@ -334,18 +334,17 @@ export function QuestLogPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="glass-panel p-4 mb-8"
+          className="glass-panel p-3 sm:p-4 mb-4 sm:mb-8"
         >
-          <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
+          <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-3 sm:mb-4 uppercase tracking-wider">
             ADHERENCE DASHBOARD
           </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-6">
             {/* Completion Rate */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-text-muted font-mono">Completion Rate</span>
-                <span className="text-lg font-mono text-text-primary">
-                  {((summary?.completion_rate || 0) * 100).toFixed(0)}%
+                 <span className="text-base sm:text-lg font-mono text-text-primary">
                 </span>
               </div>
               <AdherenceBar score={(summary?.completion_rate || 0) * 100} size="lg" showLabel={false} />
@@ -380,7 +379,7 @@ export function QuestLogPage() {
                 <FlameIcon className="w-6 h-6 text-warning-orange" />
               </div>
               <div>
-                <div className="text-2xl font-mono font-bold text-warning-orange">
+                <div className="text-xl sm:text-2xl font-mono font-bold text-warning-orange">
                   {streak}
                 </div>
                 <div className="text-xs text-text-muted font-mono">days streak</div>
@@ -389,7 +388,7 @@ export function QuestLogPage() {
           </div>
 
           {/* Stats row */}
-          <div className="mt-4 pt-4 border-t border-text-muted/10 flex gap-6 text-xs font-mono">
+          <div className="mt-4 pt-4 border-t border-text-muted/10 flex gap-4 sm:gap-6 text-xs font-mono">
             <span className="text-text-muted">
               Unmatched: <span className="text-warning-orange">{summary?.unmatched_actual || 0}</span>
             </span>
@@ -404,9 +403,9 @@ export function QuestLogPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="glass-panel p-4 mb-8"
+          className="glass-panel p-3 sm:p-4 mb-4 sm:mb-8"
         >
-          <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
+          <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-3 sm:mb-4 uppercase tracking-wider">
             RECENT SESSIONS
           </h3>
           <div className="space-y-3">
@@ -430,9 +429,9 @@ export function QuestLogPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="glass-panel p-4"
+          className="glass-panel p-3 sm:p-4"
         >
-          <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
+          <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-3 sm:mb-4 uppercase tracking-wider">
             UPLOAD ZONE
           </h3>
           <FitDropzone
@@ -457,10 +456,10 @@ export function QuestLogPage() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="glass-panel p-6 max-w-md w-full"
+              className="glass-panel p-4 sm:p-6 max-w-md w-full"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
                 <div className="flex items-center gap-2">
                   <Plus className="w-5 h-5 text-neon-cyan" />
                   <h3 className="text-lg font-display text-neon-cyan">NEW QUEST</h3>
@@ -628,10 +627,10 @@ export function QuestLogPage() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="glass-panel p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
+              className="glass-panel p-4 sm:p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
                 <div className="flex items-center gap-3">
                   {(() => {
                     const SportIcon = getSportIconComponent(selectedSession.sport);
@@ -660,7 +659,7 @@ export function QuestLogPage() {
               </div>
 
               {/* Session Stats */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-6">
                 <div className="bg-abyss/50 rounded p-3">
                   <div className="text-xs font-mono text-text-muted uppercase mb-1">Duration</div>
                   <div className="text-lg font-mono text-text-primary">
@@ -757,7 +756,7 @@ function RecentQuestRow({ session, onView }: { session: ActualSession; onView: (
   return (
     <div
       className={cn(
-        'flex items-center gap-4 p-3 rounded',
+        'flex items-center gap-2 sm:gap-4 p-2 sm:p-3 rounded',
         'bg-abyss/50 border border-text-muted/10',
         'hover:border-neon-cyan/30 transition-all duration-200 cursor-pointer'
       )}
@@ -779,14 +778,14 @@ function RecentQuestRow({ session, onView }: { session: ActualSession; onView: (
       <div className="flex-1">
         <div className="flex items-center gap-2">
           <SportIcon size="sm" className={sportColor} />
-          <span className="text-sm font-mono text-text-primary">
+          <span className="text-xs sm:text-sm font-mono text-text-primary">
             {new Date(session.date).toLocaleDateString('fr-FR', {
               day: '2-digit',
               month: 'short',
-            }).replace(' ', ' ')}
+            })}
           </span>
           <span className="text-text-muted">—</span>
-          <span className="text-sm font-mono text-text-secondary capitalize">
+          <span className="text-xs sm:text-sm font-mono text-text-secondary capitalize">
             {session.activity_type || session.session_type || session.sport}
           </span>
         </div>
@@ -801,21 +800,21 @@ function RecentQuestRow({ session, onView }: { session: ActualSession; onView: (
 
       {/* Adherence */}
       {isMatched && session.adherence_score && (
-        <div className="w-24">
+        <div className="w-16 sm:w-24">
           <AdherenceBar score={session.adherence_score} size="sm" />
         </div>
       )}
 
       {/* Unmatched label */}
       {!isMatched && (
-        <span className="text-xs font-mono text-warning-orange">
+        <span className="text-xs font-mono text-warning-orange hidden sm:inline">
           UNMATCHED
         </span>
       )}
 
       {/* Action */}
       <button 
-        className="text-xs font-mono text-neon-cyan hover:underline"
+        className="text-xs font-mono text-neon-cyan hover:underline hidden sm:block"
         onClick={(e) => {
           e.stopPropagation();
           onView();

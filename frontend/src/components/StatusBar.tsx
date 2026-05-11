@@ -56,17 +56,17 @@ export function StatusBar({
     <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="flex items-center gap-4"
+      className="flex items-center gap-2 sm:gap-4"
     >
       {/* Label */}
-      <div className="flex items-center gap-2 min-w-[60px]">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {icon && <span className={colors.text}>{icon}</span>}
-        <span className={cn('font-mono font-bold text-sm', colors.text)}>{label}</span>
+        <span className={cn('font-mono font-bold text-xs sm:text-sm', colors.text)}>{label}</span>
       </div>
 
       {/* Bar container */}
-      <div className="flex-1 relative">
-        <div className="h-4 bg-shadow rounded-sm overflow-hidden border border-text-muted/20">
+      <div className="flex-1 min-w-0 relative">
+        <div className="h-3 sm:h-4 bg-shadow rounded-sm overflow-hidden border border-text-muted/20">
           <motion.div
             initial={{ width: 0 }}
             animate={{ width: `${percentage}%` }}
@@ -76,21 +76,22 @@ export function StatusBar({
         </div>
       </div>
 
-      {/* Values */}
-      <div className="w-[160px] text-right shrink-0">
-        <span className="font-mono text-sm text-text-primary">
-          {current.toLocaleString()}/{max.toLocaleString()}
+      {/* Values — compact on mobile */}
+      <div className="shrink-0 text-right">
+        <span className="font-mono text-xs sm:text-sm text-text-primary">
+          <span className="hidden sm:inline">{current.toLocaleString()}/{max.toLocaleString()}</span>
+          <span className="sm:hidden">{percentage.toFixed(0)}%</span>
         </span>
         {showPercentage && (
-          <span className="font-mono text-xs text-text-muted ml-2">
+          <span className="hidden sm:inline font-mono text-xs text-text-muted ml-2">
             ({percentage.toFixed(0)}%)
           </span>
         )}
       </div>
 
-      {/* Subtitle */}
+      {/* Subtitle — hidden on mobile */}
       {subtitle && (
-        <span className="text-xs text-text-muted font-mono w-[100px] text-right shrink-0">
+        <span className="hidden md:inline text-xs text-text-muted font-mono shrink-0">
           {subtitle}
         </span>
       )}

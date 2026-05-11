@@ -60,15 +60,15 @@ export function HUDPage() {
   const topRecommendation = recommendations?.recommendations?.[0];
 
   return (
-    <div className="min-h-screen bg-void p-6">
+    <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
       <div className="max-w-5xl mx-auto">
         {/* Header with Level */}
         <motion.header
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center mb-8"
+          className="flex justify-between items-center mb-6 sm:mb-8"
         >
-          <h1 className="text-2xl font-display font-bold text-neon-cyan tracking-wider">
+          <h1 className="text-lg sm:text-2xl font-display font-bold text-neon-cyan tracking-wider">
             PLAYER STATUS
           </h1>
           <motion.div
@@ -86,7 +86,7 @@ export function HUDPage() {
           variants={{
             visible: { transition: { staggerChildren: 0.1 } },
           }}
-          className="space-y-4 mb-8"
+          className="space-y-3 sm:space-y-4 mb-6 sm:mb-8"
         >
           <StatusBar
             label="HP"
@@ -115,7 +115,7 @@ export function HUDPage() {
         </motion.section>
 
         {/* Metric Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
           <MetricCard
             title="ACWR"
             value={workload?.acwr?.toFixed(2) ?? '—'}
@@ -145,7 +145,7 @@ export function HUDPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="mb-8"
+            className="mb-6 sm:mb-8"
           >
             <SystemMessage
               content={topRecommendation.message}
@@ -159,7 +159,7 @@ export function HUDPage() {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-panel p-4 mb-8"
+          className="glass-panel p-3 sm:p-4 mb-6 sm:mb-8"
         >
           <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
             CHARGE HEBDOMADAIRE
@@ -190,7 +190,7 @@ export function HUDPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="glass-panel p-4"
+          className="glass-panel p-3 sm:p-4"
         >
           <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
             DERNIÈRES SESSIONS

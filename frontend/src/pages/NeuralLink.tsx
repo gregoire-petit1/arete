@@ -142,15 +142,15 @@ export function NeuralLinkPage() {
       <motion.header
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass-panel m-4 mb-0 p-4 flex items-center justify-between"
+        className="glass-panel mx-2 sm:mx-4 mb-0 px-3 py-3 sm:p-4 flex items-center justify-between"
       >
         <div className="flex items-center gap-3">
           <Brain className="w-6 h-6 text-neon-purple" />
-          <h1 className="text-xl font-display font-bold text-neon-purple tracking-wider">
+          <h1 className="text-base sm:text-xl font-display font-bold text-neon-purple tracking-wider">
             NEURAL LINK
           </h1>
         </div>
-        <div className="flex items-center gap-2 text-xs font-mono text-text-muted">
+        <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-text-muted">
           <Database className="w-4 h-4" />
           <span>ChromaDB Connected</span>
           <div className="w-2 h-2 rounded-full bg-success-green animate-pulse" />
@@ -158,7 +158,7 @@ export function NeuralLinkPage() {
       </motion.header>
 
       {/* Chat Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto px-2 py-3 sm:p-4 space-y-4 pb-2">
         {/* Boot Sequence */}
         <AnimatePresence>
           {!bootComplete && (
@@ -190,10 +190,10 @@ export function NeuralLinkPage() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="max-w-2xl mx-auto text-center py-16"
+            className="max-w-2xl mx-auto text-center py-8 sm:py-16 px-2"
           >
             <Sparkles className="w-12 h-12 text-neon-purple mx-auto mb-4" />
-            <h2 className="text-xl font-display text-text-primary mb-2">
+            <h2 className="text-lg sm:text-xl font-display text-text-primary mb-2">
               BIENVENUE, {displayName.toUpperCase()}
             </h2>
             <p className="text-sm text-text-muted font-mono mb-6">
@@ -230,7 +230,7 @@ export function NeuralLinkPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className={cn(
-                'max-w-3xl',
+                'max-w-[85vw] sm:max-w-3xl',
                 message.role === 'user' ? 'ml-auto' : 'mr-auto'
               )}
             >
@@ -260,7 +260,7 @@ export function NeuralLinkPage() {
       </div>
 
       {/* Input Area */}
-      <div className="p-4">
+      <div className="sticky bottom-0 px-2 py-2 sm:p-4 bg-void/80 backdrop-blur-sm safe-bottom">
         <div
           className={cn(
             'glass-panel p-2 flex items-center gap-2',
@@ -415,12 +415,12 @@ function AssistantMessage({
               <div
                 key={i}
                 className={cn(
-                  'flex items-center gap-2 text-xs font-mono',
+                  'flex items-center gap-2 text-xs font-mono overflow-hidden',
                   'text-text-muted hover:text-neon-cyan transition-colors cursor-pointer'
                 )}
               >
                 <Target className="w-3 h-3" />
-                <span className="text-neon-cyan">{source.id}</span>
+                <span className="text-neon-cyan truncate">{source.id}</span>
                 <span className="text-text-muted/50">
                   [{source.collection}]
                 </span>
@@ -440,7 +440,7 @@ function AssistantMessage({
 function SessionPlanView({ data }: { data: RAGSessionPlan }) {
   return (
     <div className="space-y-4">
-      <h3 className="text-lg font-display text-text-primary">{data.titre}</h3>
+        <h3 className="text-base sm:text-lg font-display text-text-primary">{data.titre}</h3>
       
       {/* Sections */}
       <div className="space-y-2">
@@ -499,7 +499,7 @@ function ExerciseInfoView({ data }: { data: RAGExerciseInfo }) {
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <Dumbbell className="w-5 h-5 text-neon-purple" />
-        <h3 className="text-lg font-display text-text-primary">{data.exercice}</h3>
+        <h3 className="text-base sm:text-lg font-display text-text-primary">{data.exercice}</h3>
       </div>
       
       {/* Description */}
@@ -508,7 +508,7 @@ function ExerciseInfoView({ data }: { data: RAGExerciseInfo }) {
       )}
       
       {/* Muscles */}
-      <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="p-2 rounded bg-danger-red/10 border border-danger-red/20">
           <span className="text-xs font-mono text-danger-red uppercase block mb-1">Muscles Principaux</span>
           <div className="flex flex-wrap gap-1">
@@ -567,7 +567,7 @@ function AnalysisView({ data }: { data: RAGAnalysis }) {
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <TrendingUp className="w-5 h-5 text-neon-cyan" />
-        <h3 className="text-lg font-display text-text-primary">{data.titre}</h3>
+      <h3 className="text-base sm:text-lg font-display text-text-primary">{data.titre}</h3>
       </div>
       
       {/* Resume */}

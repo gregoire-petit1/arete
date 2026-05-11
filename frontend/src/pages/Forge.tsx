@@ -170,15 +170,15 @@ export function ForgePage() {
   }
 
   return (
-    <div className="min-h-screen bg-void p-6">
+    <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <motion.header
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center mb-8"
+          className="flex justify-between items-center mb-4 sm:mb-8"
         >
-          <h1 className="text-2xl font-display font-bold text-neon-cyan tracking-wider">
+           <h1 className="text-lg sm:text-2xl font-display font-bold text-neon-cyan tracking-wider">
             THE FORGE
           </h1>
           <button
@@ -195,16 +195,16 @@ export function ForgePage() {
           </button>
         </motion.header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
           {/* Left Column */}
-          <div className="space-y-8">
+           <div className="space-y-4 sm:space-y-8">
             {/* Muscle Heatmap */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="glass-panel p-4"
+              className="glass-panel p-3 sm:p-4"
             >
-              <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
+              <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
                 MUSCLE HEATMAP (7D VOLUME)
               </h3>
               <AnatomicalHeatmap volumeByMuscle={volumeByMuscle || {}} />
@@ -215,26 +215,26 @@ export function ForgePage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="glass-panel p-4"
+              className="glass-panel p-3 sm:p-4"
             >
-              <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
+              <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
                 WEEKLY VOLUME TRACKER
               </h3>
-              <div className="grid grid-cols-3 gap-4 mb-4">
+              <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
                 <div className="text-center">
-                  <div className="text-2xl font-mono font-bold text-neon-cyan">
+                  <div className="text-lg sm:text-2xl font-mono font-bold text-neon-cyan">
                     {(weeklyVolume / 1000).toFixed(1)}k
                   </div>
                   <div className="text-xs text-text-muted font-mono">Total Volume (kg)</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-mono font-bold text-neon-purple">
+                  <div className="text-lg sm:text-2xl font-mono font-bold text-neon-purple">
                     {weeklySets}
                   </div>
-                  <div className="text-xs text-text-muted font-mono">Total Sets</div>
+                  <div className="text-[10px] sm:text-xs text-text-muted font-mono">Total Sets</div>
                 </div>
                 <div className="text-center">
-                  <div className="text-2xl font-mono font-bold text-warning-orange">
+                  <div className="text-lg sm:text-2xl font-mono font-bold text-warning-orange">
                     {avgRpe.toFixed(1)}
                   </div>
                   <div className="text-xs text-text-muted font-mono">Avg RPE</div>
@@ -253,19 +253,19 @@ export function ForgePage() {
           </div>
 
           {/* Right Column */}
-          <div className="space-y-8">
+            <div className="space-y-4 sm:space-y-8">
             {/* Personal Records */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="glass-panel p-4"
+              className="glass-panel p-3 sm:p-4"
             >
-              <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider flex items-center gap-2">
+              <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-4 uppercase tracking-wider flex items-center gap-2">
                 <span className="text-neon-gold">◆</span>
                 PERSONAL RECORDS [HALL OF FAME]
               </h3>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                 <PRCard
                   exercise="SQUAT"
                   weight={140}
@@ -298,9 +298,9 @@ export function ForgePage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.3 }}
-              className="glass-panel p-4"
+              className="glass-panel p-3 sm:p-4"
             >
-              <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
+              <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
                 RECENT SESSIONS
               </h3>
               <div className="space-y-3">
@@ -325,9 +325,9 @@ export function ForgePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
-          className="glass-panel p-4 mt-8"
+          className="glass-panel p-3 sm:p-4 mt-4 sm:mt-8"
         >
-          <h3 className="text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
+          <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
             EXERCISE LIBRARY
           </h3>
 
@@ -367,7 +367,7 @@ export function ForgePage() {
           </div>
 
           {/* Exercise Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2">
             {filteredExercises?.map((exercise) => (
               <div
                 key={exercise.id}
@@ -755,21 +755,21 @@ Triceps pushdown 4x12 RPE 8`}
                   </div>
 
                   {/* Stats */}
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-3 bg-abyss rounded border border-text-muted/20">
-                      <div className="text-2xl font-mono text-neon-cyan">
+                  <div className="grid grid-cols-3 gap-2 sm:gap-4">
+                    <div className="text-center p-2 sm:p-3 bg-abyss rounded border border-text-muted/20">
+                      <div className="text-lg sm:text-2xl font-mono text-neon-cyan">
                         {selectedSession.exercises_count || selectedSession.exercises?.length || 0}
                       </div>
                       <div className="text-xs font-mono text-text-muted uppercase">Exercises</div>
                     </div>
-                    <div className="text-center p-3 bg-abyss rounded border border-text-muted/20">
-                      <div className="text-2xl font-mono text-neon-gold">
+                    <div className="text-center p-2 sm:p-3 bg-abyss rounded border border-text-muted/20">
+                      <div className="text-lg sm:text-2xl font-mono text-neon-gold">
                         {selectedSession.total_sets || 0}
                       </div>
-                      <div className="text-xs font-mono text-text-muted uppercase">Sets</div>
+                      <div className="text-[10px] sm:text-xs font-mono text-text-muted uppercase">Sets</div>
                     </div>
-                    <div className="text-center p-3 bg-abyss rounded border border-text-muted/20">
-                      <div className="text-2xl font-mono text-success-green">
+                    <div className="text-center p-2 sm:p-3 bg-abyss rounded border border-text-muted/20">
+                      <div className="text-lg sm:text-2xl font-mono text-success-green">
                         {((selectedSession.total_volume || 0) / 1000).toFixed(1)}k
                       </div>
                       <div className="text-xs font-mono text-text-muted uppercase">Volume (kg)</div>
@@ -931,7 +931,7 @@ function PRCard({
   return (
     <div className="p-3 bg-abyss rounded border border-neon-gold/30 text-center">
       <div className="text-xs text-text-muted font-mono mb-1 uppercase tracking-wider">[{exercise}]</div>
-      <div className="text-2xl font-mono font-bold text-neon-gold">{weight} kg</div>
+      <div className="text-lg sm:text-2xl font-mono font-bold text-neon-gold">{weight} kg</div>
       <div className="text-xs text-text-muted font-mono">Est 1RM</div>
       <div
         className={cn(
@@ -955,7 +955,7 @@ function SessionRow({ session, onView, onDelete }: { session: StrengthSession; o
   return (
     <div
       className={cn(
-        'flex items-center gap-4 p-3 rounded',
+        'flex items-center gap-2 sm:gap-4 p-2 sm:p-3 rounded',
         'bg-abyss/50 border border-text-muted/10',
         'hover:border-neon-cyan/30 transition-all cursor-pointer'
       )}
@@ -975,7 +975,7 @@ function SessionRow({ session, onView, onDelete }: { session: StrengthSession; o
             {session.name || 'Session'}
           </span>
         </div>
-        <div className="text-xs font-mono text-text-muted mt-1">
+        <div className="text-[10px] sm:text-xs font-mono text-text-muted mt-1">
           {session.duration_min && `${session.duration_min}min`}
           {' │ '}
           Volume: {(session.total_volume / 1000).toFixed(1)}k kg

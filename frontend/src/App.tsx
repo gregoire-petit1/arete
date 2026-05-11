@@ -27,7 +27,8 @@ function App() {
         <BrowserRouter>
           <div className="min-h-screen bg-void">
             <Navigation />
-            <main>
+            {/* pb-20 on mobile for bottom tab bar clearance, pb-0 on desktop */}
+            <main className="pb-20 md:pb-0">
               <Routes>
                 <Route path="/" element={<HUDPage />} />
                 <Route path="/quest-log" element={<QuestLogPage />} />
