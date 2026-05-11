@@ -4,18 +4,15 @@ import {
   LayoutDashboard,
   CalendarDays,
   Dumbbell,
-  MessageSquare,
-  Terminal,
   Settings,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { path: '/', label: 'HUD', icon: LayoutDashboard },
-  { path: '/quest-log', label: 'Plan', icon: CalendarDays },
-  { path: '/forge', label: 'Forge', icon: Dumbbell },
-  { path: '/neural-link', label: 'AI', icon: MessageSquare },
-  { path: '/matrix', label: 'Data', icon: Terminal },
+  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/planning', label: 'Planning', icon: CalendarDays },
+  { path: '/log', label: 'Log', icon: Dumbbell },
+  { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 /**
@@ -49,6 +46,7 @@ export function Navigation() {
                 <NavLink
                   key={item.path}
                   to={item.path}
+                  end={item.path === '/'}
                   className={({ isActive }) =>
                     cn(
                       'flex items-center gap-2 px-3 py-2 rounded text-sm font-mono',
@@ -65,20 +63,8 @@ export function Navigation() {
               ))}
             </div>
 
-            {/* Settings */}
-            <NavLink
-              to="/settings"
-              className={({ isActive }) =>
-                cn(
-                  'p-2 rounded transition-all duration-200',
-                  isActive
-                    ? 'text-neon-cyan bg-neon-cyan/10'
-                    : 'text-text-muted hover:text-text-primary'
-                )
-              }
-            >
-              <Settings className="w-5 h-5" />
-            </NavLink>
+            {/* Spacer for layout balance */}
+            <div className="w-[72px]" />
           </div>
         </div>
       </nav>
@@ -94,6 +80,7 @@ export function Navigation() {
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.path === '/'}
               className={({ isActive }) =>
                 cn(
                   'flex flex-col items-center justify-center gap-0.5 py-1 px-3 rounded-lg',
@@ -118,25 +105,6 @@ export function Navigation() {
               )}
             </NavLink>
           ))}
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              cn(
-                'flex flex-col items-center justify-center gap-0.5 py-1 px-3 rounded-lg',
-                'transition-all duration-200 min-w-[56px]',
-                isActive
-                  ? 'text-neon-cyan'
-                  : 'text-text-muted active:text-text-secondary'
-              )
-            }
-          >
-            {({ isActive }) => (
-              <>
-                <Settings className={cn('w-5 h-5', isActive && 'drop-shadow-[0_0_6px_rgba(0,240,255,0.5)]')} />
-                <span className="text-[10px] font-mono">Config</span>
-              </>
-            )}
-          </NavLink>
         </div>
       </nav>
     </>
