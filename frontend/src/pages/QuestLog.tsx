@@ -5,13 +5,12 @@ import { ChevronLeft, ChevronRight, RefreshCw, Plus, X, Check } from 'lucide-rea
 import {
   CalendarWeek,
   AdherenceBar,
-  FitDropzone,
   LoadingState,
   FlameIcon,
   getSportIconComponent,
   getSportColor,
 } from '@/components';
-import { garminApi, strengthApi, type PlannedSessionCreate } from '@/lib/api';
+import { garminApi, type PlannedSessionCreate } from '@/lib/api';
 import { cn, formatDuration } from '@/lib/utils';
 import type { ActualSession } from '@/types';
 
@@ -63,16 +62,11 @@ const getDefaultSessionType = (sport: string) => {
   return types[0]?.value || 'endurance';
 };
 
-export function QuestLogPage() {
+export function PlanningPage() {
   const queryClient = useQueryClient();
   const [weekOffset, setWeekOffset] = useState(0);
   const [showNewQuest, setShowNewQuest] = useState(false);
   const [selectedSession, setSelectedSession] = useState<ActualSession | null>(null);
-  const [uploadResults, setUploadResults] = useState<Array<{
-    filename: string;
-    status: 'success' | 'error' | 'uploading';
-    message?: string;
-  }>>([]);
 
   // New Quest form state
   const [newQuest, setNewQuest] = useState<PlannedSessionCreate>({
@@ -130,38 +124,6 @@ export function QuestLogPage() {
     queryFn: () => garminApi.getActual(),
   });
 
-  // Get strength sessions from Forge (to merge with actual sessions)
-  const { data: strengthSessions } = useQuery({
-    queryKey: ['strengthSessions'],
-    queryFn: () => strengthApi.getSessions(50),
-  });
-
-  // Merge actual sessions with unlinked strength sessions
-  const mergedActualSessions = useMemo(() => {
-    const actuals = actualSessions || [];
-    const strengths = strengthSessions || [];
-    
-    // Convert unlinked strength sessions to ActualSession format
-    const unlinkedStrength = strengths
-      .filter(s => !s.garmin_activity_id)
-      .map(s => ({
-        id: -s.id, // Negative ID to avoid conflicts
-        planned_session_id: null,
-        date: s.date,
-        sport: 'strength',
-        session_type: s.name || 'strength_training',
-        duration_min: s.duration_min ? `${s.duration_min}:00` : null,
-        avg_hr: null,
-        max_hr: null,
-        source: 'forge',
-      } as ActualSession));
-    
-    // Combine: actual sessions + unlinked forge sessions
-    return [...actuals, ...unlinkedStrength].sort((a, b) => 
-      new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
-  }, [actualSessions, strengthSessions]);
-
   const { data: summary } = useQuery({
     queryKey: ['matchSummary'],
     queryFn: garminApi.getSummary,
@@ -185,51 +147,9 @@ export function QuestLogPage() {
     },
   });
 
-  // Upload mutation
-  const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      setUploadResults(prev => [
-        { filename: file.name, status: 'uploading' },
-        ...prev.slice(0, 4),
-      ]);
-      const result = await garminApi.uploadFit(file);
-      return { file, result };
-    },
-    onSuccess: ({ file, result }) => {
-      setUploadResults(prev =>
-        prev.map(u =>
-          u.filename === file.name
-            ? {
-                ...u,
-                status: 'success' as const,
-                message: `${result.sport || 'Activity'}, ${formatDuration(result.duration_seconds || 0)}`,
-              }
-            : u
-        )
-      );
-      queryClient.invalidateQueries({ queryKey: ['actual'] });
-      queryClient.invalidateQueries({ queryKey: ['matchSummary'] });
-    },
-    onError: (error, file) => {
-      setUploadResults(prev =>
-        prev.map(u =>
-          u.filename === file.name
-            ? { ...u, status: 'error' as const, message: String(error) }
-            : u
-        )
-      );
-    },
-  });
-
-  const handleUpload = useCallback(
-    async (file: File) => {
-      await uploadMutation.mutateAsync(file);
-    },
-    [uploadMutation]
-  );
 
   // Filter sessions for current week (using merged sessions)
-  const weekActual = mergedActualSessions?.filter(s => {
+  const weekActual = actualSessions?.filter(s => {
     const date = s.date.split('T')[0];
     return date >= weekStart && date <= weekEnd;
   }) || [];
@@ -398,48 +318,6 @@ export function QuestLogPage() {
           </div>
         </motion.div>
 
-        {/* Recent Sessions (completed workouts) */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="glass-panel p-3 sm:p-4 mb-4 sm:mb-8"
-        >
-          <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-3 sm:mb-4 uppercase tracking-wider">
-            RECENT SESSIONS
-          </h3>
-          <div className="space-y-3">
-            {actualSessions?.slice(0, 5).map((session) => (
-              <RecentQuestRow 
-                key={session.id} 
-                session={session} 
-                onView={() => setSelectedSession(session)}
-              />
-            ))}
-            {(!actualSessions || actualSessions.length === 0) && (
-              <div className="text-center py-6 text-text-muted font-mono text-sm">
-                NO SESSIONS COMPLETED YET
-              </div>
-            )}
-          </div>
-        </motion.div>
-
-        {/* Upload Zone */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="glass-panel p-3 sm:p-4"
-        >
-          <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-3 sm:mb-4 uppercase tracking-wider">
-            UPLOAD ZONE
-          </h3>
-          <FitDropzone
-            onUpload={handleUpload}
-            isUploading={uploadMutation.isPending}
-            recentUploads={uploadResults}
-          />
-        </motion.div>
       </div>
 
       {/* New Quest Modal */}
@@ -744,84 +622,6 @@ export function QuestLogPage() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-function RecentQuestRow({ session, onView }: { session: ActualSession; onView: () => void }) {
-  const SportIcon = getSportIconComponent(session.sport);
-  const sportColor = getSportColor(session.sport);
-  const isMatched = session.matched_planned_id !== null || session.planned_session_id !== null;
-  
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-2 sm:gap-4 p-2 sm:p-3 rounded',
-        'bg-abyss/50 border border-text-muted/10',
-        'hover:border-neon-cyan/30 transition-all duration-200 cursor-pointer'
-      )}
-      onClick={onView}
-    >
-      {/* Status indicator */}
-      <div
-        className={cn(
-          'w-8 h-8 rounded flex items-center justify-center',
-          isMatched
-            ? 'bg-success-green/20 text-success-green'
-            : 'bg-text-muted/20 text-text-muted'
-        )}
-      >
-        {isMatched ? <span className="text-sm">✓</span> : <SportIcon size="sm" className={sportColor} />}
-      </div>
-
-      {/* Icon & Info */}
-      <div className="flex-1">
-        <div className="flex items-center gap-2">
-          <SportIcon size="sm" className={sportColor} />
-          <span className="text-xs sm:text-sm font-mono text-text-primary">
-            {new Date(session.date).toLocaleDateString('fr-FR', {
-              day: '2-digit',
-              month: 'short',
-            })}
-          </span>
-          <span className="text-text-muted">—</span>
-          <span className="text-xs sm:text-sm font-mono text-text-secondary capitalize">
-            {session.activity_type || session.session_type || session.sport}
-          </span>
-        </div>
-        <div className="text-xs font-mono text-text-muted mt-1">
-          {session.duration_min || (session.duration_seconds ? formatDuration(session.duration_seconds) : '')}
-          {(session.distance_km || session.distance_meters) && (
-            <> │ {session.distance_km ?? (session.distance_meters ? (session.distance_meters / 1000).toFixed(2) : '')} km</>
-          )}
-          {session.avg_hr && <> │ avg HR {session.avg_hr}</>}
-        </div>
-      </div>
-
-      {/* Adherence */}
-      {isMatched && session.adherence_score && (
-        <div className="w-16 sm:w-24">
-          <AdherenceBar score={session.adherence_score} size="sm" />
-        </div>
-      )}
-
-      {/* Unmatched label */}
-      {!isMatched && (
-        <span className="text-xs font-mono text-warning-orange hidden sm:inline">
-          UNMATCHED
-        </span>
-      )}
-
-      {/* Action */}
-      <button 
-        className="text-xs font-mono text-neon-cyan hover:underline hidden sm:block"
-        onClick={(e) => {
-          e.stopPropagation();
-          onView();
-        }}
-      >
-        [VIEW]
-      </button>
     </div>
   );
 }
