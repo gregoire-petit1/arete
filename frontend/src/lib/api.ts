@@ -320,6 +320,7 @@ export interface UserSettings {
   fitness_goal: "maintenance" | "build" | "peak" | "recovery";
   notifications_enabled: boolean;
   theme: "dark" | "darker" | "abyss";
+  exercise_abbreviations: Record<string, string>;
 }
 
 export const tipsApi = {

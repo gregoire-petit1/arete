@@ -8,7 +8,9 @@ from arete.dataio.db import connect
 
 # ---------- Helpers ----------
 def _next_id(con, table_qualified: str) -> int:
-    result = con.execute(f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table_qualified}").fetchone()
+    result = con.execute(
+        f"SELECT COALESCE(MAX(id), 0) + 1 FROM {table_qualified}"
+    ).fetchone()
     if result is None:
         return 1
     return int(result[0])
@@ -284,7 +286,9 @@ def list_objectives(skip: int, limit: int) -> tuple[int, list[dict[str, Any]]]:
         con.close()
 
 
-def update_objective(obj_id: int, *, sport: str, name: str, priority: int) -> dict[str, Any] | None:
+def update_objective(
+    obj_id: int, *, sport: str, name: str, priority: int
+) -> dict[str, Any] | None:
     con = connect(False)
     try:
         row = con.execute(
@@ -319,7 +323,9 @@ def delete_objective(obj_id: int) -> bool:
 
 
 # ---------- Personal records ----------
-def create_record(*, sport: str, event: str, performance: float, unit: str) -> dict[str, Any]:
+def create_record(
+    *, sport: str, event: str, performance: float, unit: str
+) -> dict[str, Any]:
     con = connect(False)
     try:
         new_id = _next_id(con, "app.personal_records")
@@ -395,6 +401,14 @@ def delete_record(rec_id: int) -> bool:
 
 # ---------- User Settings ----------
 def _settings_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
+    import json as _json
+
+    abbrev_raw = row[10] if len(row) > 10 else "{}"
+    try:
+        abbreviations = _json.loads(abbrev_raw) if abbrev_raw else {}
+    except (ValueError, TypeError):
+        abbreviations = {}
+
     return {
         "user_id": row[0],
         "display_name": row[1],
@@ -406,6 +420,7 @@ def _settings_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "fitness_goal": row[7],
         "notifications_enabled": row[8],
         "theme": row[9],
+        "exercise_abbreviations": abbreviations,
     }
 
 
@@ -417,7 +432,7 @@ def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
             """
             SELECT user_id, display_name, email, timezone, weekly_training_goal,
                    rest_day_preference, fatigue_threshold, fitness_goal,
-                   notifications_enabled, theme
+                   notifications_enabled, theme, exercise_abbreviations
             FROM app.user_settings
             WHERE user_id = ?
             """,
@@ -440,10 +455,14 @@ def upsert_user_settings(
     fitness_goal: str,
     notifications_enabled: bool,
     theme: str,
+    exercise_abbreviations: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Create or update user settings."""
+    import json as _json
+
     con = connect(False)
     rest_days_str = ",".join(rest_day_preference) if rest_day_preference else ""
+    abbrev_json = _json.dumps(exercise_abbreviations or {}, ensure_ascii=False)
     try:
         # Try update first
         row = con.execute(
@@ -451,11 +470,12 @@ def upsert_user_settings(
             UPDATE app.user_settings
             SET display_name = ?, email = ?, timezone = ?, weekly_training_goal = ?,
                 rest_day_preference = ?, fatigue_threshold = ?, fitness_goal = ?,
-                notifications_enabled = ?, theme = ?, updated_at = CURRENT_TIMESTAMP
+                notifications_enabled = ?, theme = ?, exercise_abbreviations = ?,
+                updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
-                      notifications_enabled, theme
+                      notifications_enabled, theme, exercise_abbreviations
             """,
             [
                 display_name,
@@ -467,6 +487,7 @@ def upsert_user_settings(
                 fitness_goal,
                 notifications_enabled,
                 theme,
+                abbrev_json,
                 user_id,
             ],
         ).fetchone()
@@ -480,12 +501,12 @@ def upsert_user_settings(
             INSERT INTO app.user_settings (
                 user_id, display_name, email, timezone, weekly_training_goal,
                 rest_day_preference, fatigue_threshold, fitness_goal,
-                notifications_enabled, theme
+                notifications_enabled, theme, exercise_abbreviations
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
-                      notifications_enabled, theme
+                      notifications_enabled, theme, exercise_abbreviations
             """,
             [
                 user_id,
@@ -498,6 +519,7 @@ def upsert_user_settings(
                 fitness_goal,
                 notifications_enabled,
                 theme,
+                abbrev_json,
             ],
         ).fetchone()
         if row is None:

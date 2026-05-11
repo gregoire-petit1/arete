@@ -238,6 +238,7 @@ CREATE TABLE IF NOT EXISTS app.user_settings (
     fitness_goal            VARCHAR DEFAULT 'build',   -- 'maintenance', 'build', 'peak', 'recovery'
     notifications_enabled   BOOLEAN DEFAULT TRUE,
     theme                   VARCHAR DEFAULT 'dark',    -- 'dark', 'darker', 'abyss'
+    exercise_abbreviations  VARCHAR DEFAULT '{}',      -- JSON: {"bp": "bench press", "ng": "neutral grip", ...}
     updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

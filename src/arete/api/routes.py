@@ -194,7 +194,9 @@ def update_user(payload: UserCreate):
 
 @router.post("/objectives", response_model=ObjectiveOut)
 def create_objective(payload: ObjectiveCreate):
-    row = repo.create_objective(sport=payload.sport, name=payload.name, priority=payload.priority)
+    row = repo.create_objective(
+        sport=payload.sport, name=payload.name, priority=payload.priority
+    )
     return ObjectiveOut(**row)
 
 
@@ -272,6 +274,7 @@ class UserSettingsUpdate(BaseModel):
     fitness_goal: Literal["maintenance", "build", "peak", "recovery"] = "build"
     notifications_enabled: bool = True
     theme: Literal["dark", "darker", "abyss"] = "dark"
+    exercise_abbreviations: dict[str, str] = {}
 
 
 class UserSettingsOut(BaseModel):
@@ -285,6 +288,7 @@ class UserSettingsOut(BaseModel):
     fitness_goal: str
     notifications_enabled: bool
     theme: str
+    exercise_abbreviations: dict[str, str]
 
 
 @router.get("/settings", response_model=UserSettingsOut)
@@ -304,6 +308,7 @@ def get_settings():
             fitness_goal="build",
             notifications_enabled=True,
             theme="dark",
+            exercise_abbreviations={},
         )
     return UserSettingsOut(**settings)
 
@@ -322,5 +327,6 @@ def update_settings(payload: UserSettingsUpdate):
         fitness_goal=payload.fitness_goal,
         notifications_enabled=payload.notifications_enabled,
         theme=payload.theme,
+        exercise_abbreviations=payload.exercise_abbreviations,
     )
     return UserSettingsOut(**settings)

@@ -206,7 +206,9 @@ def create_exercise(data: ExerciseCreate):
     # Check if exercise already exists
     existing = _repo.get_exercise_by_name(data.name)
     if existing:
-        raise HTTPException(status_code=400, detail=f"Exercise '{data.name}' already exists")
+        raise HTTPException(
+            status_code=400, detail=f"Exercise '{data.name}' already exists"
+        )
 
     exercise = Exercise(
         name=data.name,
@@ -244,7 +246,9 @@ def get_exercise(exercise_id: int):
     return _exercise_to_response(exercise)
 
 
-@router.get("/exercises/{exercise_id}/history", response_model=list[ExerciseHistoryResponse])
+@router.get(
+    "/exercises/{exercise_id}/history", response_model=list[ExerciseHistoryResponse]
+)
 def get_exercise_history(exercise_id: int, limit: int = Query(20, ge=1, le=100)):
     """Get performance history for an exercise."""
     exercise = _repo.get_exercise(exercise_id)
@@ -387,7 +391,9 @@ def link_session_to_garmin(session_id: int, data: LinkGarminRequest):
     success = _repo.link_to_garmin_activity(session_id, data.garmin_activity_id)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")
-    return {"message": "Session linked" if data.garmin_activity_id else "Session unlinked"}
+    return {
+        "message": "Session linked" if data.garmin_activity_id else "Session unlinked"
+    }
 
 
 @router.get("/sessions/{session_id}/garmin-candidates")
@@ -444,11 +450,23 @@ CARDIO_MUSCLE_IMPACT = {
     },
     "rowing": {
         "primary": {"lats": 15, "quads": 12, "glutes": 10},
-        "secondary": {"biceps": 8, "hamstrings": 6, "rhomboids": 6, "forearms": 4, "core": 5},
+        "secondary": {
+            "biceps": 8,
+            "hamstrings": 6,
+            "rhomboids": 6,
+            "forearms": 4,
+            "core": 5,
+        },
     },
     "indoor_rowing": {
         "primary": {"lats": 15, "quads": 12, "glutes": 10},
-        "secondary": {"biceps": 8, "hamstrings": 6, "rhomboids": 6, "forearms": 4, "core": 5},
+        "secondary": {
+            "biceps": 8,
+            "hamstrings": 6,
+            "rhomboids": 6,
+            "forearms": 4,
+            "core": 5,
+        },
     },
     "cycling": {
         "primary": {"quads": 12, "glutes": 10},
@@ -490,11 +508,15 @@ def _get_cardio_volume_by_muscle(
 
         # Add primary muscle volume
         for muscle, volume_per_min in impact["primary"].items():
-            muscle_volume[muscle] = muscle_volume.get(muscle, 0) + (volume_per_min * duration_min)
+            muscle_volume[muscle] = muscle_volume.get(muscle, 0) + (
+                volume_per_min * duration_min
+            )
 
         # Add secondary muscle volume (already weighted in the mapping)
         for muscle, volume_per_min in impact["secondary"].items():
-            muscle_volume[muscle] = muscle_volume.get(muscle, 0) + (volume_per_min * duration_min)
+            muscle_volume[muscle] = muscle_volume.get(muscle, 0) + (
+                volume_per_min * duration_min
+            )
 
     return {k: round(v, 1) for k, v in muscle_volume.items()}
 
@@ -513,13 +535,17 @@ def get_volume_by_muscle(
         include_cardio: Whether to include cardio activities (running, rowing, etc.)
     """
     # Get strength training volume
-    strength_volume = _repo.get_volume_by_muscle(start_date=start_date, end_date=end_date)
+    strength_volume = _repo.get_volume_by_muscle(
+        start_date=start_date, end_date=end_date
+    )
 
     if not include_cardio:
         return strength_volume
 
     # Get cardio volume
-    cardio_volume = _get_cardio_volume_by_muscle(start_date=start_date, end_date=end_date)
+    cardio_volume = _get_cardio_volume_by_muscle(
+        start_date=start_date, end_date=end_date
+    )
 
     # Merge volumes
     merged = dict(strength_volume)
@@ -638,8 +664,12 @@ class WorkoutParseRequest(BaseModel):
     """Request to parse workout text."""
 
     text: str = Field(..., min_length=5, description="Free-form workout text to parse")
-    date: date_type | None = Field(default=None, description="Workout date (defaults to today)")
-    save: bool = Field(default=False, description="Whether to save the parsed session to DB")
+    date: date_type | None = Field(
+        default=None, description="Workout date (defaults to today)"
+    )
+    save: bool = Field(
+        default=False, description="Whether to save the parsed session to DB"
+    )
 
 
 class ParsedSetResponse(BaseModel):
@@ -684,16 +714,29 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
     """Parse free-form workout text into structured session data.
 
     Supports formats like:
-    - "Bench press 4x8 80kg"
-    - "Squat 3x5 @100kg RPE 8"
-    - "Pull ups 4x10"
+    - "2x8 @80 bench press" (sets before name)
+    - "3@100, 1@105 squat" (descending sets)
+    - "(pull ups, dips)" (supersets)
 
-    Uses LLM for complex parsing, with regex fallback.
+    Uses LLM-first for best understanding, regex fallback.
+    User abbreviations are loaded from settings automatically.
     """
+    from arete.dataio import repository as repo
     from arete.llm.workout_parser import parse_workout_text, ParsedWorkout
 
+    # Load user abbreviations from settings
+    user_settings = repo.get_user_settings(user_id=1)
+    abbreviations = (
+        user_settings.get("exercise_abbreviations", {}) if user_settings else {}
+    )
+
     try:
-        parsed = parse_workout_text(text=request.text, workout_date=request.date, use_llm=True)
+        parsed = parse_workout_text(
+            text=request.text,
+            workout_date=request.date,
+            use_llm=True,
+            abbreviations=abbreviations,
+        )
 
         # Convert to response
         exercises_response = []
@@ -739,7 +782,9 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
                 for i, ex in enumerate(parsed.exercises):
                     if ex.exercise_id:
                         # Get or create exercise from catalog
-                        exercise = _repo.get_or_create_exercise_from_catalog(ex.exercise_id)
+                        exercise = _repo.get_or_create_exercise_from_catalog(
+                            ex.exercise_id
+                        )
                         if exercise:
                             session_exercise = SessionExercise(
                                 exercise_id=exercise.id,

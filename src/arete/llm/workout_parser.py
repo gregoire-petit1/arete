@@ -74,23 +74,99 @@ def _get_exercise_list_for_prompt() -> str:
     return "\n".join(exercises)
 
 
-def _build_parser_prompt(workout_text: str, workout_date: str) -> tuple[str, str]:
+def _build_parser_prompt(
+    workout_text: str,
+    workout_date: str,
+    abbreviations: dict[str, str] | None = None,
+) -> tuple[str, str]:
     """Build system and user prompts for workout parsing."""
 
     exercise_list = _get_exercise_list_for_prompt()
 
-    system_prompt = f"""Tu es un parser de séances de musculation. Tu dois extraire les exercices et sets d'un texte libre.
+    # Build abbreviations section for prompt
+    abbrev_section = ""
+    if abbreviations:
+        abbrev_lines = "\n".join(f"  - {k} = {v}" for k, v in abbreviations.items())
+        abbrev_section = f"""
+USER ABBREVIATIONS (expand these in exercise names):
+{abbrev_lines}
+"""
 
+    system_prompt = f"""Tu es un parser de séances de musculation/training. Tu dois extraire les exercices et sets d'un texte libre écrit en notation terse.
+
+{abbrev_section}
 EXERCICES CONNUS (utilise ces IDs quand possible):
 {exercise_list}
 
+FORMAT DE NOTATION DE L'UTILISATEUR:
+Basique:
+- Sets BEFORE exercise name: "2x8 @80 bench press" = 2 sets of 8 at 80kg bench press
+- Traditional also works: "bench press 4x8 @80kg"
+- "@weight" = weight in kg: "@80" = 80kg
+- "@weighte" = weight EACH SIDE (unilateral machine): "shoulder press @50e" = 50kg per arm
+- "e" after reps = each side: "10e db row" = 10 reps each side
+- Rep range: "3x8-10" = 3 sets of 8 to 10 reps
+
+Supersets & circuits:
+- "Nx(exercise1, exercise2)" = superset: "10x(10 pull ups, 10 dips) r1'" = 10 rounds
+- "4x(ex1, ex2) @weight r2'" = all exercises at same weight
+- Different weights per exercise: "5x15e(cable extensions @5, cable pec fly @7.5)"
+- "(exercise in parentheses)" at end of line = filler exercise done DURING rest
+  Example: "4x8 t row @65 r1'30 (15e calves raises)" → t-row is main, calves during rest
+  Return filler as separate exercise with notes: "filler during rest of t-row"
+
+Rep count variations:
+- "(10,6,5) exercise @weight" = 3 sets of 10, 6, 5 reps at SAME weight
+- Descending: "3@100, 1@105, 1@110 squat" = 3 sets with different weights
+- Mixed: "4x8 @20, 3x8-10 @15, 2x10 @10, 1x amrap (pull ups, dips)" = different set schemes for SAME superset
+- "2x5 @100, 2x6 @80, amrap@60 exercise" = mixed schemes same exercise
+
+Drop sets & finishers:
+- "N@w1 + N@w2 exercise" = drop set (no rest between): "10@20 + 10@14 db lateral raises"
+  Return as ONE exercise with sets marked notes: "drop set"
+- "+ amrap @weight" = finisher AMRAP at different weight: "3x5 @90 (+ amrap @60)"
+  Return the AMRAP as an additional set with is_failure: true
+- "amrap" or "N x amrap" = as many reps as possible: reps: null, is_failure: true
+
+Pyramids:
+- "pyramid @w1-w2-w3 amrap exercise" = pyramid weight, AMRAP each
+- "+ reverse" = ascending then descending weight
+
+Rest notation:
+- "r1'30" = rest 1 min 30 sec
+- "r2'" = rest 2 min
+- "r'130" = TYPO for r1'30 (same meaning)
+- "r0" or "no rest" = no rest between exercises
+
+Cardio:
+- "30' incline walk (13%, 4.5km/h)" = 30 min cardio with parameters
+- "EF run 8.8km (5'53/km, 167 bpm)" = easy run with pace and HR
+- "threshold run 3x8' @4'55-5'00 r2'" = running intervals
+- "row erg 6x1' @1'28/500m r1'" = rowing intervals
+- "6km treadmill run" = distance-based cardio
+- Return cardio as exercise with name, notes with parameters, duration_min if available
+
+Session labels:
+- Lines like "pm : legs" or "am : EF run" are session context, use as session name
+- "b&c" = back & chest, "sharms" = shoulders & arms, "mabs" = mobility & abs
+
+Special:
+- "1RM exercise @weight" = one rep max test
+- "deload" = deload note, reduce weights
+- "rattrapages : exercise" = exercises to catch up on (note only)
+- "heavy street" or "street (exercises)" = calisthenics outdoor session
+
 RÈGLES:
 1. Retourne UNIQUEMENT du JSON valide, sans texte avant/après
-2. Parse les formats: "4x8", "3x10-12", "4x8 @80kg", "4x8 80kg RPE 8"
-3. Si l'exercice n'est pas dans la liste, utilise exercise_id: null et garde le nom original
+2. EXPAND toutes les abréviations dans les noms d'exercices avant de retourner
+3. Si l'exercice n'est pas dans la liste, utilise exercise_id: null et garde le nom COMPLET
 4. Convertis les poids en kg si nécessaire (lbs → kg * 0.453)
 5. Détecte les warmup sets (échauffement, warmup, w/)
-6. Pour les sets "to failure" ou "AMRAP", mets reps: null et is_failure: true
+6. Pour "failure", "amrap", "F": mets reps: null et is_failure: true
+7. Pour les supersets "(ex1, ex2)", retourne chaque exercice séparément avec notes: "superset with <other>"
+8. Pour les fillers "(exercise)" en fin de ligne, exercice séparé avec notes: "filler during rest"
+9. Pour les drop sets "N@w1 + N@w2", un seul exercice avec tous les sets et notes: "drop set"
+10. Pour "@weighte", stocke le poids par coté et ajoute notes: "weight per side"
 
 FORMAT JSON ATTENDU:
 {{
@@ -103,8 +179,7 @@ FORMAT JSON ATTENDU:
       "exercise_id": "bench_press" ou null,
       "sets": [
         {{"set_number": 1, "reps": 8, "weight_kg": 80, "rpe": null, "is_warmup": false, "is_failure": false}},
-        {{"set_number": 2, "reps": null, "weight_kg": null, "rpe": null, "is_warmup": false, "is_failure": true}},
-        ...
+        {{"set_number": 2, "reps": null, "weight_kg": null, "rpe": null, "is_warmup": false, "is_failure": true}}
       ],
       "notes": null
     }}
@@ -226,6 +301,7 @@ def _parse_simple_format(text: str) -> list[dict] | None:
     - Descending sets: "3@100, 1@105, 1@110 bench press"
     - Notation with "e" for each side: "15e db row"
     - EMOM format: "EMOM 20' (odd: 10 pull ups, even: 10 chin ups)"
+    - User format: "2x8 @80 bench press" (sets, then weight, then name)
     """
     lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
     if not lines:
@@ -234,10 +310,14 @@ def _parse_simple_format(text: str) -> list[dict] | None:
     exercises: list[dict] = []
     pending_rest_sec: int | None = None  # Rest time to apply to previous exercise
 
-    # Pattern for circuit format: 5x(...) or 5x[...] with optional rest r2' or r1'30
-    circuit_pattern = r"^(\d+)x\s*[\(\[](.+?)[\)\]](?:\s*r(\d+)'(\d+)?)?$"
+    # Pattern for circuit format: 5x(...) or 5x15e(...) with optional global @weight and rest
+    # Optional reps between x and ( for "5x15e(ex1, ex2)" = 5 rounds, 15 reps each for all
+    circuit_pattern = r"^(\d+)x\s*(?:(\d+)e?\s*)?[\(\[](.+?)[\)\]](?:\s*@\s*(\d+(?:\.\d+)?)\s*(?:kg)?)?(?:\s*r(\d+)'?(\d+)?)?$"
 
-    # Pattern for rest time notation: r2' or r1'30 or r'130 (typo) (standalone on a line)
+    # Pattern for rep-list format: "(10,6,5) exercise @weight r1'30"
+    rep_list_pattern = r"^\((\d+(?:\s*,\s*\d+)+)\)\s+(.+?)(?:\s+@\s*(\d+(?:\.\d+)?)\s*(?:kg)?e?)?\s*(?:r(\d+)'(\d+)?)?$"
+
+    # Pattern for rest time notation: r2' or r1'30 (standalone on a line)
     rest_pattern = r"^r'?(\d+)'?(\d+)?$"
 
     # Pattern for individual exercise in circuit: "8-10 pull ups @20kg", "10e dips", "15 db lateral raises @20"
@@ -253,6 +333,10 @@ def _parse_simple_format(text: str) -> list[dict] | None:
 
     # Reversed pattern: "5x20 leg raises" (sets x reps before exercise name)
     reversed_pattern = r"^(\d+)x(\d+)(?:-(\d+))?e?\s+(.+?)(?:\s*@?\s*(\d+(?:\.\d+)?)\s*(?:kg|lbs?)?)?\s*(?:r(\d+)'(\d+)?)?$"
+
+    # User terse format: "2x8 @80 bench press" or "4x10 @60 incline db press r2'"
+    # Sets x Reps, then @weight, then exercise name (weight BETWEEN sets and name)
+    terse_pattern = r"^(\d+)x(\d+)(?:-(\d+))?e?\s+@\s*(\d+(?:\.\d+)?)\s*(?:kg)?\s+(.+?)(?:\s*r(\d+)'(\d+)?)?$"
 
     # Descending/pyramid pattern: "3@100, 1@105, 1@110 bench press" or "6@80kg, 4@100kg bench"
     descending_pattern = r"^((?:\d+@\d+(?:\.\d+)?(?:kg)?,?\s*)+)\s*(.+?)(?:\s*r(\d+)'(\d+)?)?(?:\s*[-–]\s*rpe\s*[\d.-]+)?$"
@@ -287,13 +371,61 @@ def _parse_simple_format(text: str) -> list[dict] | None:
                 exercises[-1]["sets"][-1]["rest_sec"] = pending_rest_sec
             continue
 
-        # Try circuit format first: 5x(exercise1, exercise2, ...) r2'
+        # Try rep-list format: "(10,6,5) incline bp @70 r1'30"
+        rep_list_match = re.match(rep_list_pattern, line, re.IGNORECASE)
+        if rep_list_match:
+            reps_list = [int(r.strip()) for r in rep_list_match.group(1).split(",")]
+            name = rep_list_match.group(2).strip()
+            weight = float(rep_list_match.group(3)) if rep_list_match.group(3) else None
+            rest_min = rep_list_match.group(4)
+            rest_sec_extra = rep_list_match.group(5)
+
+            rest_sec = None
+            if rest_min:
+                rest_sec = int(rest_min) * 60
+                if rest_sec_extra:
+                    rest_sec += int(rest_sec_extra)
+
+            exercise_id = _match_exercise_fuzzy(name)
+
+            sets = []
+            for i, reps in enumerate(reps_list):
+                sets.append(
+                    {
+                        "set_number": i + 1,
+                        "reps": reps,
+                        "weight_kg": weight,
+                        "rpe": None,
+                        "is_warmup": False,
+                        "is_failure": False,
+                        "rest_sec": rest_sec if i < len(reps_list) - 1 else None,
+                    }
+                )
+
+            exercises.append(
+                {
+                    "name": name,
+                    "exercise_id": exercise_id,
+                    "sets": sets,
+                    "notes": None,
+                    "target_reps": None,
+                }
+            )
+            continue
+
+        # Try circuit format first: 5x(exercise1, exercise2, ...) @weight r2'
         circuit_match = re.match(circuit_pattern, line, re.IGNORECASE)
         if circuit_match:
             num_rounds = int(circuit_match.group(1))
-            circuit_content = circuit_match.group(2)
-            rest_min = circuit_match.group(3)
-            rest_sec_extra = circuit_match.group(4)
+            default_reps = (
+                int(circuit_match.group(2)) if circuit_match.group(2) else None
+            )
+            circuit_content = circuit_match.group(3)
+            global_weight = (
+                float(circuit_match.group(4)) if circuit_match.group(4) else None
+            )
+            rest_min = circuit_match.group(5)
+            rest_sec_extra = circuit_match.group(6)
 
             # Calculate rest time between rounds
             circuit_rest_sec = None
@@ -312,14 +444,19 @@ def _parse_simple_format(text: str) -> list[dict] | None:
                     reps_min_str = ex_match.group(1)
                     reps_max_str = ex_match.group(2)  # For range like 8-10
                     name = ex_match.group(3).strip()
-                    weight = float(ex_match.group(4)) if ex_match.group(4) else None
+                    weight = (
+                        float(ex_match.group(4)) if ex_match.group(4) else global_weight
+                    )
 
                     # Handle "failure" keyword in name
                     is_failure = "failure" in name.lower() or "amrap" in name.lower()
                     reps = None if is_failure else int(reps_min_str)
                     if is_failure:
                         name = re.sub(
-                            r"\b(failure|amrap)\b", "", name, flags=re.IGNORECASE
+                            r"\b(failure|amrap)\b",
+                            "",
+                            name,
+                            flags=re.IGNORECASE,
                         ).strip()
 
                     # Build target_reps string (e.g., "8-10" or "8")
@@ -327,33 +464,55 @@ def _parse_simple_format(text: str) -> list[dict] | None:
                     if reps_max_str:
                         circuit_target_reps = f"{reps_min_str}-{reps_max_str}"
 
-                    exercise_id = _match_exercise_fuzzy(name)
+                elif default_reps is not None:
+                    # No reps in exercise part, use circuit default_reps
+                    # e.g., "5x15e(cable extensions @5, cable pec fly @7.5)"
+                    name_weight_match = re.match(
+                        r"^(.+?)(?:\s*@\s*(\d+(?:\.\d+)?)\s*(?:kg)?)?$",
+                        part.strip(),
+                        re.IGNORECASE,
+                    )
+                    if not name_weight_match:
+                        continue
+                    name = name_weight_match.group(1).strip()
+                    weight = (
+                        float(name_weight_match.group(2))
+                        if name_weight_match.group(2)
+                        else global_weight
+                    )
+                    reps = default_reps
+                    is_failure = False
+                    circuit_target_reps = str(default_reps)
+                else:
+                    continue
 
-                    sets = []
-                    for i in range(num_rounds):
-                        sets.append(
-                            {
-                                "set_number": i + 1,
-                                "reps": reps,
-                                "weight_kg": weight,
-                                "rpe": None,
-                                "is_warmup": False,
-                                "is_failure": is_failure,
-                                "rest_sec": circuit_rest_sec
-                                if i < num_rounds - 1
-                                else None,
-                            }
-                        )
+                exercise_id = _match_exercise_fuzzy(name)
 
-                    exercises.append(
+                sets = []
+                for i in range(num_rounds):
+                    sets.append(
                         {
-                            "name": name,
-                            "exercise_id": exercise_id,
-                            "sets": sets,
-                            "notes": None,
-                            "target_reps": circuit_target_reps,
+                            "set_number": i + 1,
+                            "reps": reps,
+                            "weight_kg": weight,
+                            "rpe": None,
+                            "is_warmup": False,
+                            "is_failure": is_failure,
+                            "rest_sec": circuit_rest_sec
+                            if i < num_rounds - 1
+                            else None,
                         }
                     )
+
+                exercises.append(
+                    {
+                        "name": name,
+                        "exercise_id": exercise_id,
+                        "sets": sets,
+                        "notes": None,
+                        "target_reps": circuit_target_reps,
+                    }
+                )
             continue
 
         # Try traditional format: "Bench press 4x8 80kg" or "Pull ups 4xF" or "Dips 3x8-10"
@@ -402,6 +561,55 @@ def _parse_simple_format(text: str) -> list[dict] | None:
                         "rpe": rpe if i == num_sets - 1 else None,
                         "is_warmup": False,
                         "is_failure": is_failure,
+                        "rest_sec": rest_sec if i < num_sets - 1 else None,
+                    }
+                )
+
+            exercises.append(
+                {
+                    "name": name,
+                    "exercise_id": exercise_id,
+                    "sets": sets,
+                    "notes": None,
+                    "target_reps": target_reps,
+                }
+            )
+            continue
+
+        # Try user terse format: "2x8 @80 bench press" (weight between sets and name)
+        terse_match = re.match(terse_pattern, line, re.IGNORECASE)
+        if terse_match:
+            num_sets = int(terse_match.group(1))
+            reps_str = terse_match.group(2)
+            reps_max_str = terse_match.group(3)
+            weight = float(terse_match.group(4))
+            name = terse_match.group(5).strip()
+            rest_min = terse_match.group(6)
+            rest_sec_extra = terse_match.group(7)
+
+            reps = int(reps_str)
+            target_reps: str | None = reps_str
+            if reps_max_str:
+                target_reps = f"{reps_str}-{reps_max_str}"
+
+            rest_sec = None
+            if rest_min:
+                rest_sec = int(rest_min) * 60
+                if rest_sec_extra:
+                    rest_sec += int(rest_sec_extra)
+
+            exercise_id = _match_exercise_fuzzy(name)
+
+            sets = []
+            for i in range(num_sets):
+                sets.append(
+                    {
+                        "set_number": i + 1,
+                        "reps": reps,
+                        "weight_kg": weight,
+                        "rpe": None,
+                        "is_warmup": False,
+                        "is_failure": False,
                         "rest_sec": rest_sec if i < num_sets - 1 else None,
                     }
                 )
@@ -717,15 +925,64 @@ def _parse_simple_format(text: str) -> list[dict] | None:
     return None
 
 
+def _normalize_workout_text(text: str) -> str:
+    """Normalize common typos and shorthand in workout text.
+
+    Fixes:
+    - r'130 → r1'30 (rest typo: apostrophe before digits)
+    - r'230 → r2'30
+    - Curly/smart quotes → straight quotes
+    """
+    result = text
+    # Normalize smart quotes to straight
+    result = result.replace("\u2019", "'").replace("\u2018", "'")
+
+    # Fix rest typo: r'NNN → rN'NN (3+ digit rest after apostrophe)
+    # e.g., r'130 → r1'30, r'230 → r2'30
+    result = re.sub(
+        r"\br'(\d)(\d{2})\b",
+        r"r\1'\2",
+        result,
+    )
+
+    return result
+
+
+def _expand_abbreviations(text: str, abbreviations: dict[str, str]) -> str:
+    """Expand user abbreviations in workout text.
+
+    Uses word-boundary matching to avoid partial replacements.
+    Longer abbreviations are expanded first to prevent conflicts.
+    """
+    if not abbreviations:
+        return text
+
+    result = text
+    # Sort by length descending to expand longer abbreviations first
+    for abbrev, full in sorted(
+        abbreviations.items(), key=lambda x: len(x[0]), reverse=True
+    ):
+        pattern = r"\b" + re.escape(abbrev) + r"\b"
+        result = re.sub(pattern, full, result, flags=re.IGNORECASE)
+    return result
+
+
 def parse_workout_text(
-    text: str, workout_date: date | None = None, use_llm: bool = True
+    text: str,
+    workout_date: date | None = None,
+    use_llm: bool = True,
+    abbreviations: dict[str, str] | None = None,
 ) -> ParsedWorkout:
     """Parse workout text into structured data.
+
+    Strategy: LLM-first for best understanding of terse notation,
+    with regex fallback when LLM is unavailable or fails.
 
     Args:
         text: Free-form workout text (can start with date like "05/12/25:")
         workout_date: Date of workout (defaults to extracted date or today)
         use_llm: Whether to use LLM for parsing (falls back to regex if False)
+        abbreviations: User-defined abbreviation mapping (e.g. {"bp": "bench press"})
 
     Returns:
         ParsedWorkout with exercises and sets
@@ -739,16 +996,106 @@ def parse_workout_text(
     # Use cleaned text (without date line) for parsing
     text = cleaned_text
 
+    # Normalize common typos (r'130 → r1'30, smart quotes, etc.)
+    text = _normalize_workout_text(text)
+
     date_str = workout_date.isoformat()
 
-    # Try simple parsing first (fast path)
-    simple_result = _parse_simple_format(text)
+    # --- LLM-first strategy ---
+    if use_llm:
+        client = get_client()
+        if client:
+            try:
+                model = get_default_model()
+                system_prompt, user_prompt = _build_parser_prompt(
+                    text, date_str, abbreviations=abbreviations
+                )
 
-    # If regex parser succeeded, use it directly (saves LLM tokens)
-    # Only fall back to LLM if regex failed or use_llm is explicitly requested
-    # and regex didn't find anything
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    max_tokens=1200,
+                    temperature=0.1,  # Low temperature for consistent parsing
+                )
+
+                content = response.choices[0].message.content
+                if not content:
+                    raise ValueError("Empty response from LLM")
+
+                # Parse JSON from response
+                # Handle markdown code blocks
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+
+                # Clean up common LLM issues
+                content = content.strip()
+                # Remove trailing commas before } or ]
+                content = re.sub(r",(\s*[}\]])", r"\1", content)
+                # Fix unterminated strings by removing incomplete lines at end
+                lines = content.split("\n")
+                while lines and not lines[-1].strip().endswith(("}", "]", '"', ",")):
+                    lines.pop()
+                content = "\n".join(lines)
+
+                parsed = json.loads(content.strip())
+
+                # Convert to dataclasses
+                exercises = []
+                for ex_data in parsed.get("exercises", []):
+                    sets = []
+                    for s in ex_data.get("sets", []):
+                        sets.append(
+                            ParsedSet(
+                                set_number=s.get("set_number", 1),
+                                reps=s.get("reps"),
+                                weight_kg=s.get("weight_kg"),
+                                rpe=s.get("rpe"),
+                                is_warmup=s.get("is_warmup", False),
+                                is_failure=s.get("is_failure", False),
+                            )
+                        )
+
+                    # Try to match exercise if LLM didn't
+                    exercise_id = ex_data.get("exercise_id")
+                    if not exercise_id:
+                        exercise_id = _match_exercise_fuzzy(ex_data.get("name", ""))
+
+                    exercises.append(
+                        ParsedExercise(
+                            name=ex_data.get("name", "Unknown"),
+                            exercise_id=exercise_id,
+                            sets=sets,
+                            notes=ex_data.get("notes"),
+                        )
+                    )
+
+                logger.info(f"LLM parser found {len(exercises)} exercises")
+                return ParsedWorkout(
+                    date=workout_date,
+                    name=parsed.get("name"),
+                    exercises=exercises,
+                    duration_min=parsed.get("duration_min"),
+                    overall_rpe=parsed.get("overall_rpe"),
+                    notes=parsed.get("notes"),
+                )
+
+            except (json.JSONDecodeError, ValueError, KeyError) as e:
+                logger.warning(f"LLM parsing failed ({e}), falling back to regex")
+            except Exception as e:
+                logger.warning(f"LLM unavailable ({e}), falling back to regex")
+
+    # --- Regex fallback ---
+    # Expand user abbreviations before regex parsing
+    expanded_text = _expand_abbreviations(text, abbreviations or {})
+    simple_result = _parse_simple_format(expanded_text)
+
     if simple_result:
-        logger.info(f"Regex parser found {len(simple_result)} exercises, skipping LLM")
+        logger.info(f"Regex parser found {len(simple_result)} exercises (fallback)")
         return ParsedWorkout(
             date=workout_date,
             name=None,
@@ -763,109 +1110,4 @@ def parse_workout_text(
             ],
         )
 
-    # Regex failed, try LLM if available
-    if not use_llm:
-        raise ValueError("Simple parsing failed and LLM is disabled")
-
-    # Use LLM for complex parsing
-    client = get_client()
-    if not client:
-        raise ValueError("LLM not configured and simple parsing failed")
-
-    model = get_default_model()
-    system_prompt, user_prompt = _build_parser_prompt(text, date_str)
-
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            max_tokens=800,
-            temperature=0.1,  # Low temperature for consistent parsing
-        )
-
-        content = response.choices[0].message.content
-        if not content:
-            raise ValueError("Empty response from LLM")
-
-        # Parse JSON from response
-        # Handle markdown code blocks
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0]
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0]
-
-        # Clean up common LLM issues
-        content = content.strip()
-        # Remove trailing commas before } or ]
-        content = re.sub(r",(\s*[}\]])", r"\1", content)
-        # Fix unterminated strings by removing incomplete lines at end
-        lines = content.split("\n")
-        while lines and not lines[-1].strip().endswith(("}", "]", '"', ",")):
-            lines.pop()
-        content = "\n".join(lines)
-
-        parsed = json.loads(content.strip())
-
-        # Convert to dataclasses
-        exercises = []
-        for ex_data in parsed.get("exercises", []):
-            sets = []
-            for s in ex_data.get("sets", []):
-                sets.append(
-                    ParsedSet(
-                        set_number=s.get("set_number", 1),
-                        reps=s.get("reps"),  # None for failure sets
-                        weight_kg=s.get("weight_kg"),
-                        rpe=s.get("rpe"),
-                        is_warmup=s.get("is_warmup", False),
-                        is_failure=s.get("is_failure", False),
-                    )
-                )
-
-            # Try to match exercise if LLM didn't
-            exercise_id = ex_data.get("exercise_id")
-            if not exercise_id:
-                exercise_id = _match_exercise_fuzzy(ex_data.get("name", ""))
-
-            exercises.append(
-                ParsedExercise(
-                    name=ex_data.get("name", "Unknown"),
-                    exercise_id=exercise_id,
-                    sets=sets,
-                    notes=ex_data.get("notes"),
-                )
-            )
-
-        return ParsedWorkout(
-            date=workout_date,
-            name=parsed.get("name"),
-            exercises=exercises,
-            duration_min=parsed.get("duration_min"),
-            overall_rpe=parsed.get("overall_rpe"),
-            notes=parsed.get("notes"),
-        )
-
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse LLM response as JSON: {e}")
-        # Fallback to simple parsing
-        if simple_result:
-            return ParsedWorkout(
-                date=workout_date,
-                name=None,
-                exercises=[
-                    ParsedExercise(
-                        name=ex["name"],
-                        exercise_id=ex["exercise_id"],
-                        sets=[ParsedSet(**s) for s in ex["sets"]],
-                        notes=ex["notes"],
-                    )
-                    for ex in simple_result
-                ],
-            )
-        raise ValueError(f"Failed to parse workout: {e}")
-    except Exception as e:
-        logger.error(f"Workout parsing error: {e}")
-        raise
+    raise ValueError("Failed to parse workout text: no exercises found by LLM or regex")

@@ -21,6 +21,9 @@ import {
   CheckCircle,
   XCircle,
   LogOut,
+  Dumbbell,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LoadingState, GarminLoginModal, SystemAlert } from '@/components';
@@ -29,6 +32,7 @@ import { settingsApi, garminApi, healthApi, ragApi, type UserSettings } from '@/
 const TABS = [
   { id: 'profile', label: 'PROFILE', icon: User },
   { id: 'goals', label: 'GOALS', icon: Target },
+  { id: 'workout', label: 'WORKOUT', icon: Dumbbell },
   { id: 'connections', label: 'CONNECTIONS', icon: Watch },
   { id: 'data', label: 'DATA', icon: Database },
   { id: 'appearance', label: 'APPEARANCE', icon: Palette },
@@ -58,6 +62,7 @@ export function SettingsPage() {
     fitness_goal: 'build',
     notifications_enabled: true,
     theme: 'dark',
+    exercise_abbreviations: {},
   });
 
   // Sync local state with fetched settings
@@ -206,6 +211,9 @@ export function SettingsPage() {
             )}
             {activeTab === 'goals' && (
               <GoalsTab settings={settings} updateSetting={updateSetting} />
+            )}
+            {activeTab === 'workout' && (
+              <WorkoutTab settings={settings} updateSetting={updateSetting} />
             )}
             {activeTab === 'connections' && (
               <ConnectionsTab onGoToSystem={() => setActiveTab('system')} />
@@ -410,6 +418,163 @@ function GoalsTab({
           <p className="text-xs text-text-muted mt-1 font-mono">
             System will warn when fatigue exceeds this level
           </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkoutTab({
+  settings,
+  updateSetting,
+}: {
+  settings: LocalSettings;
+  updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
+}) {
+  const [newAbbrev, setNewAbbrev] = useState('');
+  const [newFull, setNewFull] = useState('');
+
+  const abbreviations = settings.exercise_abbreviations ?? {};
+  const entries = Object.entries(abbreviations).sort(([a], [b]) => a.localeCompare(b));
+
+  const handleAdd = () => {
+    const key = newAbbrev.trim().toLowerCase();
+    const value = newFull.trim().toLowerCase();
+    if (!key || !value) return;
+    updateSetting('exercise_abbreviations', { ...abbreviations, [key]: value });
+    setNewAbbrev('');
+    setNewFull('');
+  };
+
+  const handleRemove = (key: string) => {
+    const updated = { ...abbreviations };
+    delete updated[key];
+    updateSetting('exercise_abbreviations', updated);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleAdd();
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-lg font-display text-text-primary mb-4">WORKOUT NOTATION</h2>
+
+      {/* Abbreviations */}
+      <div>
+        <label className="text-xs font-mono text-text-muted uppercase block mb-2">
+          Exercise Abbreviations
+        </label>
+        <p className="text-xs text-text-muted font-mono mb-4">
+          Map your shorthand to full exercise names so the parser understands your notation.
+          <br />
+          Example: <span className="text-neon-cyan">bp</span> &rarr; <span className="text-neon-cyan">bench press</span>,{' '}
+          <span className="text-neon-cyan">ng</span> &rarr; <span className="text-neon-cyan">neutral grip</span>
+        </p>
+
+        {/* Existing abbreviations */}
+        {entries.length > 0 && (
+          <div className="space-y-1 mb-4">
+            {entries.map(([abbrev, full]) => (
+              <div
+                key={abbrev}
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 rounded',
+                  'bg-abyss/50 border border-text-muted/20',
+                  'group hover:border-text-muted/40 transition-all'
+                )}
+              >
+                <span className="font-mono text-sm text-neon-cyan w-20 shrink-0">{abbrev}</span>
+                <span className="text-text-muted font-mono text-xs">&rarr;</span>
+                <span className="font-mono text-sm text-text-primary flex-1">{full}</span>
+                <button
+                  onClick={() => handleRemove(abbrev)}
+                  className="opacity-0 group-hover:opacity-100 text-danger-red hover:text-danger-red/80 transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add new abbreviation */}
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={newAbbrev}
+            onChange={(e) => setNewAbbrev(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="abbrev"
+            className={cn(
+              'w-24 bg-abyss border border-text-muted/30 rounded px-3 py-2',
+              'text-neon-cyan font-mono text-sm',
+              'focus:border-neon-cyan/50 outline-none transition-colors',
+              'placeholder:text-text-muted/40'
+            )}
+          />
+          <span className="text-text-muted font-mono text-xs">&rarr;</span>
+          <input
+            type="text"
+            value={newFull}
+            onChange={(e) => setNewFull(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="full exercise name"
+            className={cn(
+              'flex-1 bg-abyss border border-text-muted/30 rounded px-3 py-2',
+              'text-text-primary font-mono text-sm',
+              'focus:border-neon-cyan/50 outline-none transition-colors',
+              'placeholder:text-text-muted/40'
+            )}
+          />
+          <button
+            onClick={handleAdd}
+            disabled={!newAbbrev.trim() || !newFull.trim()}
+            className={cn(
+              'p-2 rounded border transition-all',
+              'bg-neon-cyan/10 border-neon-cyan/30 text-neon-cyan',
+              'hover:bg-neon-cyan/20',
+              'disabled:opacity-30 disabled:cursor-not-allowed'
+            )}
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Quick reference */}
+      <div className="p-4 rounded bg-abyss/50 border border-text-muted/20">
+        <h3 className="text-xs font-mono text-text-muted uppercase mb-3">
+          Notation Quick Reference
+        </h3>
+        <div className="space-y-1.5 font-mono text-xs">
+          <div className="flex gap-3">
+            <span className="text-neon-cyan w-44 shrink-0">2x8 @80 bench press</span>
+            <span className="text-text-muted">2 sets of 8 reps at 80kg</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="text-neon-cyan w-44 shrink-0">3@100, 1@105 squat</span>
+            <span className="text-text-muted">descending sets</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="text-neon-cyan w-44 shrink-0">3x8 + reverse</span>
+            <span className="text-text-muted">pyramid (up then down)</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="text-neon-cyan w-44 shrink-0">(pull ups, dips)</span>
+            <span className="text-text-muted">superset</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="text-neon-cyan w-44 shrink-0">r1'30</span>
+            <span className="text-text-muted">rest 1 min 30 sec</span>
+          </div>
+          <div className="flex gap-3">
+            <span className="text-neon-cyan w-44 shrink-0">35' incline walk</span>
+            <span className="text-text-muted">35 min cardio</span>
+          </div>
         </div>
       </div>
     </div>
