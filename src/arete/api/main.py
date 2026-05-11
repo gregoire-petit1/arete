@@ -209,3 +209,8 @@ app.include_router(garmin_router)
 from arete.api.strength import router as strength_router
 
 app.include_router(strength_router)
+
+# Routes AI Tips (daily contextual tips)
+from arete.api.ai_tips import router as ai_tips_router
+
+app.include_router(ai_tips_router)
