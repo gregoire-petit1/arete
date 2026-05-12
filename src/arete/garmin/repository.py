@@ -158,7 +158,9 @@ class GarminRepository:
             for row in results
         ]
 
-    def update_planned_session_status(self, session_id: int, status: SessionStatus) -> bool:
+    def update_planned_session_status(
+        self, session_id: int, status: SessionStatus
+    ) -> bool:
         """Update the status of a planned session."""
         conn = self._get_connection()
         result = conn.execute(
@@ -202,8 +204,11 @@ class GarminRepository:
                 avg_cadence, max_cadence, avg_vertical_oscillation,
                 avg_ground_contact_time, avg_stride_length,
                 source, source_file, garmin_activity_id,
-                adherence_score, intensity_deviation, start_time, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                adherence_score, intensity_deviation, start_time, created_at,
+                name, notes, rpe, workout_type, moving_time_sec,
+                suffer_score, laps_json, splits_json, best_efforts_json,
+                avg_watts, weighted_avg_watts, device_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             """,
             [
@@ -239,6 +244,18 @@ class GarminRepository:
                 session.intensity_deviation,
                 session.start_time,
                 datetime.now(),
+                session.name,
+                session.notes,
+                session.rpe,
+                session.workout_type,
+                session.moving_time_sec,
+                session.suffer_score,
+                session.laps_json,
+                session.splits_json,
+                session.best_efforts_json,
+                session.avg_watts,
+                session.weighted_avg_watts,
+                session.device_name,
             ],
         ).fetchone()
         conn.close()
@@ -258,7 +275,10 @@ class GarminRepository:
                    avg_cadence, max_cadence, avg_vertical_oscillation,
                    avg_ground_contact_time, avg_stride_length,
                    source, source_file, garmin_activity_id,
-                   adherence_score, intensity_deviation, start_time, created_at
+                   adherence_score, intensity_deviation, start_time, created_at,
+                   name, notes, rpe, workout_type, moving_time_sec,
+                   suffer_score, laps_json, splits_json, best_efforts_json,
+                   avg_watts, weighted_avg_watts, device_name
             FROM actual_sessions WHERE id = ?
             """,
             [session_id],
@@ -304,6 +324,18 @@ class GarminRepository:
             intensity_deviation=row[28],
             start_time=row[29],
             created_at=row[30],
+            name=row[31] if len(row) > 31 else None,
+            notes=row[32] if len(row) > 32 else None,
+            rpe=row[33] if len(row) > 33 else None,
+            workout_type=row[34] if len(row) > 34 else None,
+            moving_time_sec=row[35] if len(row) > 35 else None,
+            suffer_score=row[36] if len(row) > 36 else None,
+            laps_json=row[37] if len(row) > 37 else None,
+            splits_json=row[38] if len(row) > 38 else None,
+            best_efforts_json=row[39] if len(row) > 39 else None,
+            avg_watts=row[40] if len(row) > 40 else None,
+            weighted_avg_watts=row[41] if len(row) > 41 else None,
+            device_name=row[42] if len(row) > 42 else None,
         )
 
     def list_actual_sessions(
@@ -324,7 +356,10 @@ class GarminRepository:
                    avg_cadence, max_cadence, avg_vertical_oscillation,
                    avg_ground_contact_time, avg_stride_length,
                    source, source_file, garmin_activity_id,
-                   adherence_score, intensity_deviation, start_time, created_at
+                   adherence_score, intensity_deviation, start_time, created_at,
+                   name, notes, rpe, workout_type, moving_time_sec,
+                   suffer_score, laps_json, splits_json, best_efforts_json,
+                   avg_watts, weighted_avg_watts, device_name
             FROM actual_sessions WHERE 1=1
         """
         params: list = []
@@ -428,7 +463,9 @@ class GarminRepository:
             "total_matched": total_matched,
             "total_unmatched": total_actual - total_matched,
             "adherence_rate": (
-                round(total_matched / total_planned * 100, 1) if total_planned > 0 else 0
+                round(total_matched / total_planned * 100, 1)
+                if total_planned > 0
+                else 0
             ),
         }
 
@@ -584,9 +621,15 @@ class GarminRepository:
             "period_days": days,
             "session_count": result[6] if result else 0,
             "avg_cadence_spm": round(result[0]) if result and result[0] else None,
-            "avg_vertical_oscillation_mm": round(result[1], 1) if result and result[1] else None,
-            "avg_ground_contact_time_ms": round(result[2]) if result and result[2] else None,
-            "avg_stride_length_m": round(result[3], 2) if result and result[3] else None,
+            "avg_vertical_oscillation_mm": round(result[1], 1)
+            if result and result[1]
+            else None,
+            "avg_ground_contact_time_ms": round(result[2])
+            if result and result[2]
+            else None,
+            "avg_stride_length_m": round(result[3], 2)
+            if result and result[3]
+            else None,
             "avg_easy_hr": round(result[4]) if result and result[4] else None,
             "avg_easy_pace": _pace_str(result[5]) if result else None,
             "best_pace": _pace_str(best_pace[0]) if best_pace else None,
@@ -642,7 +685,9 @@ class GarminRepository:
                         "avg_hr": avg_hr,
                         "max_hr": max_hr,
                         "hr_spread_pct": round(hr_spread_pct, 1),
-                        "flag": "potential_fatigue" if hr_spread_pct > 20 else "monitor",
+                        "flag": "potential_fatigue"
+                        if hr_spread_pct > 20
+                        else "monitor",
                     }
                 )
 

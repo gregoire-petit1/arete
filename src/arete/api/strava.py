@@ -7,7 +7,7 @@ import os
 import time
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -133,7 +133,7 @@ def authorize():
     return {"url": client.get_authorize_url()}
 
 
-@router.get("/callback", response_class=HTMLResponse)
+@router.get("/callback")
 def callback(code: str, scope: str = ""):
     """Exchange authorization code for tokens and store them."""
     client = _get_strava_client()
@@ -150,9 +150,9 @@ def callback(code: str, scope: str = ""):
     }
     _save_strava_tokens(tokens)
 
-    return HTMLResponse(
-        "<html><body><h2>Connected! You can close this tab.</h2></body></html>"
-    )
+    # Redirect back to the frontend Settings page after successful OAuth
+    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3080")
+    return RedirectResponse(url=f"{frontend_url}/settings?strava=connected")
 
 
 @router.post("/sync")
@@ -191,15 +191,24 @@ def sync(body: SyncRequest | None = None):
     skipped = 0
     errors: list[str] = []
 
-    for activity in activities:
+    for idx, activity in enumerate(activities):
         act_id = str(activity.get("id", ""))
         if act_id in existing_ids:
             skipped += 1
             continue
         try:
-            session = strava_activity_to_actual_session(activity)
+            # Fetch detail for richer data (laps, splits, best_efforts)
+            detail = client.fetch_activity_detail(access_token, int(act_id))
+            activity_data = detail if detail else activity
+
+            session = strava_activity_to_actual_session(activity_data)
             repo.create_actual_session(session)
             imported += 1
+
+            # Rate limiting: pause briefly between detail calls
+            if imported % 90 == 0:
+                logger.info("Approaching rate limit, pausing 60s...")
+                time.sleep(60)
         except Exception as exc:
             errors.append(f"Activity {act_id}: {exc}")
 
