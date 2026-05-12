@@ -118,3 +118,37 @@ class TestNeedsRefresh:
 
     def test_within_margin(self, client):
         assert client.needs_refresh(int(time.time()) + 240) is True
+
+
+class TestFetchActivityDetail:
+    @patch("arete.strava.client.httpx.get")
+    def test_fetches_detail_with_all_fields(self, mock_get, client):
+        detail = {
+            "id": 123,
+            "name": "Morning Run",
+            "description": "Easy recovery",
+            "calories": 450,
+            "device_name": "Garmin FR 265",
+            "laps": [{"elapsed_time": 300, "distance": 1000}],
+            "splits_metric": [{"average_speed": 3.5, "distance": 1000}],
+            "best_efforts": [{"name": "1k", "elapsed_time": 240}],
+            "suffer_score": 78,
+            "workout_type": 1,
+            "average_watts": None,
+            "weighted_average_watts": None,
+        }
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: detail,
+        )
+        result = client.fetch_activity_detail("token123", 123)
+        assert result["name"] == "Morning Run"
+        assert result["description"] == "Easy recovery"
+        assert result["laps"] == detail["laps"]
+        mock_get.assert_called_once()
+
+    @patch("arete.strava.client.httpx.get")
+    def test_detail_returns_none_on_404(self, mock_get, client):
+        mock_get.return_value = MagicMock(status_code=404)
+        result = client.fetch_activity_detail("token123", 999)
+        assert result is None

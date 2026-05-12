@@ -113,3 +113,15 @@ class StravaClient:
 
         logger.info("Fetched %d activities from Strava", len(all_activities))
         return all_activities
+
+    def fetch_activity_detail(self, access_token: str, activity_id: int) -> dict | None:
+        """Fetch detailed data for a single activity (laps, splits, best_efforts)."""
+        resp = httpx.get(
+            f"{STRAVA_API_BASE}/activities/{activity_id}",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30,
+        )
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.json()
