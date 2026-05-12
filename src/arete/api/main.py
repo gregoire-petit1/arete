@@ -214,3 +214,8 @@ app.include_router(strength_router)
 from arete.api.ai_tips import router as ai_tips_router
 
 app.include_router(ai_tips_router)
+
+# Routes Strava
+from arete.api.strava import router as strava_router
+
+app.include_router(strava_router)
