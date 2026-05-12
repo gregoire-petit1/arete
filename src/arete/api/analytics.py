@@ -12,6 +12,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Query
+from pydantic import BaseModel
 
 from arete.api.metrics import _get_tss_history
 from arete.dataio.db import connect
@@ -309,3 +310,81 @@ def get_best_efforts(
     # Return in canonical order
     ordered = [bests[n] for n in EFFORT_NAMES if n in bests]
     return {"efforts": ordered}
+
+
+# ---------- Session CRUD ----------
+
+
+class SessionUpdate(BaseModel):
+    rpe: int | None = None
+    notes: str | None = None
+
+
+@router.patch("/sessions/{session_id}")
+def update_session(session_id: int, body: SessionUpdate):
+    """Update RPE and/or notes for an actual session."""
+    con = connect(read_only=False)
+    try:
+        updates = []
+        values: list = []
+        if body.rpe is not None:
+            updates.append("rpe = ?")
+            values.append(body.rpe)
+        if body.notes is not None:
+            updates.append("notes = ?")
+            values.append(body.notes)
+        if not updates:
+            return {"success": True}
+
+        values.append(session_id)
+        con.execute(
+            f"UPDATE app.actual_sessions SET {', '.join(updates)} WHERE id = ?",
+            values,
+        )
+        return {"success": True}
+    finally:
+        con.close()
+
+
+@router.get("/sessions")
+def list_sessions(limit: int = 20, offset: int = 0):
+    """List recent actual sessions (for Log page)."""
+    con = connect(read_only=True)
+    try:
+        rows = con.execute(
+            """
+            SELECT id, date, sport, name, duration_sec, distance_m,
+                   avg_hr, avg_pace_sec_km, rpe, notes, source, calories
+            FROM app.actual_sessions
+            WHERE user_id = 1
+            ORDER BY date DESC, id DESC
+            LIMIT ? OFFSET ?
+            """,
+            [limit, offset],
+        ).fetchall()
+
+        sessions = []
+        for r in rows:
+            pace_display = None
+            if r[7]:
+                pace_display = f"{r[7] // 60}:{r[7] % 60:02d}"
+            sessions.append(
+                {
+                    "id": r[0],
+                    "date": str(r[1]),
+                    "sport": r[2],
+                    "name": r[3],
+                    "duration_sec": r[4],
+                    "distance_m": r[5],
+                    "avg_hr": r[6],
+                    "avg_pace_sec_km": r[7],
+                    "pace_display": pace_display,
+                    "rpe": r[8],
+                    "notes": r[9],
+                    "source": r[10],
+                    "calories": r[11],
+                }
+            )
+        return {"sessions": sessions}
+    finally:
+        con.close()

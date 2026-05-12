@@ -392,6 +392,13 @@ export const analyticsApi = {
     fetchAPI<any>(`/analytics/sport-distribution?period=${period}`),
   getBestEfforts: (sport = 'running') =>
     fetchAPI<any>(`/analytics/best-efforts?sport=${sport}`),
+  getSessions: (limit = 20, offset = 0) =>
+    fetchAPI<any>(`/analytics/sessions?limit=${limit}&offset=${offset}`),
+  updateSession: (id: number, data: { rpe?: number; notes?: string }) =>
+    fetchAPI<any>(`/analytics/sessions/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 };
 
 export const settingsApi = {

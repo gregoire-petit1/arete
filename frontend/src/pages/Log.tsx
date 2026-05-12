@@ -14,10 +14,12 @@ import {
   Unlink,
   Dumbbell,
   Heart,
+  Pencil,
+  Save,
 } from 'lucide-react';
 import { LoadingState, EmptyState, StrengthIcon, FitDropzone } from '@/components';
 import { AnatomicalHeatmap } from '@/components/AnatomicalHeatmap';
-import { strengthApi, garminApi, tipsApi } from '@/lib/api';
+import { strengthApi, garminApi, tipsApi, analyticsApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { StrengthSession } from '@/types';
 
@@ -393,6 +395,9 @@ export function LogPage() {
                 )}
               </motion.div>
             )}
+
+            {/* Recent Sessions List */}
+            <RecentSessions />
           </div>
         )}
       </div>
@@ -896,6 +901,225 @@ Triceps pushdown 4x12 RPE 8`}
         )}
       </AnimatePresence>
     </div>
+  );
+}
+
+function RecentSessions() {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['recentSessions'],
+    queryFn: () => analyticsApi.getSessions(20),
+  });
+
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editRpe, setEditRpe] = useState<number | null>(null);
+  const [editNotes, setEditNotes] = useState('');
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: { rpe?: number; notes?: string } }) =>
+      analyticsApi.updateSession(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['recentSessions'] });
+      setEditingId(null);
+    },
+  });
+
+  const startEdit = (session: any) => {
+    setEditingId(session.id);
+    setEditRpe(session.rpe);
+    setEditNotes(session.notes || '');
+  };
+
+  const saveEdit = () => {
+    if (editingId === null) return;
+    updateMutation.mutate({
+      id: editingId,
+      data: {
+        ...(editRpe !== null ? { rpe: editRpe } : {}),
+        notes: editNotes,
+      },
+    });
+  };
+
+  const formatDuration = (sec: number | null) => {
+    if (!sec) return '—';
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    return h > 0 ? `${h}h${m.toString().padStart(2, '0')}` : `${m}min`;
+  };
+
+  const sportIcon: Record<string, string> = {
+    run: '\u{1F3C3}',
+    ride: '\u{1F6B4}',
+    swim: '\u{1F3CA}',
+    trail_run: '\u{26F0}\uFE0F',
+    virtual_ride: '\u{1F6B4}',
+    walk: '\u{1F6B6}',
+    hike: '\u{1F97E}',
+  };
+
+  if (isLoading) return <LoadingState message="LOADING SESSIONS..." />;
+
+  const sessions = data?.sessions || [];
+  if (sessions.length === 0) {
+    return (
+      <div className="glass-panel p-3 sm:p-4">
+        <EmptyState message="NO CARDIO SESSIONS YET" action="Upload a FIT file or sync from Strava" />
+      </div>
+    );
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.1 }}
+      className="glass-panel p-3 sm:p-4"
+    >
+      <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-4 uppercase tracking-wider">
+        RECENT SESSIONS
+      </h3>
+      <div className="space-y-2">
+        {sessions.map((s: any) => (
+          <div
+            key={s.id}
+            className="p-3 bg-abyss rounded border border-text-muted/10 hover:border-neon-cyan/20 transition-all"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <span className="text-base">{sportIcon[s.sport] || '\u{1F3C3}'}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono text-text-muted">{s.date}</span>
+                    <span className="text-sm font-mono text-text-primary truncate">
+                      {s.name || 'Untitled'}
+                    </span>
+                  </div>
+                  <div className="text-xs font-mono text-text-muted mt-0.5 flex flex-wrap gap-x-3">
+                    <span>{formatDuration(s.duration_sec)}</span>
+                    {s.distance_m && <span>{(s.distance_m / 1000).toFixed(1)} km</span>}
+                    {s.avg_hr && <span>{s.avg_hr} bpm</span>}
+                    {s.pace_display && <span>{s.pace_display} /km</span>}
+                    {s.calories && <span>{s.calories} kcal</span>}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 ml-2 shrink-0">
+                {s.source && (
+                  <span className={cn(
+                    'px-1.5 py-0.5 rounded text-[10px] font-mono uppercase',
+                    s.source === 'strava' && 'bg-[#FC4C02]/20 text-[#FC4C02]',
+                    s.source === 'garmin' && 'bg-info-blue/20 text-info-blue',
+                    s.source === 'manual' && 'bg-text-muted/20 text-text-muted',
+                  )}>
+                    {s.source}
+                  </span>
+                )}
+
+                {editingId !== s.id && (
+                  <span className={cn(
+                    'px-2 py-0.5 rounded text-xs font-mono',
+                    s.rpe ? (
+                      s.rpe <= 6 ? 'bg-success-green/20 text-success-green' :
+                      s.rpe <= 8 ? 'bg-warning-orange/20 text-warning-orange' :
+                      'bg-danger-red/20 text-danger-red'
+                    ) : 'bg-text-muted/10 text-text-muted'
+                  )}>
+                    RPE {s.rpe ?? '—'}
+                  </span>
+                )}
+
+                <button
+                  onClick={() => editingId === s.id ? saveEdit() : startEdit(s)}
+                  disabled={updateMutation.isPending}
+                  className="p-1 hover:bg-text-muted/20 rounded transition-colors text-text-muted hover:text-neon-cyan"
+                  title={editingId === s.id ? 'Save' : 'Edit RPE & Notes'}
+                >
+                  {editingId === s.id ? <Save className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Inline edit */}
+            {editingId === s.id && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="mt-3 pt-3 border-t border-text-muted/10 space-y-3"
+              >
+                <div>
+                  <label className="text-[10px] font-mono text-text-muted uppercase block mb-1">
+                    RPE (1-10)
+                  </label>
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    value={editRpe ?? 5}
+                    onChange={(e) => setEditRpe(Number(e.target.value))}
+                    className="w-full accent-neon-cyan"
+                  />
+                  <div className="flex justify-between text-[10px] font-mono text-text-muted">
+                    <span>1</span>
+                    <span className={cn(
+                      'text-sm font-bold',
+                      (editRpe ?? 5) <= 6 ? 'text-success-green' :
+                      (editRpe ?? 5) <= 8 ? 'text-warning-orange' : 'text-danger-red'
+                    )}>{editRpe ?? 5}</span>
+                    <span>10</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-mono text-text-muted uppercase block mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    rows={2}
+                    placeholder="How did it feel?"
+                    className={cn(
+                      'w-full bg-void border border-text-muted/30 rounded px-3 py-2',
+                      'text-text-primary font-mono text-sm resize-none',
+                      'focus:border-neon-cyan/50 outline-none transition-colors',
+                      'placeholder:text-text-muted/50'
+                    )}
+                  />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => setEditingId(null)}
+                    className="px-3 py-1 text-xs font-mono text-text-muted hover:text-text-primary transition-colors"
+                  >
+                    CANCEL
+                  </button>
+                  <button
+                    onClick={saveEdit}
+                    disabled={updateMutation.isPending}
+                    className={cn(
+                      'px-3 py-1 rounded text-xs font-mono',
+                      'bg-neon-cyan/20 text-neon-cyan border border-neon-cyan/30',
+                      'hover:bg-neon-cyan/30 transition-all',
+                      'disabled:opacity-50'
+                    )}
+                  >
+                    {updateMutation.isPending ? 'SAVING...' : 'SAVE'}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Show notes if present and not editing */}
+            {editingId !== s.id && s.notes && (
+              <div className="mt-2 text-xs font-mono text-text-muted italic">
+                {s.notes}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </motion.div>
   );
 }
 

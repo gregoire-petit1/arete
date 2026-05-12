@@ -197,3 +197,54 @@ class TestBestEfforts:
         # 5k present
         five_k = next(e for e in efforts if e["name"] == "5k")
         assert five_k["best_time_sec"] == 1250
+
+
+class TestSessionUpdate:
+    @patch("arete.api.analytics.connect")
+    def test_update_rpe_and_notes(self, mock_connect, client):
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        resp = client.patch(
+            "/analytics/sessions/42", json={"rpe": 7, "notes": "Felt good"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        mock_conn.execute.assert_called_once()
+
+    @patch("arete.api.analytics.connect")
+    def test_update_empty_body(self, mock_connect, client):
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        resp = client.patch("/analytics/sessions/42", json={})
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        mock_conn.execute.assert_not_called()
+
+
+class TestListSessions:
+    @patch("arete.api.analytics.connect")
+    def test_returns_sessions(self, mock_connect, client):
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (
+                1,
+                date(2026, 5, 10),
+                "run",
+                "Morning Run",
+                3600,
+                10000,
+                145,
+                320,
+                7,
+                "Great",
+                "strava",
+                450,
+            ),
+        ]
+        resp = client.get("/analytics/sessions")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["sessions"]) == 1
+        assert data["sessions"][0]["name"] == "Morning Run"
+        assert data["sessions"][0]["pace_display"] == "5:20"
