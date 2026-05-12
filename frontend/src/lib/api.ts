@@ -375,6 +375,25 @@ export const stravaApi = {
     fetchAPI<{ success: boolean }>("/strava/disconnect", { method: "DELETE" }),
 };
 
+// ========================= //
+// ANALYTICS API             //
+// ========================= //
+
+export const analyticsApi = {
+  getVolume: (period = '30d', sport = 'all') =>
+    fetchAPI<any>(`/analytics/volume?period=${period}&sport=${sport}`),
+  getTrainingLoad: (period = '90d') =>
+    fetchAPI<any>(`/analytics/training-load?period=${period}`),
+  getPace: (period = '90d', sport = 'running') =>
+    fetchAPI<any>(`/analytics/pace?period=${period}&sport=${sport}`),
+  getHrZones: (period = '30d') =>
+    fetchAPI<any>(`/analytics/hr-zones?period=${period}`),
+  getSportDistribution: (period = '90d') =>
+    fetchAPI<any>(`/analytics/sport-distribution?period=${period}`),
+  getBestEfforts: (sport = 'running') =>
+    fetchAPI<any>(`/analytics/best-efforts?sport=${sport}`),
+};
+
 export const settingsApi = {
   get: () => fetchAPI<UserSettings>("/settings"),
 

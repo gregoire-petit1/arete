@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
   CalendarDays,
+  BarChart3,
   Dumbbell,
   Settings,
 } from 'lucide-react';
@@ -11,6 +12,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/planning', label: 'Planning', icon: CalendarDays },
+  { path: '/analytics', label: 'Analytics', icon: BarChart3 },
   { path: '/log', label: 'Log', icon: Dumbbell },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];

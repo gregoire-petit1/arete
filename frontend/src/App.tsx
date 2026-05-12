@@ -5,6 +5,7 @@ import { SettingsProvider } from '@/contexts';
 import {
   DashboardPage,
   PlanningPage,
+  AnalyticsPage,
   LogPage,
   SettingsPage,
 } from '@/pages';
@@ -30,6 +31,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/planning" element={<PlanningPage />} />
+                <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/log" element={<LogPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
                 {/* Legacy redirects */}
