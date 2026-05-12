@@ -142,7 +142,21 @@ CREATE TABLE IF NOT EXISTS app.actual_sessions (
 
     -- Timestamps
     start_time          TIMESTAMP,
-    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    -- Analytics / enrichment columns
+    name                VARCHAR,
+    notes               TEXT,
+    rpe                 INTEGER,
+    workout_type        VARCHAR,
+    moving_time_sec     INTEGER,
+    suffer_score        INTEGER,
+    laps_json           TEXT,
+    splits_json         TEXT,
+    best_efforts_json   TEXT,
+    avg_watts           INTEGER,
+    weighted_avg_watts  INTEGER,
+    device_name         VARCHAR
 );
 
 -- Session analysis/feedback (LLM-generated insights)
@@ -276,6 +290,30 @@ def _run_migrations(con) -> None:
             "ADD COLUMN exercise_abbreviations VARCHAR DEFAULT '{}'"
         )
         logger.info("Migration: added exercise_abbreviations to user_settings")
+
+    # Migration 2: add analytics columns to actual_sessions
+    _analytics_cols = {
+        "name": "VARCHAR",
+        "notes": "TEXT",
+        "rpe": "INTEGER",
+        "workout_type": "VARCHAR",
+        "moving_time_sec": "INTEGER",
+        "suffer_score": "INTEGER",
+        "laps_json": "TEXT",
+        "splits_json": "TEXT",
+        "best_efforts_json": "TEXT",
+        "avg_watts": "INTEGER",
+        "weighted_avg_watts": "INTEGER",
+        "device_name": "VARCHAR",
+    }
+    for col_name, col_type in _analytics_cols.items():
+        try:
+            con.execute(
+                f"ALTER TABLE app.actual_sessions ADD COLUMN {col_name} {col_type}"
+            )
+            logger.info("Added column %s to actual_sessions", col_name)
+        except Exception:
+            pass  # Column already exists
 
 
 def main():
