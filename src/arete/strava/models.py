@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from arete.garmin.models import ActualSession, ActivitySource
@@ -71,4 +72,25 @@ def strava_activity_to_actual_session(activity: dict) -> ActualSession:
         source=ActivitySource.STRAVA,
         garmin_activity_id=str(activity["id"]),
         start_time=start_dt,
+        name=activity.get("name"),
+        notes=activity.get("description"),
+        moving_time_sec=activity.get("moving_time"),
+        suffer_score=activity.get("suffer_score"),
+        workout_type=str(activity["workout_type"])
+        if activity.get("workout_type") is not None
+        else None,
+        device_name=activity.get("device_name"),
+        avg_watts=int(activity["average_watts"])
+        if activity.get("average_watts")
+        else None,
+        weighted_avg_watts=int(activity["weighted_average_watts"])
+        if activity.get("weighted_average_watts")
+        else None,
+        laps_json=json.dumps(activity["laps"]) if activity.get("laps") else None,
+        splits_json=json.dumps(activity["splits_metric"])
+        if activity.get("splits_metric")
+        else None,
+        best_efforts_json=json.dumps(activity["best_efforts"])
+        if activity.get("best_efforts")
+        else None,
     )

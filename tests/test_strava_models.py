@@ -93,3 +93,50 @@ class TestStravaToActualSession:
             activity = {**SAMPLE_ACTIVITY, "type": strava_type}
             session = strava_activity_to_actual_session(activity)
             assert session.sport == expected, f"{strava_type} -> {session.sport}"
+
+
+def test_maps_detail_fields():
+    activity = {
+        "id": 1,
+        "type": "Run",
+        "start_date_local": "2026-05-10T07:30:00",
+        "elapsed_time": 3600,
+        "distance": 10000,
+        "name": "Morning Run",
+        "description": "Easy jog in the park",
+        "moving_time": 3400,
+        "suffer_score": 78,
+        "workout_type": 3,
+        "calories": 450,
+        "device_name": "Garmin FR 265",
+        "average_watts": None,
+        "weighted_average_watts": None,
+        "laps": [{"elapsed_time": 300}],
+        "splits_metric": [{"distance": 1000, "average_speed": 2.78}],
+        "best_efforts": [{"name": "1k", "elapsed_time": 240}],
+    }
+    session = strava_activity_to_actual_session(activity)
+    assert session.name == "Morning Run"
+    assert session.notes == "Easy jog in the park"
+    assert session.moving_time_sec == 3400
+    assert session.suffer_score == 78
+    assert session.device_name == "Garmin FR 265"
+    assert session.laps_json is not None
+    assert "elapsed_time" in session.laps_json
+    assert session.splits_json is not None
+    assert session.best_efforts_json is not None
+
+
+def test_maps_cycling_watts():
+    activity = {
+        "id": 2,
+        "type": "Ride",
+        "start_date_local": "2026-05-10T07:30:00",
+        "elapsed_time": 3600,
+        "distance": 30000,
+        "average_watts": 200,
+        "weighted_average_watts": 210,
+    }
+    session = strava_activity_to_actual_session(activity)
+    assert session.avg_watts == 200
+    assert session.weighted_avg_watts == 210

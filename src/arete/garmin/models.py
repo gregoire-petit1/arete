@@ -152,6 +152,20 @@ class ActualSession:
     start_time: datetime | None = None
     created_at: datetime | None = None
 
+    # Analytics / detail data
+    name: str | None = None
+    notes: str | None = None
+    rpe: int | None = None
+    workout_type: str | None = None
+    moving_time_sec: int | None = None
+    suffer_score: int | None = None
+    laps_json: str | None = None
+    splits_json: str | None = None
+    best_efforts_json: str | None = None
+    avg_watts: int | None = None
+    weighted_avg_watts: int | None = None
+    device_name: str | None = None
+
     @property
     def duration_min_raw(self) -> float:
         """Duration in minutes (raw float)."""
@@ -229,7 +243,9 @@ class SessionMatch:
     @property
     def is_matched(self) -> bool:
         """Whether a match was found."""
-        return self.planned_session is not None and self.confidence != MatchConfidence.NONE
+        return (
+            self.planned_session is not None and self.confidence != MatchConfidence.NONE
+        )
 
     def summary(self) -> str:
         """Human-readable summary."""
