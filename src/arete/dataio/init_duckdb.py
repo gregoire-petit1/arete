@@ -248,6 +248,22 @@ SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM app.user_settings WHERE user_id = 1);
 """
 
 
+def _run_migrations(con) -> None:
+    """Apply schema migrations for existing databases.
+
+    Each migration checks if the change is needed before applying,
+    making them safe to run repeatedly (idempotent).
+    """
+    # Migration 1: Add exercise_abbreviations column to user_settings
+    cols = {row[0] for row in con.execute("DESCRIBE app.user_settings").fetchall()}
+    if "exercise_abbreviations" not in cols:
+        con.execute(
+            "ALTER TABLE app.user_settings "
+            "ADD COLUMN exercise_abbreviations VARCHAR DEFAULT '{}'"
+        )
+        logger.info("Migration: added exercise_abbreviations to user_settings")
+
+
 def main():
     """Initialize the DuckDB database with the required schema."""
     con = None
@@ -257,6 +273,9 @@ def main():
             s = stmt.strip()
             if s:
                 con.execute(s + ";")
+
+        _run_migrations(con)
+
         tables = con.execute(
             "SELECT table_name FROM information_schema.tables WHERE table_schema='app'"
         ).fetchall()

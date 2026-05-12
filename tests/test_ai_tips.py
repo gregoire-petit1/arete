@@ -115,8 +115,9 @@ def _make_actual_session(
 class TestPostSessionCardio:
     """POST /tips/post-session with session_type=cardio."""
 
+    @patch("arete.api.ai_tips._enrich_with_llm", return_value=None)
     @patch("arete.api.ai_tips.GarminRepository")
-    def test_cardio_feedback_with_hr_and_pace(self, mock_repo_cls, client):
+    def test_cardio_feedback_with_hr_and_pace(self, mock_repo_cls, _mock_llm, client):
         repo = mock_repo_cls.return_value
         repo.get_actual_session.return_value = _make_actual_session()
 

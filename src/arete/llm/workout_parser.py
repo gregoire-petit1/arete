@@ -111,9 +111,12 @@ Supersets & circuits:
 - "Nx(exercise1, exercise2)" = superset: "10x(10 pull ups, 10 dips) r1'" = 10 rounds
 - "4x(ex1, ex2) @weight r2'" = all exercises at same weight
 - Different weights per exercise: "5x15e(cable extensions @5, cable pec fly @7.5)"
-- "(exercise in parentheses)" at end of line = filler exercise done DURING rest
+- "(exercise)" at END of another exercise's line = filler done DURING rest of that exercise
   Example: "4x8 t row @65 r1'30 (15e calves raises)" → t-row is main, calves during rest
   Return filler as separate exercise with notes: "filler during rest of t-row"
+- "(exercise) NxM" on its OWN line = standalone finisher exercise, parse normally
+  Example: "(dips) 3x amrap" → 3 sets of dips, reps: null, is_failure: true, notes: "finisher"
+  IMPORTANT: everything the user writes was actually performed — never skip an exercise
 
 Rep count variations:
 - "(10,6,5) exercise @weight" = 3 sets of 10, 6, 5 reps at SAME weight
@@ -164,7 +167,8 @@ RÈGLES:
 5. Détecte les warmup sets (échauffement, warmup, w/)
 6. Pour "failure", "amrap", "F": mets reps: null et is_failure: true
 7. Pour les supersets "(ex1, ex2)", retourne chaque exercice séparément avec notes: "superset with <other>"
-8. Pour les fillers "(exercise)" en fin de ligne, exercice séparé avec notes: "filler during rest"
+8. Pour les fillers "(exercise)" en fin de ligne d'un AUTRE exercice → exercice séparé avec notes: "filler during rest"
+   Pour les "(exercise) NxM" sur une ligne SEULE → exercice finisher normal, notes: "finisher". Ne jamais ignorer un exercice.
 9. Pour les drop sets "N@w1 + N@w2", un seul exercice avec tous les sets et notes: "drop set"
 10. Pour "@weighte", stocke le poids par coté et ajoute notes: "weight per side"
 
@@ -314,6 +318,9 @@ def _parse_simple_format(text: str) -> list[dict] | None:
     # Optional reps between x and ( for "5x15e(ex1, ex2)" = 5 rounds, 15 reps each for all
     circuit_pattern = r"^(\d+)x\s*(?:(\d+)e?\s*)?[\(\[](.+?)[\)\]](?:\s*@\s*(\d+(?:\.\d+)?)\s*(?:kg)?)?(?:\s*r(\d+)'?(\d+)?)?$"
 
+    # Pattern for finisher: "(exercise) NxM" or "(exercise) Nx amrap" on its own line
+    finisher_pattern = r"^\((.+?)\)\s+(\d+)x\s*(amrap|\d+)(?:\s*@\s*(\d+(?:\.\d+)?)\s*(?:kg)?e?)?(?:\s*r(\d+)'?(\d+)?)?$"
+
     # Pattern for rep-list format: "(10,6,5) exercise @weight r1'30"
     rep_list_pattern = r"^\((\d+(?:\s*,\s*\d+)+)\)\s+(.+?)(?:\s+@\s*(\d+(?:\.\d+)?)\s*(?:kg)?e?)?\s*(?:r(\d+)'(\d+)?)?$"
 
@@ -369,6 +376,52 @@ def _parse_simple_format(text: str) -> list[dict] | None:
             # Apply to last set of previous exercise
             if exercises and exercises[-1]["sets"]:
                 exercises[-1]["sets"][-1]["rest_sec"] = pending_rest_sec
+            continue
+
+        # Try finisher format: "(dips) 3x amrap" or "(pull ups) 4x8 @20"
+        finisher_match = re.match(finisher_pattern, line, re.IGNORECASE)
+        if finisher_match:
+            name = finisher_match.group(1).strip()
+            num_sets = int(finisher_match.group(2))
+            reps_str = finisher_match.group(3)
+            weight = float(finisher_match.group(4)) if finisher_match.group(4) else None
+            rest_min = finisher_match.group(5)
+            rest_sec_extra = finisher_match.group(6)
+
+            is_failure = reps_str.lower() == "amrap"
+            reps = None if is_failure else int(reps_str)
+
+            rest_sec = None
+            if rest_min:
+                rest_sec = int(rest_min) * 60
+                if rest_sec_extra:
+                    rest_sec += int(rest_sec_extra)
+
+            exercise_id = _match_exercise_fuzzy(name)
+
+            sets = []
+            for i in range(num_sets):
+                sets.append(
+                    {
+                        "set_number": i + 1,
+                        "reps": reps,
+                        "weight_kg": weight,
+                        "rpe": None,
+                        "is_warmup": False,
+                        "is_failure": is_failure,
+                        "rest_sec": rest_sec if i < num_sets - 1 else None,
+                    }
+                )
+
+            exercises.append(
+                {
+                    "name": name,
+                    "exercise_id": exercise_id,
+                    "sets": sets,
+                    "notes": "finisher",
+                    "target_reps": None if is_failure else reps_str,
+                }
+            )
             continue
 
         # Try rep-list format: "(10,6,5) incline bp @70 r1'30"
