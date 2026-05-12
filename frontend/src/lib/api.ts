@@ -345,6 +345,36 @@ export const tipsApi = {
     }),
 };
 
+// ========================= //
+// STRAVA API              //
+// ========================= //
+
+export const stravaApi = {
+  getStatus: () =>
+    fetchAPI<{
+      connected: boolean;
+      athlete_name: string | null;
+      athlete_id: number | null;
+    }>("/strava/status"),
+
+  getAuthorizeUrl: () =>
+    fetchAPI<{ url: string }>("/strava/authorize"),
+
+  sync: (days = 30) =>
+    fetchAPI<{
+      success: boolean;
+      imported: number;
+      skipped: number;
+      errors: string[];
+    }>("/strava/sync", {
+      method: "POST",
+      body: JSON.stringify({ days }),
+    }),
+
+  disconnect: () =>
+    fetchAPI<{ success: boolean }>("/strava/disconnect", { method: "DELETE" }),
+};
+
 export const settingsApi = {
   get: () => fetchAPI<UserSettings>("/settings"),
 

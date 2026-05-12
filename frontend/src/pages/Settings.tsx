@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LoadingState, GarminLoginModal, SystemAlert } from '@/components';
-import { settingsApi, garminApi, healthApi, ragApi, type UserSettings } from '@/lib/api';
+import { settingsApi, garminApi, stravaApi, healthApi, ragApi, type UserSettings } from '@/lib/api';
 
 const TABS = [
   { id: 'profile', label: 'PROFILE', icon: User },
@@ -591,63 +591,152 @@ function ConnectionsTab({ onGoToSystem }: { onGoToSystem: () => void }) {
     },
   });
 
-  const connections = [
-    {
-      id: 'garmin',
-      name: 'Garmin Connect',
-      icon: Watch,
-      status: syncStatus?.garmin_authenticated ? 'connected' : 'disconnected',
-      email: syncStatus?.user_email || null,
-    },
-    {
-      id: 'runalyze',
-      name: 'Runalyze',
-      icon: Database,
-      status: 'disconnected',
-      email: null,
-    },
-    {
-      id: 'strava',
-      name: 'Strava',
-      icon: Target,
-      status: 'disconnected',
-      email: null,
-    },
-  ];
+  // Strava state
+  const [stravaStatus, setStravaStatus] = useState<{
+    connected: boolean;
+    athlete_name: string | null;
+  }>({ connected: false, athlete_name: null });
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<string | null>(null);
+
+  useEffect(() => {
+    stravaApi.getStatus()
+      .then(setStravaStatus)
+      .catch(() => {}); // silently fail if backend unavailable
+  }, []);
+
+  const handleStravaConnect = async () => {
+    try {
+      const { url } = await stravaApi.getAuthorizeUrl();
+      window.open(url, '_blank');
+    } catch (e) {
+      console.error('Failed to get Strava auth URL', e);
+    }
+  };
+
+  const handleStravaSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const result = await stravaApi.sync(30);
+      setSyncResult(`${result.imported} imported, ${result.skipped} skipped`);
+      const status = await stravaApi.getStatus();
+      setStravaStatus(status);
+    } catch (_e) {
+      setSyncResult('Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleStravaDisconnect = async () => {
+    try {
+      await stravaApi.disconnect();
+      setStravaStatus({ connected: false, athlete_name: null });
+      setSyncResult(null);
+    } catch (e) {
+      console.error('Failed to disconnect Strava', e);
+    }
+  };
+
+  const garminConnected = syncStatus?.garmin_authenticated;
 
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-display text-text-primary mb-4">CONNECTED SERVICES</h2>
 
       <div className="space-y-3">
-        {connections.map((conn) => (
-          <div
-            key={conn.id}
-            className={cn(
-              'flex items-center gap-4 p-4 rounded',
-              'bg-abyss/50 border',
-              conn.status === 'connected' ? 'border-success-green/30' : 'border-text-muted/20'
-            )}
-          >
-            <conn.icon className="w-6 h-6 text-text-muted" />
-            <div className="flex-1">
-              <div className="font-mono text-sm text-text-primary">{conn.name}</div>
-              {conn.email && (
-                <div className="text-xs text-neon-cyan">{conn.email}</div>
-              )}
-            </div>
-            {conn.status === 'connected' ? (
-              <div className="flex items-center gap-1 text-xs text-success-green">
-                <Check className="w-4 h-4" />
-                Connected
-              </div>
-            ) : (
-              <span className="text-xs font-mono text-text-muted">
-                {conn.id === 'garmin' ? 'Not connected' : 'Coming Soon'}
-              </span>
+        {/* Garmin */}
+        <div
+          className={cn(
+            'flex items-center gap-4 p-4 rounded',
+            'bg-abyss/50 border',
+            garminConnected ? 'border-success-green/30' : 'border-text-muted/20'
+          )}
+        >
+          <Watch className="w-6 h-6 text-text-muted" />
+          <div className="flex-1">
+            <div className="font-mono text-sm text-text-primary">Garmin Connect</div>
+            {syncStatus?.user_email && (
+              <div className="text-xs text-neon-cyan">{syncStatus.user_email}</div>
             )}
           </div>
-        ))}
+          {garminConnected ? (
+            <div className="flex items-center gap-1 text-xs text-success-green">
+              <Check className="w-4 h-4" />
+              Connected
+            </div>
+          ) : (
+            <span className="text-xs font-mono text-text-muted">Not connected</span>
+          )}
+        </div>
+
+        {/* Strava */}
+        <div
+          className={cn(
+            'flex items-center gap-4 p-4 rounded',
+            'bg-abyss/50 border',
+            stravaStatus.connected ? 'border-success-green/30' : 'border-text-muted/20'
+          )}
+        >
+          <Target className="w-6 h-6 text-text-muted" />
+          <div className="flex-1">
+            <div className="font-mono text-sm text-text-primary">Strava</div>
+            {stravaStatus.connected && stravaStatus.athlete_name && (
+              <div className="text-xs text-[#FC4C02]">{stravaStatus.athlete_name}</div>
+            )}
+            {syncResult && (
+              <div className="text-xs text-text-muted mt-1 font-mono">{syncResult}</div>
+            )}
+          </div>
+          {stravaStatus.connected ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleStravaSync}
+                disabled={syncing}
+                className={cn(
+                  'px-3 py-1.5 rounded text-xs font-mono',
+                  'bg-[#FC4C02]/10 border border-[#FC4C02]/30 text-[#FC4C02]',
+                  'hover:bg-[#FC4C02]/20 transition-all',
+                  syncing && 'opacity-50'
+                )}
+              >
+                {syncing ? 'SYNCING...' : 'SYNC NOW'}
+              </button>
+              <button
+                onClick={handleStravaDisconnect}
+                className="px-3 py-1.5 rounded text-xs font-mono bg-danger-red/10 border border-danger-red/30 text-danger-red hover:bg-danger-red/20 transition-all"
+              >
+                <LogOut className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={handleStravaConnect}
+              className={cn(
+                'px-3 py-1.5 rounded text-xs font-mono',
+                'bg-[#FC4C02]/10 border border-[#FC4C02]/30 text-[#FC4C02]',
+                'hover:bg-[#FC4C02]/20 transition-all'
+              )}
+            >
+              CONNECT
+            </button>
+          )}
+        </div>
+
+        {/* Runalyze */}
+        <div
+          className={cn(
+            'flex items-center gap-4 p-4 rounded',
+            'bg-abyss/50 border border-text-muted/20'
+          )}
+        >
+          <Database className="w-6 h-6 text-text-muted" />
+          <div className="flex-1">
+            <div className="font-mono text-sm text-text-primary">Runalyze</div>
+          </div>
+          <span className="text-xs font-mono text-text-muted">Coming Soon</span>
+        </div>
       </div>
 
       <button
