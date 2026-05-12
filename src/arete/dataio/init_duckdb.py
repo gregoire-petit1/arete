@@ -245,6 +245,20 @@ CREATE TABLE IF NOT EXISTS app.user_settings (
 -- Insert default settings if not exists
 INSERT INTO app.user_settings (user_id) 
 SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM app.user_settings WHERE user_id = 1);
+
+-- ============================================================
+-- Strava Integration
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS app.strava_tokens (
+    user_id         INTEGER PRIMARY KEY DEFAULT 1,
+    athlete_id      INTEGER,
+    access_token    VARCHAR NOT NULL,
+    refresh_token   VARCHAR NOT NULL,
+    expires_at      INTEGER NOT NULL,
+    athlete_name    VARCHAR,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
