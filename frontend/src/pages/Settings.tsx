@@ -603,12 +603,23 @@ function ConnectionsTab({ onGoToSystem }: { onGoToSystem: () => void }) {
     stravaApi.getStatus()
       .then(setStravaStatus)
       .catch(() => {}); // silently fail if backend unavailable
+
+    // Handle redirect back from Strava OAuth
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('strava') === 'connected') {
+      // Clean URL without reloading
+      window.history.replaceState({}, '', window.location.pathname);
+      // Refresh status
+      stravaApi.getStatus()
+        .then(setStravaStatus)
+        .catch(() => {});
+    }
   }, []);
 
   const handleStravaConnect = async () => {
     try {
       const { url } = await stravaApi.getAuthorizeUrl();
-      window.open(url, '_blank');
+      window.location.href = url;
     } catch (e) {
       console.error('Failed to get Strava auth URL', e);
     }
