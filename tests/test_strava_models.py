@@ -1,0 +1,95 @@
+"""Tests for Strava -> ActualSession mapping."""
+
+from arete.strava.models import strava_activity_to_actual_session
+from arete.garmin.models import ActivitySource
+
+
+SAMPLE_ACTIVITY = {
+    "id": 123456789,
+    "name": "Morning Run",
+    "type": "Run",
+    "sport_type": "Run",
+    "start_date": "2026-05-10T08:00:00Z",
+    "start_date_local": "2026-05-10T10:00:00Z",
+    "elapsed_time": 3600,
+    "moving_time": 3500,
+    "distance": 10000.0,
+    "total_elevation_gain": 120.5,
+    "average_speed": 2.78,
+    "max_speed": 4.5,
+    "average_heartrate": 145.0,
+    "max_heartrate": 172.0,
+    "average_cadence": 82.0,
+    "calories": 650,
+    "start_latlng": [48.8566, 2.3522],
+}
+
+
+class TestStravaToActualSession:
+    def test_basic_fields(self):
+        session = strava_activity_to_actual_session(SAMPLE_ACTIVITY)
+        assert session.source == ActivitySource.STRAVA
+        assert session.garmin_activity_id == "123456789"
+        assert session.sport == "run"
+        assert session.duration_sec == 3600
+        assert session.distance_m == 10000.0
+
+    def test_heart_rate(self):
+        session = strava_activity_to_actual_session(SAMPLE_ACTIVITY)
+        assert session.avg_hr == 145
+        assert session.max_hr == 172
+
+    def test_speed(self):
+        session = strava_activity_to_actual_session(SAMPLE_ACTIVITY)
+        assert session.avg_speed_mps == 2.78
+        assert session.max_speed_mps == 4.5
+
+    def test_pace_computed(self):
+        session = strava_activity_to_actual_session(SAMPLE_ACTIVITY)
+        assert session.avg_pace_sec_km == 360
+
+    def test_elevation(self):
+        session = strava_activity_to_actual_session(SAMPLE_ACTIVITY)
+        assert session.ascent_m == 120.5
+
+    def test_gps(self):
+        session = strava_activity_to_actual_session(SAMPLE_ACTIVITY)
+        assert session.start_lat == 48.8566
+        assert session.start_lon == 2.3522
+
+    def test_running_cadence_doubled(self):
+        session = strava_activity_to_actual_session(SAMPLE_ACTIVITY)
+        assert session.avg_cadence == 164
+
+    def test_cycling_cadence_not_doubled(self):
+        activity = {**SAMPLE_ACTIVITY, "type": "Ride", "average_cadence": 90}
+        session = strava_activity_to_actual_session(activity)
+        assert session.avg_cadence == 90
+
+    def test_missing_optional_fields(self):
+        minimal = {
+            "id": 1,
+            "type": "Run",
+            "start_date": "2026-05-10T08:00:00Z",
+            "start_date_local": "2026-05-10T10:00:00Z",
+            "elapsed_time": 1800,
+            "distance": 5000,
+        }
+        session = strava_activity_to_actual_session(minimal)
+        assert session.avg_hr is None
+        assert session.start_lat is None
+        assert session.calories is None
+
+    def test_sport_type_mapping(self):
+        for strava_type, expected in [
+            ("Run", "run"),
+            ("TrailRun", "trail_run"),
+            ("Ride", "ride"),
+            ("Swim", "swim"),
+            ("Hike", "hike"),
+            ("Walk", "walk"),
+            ("WeightTraining", "weight_training"),
+        ]:
+            activity = {**SAMPLE_ACTIVITY, "type": strava_type}
+            session = strava_activity_to_actual_session(activity)
+            assert session.sport == expected, f"{strava_type} -> {session.sport}"
