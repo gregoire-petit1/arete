@@ -170,7 +170,7 @@ class RecommendationsResponse(BaseModel):
 
 # ---------- Helper Functions ----------
 def _get_training_loads(days: int = 28) -> list[DailyLoad]:
-    """Fetch daily training loads from training_log.
+    """Fetch daily training loads from actual_sessions.
 
     Returns list of DailyLoad objects for the last N days.
     Uses RPE * duration as load metric.
@@ -184,10 +184,11 @@ def _get_training_loads(days: int = 28) -> list[DailyLoad]:
         rows = con.execute(
             """
             SELECT date,
-                   SUM(COALESCE(duree_min, 0)) as total_duration,
+                   SUM(COALESCE(duration_sec, 0)) / 60.0 as total_duration,
                    AVG(COALESCE(rpe, 5)) as avg_rpe
-            FROM app.training_log
+            FROM app.actual_sessions
             WHERE date >= ? AND date <= ?
+              AND user_id = 1
             GROUP BY date
             ORDER BY date ASC
             """,
@@ -214,9 +215,10 @@ def _get_training_loads(days: int = 28) -> list[DailyLoad]:
 
 
 def _get_tss_history(days: int = 42) -> list[DailyTSS]:
-    """Fetch daily TSS-like values from training_log.
+    """Fetch daily TSS-like values from actual_sessions.
 
-    Uses simplified TSS estimation: (duration * intensity^2) / 0.36
+    Uses TSS fallback chain: RPE → suffer_score → HR-based → default (RPE 5).
+    TSS estimation: (duration * intensity^2) / 0.36
     where intensity = RPE / 10. This approximates 100 TSS for 1 hour at RPE 6.
     """
     con = connect(read_only=True)
@@ -227,9 +229,21 @@ def _get_tss_history(days: int = 42) -> list[DailyTSS]:
         rows = con.execute(
             """
             SELECT date,
-                   SUM(COALESCE(duree_min, 0) * POWER(COALESCE(rpe, 5) / 10.0, 2) / 0.36) as daily_tss
-            FROM app.training_log
+                   SUM(
+                     CASE
+                       WHEN rpe IS NOT NULL THEN
+                         (COALESCE(duration_sec, 0) / 60.0) * POWER(rpe / 10.0, 2) / 0.36
+                       WHEN suffer_score IS NOT NULL THEN
+                         suffer_score * 0.8
+                       WHEN avg_hr IS NOT NULL THEN
+                         (COALESCE(duration_sec, 0) / 60.0) * POWER(LEAST(avg_hr, 200) / 180.0, 2) / 0.36
+                       ELSE
+                         (COALESCE(duration_sec, 0) / 60.0) * 0.25 / 0.36
+                     END
+                   ) as daily_tss
+            FROM app.actual_sessions
             WHERE date >= ? AND date <= ?
+              AND user_id = 1
             GROUP BY date
             ORDER BY date ASC
             """,
@@ -277,10 +291,20 @@ def _compute_weekly_tss(start_monday: date, end_date: date) -> float:
         row = con.execute(
             """
             SELECT COALESCE(SUM(
-                COALESCE(duree_min, 0) * POWER(COALESCE(rpe, 5) / 10.0, 2) / 0.36
+              CASE
+                WHEN rpe IS NOT NULL THEN
+                  (COALESCE(duration_sec, 0) / 60.0) * POWER(rpe / 10.0, 2) / 0.36
+                WHEN suffer_score IS NOT NULL THEN
+                  suffer_score * 0.8
+                WHEN avg_hr IS NOT NULL THEN
+                  (COALESCE(duration_sec, 0) / 60.0) * POWER(LEAST(avg_hr, 200) / 180.0, 2) / 0.36
+                ELSE
+                  (COALESCE(duration_sec, 0) / 60.0) * 0.25 / 0.36
+              END
             ), 0)
-            FROM app.training_log
+            FROM app.actual_sessions
             WHERE date >= ? AND date <= ?
+              AND user_id = 1
             """,
             [start_monday, end_date],
         ).fetchone()
@@ -300,7 +324,9 @@ def _compute_level(weekly_tss_goal: float) -> int:
         current_monday = today - timedelta(days=today.weekday())
 
         # Get earliest training date
-        row = con.execute("SELECT MIN(date) FROM app.training_log").fetchone()
+        row = con.execute(
+            "SELECT MIN(date) FROM app.actual_sessions WHERE user_id = 1"
+        ).fetchone()
         if not row or not row[0]:
             return 0
 
