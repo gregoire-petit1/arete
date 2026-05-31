@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Inject TMB training plan sessions into Arete via /garmin/planned."""
+"""Inject TMB training plan sessions into Arete via /garmin/planned.
 
-import urllib.request, json, sys
+Locations: Paris only — Montmartre (D+), Quais de Seine (flat), Buttes Chaumont (mixed).
+TMB dates: 8-9-10 July 2026.
+"""
+
+import urllib.request, urllib.error, json, sys
 
 
 def post(url, body):
@@ -31,7 +35,7 @@ PLAN = [
         10.0,
         "easy",
         "Z2",
-        "Easy Yvette flat + 6x30s hill strides",
+        "Easy Quais de Seine + 6x30s hill strides Montmartre",
     ),
     (
         "2026-06-03",
@@ -51,7 +55,7 @@ PLAN = [
         12.0,
         "moderate",
         "Z3",
-        "Hilly tempo, Troche stairs x4",
+        "Hilly tempo Buttes Chaumont: 8 tours + finish",
     ),
     (
         "2026-06-06",
@@ -61,17 +65,17 @@ PLAN = [
         25.0,
         "moderate",
         "Z2",
-        "Long 1 hilly: 10x Butte Montmartre (D+800m)",
+        "Long 1 D+: 10x Butte Montmartre (D+800m) + Quais Seine",
     ),
     (
         "2026-06-07",
         "running",
         "long_run",
         180,
-        24.0,
+        22.0,
         "easy",
         "Z2",
-        "Long 2 endurance: Chevreuse D+700m, slow (HR<150)",
+        "Long 2 endurance: Quais Seine + Buttes Chaumont 5 tours, HR<150",
     ),
     # S18 — Active Recovery
     (
@@ -82,7 +86,7 @@ PLAN = [
         8.0,
         "easy",
         "Z1",
-        "Recovery run, flat, very slow",
+        "Recovery: Quais Seine flat very slow",
     ),
     (
         "2026-06-10",
@@ -92,7 +96,7 @@ PLAN = [
         None,
         "moderate",
         None,
-        "Upper + 15min calves/ankles work",
+        "Upper + 15min calves/ankles",
     ),
     (
         "2026-06-11",
@@ -102,7 +106,7 @@ PLAN = [
         10.0,
         "moderate",
         "Z3",
-        "Short tempo: 4x3min threshold",
+        "Short tempo Quais Seine: 4x3min threshold",
     ),
     (
         "2026-06-13",
@@ -112,7 +116,7 @@ PLAN = [
         15.0,
         "moderate",
         "Z2",
-        "Medium hilly Chevreuse, D+400m",
+        "Medium hilly: Buttes Chaumont 8 tours + boucle",
     ),
     (
         "2026-06-14",
@@ -122,7 +126,7 @@ PLAN = [
         10.0,
         "easy",
         "Z1",
-        "Easy flat, fluid legs",
+        "Easy Quais Seine, fluid legs",
     ),
     # S19 — Spec Block 2 PEAK
     (
@@ -133,7 +137,7 @@ PLAN = [
         10.0,
         "moderate",
         "Z2",
-        "Run + Montmartre DESCENT focus (eccentric quads)",
+        "Montmartre DESCENT focus 6 reps (eccentric quads)",
     ),
     (
         "2026-06-17",
@@ -153,7 +157,7 @@ PLAN = [
         13.0,
         "moderate",
         "Z3",
-        "Long hilly tempo: Troche x6",
+        "Long tempo: Buttes Chaumont 10 tours soutenu",
     ),
     (
         "2026-06-20",
@@ -163,7 +167,7 @@ PLAN = [
         30.0,
         "moderate",
         "Z2",
-        "TMB DRESS REHEARSAL: 13x Montmartre D+1100m, FULL PACK + nutrition + TMB shoes",
+        "TMB DRESS REHEARSAL: 14x Montmartre D+1100m, FULL PACK + nutrition + TMB shoes",
     ),
     (
         "2026-06-21",
@@ -173,7 +177,7 @@ PLAN = [
         22.0,
         "easy",
         "Z2",
-        "Back-to-back: Chevreuse D+700m, very slow, SAME PACK",
+        "Back-to-back: Quais Seine + Buttes Chaumont 6 tours, SAME PACK, very slow",
     ),
     # S20 — Discharge
     (
@@ -184,7 +188,7 @@ PLAN = [
         7.0,
         "easy",
         "Z1",
-        "Easy + 6x100m fluid strides",
+        "Easy Quais Seine + 6x100m fluid strides",
     ),
     (
         "2026-06-24",
@@ -204,7 +208,7 @@ PLAN = [
         8.0,
         "moderate",
         "Z3",
-        "Short tempo: 3x5min marathon pace",
+        "Short tempo Quais Seine: 3x5min marathon pace",
     ),
     (
         "2026-06-27",
@@ -214,12 +218,39 @@ PLAN = [
         14.0,
         "moderate",
         "Z2",
-        "Medium hilly Chevreuse D+500m",
+        "Medium hilly: Montmartre 6 reps + Buttes 3 tours",
     ),
-    ("2026-06-28", "running", "recovery", 60, 9.0, "easy", "Z1", "Easy flat"),
-    # S21 — Activation
-    ("2026-06-29", "running", "recovery", 30, 5.0, "easy", "Z1", "Very short easy"),
-    ("2026-07-01", "running", "tempo", 40, 7.0, "moderate", "Z2", "Run + 4x1min tempo"),
+    (
+        "2026-06-28",
+        "running",
+        "recovery",
+        60,
+        9.0,
+        "easy",
+        "Z1",
+        "Easy Quais Seine flat",
+    ),
+    # S21 — Activation (TMB starts Tue 8/7, so this week ends Sun 5/7, then travel)
+    (
+        "2026-06-29",
+        "running",
+        "recovery",
+        30,
+        5.0,
+        "easy",
+        "Z1",
+        "Very short easy Quais Seine",
+    ),
+    (
+        "2026-07-01",
+        "running",
+        "tempo",
+        40,
+        7.0,
+        "moderate",
+        "Z2",
+        "Quais Seine + 4x1min tempo",
+    ),
     (
         "2026-07-03",
         "running",
@@ -234,15 +265,25 @@ PLAN = [
         "2026-07-05",
         "running",
         "recovery",
+        30,
+        4.0,
+        "easy",
+        "Z1",
+        "Last easy run before travel",
+    ),
+    (
+        "2026-07-06",
+        "running",
+        "recovery",
         40,
         5.0,
         "easy",
         "Z2",
-        "Recon Chamonix, light elevation, feel altitude",
+        "Recon Chamonix on arrival: light elevation, feel altitude",
     ),
-    # TMB
+    # TMB — 8-9-10 July
     (
-        "2026-07-07",
+        "2026-07-08",
         "running",
         "race",
         600,
@@ -252,7 +293,7 @@ PLAN = [
         "TMB Day 1 - France/Italy",
     ),
     (
-        "2026-07-08",
+        "2026-07-09",
         "running",
         "race",
         600,
@@ -262,7 +303,7 @@ PLAN = [
         "TMB Day 2 - Italy/Switzerland",
     ),
     (
-        "2026-07-09",
+        "2026-07-10",
         "running",
         "race",
         600,
@@ -287,13 +328,13 @@ for entry in PLAN:
         "description": desc,
         "source": "coach",
     }
-    r_code, r_text = post(f"{API}/garmin/planned", body)
-    if r_code in (200, 201):
+    code, text = post(f"{API}/garmin/planned", body)
+    if code in (200, 201):
         ok += 1
-        print(f"  OK  {date} {sport:8} {stype:10} {desc[:50]}")
+        print(f"  OK   {date} {sport:8} {stype:10} {desc[:55]}")
     else:
         fail += 1
-        print(f"  FAIL {date} {r_code}: {r_text[:200]}")
+        print(f"  FAIL {date} {code}: {text[:200]}")
 
 print(f"\nDone: {ok} created, {fail} failed (total {len(PLAN)})")
 sys.exit(0 if fail == 0 else 1)
