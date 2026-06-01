@@ -1,11 +1,33 @@
 #!/usr/bin/env python3
-"""Inject TMB training plan sessions into Arete via /garmin/planned.
+"""Re-seed TMB plan with geographically accurate session descriptions.
 
-Locations: Paris only — Montmartre (D+), Quais de Seine (flat), Buttes Chaumont (mixed).
-TMB dates: 8-9-10 July 2026.
+Montmartre circuit (Abbesses → Ravignan escaliers → de la Mire escaliers
+→ Lepic → Place JB Clément → Norvins → Saules escaliers ↓ → Caulaincourt
+→ Saules escaliers ↑ → Marcadet):
+  - 1 rep (A/R) ≈ 100m D+
+  - 3 reps = 300m D+  |  4 reps = 400m D+  |  5 reps = 500m D+
+  - 7 reps = 700m D+  |  8 reps = 800m D+  |  11 reps = 1100m D+
+  - Each rep includes stairs DOWN (Saules ↓) = eccentric quad work built-in
+
+Flat routes from 128 rue de Turenne:
+  - Canal Saint-Martin (0.7km north, ultra flat) → récup/easy
+  - Quais de Seine / Île de la Cité (1.4km south, flat) → tempo plat / long flat
+  - Approach to Montmartre base (Pigalle/Abbesses): ~3km via Turbigo/Pigalle
+
+Session structure for Montmartre runs:
+  Turenne → Abbesses (~3km warm-up) + N reps + retour (~3km cool-down)
 """
 
 import urllib.request, urllib.error, json, sys
+
+
+def delete(url):
+    req = urllib.request.Request(url, method="DELETE")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
 
 
 def post(url, body):
@@ -24,9 +46,28 @@ def post(url, body):
 
 API = "http://localhost:8000"
 
+# ── Step 1: delete existing coach sessions ────────────────────────────────────
+import urllib.request as ur
+
+req = ur.Request(f"{API}/garmin/planned")
+with ur.urlopen(req) as r:
+    data = json.loads(r.read())
+sessions = data if isinstance(data, list) else data.get("sessions", [])
+to_delete = [
+    s["id"]
+    for s in sessions
+    if s.get("source") == "coach" and s.get("date", "") >= "2026-06-01"
+]
+print(f"Deleting {len(to_delete)} existing coach sessions…")
+for sid in to_delete:
+    status = delete(f"{API}/garmin/planned/{sid}")
+    print(f"  DELETE {sid} → {status}")
+
+# ── Step 2: re-create with correct descriptions ───────────────────────────────
 # (date, sport, session_type, duration_min, distance_km, intensity, hr_zone, description)
 PLAN = [
-    # S17 — Spec Block 1
+    # ── S17 (1–7 juin) — Bloc spécifique 1 ──────────────────────────────────
+    # Lun 01/06 : OFF (récup S16)
     (
         "2026-06-02",
         "running",
@@ -35,7 +76,7 @@ PLAN = [
         10.0,
         "easy",
         "Z2",
-        "Easy Quais de Seine + 6x30s hill strides Montmartre",
+        "Easy + strides: Turenne → Canal St-Martin aller-retour, 6×30s accélérations fin",
     ),
     (
         "2026-06-03",
@@ -45,7 +86,7 @@ PLAN = [
         None,
         "moderate",
         None,
-        "Upper light, no legs",
+        "Upper light — pas de jambes",
     ),
     (
         "2026-06-04",
@@ -55,38 +96,40 @@ PLAN = [
         12.0,
         "moderate",
         "Z3",
-        "Hilly tempo Buttes Chaumont: 8 tours + finish",
+        "Tempo vallonné: Turenne → Abbesses (warm-up 3km) + 3 reps Montmartre soutenu (D+300m) + retour",
     ),
+    # Ven 05/06 : OFF (veille bloc)
     (
         "2026-06-06",
         "running",
         "long_run",
         180,
-        25.0,
+        22.0,
         "moderate",
         "Z2",
-        "Long 1 D+: 10x Butte Montmartre (D+800m) + Quais Seine",
+        "Long 1 D+: Turenne → Abbesses + 8 reps Montmartre (D+800m) + retour — 1er back-to-back",
     ),
     (
         "2026-06-07",
         "running",
         "long_run",
         180,
-        22.0,
+        21.0,
         "easy",
         "Z2",
-        "Long 2 endurance: Quais Seine + Buttes Chaumont 5 tours, HR<150",
+        "Long 2 endurance: Turenne → Abbesses + 7 reps Montmartre (D+700m) + retour — jambes lourdes, HR<150, allure TMB J2",
     ),
-    # S18 — Active Recovery
+    # ── S18 (8–14 juin) — Récup active ─────────────────────────────────────
+    # Lun 08/06 : OFF
     (
         "2026-06-09",
         "running",
         "recovery",
         45,
-        8.0,
+        7.0,
         "easy",
         "Z1",
-        "Recovery: Quais Seine flat very slow",
+        "Récup: Turenne → Canal St-Martin → Républiq → retour, plat très lent",
     ),
     (
         "2026-06-10",
@@ -96,7 +139,7 @@ PLAN = [
         None,
         "moderate",
         None,
-        "Upper + 15min calves/ankles",
+        "Upper + 15min mollets/chevilles (montée sur pointe d'escalier)",
     ),
     (
         "2026-06-11",
@@ -106,29 +149,31 @@ PLAN = [
         10.0,
         "moderate",
         "Z3",
-        "Short tempo Quais Seine: 4x3min threshold",
+        "Tempo plat: Turenne → Quais de Seine (Île de la Cité) → retour, 4×3min allure seuil",
     ),
+    # Ven 12/06 : OFF
     (
         "2026-06-13",
         "running",
         "endurance",
-        105,
+        100,
         15.0,
         "moderate",
         "Z2",
-        "Medium hilly: Buttes Chaumont 8 tours + boucle",
+        "Moyen vallonné: Turenne → Abbesses + 4 reps Montmartre (D+400m) + retour",
     ),
     (
         "2026-06-14",
         "running",
         "recovery",
         60,
-        10.0,
+        9.0,
         "easy",
         "Z1",
-        "Easy Quais Seine, fluid legs",
+        "Easy récup: Turenne → Canal St-Martin → Quais aller-retour, jambes fluides",
     ),
-    # S19 — Spec Block 2 PEAK
+    # ── S19 (15–21 juin) — Bloc spécifique 2 PEAK ───────────────────────────
+    # Lun 15/06 : OFF
     (
         "2026-06-16",
         "running",
@@ -137,7 +182,7 @@ PLAN = [
         10.0,
         "moderate",
         "Z2",
-        "Montmartre DESCENT focus 6 reps (eccentric quads)",
+        "Focus descentes: Turenne → Abbesses + 4 reps Montmartre, insister sur descente Saules escaliers (quadri excentrique)",
     ),
     (
         "2026-06-17",
@@ -147,7 +192,7 @@ PLAN = [
         None,
         "moderate",
         None,
-        "Upper light + core",
+        "Upper light + gainage",
     ),
     (
         "2026-06-18",
@@ -157,29 +202,31 @@ PLAN = [
         13.0,
         "moderate",
         "Z3",
-        "Long tempo: Buttes Chaumont 10 tours soutenu",
+        "Tempo long vallonné: Turenne → Abbesses + 6 reps Montmartre soutenu (D+600m) + retour",
     ),
+    # Ven 19/06 : OFF strict (veille gros week-end)
     (
         "2026-06-20",
         "running",
         "long_run",
         240,
-        30.0,
+        28.0,
         "moderate",
         "Z2",
-        "TMB DRESS REHEARSAL: 14x Montmartre D+1100m, FULL PACK + nutrition + TMB shoes",
+        "RÉPÉTITION GÉNÉRALE TMB: Turenne → Abbesses + 11 reps Montmartre (D+1100m) + retour — SAC COMPLET (nutrition 60g/h, gourdes, chaussures TMB, vêtements)",
     ),
     (
         "2026-06-21",
         "running",
         "long_run",
         180,
-        22.0,
+        21.0,
         "easy",
         "Z2",
-        "Back-to-back: Quais Seine + Buttes Chaumont 6 tours, SAME PACK, very slow",
+        "BACK-TO-BACK J2: Turenne → Abbesses + 7 reps Montmartre (D+700m) + retour — MÊME SAC, allure très lente, HR<155 — simuler TMB J2 avec jambes lourdes",
     ),
-    # S20 — Discharge
+    # ── S20 (22–28 juin) — Décharge ─────────────────────────────────────────
+    # Lun 22/06 : OFF
     (
         "2026-06-23",
         "running",
@@ -188,7 +235,7 @@ PLAN = [
         7.0,
         "easy",
         "Z1",
-        "Easy Quais Seine + 6x100m fluid strides",
+        "Easy + accélérations: Canal St-Martin plat, 6×100m fluides fin de séance",
     ),
     (
         "2026-06-24",
@@ -198,27 +245,18 @@ PLAN = [
         None,
         "easy",
         None,
-        "Very light upper, no legs",
+        "Upper très light — pas de jambes (soutenances J+1)",
     ),
-    (
-        "2026-06-25",
-        "running",
-        "tempo",
-        50,
-        8.0,
-        "moderate",
-        "Z3",
-        "Short tempo Quais Seine: 3x5min marathon pace",
-    ),
+    # Jeu 25/06 : exam+oral → séance déplacée au 24 matin si possible, sinon OFF
     (
         "2026-06-27",
         "running",
         "endurance",
-        105,
+        100,
         14.0,
         "moderate",
         "Z2",
-        "Medium hilly: Montmartre 6 reps + Buttes 3 tours",
+        "Moyen vallonné post-soutenances: Turenne → Abbesses + 5 reps Montmartre (D+500m) + retour",
     ),
     (
         "2026-06-28",
@@ -228,9 +266,9 @@ PLAN = [
         9.0,
         "easy",
         "Z1",
-        "Easy Quais Seine flat",
+        "Easy plat: Turenne → Quais de Seine aller-retour, jambes fluides",
     ),
-    # S21 — Activation (TMB starts Tue 8/7, so this week ends Sun 5/7, then travel)
+    # ── S21 (29 juin – 6 juillet) — Activation ──────────────────────────────
     (
         "2026-06-29",
         "running",
@@ -239,8 +277,9 @@ PLAN = [
         5.0,
         "easy",
         "Z1",
-        "Very short easy Quais Seine",
+        "Très court: Canal St-Martin aller-retour, plat easy",
     ),
+    # Mar 30/06 : OFF
     (
         "2026-07-01",
         "running",
@@ -249,8 +288,9 @@ PLAN = [
         7.0,
         "moderate",
         "Z2",
-        "Quais Seine + 4x1min tempo",
+        "Activation: Turenne → Canal St-Martin + 4×1min allure tempo, jambes vives",
     ),
+    # Jeu 02/07 : OFF
     (
         "2026-07-03",
         "running",
@@ -259,7 +299,7 @@ PLAN = [
         5.0,
         "easy",
         "Z1",
-        "Activation + 4x20s strides",
+        "Activation légère: 5km autour de République, 4×20s accélérations",
     ),
     (
         "2026-07-05",
@@ -269,7 +309,7 @@ PLAN = [
         4.0,
         "easy",
         "Z1",
-        "Last easy run before travel",
+        "Dernière sortie avant voyage: 4km très easy Canal St-Martin, fraîcheur",
     ),
     (
         "2026-07-06",
@@ -279,9 +319,9 @@ PLAN = [
         5.0,
         "easy",
         "Z2",
-        "Recon Chamonix on arrival: light elevation, feel altitude",
+        "Reconnaissance Chamonix à l'arrivée: 30-40min très léger, sentir l'altitude, pas de D+",
     ),
-    # TMB — 8-9-10 July
+    # ── TMB 8–9–10 juillet ───────────────────────────────────────────────────
     (
         "2026-07-08",
         "running",
@@ -290,7 +330,7 @@ PLAN = [
         55.0,
         "hard",
         "Z2",
-        "TMB Day 1 - France/Italy",
+        "TMB Jour 1 — France/Italie",
     ),
     (
         "2026-07-09",
@@ -300,7 +340,7 @@ PLAN = [
         60.0,
         "hard",
         "Z2",
-        "TMB Day 2 - Italy/Switzerland",
+        "TMB Jour 2 — Italie/Suisse",
     ),
     (
         "2026-07-10",
@@ -310,11 +350,12 @@ PLAN = [
         55.0,
         "hard",
         "Z2",
-        "TMB Day 3 - Switzerland/France",
+        "TMB Jour 3 — Suisse/France",
     ),
 ]
 
-ok, fail = 0, 0
+print(f"\nCreating {len(PLAN)} sessions…")
+ok = fail = 0
 for entry in PLAN:
     date, sport, stype, dur, dist, intens, hr, desc = entry
     body = {
@@ -331,10 +372,10 @@ for entry in PLAN:
     code, text = post(f"{API}/garmin/planned", body)
     if code in (200, 201):
         ok += 1
-        print(f"  OK   {date} {sport:8} {stype:10} {desc[:55]}")
+        print(f"  OK  {date} {desc[:65]}")
     else:
         fail += 1
-        print(f"  FAIL {date} {code}: {text[:200]}")
+        print(f"  FAIL {date} {code}: {text[:150]}")
 
-print(f"\nDone: {ok} created, {fail} failed (total {len(PLAN)})")
+print(f"\nDone: {ok} created, {fail} failed")
 sys.exit(0 if fail == 0 else 1)
