@@ -152,3 +152,49 @@ class TestFetchActivityDetail:
         mock_get.return_value = MagicMock(status_code=404)
         result = client.fetch_activity_detail("token123", 999)
         assert result is None
+
+
+class TestFetchActivityZones:
+    @patch("arete.strava.client.httpx.get")
+    def test_fetches_hr_zones(self, mock_get, client):
+        zones_response = [
+            {
+                "type": "heartrate",
+                "distribution_buckets": [
+                    {"min": 0, "max": 115, "time": 120},
+                    {"min": 115, "max": 152, "time": 600},
+                    {"min": 152, "max": 171, "time": 1200},
+                    {"min": 171, "max": 190, "time": 300},
+                    {"min": 190, "max": -1, "time": 60},
+                ],
+            }
+        ]
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: zones_response,
+        )
+        result = client.fetch_activity_zones("token123", 123)
+        assert result == {"z1": 120, "z2": 600, "z3": 1200, "z4": 300, "z5": 60}
+        mock_get.assert_called_once()
+        assert "/zones" in mock_get.call_args[0][0]
+
+    @patch("arete.strava.client.httpx.get")
+    def test_zones_returns_none_on_404(self, mock_get, client):
+        mock_get.return_value = MagicMock(status_code=404)
+        result = client.fetch_activity_zones("token123", 999)
+        assert result is None
+
+    @patch("arete.strava.client.httpx.get")
+    def test_zones_returns_none_no_hr_type(self, mock_get, client):
+        mock_get.return_value = MagicMock(
+            status_code=200,
+            json=lambda: [{"type": "power", "distribution_buckets": []}],
+        )
+        result = client.fetch_activity_zones("token123", 123)
+        assert result is None
+
+    @patch("arete.strava.client.httpx.get")
+    def test_zones_returns_none_on_server_error(self, mock_get, client):
+        mock_get.return_value = MagicMock(status_code=500)
+        result = client.fetch_activity_zones("token123", 123)
+        assert result is None

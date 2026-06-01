@@ -70,7 +70,7 @@ def _patch_sync():
         patch("arete.dataio.db.connect"),
         patch(
             "arete.strava.models.strava_activity_to_actual_session",
-            side_effect=lambda a: {"id": a["id"]},
+            side_effect=lambda a, hr_zones=None: {"id": a["id"]},
         ),
         patch("arete.garmin.repository.GarminRepository"),
     )

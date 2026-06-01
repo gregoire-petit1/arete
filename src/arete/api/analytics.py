@@ -388,3 +388,125 @@ def list_sessions(limit: int = 20, offset: int = 0):
         return {"sessions": sessions}
     finally:
         con.close()
+
+
+@router.get("/cardiac-efficiency")
+def get_cardiac_efficiency(
+    period: str = Query("90d"),
+):
+    """Weekly cardiac efficiency trend for runs.
+
+    Efficiency = avg_hr / speed_kmh.  Lower = more efficient heart.
+    """
+    days = _parse_period(period)
+    start_date = date.today() - timedelta(days=days)
+
+    con = connect(read_only=True)
+    try:
+        rows = con.execute(
+            """
+            SELECT DATE_TRUNC('week', date) as week,
+                   avg_hr,
+                   avg_pace_sec_km,
+                   duration_sec
+            FROM app.actual_sessions
+            WHERE date >= ? AND user_id = 1
+              AND sport IN ('run', 'trail_run', 'running')
+              AND avg_hr IS NOT NULL
+              AND avg_pace_sec_km IS NOT NULL
+              AND avg_pace_sec_km > 0
+            ORDER BY week ASC
+            """,
+            [start_date],
+        ).fetchall()
+    finally:
+        con.close()
+
+    if not rows:
+        return {"data": []}
+
+    # Group by week — weighted average by duration
+    weeks: dict[str, dict] = defaultdict(
+        lambda: {"hr_sum": 0.0, "speed_sum": 0.0, "dur_sum": 0, "n": 0}
+    )
+    for week_ts, hr, pace, dur in rows:
+        week_str = str(week_ts.date()) if hasattr(week_ts, "date") else str(week_ts)
+        w = weeks[week_str]
+        weight = dur or 1
+        speed_kmh = 3600.0 / pace  # convert sec/km to km/h
+        w["hr_sum"] += hr * weight
+        w["speed_sum"] += speed_kmh * weight
+        w["dur_sum"] += weight
+        w["n"] += 1
+
+    result = []
+    for week_str in sorted(weeks.keys()):
+        w = weeks[week_str]
+        avg_hr = w["hr_sum"] / w["dur_sum"]
+        avg_speed = w["speed_sum"] / w["dur_sum"]
+        efficiency = round(avg_hr / avg_speed, 1) if avg_speed > 0 else None
+        avg_pace_sec = int(3600.0 / avg_speed) if avg_speed > 0 else None
+        result.append(
+            {
+                "week": week_str,
+                "efficiency": efficiency,
+                "avg_hr": round(avg_hr, 1),
+                "avg_pace": _format_pace(avg_pace_sec) if avg_pace_sec else None,
+                "avg_pace_sec_km": avg_pace_sec,
+                "n_runs": w["n"],
+            }
+        )
+
+    return {"data": result}
+
+
+@router.get("/hr-pace-scatter")
+def get_hr_pace_scatter(
+    period: str = Query("90d"),
+):
+    """Per-session HR, pace, elevation data for scatter plots."""
+    days = _parse_period(period)
+    start_date = date.today() - timedelta(days=days)
+
+    con = connect(read_only=True)
+    try:
+        rows = con.execute(
+            """
+            SELECT date, sport, name,
+                   avg_hr, max_hr,
+                   avg_pace_sec_km,
+                   ascent_m,
+                   CASE WHEN distance_m IS NOT NULL THEN ROUND(distance_m / 1000.0, 1) ELSE NULL END as distance_km,
+                   duration_sec
+            FROM app.actual_sessions
+            WHERE date >= ? AND user_id = 1
+              AND avg_hr IS NOT NULL
+              AND sport IN ('run', 'trail_run', 'running', 'walk', 'walking', 'hike')
+            ORDER BY date ASC
+            """,
+            [start_date],
+        ).fetchall()
+    finally:
+        con.close()
+
+    sessions = []
+    for r in rows:
+        pace_display = None
+        if r[5]:
+            pace_display = f"{r[5] // 60}:{r[5] % 60:02d}"
+        sessions.append(
+            {
+                "date": str(r[0]),
+                "sport": r[1],
+                "name": r[2],
+                "avg_hr": r[3],
+                "max_hr": r[4],
+                "pace_sec_km": r[5],
+                "pace_display": pace_display,
+                "elevation_gain": r[6],
+                "distance_km": float(r[7]) if r[7] is not None else None,
+                "duration_sec": r[8],
+            }
+        )
+
+    return {"sessions": sessions}

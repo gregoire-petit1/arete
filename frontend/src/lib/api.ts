@@ -392,6 +392,10 @@ export const analyticsApi = {
     fetchAPI<any>(`/analytics/sport-distribution?period=${period}`),
   getBestEfforts: (sport = 'running') =>
     fetchAPI<any>(`/analytics/best-efforts?sport=${sport}`),
+  getCardiacEfficiency: (period = '90d') =>
+    fetchAPI<any>(`/analytics/cardiac-efficiency?period=${period}`),
+  getHrPaceScatter: (period = '90d') =>
+    fetchAPI<any>(`/analytics/hr-pace-scatter?period=${period}`),
   getSessions: (limit = 20, offset = 0) =>
     fetchAPI<any>(`/analytics/sessions?limit=${limit}&offset=${offset}`),
   updateSession: (id: number, data: { rpe?: number; notes?: string }) =>

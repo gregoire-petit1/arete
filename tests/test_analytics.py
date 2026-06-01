@@ -248,3 +248,73 @@ class TestListSessions:
         assert len(data["sessions"]) == 1
         assert data["sessions"][0]["name"] == "Morning Run"
         assert data["sessions"][0]["pace_display"] == "5:20"
+
+
+class TestCardiacEfficiency:
+    @patch("arete.api.analytics.connect")
+    def test_returns_weekly_efficiency(self, mock_connect, client):
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (date(2026, 5, 5), 165, 330, 3600),  # week, hr, pace, duration
+            (date(2026, 5, 5), 170, 340, 2400),  # same week, second run
+        ]
+
+        resp = client.get("/analytics/cardiac-efficiency?period=30d")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "data" in data
+        assert len(data["data"]) == 1
+        entry = data["data"][0]
+        assert "efficiency" in entry
+        assert "avg_hr" in entry
+        assert "n_runs" in entry
+        assert entry["n_runs"] == 2
+        # Efficiency should be a reasonable number (hr / speed_kmh)
+        assert 10 < entry["efficiency"] < 30
+
+    @patch("arete.api.analytics.connect")
+    def test_empty_when_no_runs(self, mock_connect, client):
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_conn.execute.return_value.fetchall.return_value = []
+
+        resp = client.get("/analytics/cardiac-efficiency?period=30d")
+        assert resp.status_code == 200
+        assert resp.json() == {"data": []}
+
+
+class TestHrPaceScatter:
+    @patch("arete.api.analytics.connect")
+    def test_returns_sessions(self, mock_connect, client):
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (date(2026, 5, 1), "run", "Morning Run", 165, 185, 330, 120, 10.5, 3600),
+            (date(2026, 5, 3), "walk", "Walk", 110, 130, None, 50, 5.0, 2400),
+        ]
+
+        resp = client.get("/analytics/hr-pace-scatter?period=90d")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["sessions"]) == 2
+        run = data["sessions"][0]
+        assert run["avg_hr"] == 165
+        assert run["pace_sec_km"] == 330
+        assert run["elevation_gain"] == 120
+        assert run["distance_km"] == 10.5
+        assert run["pace_display"] == "5:30"
+        # Walk has no pace
+        walk = data["sessions"][1]
+        assert walk["pace_sec_km"] is None
+        assert walk["pace_display"] is None
+
+    @patch("arete.api.analytics.connect")
+    def test_empty_when_no_data(self, mock_connect, client):
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_conn.execute.return_value.fetchall.return_value = []
+
+        resp = client.get("/analytics/hr-pace-scatter")
+        assert resp.status_code == 200
+        assert resp.json() == {"sessions": []}

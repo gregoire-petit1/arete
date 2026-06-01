@@ -140,3 +140,32 @@ def test_maps_cycling_watts():
     session = strava_activity_to_actual_session(activity)
     assert session.avg_watts == 200
     assert session.weighted_avg_watts == 210
+
+
+def test_maps_hr_zones():
+    activity = {
+        "id": 3,
+        "type": "Run",
+        "start_date_local": "2026-05-10T07:30:00",
+        "elapsed_time": 3600,
+        "distance": 10000,
+    }
+    hr_zones = {"z1": 120, "z2": 600, "z3": 1200, "z4": 300, "z5": 60}
+    session = strava_activity_to_actual_session(activity, hr_zones=hr_zones)
+    assert session.hr_zones_json is not None
+    import json
+
+    parsed = json.loads(session.hr_zones_json)
+    assert parsed == hr_zones
+
+
+def test_hr_zones_none_when_not_provided():
+    activity = {
+        "id": 4,
+        "type": "Run",
+        "start_date_local": "2026-05-10T07:30:00",
+        "elapsed_time": 3600,
+        "distance": 10000,
+    }
+    session = strava_activity_to_actual_session(activity)
+    assert session.hr_zones_json is None

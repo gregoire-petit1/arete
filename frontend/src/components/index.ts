@@ -4,6 +4,7 @@ export { SystemMessage } from "./SystemMessage";
 export { LoadChart, LoadSparkline } from "./LoadChart";
 export { SessionTimeline } from "./SessionTimeline";
 export { Navigation } from "./Navigation";
+export { ErrorBoundary } from "./ErrorBoundary";
 export { LoadingState, ErrorState, EmptyState, SystemAlert } from "./States";
 export { CalendarWeek } from "./CalendarWeek";
 export { AdherenceBar } from "./AdherenceBar";

@@ -201,12 +201,18 @@ def sync(body: SyncRequest | None = None):
             detail = client.fetch_activity_detail(access_token, int(act_id))
             activity_data = detail if detail else activity
 
-            session = strava_activity_to_actual_session(activity_data)
+            # Fetch HR zone distribution
+            hr_zones = client.fetch_activity_zones(access_token, int(act_id))
+
+            session = strava_activity_to_actual_session(
+                activity_data, hr_zones=hr_zones
+            )
             repo.create_actual_session(session)
             imported += 1
 
             # Rate limiting: pause briefly between detail calls
-            if imported % 90 == 0:
+            # Each activity = 2 API calls (detail + zones), so pause at 45 activities
+            if imported % 45 == 0:
                 logger.info("Approaching rate limit, pausing 60s...")
                 time.sleep(60)
         except Exception as exc:

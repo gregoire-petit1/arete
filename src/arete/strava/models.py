@@ -26,7 +26,10 @@ _SPORT_MAP: dict[str, str] = {
 _RUNNING_TYPES = {"Run", "TrailRun", "VirtualRun"}
 
 
-def strava_activity_to_actual_session(activity: dict) -> ActualSession:
+def strava_activity_to_actual_session(
+    activity: dict,
+    hr_zones: dict | None = None,
+) -> ActualSession:
     """Convert a raw Strava activity dict to an ActualSession."""
     strava_type = activity.get("type", "Workout")
     sport = _SPORT_MAP.get(strava_type, strava_type.lower())
@@ -93,4 +96,5 @@ def strava_activity_to_actual_session(activity: dict) -> ActualSession:
         best_efforts_json=json.dumps(activity["best_efforts"])
         if activity.get("best_efforts")
         else None,
+        hr_zones_json=json.dumps(hr_zones) if hr_zones else None,
     )

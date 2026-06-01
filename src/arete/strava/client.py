@@ -125,3 +125,33 @@ class StravaClient:
             return None
         resp.raise_for_status()
         return resp.json()
+
+    def fetch_activity_zones(self, access_token: str, activity_id: int) -> dict | None:
+        """Fetch HR zone distribution for a single activity.
+
+        Returns normalized dict like {"z1": 120, "z2": 600, ...} (seconds per zone)
+        or None if no HR data / 404.
+        """
+        resp = httpx.get(
+            f"{STRAVA_API_BASE}/activities/{activity_id}/zones",
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=30,
+        )
+        if resp.status_code == 404:
+            return None
+        if resp.status_code != 200:
+            logger.warning(
+                "Zones fetch failed for %d: %s", activity_id, resp.status_code
+            )
+            return None
+
+        zones_data = resp.json()
+        # Strava returns a list of zone types; we want "heartrate"
+        for zone_type in zones_data:
+            if zone_type.get("type") == "heartrate":
+                buckets = zone_type.get("distribution_buckets", [])
+                if not buckets:
+                    return None
+                return {f"z{i + 1}": bucket["time"] for i, bucket in enumerate(buckets)}
+
+        return None
