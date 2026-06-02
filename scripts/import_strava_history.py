@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Full Strava history import — fetches ALL activities from 2023 onwards.
+"""Full Strava history import — fetches ALL activities, with proper 429 backoff.
 
-Each activity = 2 API calls (detail + zones), so we pause 60s every 45 activities
-to respect Strava's 100 req/15min rate limit.
+Each activity = 2 API calls (detail + zones).
+Strava limit: 100 requests / 15 min, 2000 / day.
 
-Estimated time: ~300 activities × 2 calls / 200 calls per 15min = ~22min
+Strategy:
+  - 1.5s sleep between calls (slow but safe)
+  - 60s pause every 40 imports (~80 calls)
+  - On 429: pause 5min, then retry the same activity
+
+Resumable: skips activities already in DB (by garmin_activity_id).
 """
 
 import os
@@ -13,6 +18,7 @@ import time
 import logging
 from datetime import datetime
 
+import httpx
 from arete.dataio.db import connect
 from arete.strava.client import StravaClient
 from arete.strava.models import strava_activity_to_actual_session
@@ -20,6 +26,61 @@ from arete.garmin.repository import GarminRepository
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("import_history")
+
+
+CALL_DELAY_SEC = 1.5  # sleep between API calls
+BURST_LIMIT = 40  # imports per burst
+BURST_PAUSE_SEC = 75  # pause between bursts (slightly more than 60 to be safe)
+BACKOFF_429_SEC = 300  # 5 min on 429
+
+
+def fetch_with_retry(client_fn, *args, **kwargs):
+    """Call a Strava function with 429-aware backoff."""
+    while True:
+        try:
+            return client_fn(*args, **kwargs)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429:
+                logger.warning("429 hit, sleeping %ds…", BACKOFF_429_SEC)
+                time.sleep(BACKOFF_429_SEC)
+                continue
+            raise
+
+
+def fetch_all_activities(client, access_token: str) -> list[dict]:
+    """Fetch all activities with 429-aware pagination."""
+    import httpx as _httpx
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+    all_acts: list[dict] = []
+    page = 1
+    per_page = 50
+    while True:
+        url = "https://www.strava.com/api/v3/athlete/activities"
+        while True:
+            resp = _httpx.get(
+                url, headers=headers, params={"per_page": per_page, "page": page}
+            )
+            if resp.status_code == 429:
+                logger.warning(
+                    "429 on fetch_activities page %d, sleeping %ds…",
+                    page,
+                    BACKOFF_429_SEC,
+                )
+                time.sleep(BACKOFF_429_SEC)
+                continue
+            if resp.status_code != 200:
+                logger.error("Strava API error: %s %s", resp.status_code, resp.text)
+                return all_acts
+            break
+        batch = resp.json()
+        if not batch:
+            break
+        all_acts.extend(batch)
+        if len(batch) < per_page:
+            break
+        page += 1
+    return all_acts
 
 
 def main() -> int:
@@ -46,14 +107,11 @@ def main() -> int:
             [new["access_token"], new["refresh_token"], new["expires_at"]],
         )
         access_token = new["access_token"]
-        logger.info("  → new expires_at: %s", new["expires_at"])
 
-    # Fetch all activities
-    logger.info("Fetching all activities (no time filter)…")
-    activities = client.fetch_activities(access_token)
-    logger.info("  → %d activities returned by Strava", len(activities))
+    logger.info("Fetching all activities…")
+    activities = fetch_all_activities(client, access_token)
+    logger.info("  → %d activities from Strava", len(activities))
 
-    # Dedup against DB
     existing_ids = {
         str(r[0])
         for r in con.execute(
@@ -69,12 +127,9 @@ def main() -> int:
         logger.info("Nothing to import. Done.")
         return 0
 
-    # Sort chronologically (oldest first) so the DB ends up in a sensible order
     to_import.sort(key=lambda a: a.get("start_date", ""))
-
     repo = GarminRepository()
     imported = 0
-    skipped = 0
     errors: list[str] = []
 
     for idx, activity in enumerate(to_import, start=1):
@@ -84,13 +139,16 @@ def main() -> int:
         date_short = start[:10] if start else "?"
 
         try:
-            # Detail (laps, splits, best_efforts)
-            detail = client.fetch_activity_detail(access_token, int(act_id))
+            time.sleep(CALL_DELAY_SEC)
+            detail = fetch_with_retry(
+                client.fetch_activity_detail, access_token, int(act_id)
+            )
+            time.sleep(CALL_DELAY_SEC)
+            hr_zones = fetch_with_retry(
+                client.fetch_activity_zones, access_token, int(act_id)
+            )
+
             activity_data = detail if detail else activity
-
-            # HR zones
-            hr_zones = client.fetch_activity_zones(access_token, int(act_id))
-
             session = strava_activity_to_actual_session(
                 activity_data, hr_zones=hr_zones
             )
@@ -107,10 +165,11 @@ def main() -> int:
                 dist_km,
             )
 
-            # Rate limit: pause every 45 imports (~90 API calls)
-            if imported % 45 == 0:
-                logger.info("  ⏸  Approaching rate limit, pausing 60s…")
-                time.sleep(60)
+            if imported % BURST_LIMIT == 0:
+                logger.info(
+                    "  ⏸  Burst limit (%d), pausing %ds…", BURST_LIMIT, BURST_PAUSE_SEC
+                )
+                time.sleep(BURST_PAUSE_SEC)
 
         except Exception as exc:
             errors.append(f"{date_short} {act_id} ({sport}): {exc}")
@@ -120,7 +179,10 @@ def main() -> int:
 
     logger.info("=" * 60)
     logger.info(
-        "DONE: %d imported, %d skipped, %d errors", imported, skipped, len(errors)
+        "DONE: %d imported, %d errors (out of %d to import)",
+        imported,
+        len(errors),
+        len(to_import),
     )
     if errors:
         logger.info("First 10 errors:")
