@@ -479,7 +479,24 @@ def compute_performance_model(
     )
     readiness_level = get_readiness_level(readiness)
 
-    predicted_perf = predict_performance(metrics.ctl, metrics.atl)
+    # Try personalized Banister coefficients (lazy import avoids circular)
+    try:
+        from arete.features.banister import load_coefficients
+
+        coeffs = load_coefficients()
+    except Exception:
+        coeffs = None
+
+    if coeffs:
+        predicted_perf = predict_performance(
+            metrics.ctl,
+            metrics.atl,
+            k1=coeffs["k1"],
+            k2=coeffs["k2"],
+            baseline=coeffs["baseline"],
+        )
+    else:
+        predicted_perf = predict_performance(metrics.ctl, metrics.atl)
 
     return PerformanceModel(
         date=target_date,

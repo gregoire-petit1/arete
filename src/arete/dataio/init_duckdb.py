@@ -273,6 +273,20 @@ CREATE TABLE IF NOT EXISTS app.strava_tokens (
     athlete_name    VARCHAR,
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ============================================================
+-- Banister Personalization (Task 1)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS app.banister_coefficients (
+    user_id         INTEGER PRIMARY KEY DEFAULT 1,
+    k1              FLOAT NOT NULL DEFAULT 1.0,
+    k2              FLOAT NOT NULL DEFAULT 2.0,
+    baseline        FLOAT NOT NULL DEFAULT 100.0,
+    r2              FLOAT,
+    n_samples       INTEGER,
+    fitted_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -314,6 +328,25 @@ def _run_migrations(con) -> None:
             logger.info("Added column %s to actual_sessions", col_name)
         except Exception:
             pass  # Column already exists
+
+    # Migration 3: add banister_coefficients table
+    _banister_exists = con.execute(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema='app' AND table_name='banister_coefficients')"
+    ).fetchone()[0]
+    if not _banister_exists:
+        con.execute("""
+            CREATE TABLE app.banister_coefficients (
+                user_id         INTEGER PRIMARY KEY DEFAULT 1,
+                k1              FLOAT NOT NULL DEFAULT 1.0,
+                k2              FLOAT NOT NULL DEFAULT 2.0,
+                baseline        FLOAT NOT NULL DEFAULT 100.0,
+                r2              FLOAT,
+                n_samples       INTEGER,
+                fitted_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        logger.info("Migration: created banister_coefficients table")
 
 
 def main():

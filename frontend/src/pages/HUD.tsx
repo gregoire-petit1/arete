@@ -7,7 +7,7 @@ import {
   ErrorState,
 } from '@/components';
 import { getSportIconComponent } from '@/components/SportIcons';
-import { metricsApi, garminApi, tipsApi, settingsApi } from '@/lib/api';
+import { metricsApi, garminApi, garminHealthApi, tipsApi, settingsApi } from '@/lib/api';
 import { cn, getZoneColor } from '@/lib/utils';
 
 function getTodayISO(): string {
@@ -60,6 +60,14 @@ export function DashboardPage() {
   const { data: workload } = useQuery({
     queryKey: ['workload'],
     queryFn: metricsApi.getWorkload,
+  });
+
+  // Garmin health (readiness, HRV, sleep)
+  const { data: healthData } = useQuery({
+    queryKey: ['health-daily', today],
+    queryFn: () => garminHealthApi.getDaily(today),
+    refetchInterval: 60000,
+    retry: false,
   });
 
   // Block 3: AI Tip
@@ -232,8 +240,8 @@ export function DashboardPage() {
                   zoneColor={getZoneColor(fitness?.form_zone)}
                 />
                 <MetricCard
-                  title="READINESS"
-                  value={`${fitness?.readiness_score?.toFixed(0) ?? 0}%`}
+                  title="TRAINING R."
+                  value={fitness?.readiness_score?.toFixed(0) ?? '—'}
                   zone={fitness?.readiness_level ?? 'unknown'}
                   zoneColor={getZoneColor(fitness?.readiness_level)}
                 />
@@ -242,7 +250,98 @@ export function DashboardPage() {
           </motion.div>
         </motion.section>
 
-        {/* Block 3: AI Tip */}
+        {/* Block 3: Readiness */}
+        {healthData && healthData.readiness_score != null && (
+          <motion.section
+            initial="hidden"
+            animate="visible"
+            variants={stagger}
+            className="glass-panel p-4"
+          >
+            <motion.div variants={fadeUp}>
+              <div className="flex items-center gap-2 mb-4">
+                <Zap className="w-4 h-4 text-neon-gold" />
+                <h2 className="text-sm font-mono text-text-muted uppercase tracking-wider">
+                  READINESS
+                </h2>
+              </div>
+
+              <div className="flex items-center gap-6">
+                {/* Score ring */}
+                <div className="flex-shrink-0 w-20 h-20 rounded-full bg-abyss border-2 flex items-center justify-center"
+                  style={{
+                    borderColor:
+                      healthData.readiness_score >= 70 ? '#00f0ff' :
+                      healthData.readiness_score >= 45 ? '#ffd700' :
+                      '#ff4444'
+                  }}
+                >
+                  <span className="text-2xl font-mono font-bold"
+                    style={{
+                      color:
+                        healthData.readiness_score >= 70 ? '#00f0ff' :
+                        healthData.readiness_score >= 45 ? '#ffd700' :
+                        '#ff4444'
+                    }}
+                  >
+                    {healthData.readiness_score}
+                  </span>
+                </div>
+
+                {/* Metrics grid */}
+                <div className="flex-1 grid grid-cols-2 gap-x-6 gap-y-1.5">
+                  {healthData.hrv_last_night != null && (
+                    <>
+                      <span className="text-[10px] font-mono text-text-muted">HRV</span>
+                      <span className="text-xs font-mono text-text-primary text-right">
+                        {healthData.hrv_last_night} ms
+                        {healthData.hrv_status && (
+                          <span className="text-[10px] text-neon-cyan ml-1">
+                            {healthData.hrv_status === 'BALANCED' ? '⚖' :
+                             healthData.hrv_status === 'LOW' ? '↓' : '↑'}
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  )}
+                  {healthData.sleep_score != null && (
+                    <>
+                      <span className="text-[10px] font-mono text-text-muted">Sleep</span>
+                      <span className="text-xs font-mono text-text-primary text-right">
+                        {healthData.sleep_score}/100
+                        {healthData.sleep_duration_sec != null && (
+                          <span className="text-[10px] text-text-muted ml-1">
+                            ({Math.round(healthData.sleep_duration_sec / 3600)}h{Math.round((healthData.sleep_duration_sec % 3600) / 60)}min)
+                          </span>
+                        )}
+                      </span>
+                    </>
+                  )}
+                  {healthData.stress_avg != null && (
+                    <>
+                      <span className="text-[10px] font-mono text-text-muted">Stress</span>
+                      <span className="text-xs font-mono text-text-primary text-right"
+                        style={{ color: healthData.stress_avg > 40 ? '#ff4444' : healthData.stress_avg > 25 ? '#ffd700' : '#22c55e' }}
+                      >
+                        {healthData.stress_avg}
+                      </span>
+                    </>
+                  )}
+                  {healthData.steps != null && (
+                    <>
+                      <span className="text-[10px] font-mono text-text-muted">Steps</span>
+                      <span className="text-xs font-mono text-text-primary text-right">
+                        {healthData.steps.toLocaleString()}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </motion.section>
+        )}
+
+        {/* Block 4: AI Tip */}
         {tip && (
           <motion.section
             initial={{ opacity: 0, scale: 0.95 }}

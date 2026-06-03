@@ -6,7 +6,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { analyticsApi } from '@/lib/api';
+import { analyticsApi, garminHealthApi } from '@/lib/api';
 
 const PERIODS = ['7d', '30d', '90d', '6m', '1y', 'all'] as const;
 type Period = (typeof PERIODS)[number];
@@ -582,6 +582,47 @@ function EffortBucketSummary({ period }: { period: Period }) {
   );
 }
 
+// ── Readiness Trend Chart (Garmin Health) ──────────────────
+function ReadinessTrendChart({ period }: { period: Period }) {
+  const end = new Date().toISOString().slice(0, 10);
+  const startDays = period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : 180;
+  const start = new Date(Date.now() - startDays * 86400000).toISOString().slice(0, 10);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['garmin-health', 'range', start, end],
+    queryFn: () => garminHealthApi.getRange(start, end),
+  });
+
+  const days = data?.days ?? [];
+
+  return (
+    <ChartCard title="Readiness Trend" loading={isLoading} empty={days.length === 0}>
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={days}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+          <XAxis dataKey="date" stroke="#888" tick={{ fontSize: 11 }}
+            tickFormatter={(v: string) => v.slice(5)}
+          />
+          <YAxis yAxisId="readiness" domain={[0, 100]} stroke="#ffd700" />
+          <YAxis yAxisId="hrv" orientation="right" domain={[0, 120]} stroke="#00f0ff" />
+          <Tooltip
+            contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid #333', color: '#ccc' }}
+            labelFormatter={(v: string) => `Date: ${v}`}
+          />
+          <Legend />
+          <Line yAxisId="readiness" type="monotone" dataKey="readiness_score"
+            stroke="#ffd700" strokeWidth={2} dot={false} name="Readiness"
+          />
+          <Line yAxisId="hrv" type="monotone" dataKey="hrv_last_night"
+            stroke="#00f0ff" strokeWidth={1.5} dot={false} name="HRV (ms)"
+            strokeDasharray="4 4"
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </ChartCard>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────
 export function AnalyticsPage() {
   const [period, setPeriod] = useState<Period>('30d');
@@ -637,6 +678,14 @@ export function AnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <HRDriftChart period={period} />
         <EffortBucketSummary period={period} />
+      </div>
+
+      {/* Readiness & Recovery Section */}
+      <h2 className="text-lg font-bold font-mono text-neon-cyan/80 tracking-wider uppercase pt-2">
+        Readiness & Recovery
+      </h2>
+      <div className="grid grid-cols-1 gap-4">
+        <ReadinessTrendChart period={period} />
       </div>
     </div>
   );

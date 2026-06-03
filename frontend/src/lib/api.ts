@@ -407,6 +407,46 @@ export const analyticsApi = {
     }),
 };
 
+// ========================= //
+// GARMIN HEALTH API         //
+// ========================= //
+
+export const garminHealthApi = {
+  getDaily: (date: string) =>
+    fetchAPI<{
+      date: string;
+      hrv_weekly_avg: number | null;
+      hrv_last_night: number | null;
+      hrv_status: string | null;
+      sleep_duration_sec: number | null;
+      sleep_score: number | null;
+      body_battery_high: number | null;
+      stress_avg: number | null;
+      stress_max: number | null;
+      steps: number | null;
+      readiness_score: number | null;
+    }>(`/garmin/health/daily?date=${date}`),
+
+  getRange: (start: string, end: string) =>
+    fetchAPI<{
+      start: string;
+      end: string;
+      days: Array<{
+        date: string;
+        hrv_last_night: number | null;
+        hrv_weekly_avg: number | null;
+        sleep_score: number | null;
+        sleep_duration_sec: number | null;
+        body_battery_high: number | null;
+        body_battery_low: number | null;
+        stress_avg: number | null;
+        resting_hr: number | null;
+        readiness_score: number | null;
+        steps: number | null;
+      }>;
+    }>(`/garmin/health/range?start=${start}&end=${end}`),
+};
+
 export const settingsApi = {
   get: () => fetchAPI<UserSettings>("/settings"),
 
