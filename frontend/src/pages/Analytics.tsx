@@ -450,6 +450,138 @@ function HrElevationScatter({ period }: { period: Period }) {
   );
 }
 
+// ── HR Drift (Cardiac Decoupling) Trend ──────────────────
+const SCORE_COLORS: Record<string, string> = {
+  excellent: '#00f0ff',
+  good: '#22c55e',
+  moderate: '#eab308',
+  concerning: '#ef4444',
+};
+
+function HRDriftChart({ period }: { period: Period }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['analytics', 'hr-drift', period],
+    queryFn: () => analyticsApi.getHrDrift(period, 40),
+  });
+
+  const runs = data?.runs ?? [];
+  const baseline = data?.baseline;
+
+  // Per-week aggregation: avg decoupling, colored by score
+  const weekly = (() => {
+    const byWeek: Record<string, { sum: number; n: number; scores: string[] }> = {};
+    for (const r of runs) {
+      const d = new Date(r.date);
+      const day = d.getUTCDay();
+      const monday = new Date(d);
+      monday.setUTCDate(d.getUTCDate() - ((day + 6) % 7));
+      const key = monday.toISOString().slice(0, 10);
+      if (!byWeek[key]) byWeek[key] = { sum: 0, n: 0, scores: [] };
+      byWeek[key].sum += r.decoupling_pct;
+      byWeek[key].n += 1;
+      byWeek[key].scores.push(r.drift_score);
+    }
+    return Object.entries(byWeek)
+      .map(([week, v]) => {
+        const avg = v.sum / v.n;
+        const counts: Record<string, number> = {};
+        v.scores.forEach((s) => (counts[s] = (counts[s] || 0) + 1));
+        const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+        return { week, decoupling_pct: Math.round(avg * 10) / 10, n: v.n, top_score: top };
+      })
+      .sort((a, b) => a.week.localeCompare(b.week));
+  })();
+
+  return (
+    <ChartCard title="HR Drift (Cardiac Decoupling)" loading={isLoading} empty={runs.length === 0}>
+      <ResponsiveContainer width="100%" height={300}>
+        <LineChart data={weekly}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#333" />
+          <XAxis dataKey="week" stroke="#888" tick={{ fontSize: 10 }} />
+          <YAxis stroke="#888" tick={{ fontSize: 12 }} label={{ value: 'Decoupling %', angle: -90, position: 'insideLeft', fill: '#666', fontSize: 10 }} />
+          <Tooltip
+            content={({ payload }) => {
+              if (!payload?.[0]?.payload) return null;
+              const w = payload[0].payload;
+              return (
+                <div className="bg-[#1a1a2e] border border-[#333] p-2 text-xs text-gray-300 rounded">
+                  <div className="font-mono text-neon-cyan">Week of {w.week}</div>
+                  <div>Avg decoupling: <b>{w.decoupling_pct}%</b> ({w.n} runs)</div>
+                  <div>Top score: <span style={{ color: SCORE_COLORS[w.top_score] }}>{w.top_score}</span></div>
+                </div>
+              );
+            }}
+          />
+          <Line
+            type="monotone"
+            dataKey="decoupling_pct"
+            stroke="#00f0ff"
+            strokeWidth={2}
+            dot={(props: any) => (
+              <circle
+                key={props.key}
+                cx={props.cx}
+                cy={props.cy}
+                r={4}
+                fill={SCORE_COLORS[props.payload.top_score] || '#00f0ff'}
+                stroke="#0a0a14"
+                strokeWidth={1}
+              />
+            )}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+      {baseline && (
+        <div className="mt-3 text-[10px] font-mono text-text-muted text-center">
+          Baseline R² = {baseline.r_squared} on {baseline.n_samples} runs · formula: {baseline.formula}
+        </div>
+      )}
+    </ChartCard>
+  );
+}
+
+// ── Effort Bucket Summary ─────────────────────────────────
+function EffortBucketSummary({ period }: { period: Period }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['analytics', 'hr-drift', period],
+    queryFn: () => analyticsApi.getHrDrift(period, 40),
+  });
+
+  const buckets = data?.effort_buckets ?? {};
+  const entries = Object.entries(buckets as Record<string, any>).sort(([a], [b]) =>
+    a.localeCompare(b)
+  );
+
+  return (
+    <ChartCard title="Decoupling by Effort Class" loading={isLoading} empty={entries.length === 0}>
+      <div className="space-y-2">
+        {entries.map(([k, v]: [string, any]) => {
+          const avg = v.avg_decoupling_pct ?? 0;
+          const color = avg < 0 ? '#00f0ff' : avg < 5 ? '#22c55e' : avg < 10 ? '#eab308' : '#ef4444';
+          return (
+            <div key={k} className="flex items-center gap-2 text-xs font-mono">
+              <div className="w-28 text-text-muted capitalize">{k.replace('_', ' ')}</div>
+              <div className="flex-1 bg-abyss-2 rounded-full h-2 overflow-hidden border border-text-muted/20">
+                <div
+                  className="h-full"
+                  style={{
+                    width: `${Math.min(Math.abs(avg) * 5, 100)}%`,
+                    background: color,
+                  }}
+                />
+              </div>
+              <div className="w-16 text-right" style={{ color }}>
+                {avg > 0 ? '+' : ''}{avg}%
+              </div>
+              <div className="w-10 text-text-muted text-right">n={v.n}</div>
+            </div>
+          );
+        })}
+      </div>
+    </ChartCard>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────
 export function AnalyticsPage() {
   const [period, setPeriod] = useState<Period>('30d');
@@ -496,6 +628,15 @@ export function AnalyticsPage() {
         <CardiacEfficiencyChart period={period} />
         <HrPaceScatter period={period} />
         <HrElevationScatter period={period} />
+      </div>
+
+      {/* HR Drift / Cardiac Decoupling Section */}
+      <h2 className="text-lg font-bold font-mono text-neon-cyan/80 tracking-wider uppercase pt-2">
+        HR Drift (Aerobic Decoupling)
+      </h2>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <HRDriftChart period={period} />
+        <EffortBucketSummary period={period} />
       </div>
     </div>
   );

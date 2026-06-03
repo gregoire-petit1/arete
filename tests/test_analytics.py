@@ -318,3 +318,278 @@ class TestHrPaceScatter:
         resp = client.get("/analytics/hr-pace-scatter")
         assert resp.status_code == 200
         assert resp.json() == {"sessions": []}
+
+
+# ---------- HR drift tests ----------
+
+
+def _make_laps(n: int, hr_first: float, hr_last: float, elev: float = 0) -> str:
+    """Build a JSON laps list: n 1-km laps, HR rising from hr_first to hr_last."""
+    import json as _json
+
+    laps = []
+    for i in range(n):
+        hr = hr_first + (hr_last - hr_first) * i / max(n - 1, 1)
+        laps.append(
+            {
+                "distance": 1000,
+                "average_heartrate": hr,
+                "average_speed": 1000 / 360,  # 6:00/km pace
+                "total_elevation_gain": elev,
+            }
+        )
+    return _json.dumps(laps)
+
+
+class TestHrDrift:
+    @patch("arete.api.analytics.connect")
+    def test_negative_hr_drift_is_excellent(self, mock_connect, client):
+        """Run with HR dropping from 160 to 150 over 10 km = negative split."""
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        # 10 km, 60 min, pace 360 sec/km, HR drops 160→150
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (
+                1,
+                date(2026, 5, 23),
+                "Long Run",
+                10000,
+                100,
+                3600,
+                155,
+                360,
+                _make_laps(10, 160, 150),
+            ),
+        ]
+
+        resp = client.get("/analytics/hr-drift?period=1y")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["count"] == 1
+        run = data["runs"][0]
+        assert run["hr_drift_pct"] < 0
+        assert run["drift_score"] == "excellent"
+        assert "negative_hr_drift" in run["tags"]
+        assert len(run["splits"]) == 10
+
+    @patch("arete.api.analytics.connect")
+    def test_high_hr_drift_base_run_is_concerning(self, mock_connect, client):
+        """Base run with HR rising 15% = concerning aerobic deficit."""
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        # 10 km flat (D+=10), 360 sec/km, HR 140→180 (+28% range, ~15% half-drift)
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (
+                1,
+                date(2026, 5, 1),
+                "Base Run",
+                10000,
+                10,
+                3600,
+                160,
+                360,
+                _make_laps(10, 140, 180),
+            ),
+        ]
+
+        resp = client.get("/analytics/hr-drift?period=1y")
+        data = resp.json()
+        assert data["count"] == 1
+        run = data["runs"][0]
+        # Half-drift should be around 14-15%
+        assert run["hr_drift_pct"] > 13
+        assert run["drift_score"] == "concerning"
+
+    @patch("arete.api.analytics.connect")
+    def test_workout_gets_lenient_threshold(self, mock_connect, client):
+        """Hard interval workout: pace 5:00/km, HR rises 15% — should NOT be concerning
+        because run_type=intensity has higher threshold."""
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        # 8 km, 40 min, pace 300 sec/km (5:00/km = intensity), HR 165→190 (+15%)
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (
+                1,
+                date(2026, 5, 5),
+                "Thresholds",
+                8000,
+                10,
+                2400,
+                178,
+                300,
+                _make_laps(8, 165, 190),
+            ),
+        ]
+
+        resp = client.get("/analytics/hr-drift?period=1y")
+        run = resp.json()["runs"][0]
+        assert run["run_type"] == "intensity"
+        # 15% HR drift is at the threshold of "moderate" for intensity (12-18%)
+        assert run["drift_score"] in ("good", "moderate")
+
+    @patch("arete.api.analytics.connect")
+    def test_short_run_filtered_out(self, mock_connect, client):
+        """Run with < 4 full 1-km laps should be excluded (insufficient data)."""
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        # 3 km, 18 min — only 3 full 1-km laps (need >= 4)
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (
+                1,
+                date(2026, 5, 1),
+                "Short",
+                3000,
+                10,
+                1080,
+                160,
+                300,
+                _make_laps(3, 150, 170),
+            ),
+        ]
+
+        resp = client.get("/analytics/hr-drift?period=1y")
+        assert resp.json()["count"] == 0
+
+    @patch("arete.api.analytics.connect")
+    def test_runs_without_laps_excluded(self, mock_connect, client):
+        """Runs with NULL laps_json should be skipped."""
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (1, date(2026, 5, 1), "No Laps", 10000, 100, 3600, 155, 360, None),
+        ]
+
+        resp = client.get("/analytics/hr-drift?period=1y")
+        assert resp.json()["count"] == 0
+
+    @patch("arete.api.analytics.connect")
+    def test_min_lap_count_required(self, mock_connect, client):
+        """Need at least 4 full 1-km laps to compute drift."""
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        # Only 3 laps (3 km) — should be excluded
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (
+                1,
+                date(2026, 5, 1),
+                "Short",
+                3000,
+                10,
+                1800,
+                160,
+                360,
+                _make_laps(3, 150, 170),
+            ),
+        ]
+
+        resp = client.get("/analytics/hr-drift?period=1y")
+        assert resp.json()["count"] == 0
+
+    @patch("arete.api.analytics.connect")
+    def test_baseline_regression_fitted(self, mock_connect, client):
+        """With enough runs, baseline regression should be computed."""
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        # 12 runs, varied distance/elev/pace
+        runs = []
+        for i in range(12):
+            runs.append(
+                (
+                    i + 1,
+                    date(2026, 5, i + 1),
+                    f"Run {i}",
+                    8000 + i * 500,
+                    50 + i * 20,
+                    3000 + i * 200,
+                    155,
+                    320 + i * 10,
+                    _make_laps(10, 150 + i, 165 + i),
+                )
+            )
+        mock_conn.execute.return_value.fetchall.return_value = runs
+
+        resp = client.get("/analytics/hr-drift?period=1y")
+        data = resp.json()
+        assert data["baseline"] is not None
+        assert "coefficients" in data["baseline"]
+        assert "r_squared" in data["baseline"]
+        assert data["baseline"]["n_samples"] == 12
+        # All runs should have residual computed
+        assert all(r.get("drift_residual_pct") is not None for r in data["runs"])
+
+    @patch("arete.api.analytics.connect")
+    def test_effort_buckets_computed(self, mock_connect, client):
+        """Effort buckets should classify runs by distance + elevation."""
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        runs = [
+            # 8 km, 50m = short
+            (
+                1,
+                date(2026, 5, 1),
+                "Short",
+                8000,
+                50,
+                2700,
+                155,
+                340,
+                _make_laps(8, 150, 160),
+            ),
+            # 15 km, 500m = 33 m/km → moderate_hilly (> 30 m/km)
+            (
+                2,
+                date(2026, 5, 2),
+                "ModHilly",
+                15000,
+                500,
+                5400,
+                158,
+                360,
+                _make_laps(15, 150, 160),
+            ),
+            # 22 km, 1500m = 68 m/km → long_hilly (40-80 m/km range)
+            (
+                3,
+                date(2026, 5, 3),
+                "LongHilly",
+                22000,
+                1500,
+                9000,
+                160,
+                410,
+                _make_laps(22, 150, 160),
+            ),
+        ]
+        mock_conn.execute.return_value.fetchall.return_value = runs
+
+        resp = client.get("/analytics/hr-drift?period=1y")
+        buckets = resp.json()["effort_buckets"]
+        assert "short" in buckets
+        assert "moderate_hilly" in buckets
+        assert "long_hilly" in buckets
+
+    @patch("arete.api.analytics.connect")
+    def test_too_few_runs_for_baseline(self, mock_connect, client):
+        """With <10 runs, baseline regression should be None (fallback to raw thresholds)."""
+        mock_conn = MagicMock()
+        mock_connect.return_value = mock_conn
+        runs = [
+            (
+                i,
+                date(2026, 5, i + 1),
+                f"Run {i}",
+                10000,
+                100,
+                3600,
+                155,
+                360,
+                _make_laps(10, 150, 160),
+            )
+            for i in range(5)
+        ]
+        mock_conn.execute.return_value.fetchall.return_value = runs
+
+        resp = client.get("/analytics/hr-drift?period=1y")
+        data = resp.json()
+        assert data["baseline"] is None
+        assert all(r.get("drift_residual_pct") is None for r in data["runs"])

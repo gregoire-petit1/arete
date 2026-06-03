@@ -205,6 +205,11 @@ from arete.api.garmin import router as garmin_router
 
 app.include_router(garmin_router)
 
+# Routes Garmin Health (HRV, sleep, body battery, readiness)
+from arete.api.garmin_health import router as garmin_health_router
+
+app.include_router(garmin_health_router)
+
 # Routes Strength (exercises, strength sessions, sets, PRs)
 from arete.api.strength import router as strength_router
 
