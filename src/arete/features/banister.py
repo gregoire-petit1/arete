@@ -62,7 +62,7 @@ def get_running_sessions(con, start_date: date, end_date: date) -> list[dict]:
         """
         SELECT date, avg_hr, avg_speed_mps
         FROM app.actual_sessions
-        WHERE sport = 'running'
+        WHERE sport IN ('running', 'run')
           AND avg_hr IS NOT NULL
           AND avg_speed_mps IS NOT NULL
           AND avg_speed_mps > 0
@@ -157,14 +157,14 @@ def store_coefficients(coeffs: dict, user_id: int = 1) -> None:
         con.execute(
             """
             INSERT INTO app.banister_coefficients (user_id, k1, k2, baseline, r2, n_samples, fitted_at)
-            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            VALUES (?, ?, ?, ?, ?, ?, now())
             ON CONFLICT (user_id) DO UPDATE SET
                 k1 = EXCLUDED.k1,
                 k2 = EXCLUDED.k2,
                 baseline = EXCLUDED.baseline,
                 r2 = EXCLUDED.r2,
                 n_samples = EXCLUDED.n_samples,
-                fitted_at = CURRENT_TIMESTAMP
+                fitted_at = now()
             """,
             [
                 user_id,

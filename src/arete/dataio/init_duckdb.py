@@ -285,7 +285,7 @@ CREATE TABLE IF NOT EXISTS app.banister_coefficients (
     baseline        FLOAT NOT NULL DEFAULT 100.0,
     r2              FLOAT,
     n_samples       INTEGER,
-    fitted_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    fitted_at       TIMESTAMP DEFAULT now()
 );
 """
 
@@ -343,7 +343,7 @@ def _run_migrations(con) -> None:
                 baseline        FLOAT NOT NULL DEFAULT 100.0,
                 r2              FLOAT,
                 n_samples       INTEGER,
-                fitted_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                fitted_at       TIMESTAMP DEFAULT now()
             )
         """)
         logger.info("Migration: created banister_coefficients table")

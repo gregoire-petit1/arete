@@ -10,10 +10,12 @@ dependencies = [
     "fastapi>=0.119.0",
     "fitparse>=1.2.0",
     "garth>=0.5.19",
+    "numpy>=2.3.5",
     "openai>=1.82.0",
     "pydantic>=2",
     "python-dotenv>=1.1.1",
     "python-multipart>=0.0.20",
+    "scikit-learn>=1.7.2",
     "uvicorn>=0.37.0",
 ]
 
