@@ -52,36 +52,38 @@ def _ensure_authenticated() -> None:
 def _fetch_hrv(target_date: date) -> dict[str, Any]:
     """Fetch HRV summary for the given date (last_night + weekly_avg)."""
     try:
-        hrv = garth.DailyHRV.get(target_date.isoformat())
+        hrv = garth.HRVData.get(target_date.isoformat())
     except Exception as e:
         logger.warning("HRV fetch failed for %s: %s", target_date, e)
         return {}
-    if not hrv:
+    if not hrv or not hrv.hrv_summary:
         return {}
+    s = hrv.hrv_summary
     return {
-        "hrv_last_night": getattr(hrv, "last_night_avg", None),
-        "hrv_weekly_avg": getattr(hrv, "weekly_avg", None),
-        "hrv_status": getattr(hrv, "status", None),
+        "hrv_last_night": getattr(s, "last_night_avg", None),
+        "hrv_weekly_avg": getattr(s, "weekly_avg", None),
+        "hrv_status": getattr(s, "status", None),
     }
 
 
 def _fetch_sleep(target_date: date) -> dict[str, Any]:
     """Fetch sleep summary for the given date."""
     try:
-        sleep = garth.DailySleep.get(target_date.isoformat())
+        sleep = garth.SleepData.get(target_date.isoformat())
     except Exception as e:
         logger.warning("Sleep fetch failed for %s: %s", target_date, e)
         return {}
-    if not sleep:
+    if not sleep or not sleep.daily_sleep_dto:
         return {}
+    dto = sleep.daily_sleep_dto
+    score = getattr(dto.sleep_scores, "overall", None) if dto.sleep_scores else None
     return {
-        "sleep_duration_sec": getattr(sleep, "total_sleep_duration_seconds", None)
-        or getattr(sleep, "sleep_duration_seconds", None),
-        "sleep_score": getattr(sleep, "overall_score", None),
-        "sleep_deep_sec": getattr(sleep, "deep_sleep_duration_seconds", None),
-        "sleep_light_sec": getattr(sleep, "light_sleep_duration_seconds", None),
-        "sleep_rem_sec": getattr(sleep, "rem_sleep_duration_seconds", None),
-        "sleep_awake_sec": getattr(sleep, "awake_duration_seconds", None),
+        "sleep_duration_sec": getattr(dto, "sleep_time_seconds", None),
+        "sleep_score": getattr(score, "value", None) if score else None,
+        "sleep_deep_sec": getattr(dto, "deep_sleep_seconds", None),
+        "sleep_light_sec": getattr(dto, "light_sleep_seconds", None),
+        "sleep_rem_sec": getattr(dto, "rem_sleep_seconds", None),
+        "sleep_awake_sec": getattr(dto, "awake_sleep_seconds", None),
     }
 
 
@@ -97,20 +99,23 @@ def _fetch_body_battery(target_date: date) -> dict[str, Any]:
         "body_battery_drained": getattr(bb, "body_battery_drained", None),
         "body_battery_high": getattr(bb, "max_body_battery", None),
         "body_battery_low": getattr(bb, "min_body_battery", None),
-        "stress_avg": getattr(bb, "average_stress", None),
-        "stress_max": getattr(bb, "max_stress", None),
+        "stress_avg": getattr(bb, "avg_stress_level", None),
+        "stress_max": getattr(bb, "max_stress_level", None),
     }
 
 
 def _fetch_steps(target_date: date) -> dict[str, Any]:
     """Fetch steps + intensity minutes."""
     try:
-        steps = garth.DailySteps.get(target_date.isoformat())
+        items = garth.DailySteps.list(target_date, 1)
     except Exception as e:
         logger.warning("Steps fetch failed for %s: %s", target_date, e)
         return {}
+    if not items:
+        return {}
+    s = items[0]
     return {
-        "steps": getattr(steps, "steps", None) or getattr(steps, "total_steps", None),
+        "steps": getattr(s, "total_steps", None),
     }
 
 
