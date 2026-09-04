@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Heart, Zap, Star, Calendar, Dumbbell, Bot, ArrowRight } from 'lucide-react';
 import {
@@ -101,7 +102,7 @@ export function DashboardPage() {
           className="flex justify-between items-center"
         >
           <div>
-            <h1 className="text-lg sm:text-2xl font-display font-bold text-text-primary tracking-wider">
+            <h1 className="text-lg sm:text-2xl font-sans font-bold text-text-primary tracking-wider">
               Hello, <span className="text-neon-cyan">{userSettings?.display_name || 'HUNTER'}</span>
             </h1>
             <p className="text-xs font-mono text-text-muted mt-0.5">
@@ -155,12 +156,12 @@ export function DashboardPage() {
                           )}
                         </div>
                       </div>
-                      <a
-                        href="/log"
+                      <Link
+                        to="/log"
                         className="text-xs font-mono text-neon-gold hover:text-neon-gold/80 transition-colors"
                       >
                         Log this session →
-                      </a>
+                      </Link>
                     </div>
                   );
                 })}
@@ -170,12 +171,12 @@ export function DashboardPage() {
                 <p className="text-sm font-mono text-text-muted mb-2">
                   Rest day — no sessions planned
                 </p>
-                <a
-                  href="/planning"
+                <Link
+                  to="/planning"
                   className="text-xs font-mono text-neon-cyan hover:underline"
                 >
                   + Add a session
-                </a>
+                </Link>
               </div>
             )}
           </motion.div>
@@ -372,27 +373,25 @@ export function DashboardPage() {
           transition={{ delay: 0.3 }}
           className="flex gap-3"
         >
-          <a
-            href="/log"
+          <Link
+            to="/log"
             className="flex-1 flex items-center justify-center gap-2 glass-panel px-4 py-3 text-sm font-mono text-neon-cyan hover:bg-abyss/80 transition-colors"
           >
             <Dumbbell className="w-4 h-4" />
             Log Session
             <ArrowRight className="w-3 h-3" />
-          </a>
-          <a
-            href="/planning"
+          </Link>
+          <Link
+            to="/planning"
             className="flex-1 flex items-center justify-center gap-2 glass-panel px-4 py-3 text-sm font-mono text-neon-purple hover:bg-abyss/80 transition-colors"
           >
             <Calendar className="w-4 h-4" />
             View Planning
             <ArrowRight className="w-3 h-3" />
-          </a>
+          </Link>
         </motion.div>
       </div>
     </div>
   );
 }
 
-// Keep backward compat
-export { DashboardPage as HUDPage };

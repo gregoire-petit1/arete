@@ -7,12 +7,9 @@ import {
   AdherenceBar,
   LoadingState,
   FlameIcon,
-  getSportIconComponent,
-  getSportColor,
 } from '@/components';
 import { garminApi, type PlannedSessionCreate } from '@/lib/api';
-import { cn, formatDuration } from '@/lib/utils';
-import type { ActualSession } from '@/types';
+import { cn } from '@/lib/utils';
 
 // Session types per sport category
 const CARDIO_SESSION_TYPES = [
@@ -66,7 +63,6 @@ export function PlanningPage() {
   const queryClient = useQueryClient();
   const [weekOffset, setWeekOffset] = useState(0);
   const [showNewQuest, setShowNewQuest] = useState(false);
-  const [selectedSession, setSelectedSession] = useState<ActualSession | null>(null);
 
   // New Quest form state
   const [newQuest, setNewQuest] = useState<PlannedSessionCreate>({
@@ -170,7 +166,7 @@ export function PlanningPage() {
           animate={{ opacity: 1, y: 0 }}
           className="flex justify-between items-center mb-4 sm:mb-8"
         >
-          <h1 className="text-lg sm:text-2xl font-display font-bold text-neon-cyan tracking-wider">
+          <h1 className="text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wider">
             QUEST LOG
           </h1>
           <div className="flex items-center gap-2">
@@ -264,7 +260,8 @@ export function PlanningPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-text-muted font-mono">Completion Rate</span>
-                 <span className="text-base sm:text-lg font-mono text-text-primary">
+                <span className="text-base sm:text-lg font-mono text-text-primary">
+                  {Math.round((summary?.completion_rate || 0) * 100)}%
                 </span>
               </div>
               <AdherenceBar score={(summary?.completion_rate || 0) * 100} size="lg" showLabel={false} />
@@ -302,7 +299,7 @@ export function PlanningPage() {
                 <div className="text-xl sm:text-2xl font-mono font-bold text-warning-orange">
                   {streak}
                 </div>
-                <div className="text-xs text-text-muted font-mono">days streak</div>
+                <div className="text-xs text-text-muted font-mono">sessions matched</div>
               </div>
             </div>
           </div>
@@ -340,7 +337,7 @@ export function PlanningPage() {
               <div className="flex items-center justify-between mb-4 sm:mb-6">
                 <div className="flex items-center gap-2">
                   <Plus className="w-5 h-5 text-neon-cyan" />
-                  <h3 className="text-lg font-display text-neon-cyan">NEW QUEST</h3>
+                  <h3 className="text-lg font-sans text-neon-cyan">NEW QUEST</h3>
                 </div>
                 <button 
                   onClick={() => setShowNewQuest(false)}
@@ -486,138 +483,6 @@ export function PlanningPage() {
                   )}
                 </button>
               </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Session Detail Modal */}
-      <AnimatePresence>
-        {selectedSession && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-void/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setSelectedSession(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="glass-panel p-4 sm:p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4 sm:mb-6">
-                <div className="flex items-center gap-3">
-                  {(() => {
-                    const SportIcon = getSportIconComponent(selectedSession.sport);
-                    return <SportIcon size="lg" className={getSportColor(selectedSession.sport)} />;
-                  })()}
-                  <div>
-                    <h3 className="text-lg font-display text-text-primary capitalize">
-                      {selectedSession.activity_type || selectedSession.session_type || selectedSession.sport}
-                    </h3>
-                    <p className="text-sm font-mono text-text-muted">
-                      {new Date(selectedSession.date).toLocaleDateString('fr-FR', {
-                        weekday: 'long',
-                        day: '2-digit',
-                        month: 'long',
-                        year: 'numeric',
-                      })}
-                    </p>
-                  </div>
-                </div>
-                <button 
-                  onClick={() => setSelectedSession(null)}
-                  className="p-1 hover:bg-text-muted/20 rounded transition-colors"
-                >
-                  <X className="w-5 h-5 text-text-muted" />
-                </button>
-              </div>
-
-              {/* Session Stats */}
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 mb-4 sm:mb-6">
-                <div className="bg-abyss/50 rounded p-3">
-                  <div className="text-xs font-mono text-text-muted uppercase mb-1">Duration</div>
-                  <div className="text-lg font-mono text-text-primary">
-                    {selectedSession.duration_min || (selectedSession.duration_seconds ? formatDuration(selectedSession.duration_seconds) : '-')}
-                  </div>
-                </div>
-                {(selectedSession.distance_km || selectedSession.distance_meters) && (
-                  <div className="bg-abyss/50 rounded p-3">
-                    <div className="text-xs font-mono text-text-muted uppercase mb-1">Distance</div>
-                    <div className="text-lg font-mono text-text-primary">
-                      {selectedSession.distance_km ?? (selectedSession.distance_meters ? (selectedSession.distance_meters / 1000).toFixed(2) : '-')} km
-                    </div>
-                  </div>
-                )}
-                {selectedSession.avg_hr && (
-                  <div className="bg-abyss/50 rounded p-3">
-                    <div className="text-xs font-mono text-text-muted uppercase mb-1">Avg HR</div>
-                    <div className="text-lg font-mono text-text-primary">
-                      {selectedSession.avg_hr} bpm
-                    </div>
-                  </div>
-                )}
-                {selectedSession.max_hr && (
-                  <div className="bg-abyss/50 rounded p-3">
-                    <div className="text-xs font-mono text-text-muted uppercase mb-1">Max HR</div>
-                    <div className="text-lg font-mono text-text-primary">
-                      {selectedSession.max_hr} bpm
-                    </div>
-                  </div>
-                )}
-                {selectedSession.avg_pace && (
-                  <div className="bg-abyss/50 rounded p-3">
-                    <div className="text-xs font-mono text-text-muted uppercase mb-1">Avg Pace</div>
-                    <div className="text-lg font-mono text-text-primary">
-                      {selectedSession.avg_pace}
-                    </div>
-                  </div>
-                )}
-                {selectedSession.calories && (
-                  <div className="bg-abyss/50 rounded p-3">
-                    <div className="text-xs font-mono text-text-muted uppercase mb-1">Calories</div>
-                    <div className="text-lg font-mono text-text-primary">
-                      {selectedSession.calories} kcal
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Match Status */}
-              <div className={cn(
-                'p-3 rounded border',
-                (selectedSession.matched_planned_id || selectedSession.planned_session_id)
-                  ? 'bg-success-green/10 border-success-green/30' 
-                  : 'bg-warning-orange/10 border-warning-orange/30'
-              )}>
-                <div className="flex items-center gap-2">
-                  {(selectedSession.matched_planned_id || selectedSession.planned_session_id) ? (
-                    <>
-                      <Check className="w-4 h-4 text-success-green" />
-                      <span className="text-sm font-mono text-success-green">
-                        MATCHED TO PLANNED QUEST
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="text-sm font-mono text-warning-orange">
-                        UNMATCHED - BONUS QUEST
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Source */}
-              {selectedSession.source && (
-                <div className="mt-4 text-xs font-mono text-text-muted">
-                  Source: {selectedSession.source}
-                  {selectedSession.fit_file_path && ' (FIT file available)'}
-                </div>
-              )}
             </motion.div>
           </motion.div>
         )}

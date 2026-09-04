@@ -41,28 +41,3 @@ export function formatDuration(seconds: number): string {
   }
   return `${secs}s`;
 }
-
-// Calculate XP from session (RPE × duration / 10)
-export function calculateXP(
-  rpe: number | null,
-  durationMinutes: number
-): number {
-  if (rpe === null) return Math.round(durationMinutes);
-  return Math.round((rpe * durationMinutes) / 10);
-}
-
-// Sport icons mapping - using text symbols for system look
-export function getSportIcon(sport: string): string {
-  const icons: Record<string, string> = {
-    running: "▶",
-    cycling: "◎",
-    swimming: "≋",
-    strength: "◆",
-    yoga: "◇",
-    hiking: "△",
-    walking: "○",
-    other: "◈",
-    default: "●",
-  };
-  return icons[sport.toLowerCase()] || icons.default;
-}

@@ -164,3 +164,188 @@ export interface SyncResult {
   errors: string[];
   new_activities: ActualSession[];
 }
+
+// ========================= //
+// WORKOUT PARSER            //
+// ========================= //
+
+export interface ParsedSet {
+  set_number: number;
+  reps: number | null; // null for failure sets
+  weight_kg: number | null;
+  rpe: number | null;
+  is_warmup: boolean;
+  is_failure: boolean;
+}
+
+export interface ParsedExercise {
+  name: string;
+  exercise_id: string | null;
+  exercise_matched: boolean;
+  sets: ParsedSet[];
+  notes: string | null;
+}
+
+export interface ParsedWorkout {
+  success: boolean;
+  date: string;
+  name: string | null;
+  exercises: ParsedExercise[];
+  duration_min: number | null;
+  overall_rpe: number | null;
+  notes: string | null;
+  session_id: number | null;
+  message: string | null;
+}
+
+// ========================= //
+// ANALYTICS                 //
+// ========================= //
+
+export interface VolumeWeek {
+  week: string;
+  sports: Record<string, { hours: number; km: number }>;
+  total_hours: number;
+  total_km: number;
+}
+export interface VolumeResponse {
+  weeks: VolumeWeek[];
+}
+
+export interface TrainingLoadPoint {
+  date: string;
+  ctl: number;
+  atl: number;
+  tsb: number;
+  tss: number;
+}
+export interface TrainingLoadResponse {
+  data: TrainingLoadPoint[];
+}
+
+export interface PaceActivity {
+  date: string;
+  pace_sec_km: number;
+  pace_display: string;
+  distance_km: number;
+  name: string;
+}
+export interface PaceResponse {
+  activities: PaceActivity[];
+}
+
+export interface HrZonesWeek {
+  week: string;
+  zones: Record<string, number>; // seconds per zone
+}
+export interface HrZonesResponse {
+  weeks: HrZonesWeek[];
+}
+
+export interface SportShare {
+  [key: string]: string | number;
+  sport: string;
+  hours: number;
+  count: number;
+  percentage: number;
+}
+export interface SportDistributionResponse {
+  sports: SportShare[];
+  total_hours: number;
+}
+
+export interface BestEffort {
+  name: string;
+  best_time_sec: number;
+  best_time_display: string;
+  date: string;
+  activity_name: string;
+}
+export interface BestEffortsResponse {
+  efforts: BestEffort[];
+}
+
+export interface CardiacEfficiencyWeek {
+  week: string;
+  efficiency: number | null;
+  avg_hr: number;
+  avg_pace: string | null;
+  avg_pace_sec_km: number | null;
+  n_runs: number;
+}
+export interface CardiacEfficiencyResponse {
+  data: CardiacEfficiencyWeek[];
+}
+
+export interface HrPaceSession {
+  date: string;
+  sport: string;
+  name: string | null;
+  avg_hr: number;
+  max_hr: number | null;
+  pace_sec_km: number | null;
+  pace_display: string | null;
+  elevation_gain: number | null;
+  distance_km: number | null;
+  duration_sec: number | null;
+}
+export interface HrPaceScatterResponse {
+  sessions: HrPaceSession[];
+}
+
+export interface HrDriftRun {
+  id: number;
+  date: string;
+  name: string | null;
+  distance_km: number | null;
+  elevation_m: number | null;
+  duration_min: number | null;
+  avg_hr: number | null;
+  avg_pace_sec_km: number | null;
+  hr_drift_pct: number;
+  pace_drift_pct: number;
+  decoupling_pct: number;
+  splits: unknown;
+  run_type: string;
+  drift_score: string;
+  expected_decoupling_pct: number | null;
+  drift_residual_pct: number | null;
+  tags: string[];
+}
+export interface HrDriftBaseline {
+  formula: string;
+  coefficients: Record<string, number>;
+  r_squared: number;
+  n_samples: number;
+}
+export interface EffortBucket {
+  n: number;
+  avg_decoupling_pct: number | null;
+  best_decoupling_pct: number | null;
+  worst_decoupling_pct: number | null;
+}
+export interface HrDriftResponse {
+  runs: HrDriftRun[];
+  count: number;
+  baseline: HrDriftBaseline | null;
+  effort_buckets: Record<string, EffortBucket>;
+}
+
+export interface CardioSession {
+  id: number;
+  date: string;
+  sport: string;
+  name: string | null;
+  duration_sec: number | null;
+  distance_m: number | null;
+  avg_hr: number | null;
+  avg_pace_sec_km: number | null;
+  pace_display: string | null;
+  rpe: number | null;
+  notes: string | null;
+  source: string;
+  calories: number | null;
+}
+export interface CardioSessionsResponse {
+  sessions: CardioSession[];
+}

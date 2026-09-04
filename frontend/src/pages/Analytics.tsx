@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   BarChart, Bar, LineChart, Line, ScatterChart, Scatter,
@@ -71,13 +71,10 @@ function VolumeChart({ period }: { period: Period }) {
 
   // Backend returns {weeks: [{week, sports: {run: {hours, km}}, total_hours}]}
   // Flatten to [{week, run: 1.5, weight_training: 2.0}] for Recharts
-  const rawWeeks: any[] = data?.weeks ?? data?.data ?? [];
-  const volumeData = rawWeeks.map((w: any) => {
-    const flat: Record<string, any> = { week: w.week };
-    if (w.sports && typeof w.sports === 'object') {
-      for (const [sport, val] of Object.entries(w.sports)) {
-        flat[sport] = (val as any)?.hours ?? val ?? 0;
-      }
+  const volumeData = (data?.weeks ?? []).map((w) => {
+    const flat: Record<string, string | number> = { week: w.week };
+    for (const [sport, val] of Object.entries(w.sports)) {
+      flat[sport] = val.hours;
     }
     return flat;
   });
@@ -144,7 +141,7 @@ function PaceChart({ period }: { period: Period }) {
     queryFn: () => analyticsApi.getPace(period),
   });
 
-  const paceData = data?.activities ?? data?.data ?? [];
+  const paceData = data?.activities ?? [];
 
   return (
     <ChartCard title="Pace Trend" loading={isLoading} empty={!Array.isArray(paceData) || paceData.length === 0}>
@@ -181,18 +178,10 @@ function HRZonesChart({ period }: { period: Period }) {
 
   // Backend returns {weeks: [{week, zones: {z1: 600, z2: 1200, ...}}]}
   // Flatten to [{week, z1: 10, z2: 20, ...}] with minutes for Recharts
-  const rawZones: any[] = data?.weeks ?? data?.data ?? [];
-  const zoneData = rawZones.map((w: any) => {
-    const flat: Record<string, any> = { week: w.week };
-    if (w.zones && typeof w.zones === 'object') {
-      for (const [zone, secs] of Object.entries(w.zones)) {
-        flat[zone] = Math.round((secs as number) / 60); // seconds -> minutes
-      }
-    } else {
-      // Already flat format
-      for (const key of ['z1', 'z2', 'z3', 'z4', 'z5']) {
-        if (w[key] != null) flat[key] = Math.round(w[key] / 60);
-      }
+  const zoneData = (data?.weeks ?? []).map((w) => {
+    const flat: Record<string, string | number> = { week: w.week };
+    for (const [zone, secs] of Object.entries(w.zones)) {
+      flat[zone] = Math.round(secs / 60); // seconds -> minutes
     }
     return flat;
   });
@@ -222,7 +211,7 @@ function SportDistributionChart({ period }: { period: Period }) {
     queryFn: () => analyticsApi.getSportDistribution(period),
   });
 
-  const sportData = data?.sports ?? data?.data ?? [];
+  const sportData = data?.sports ?? [];
 
   return (
     <ChartCard title="Sport Distribution" loading={isLoading} empty={!Array.isArray(sportData) || sportData.length === 0}>
@@ -236,7 +225,7 @@ function SportDistributionChart({ period }: { period: Period }) {
             outerRadius={100}
             paddingAngle={2}
           >
-            {sportData.map((entry: any, i: number) => (
+            {sportData.map((entry, i) => (
               <Cell key={i} fill={SPORT_COLORS[entry.sport] || '#6b7280'} />
             ))}
           </Pie>
@@ -255,7 +244,7 @@ function BestEffortsTable() {
     queryFn: () => analyticsApi.getBestEfforts(),
   });
 
-  const efforts = data?.efforts ?? data?.data ?? [];
+  const efforts = data?.efforts ?? [];
 
   return (
     <ChartCard
@@ -275,12 +264,12 @@ function BestEffortsTable() {
               </tr>
             </thead>
             <tbody>
-              {efforts.map((e: any, i: number) => (
+              {efforts.map((e, i) => (
                 <tr key={i} className="border-b border-text-muted/10 hover:bg-void/50">
-                  <td className="py-2 px-2 text-text-primary">{e.name ?? e.effort ?? e.distance}</td>
-                  <td className="py-2 px-2 text-text-secondary font-mono">{e.best_time_display ?? e.best_time ?? e.time}</td>
+                  <td className="py-2 px-2 text-text-primary">{e.name}</td>
+                  <td className="py-2 px-2 text-text-secondary font-mono">{e.best_time_display}</td>
                   <td className="py-2 px-2 text-text-muted">{e.date}</td>
-                  <td className="py-2 px-2 text-text-muted">{e.activity_name ?? e.activity ?? '—'}</td>
+                  <td className="py-2 px-2 text-text-muted">{e.activity_name || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -387,7 +376,7 @@ function HrPaceScatter({ period }: { period: Period }) {
             }}
           />
           <Scatter data={sessions} shape="circle">
-            {sessions.map((s: any, i: number) => (
+            {sessions.map((s, i) => (
               <Cell key={i} fill={colorByElevation(s.elevation_gain)} fillOpacity={0.8} />
             ))}
           </Scatter>
@@ -409,7 +398,7 @@ function HrElevationScatter({ period }: { period: Period }) {
     queryFn: () => analyticsApi.getHrPaceScatter(period),
   });
 
-  const sessions = (data?.sessions ?? []).filter((s: any) => s.elevation_gain != null);
+  const sessions = (data?.sessions ?? []).filter((s) => s.elevation_gain != null);
 
   return (
     <ChartCard title="HR vs Elevation" loading={isLoading} empty={sessions.length === 0}>
@@ -517,13 +506,13 @@ function HRDriftChart({ period }: { period: Period }) {
             dataKey="decoupling_pct"
             stroke="#00f0ff"
             strokeWidth={2}
-            dot={(props: any) => (
+            dot={(props: { key?: React.Key | null; cx?: number; cy?: number; payload?: { top_score: string } }) => (
               <circle
-                key={props.key}
+                key={props.key ?? undefined}
                 cx={props.cx}
                 cy={props.cy}
                 r={4}
-                fill={SCORE_COLORS[props.payload.top_score] || '#00f0ff'}
+                fill={SCORE_COLORS[props.payload?.top_score ?? ''] || '#00f0ff'}
                 stroke="#0a0a14"
                 strokeWidth={1}
               />
@@ -548,20 +537,18 @@ function EffortBucketSummary({ period }: { period: Period }) {
   });
 
   const buckets = data?.effort_buckets ?? {};
-  const entries = Object.entries(buckets as Record<string, any>).sort(([a], [b]) =>
-    a.localeCompare(b)
-  );
+  const entries = Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <ChartCard title="Decoupling by Effort Class" loading={isLoading} empty={entries.length === 0}>
       <div className="space-y-2">
-        {entries.map(([k, v]: [string, any]) => {
+        {entries.map(([k, v]) => {
           const avg = v.avg_decoupling_pct ?? 0;
           const color = avg < 0 ? '#00f0ff' : avg < 5 ? '#22c55e' : avg < 10 ? '#eab308' : '#ef4444';
           return (
             <div key={k} className="flex items-center gap-2 text-xs font-mono">
               <div className="w-28 text-text-muted capitalize">{k.replace('_', ' ')}</div>
-              <div className="flex-1 bg-abyss-2 rounded-full h-2 overflow-hidden border border-text-muted/20">
+              <div className="flex-1 bg-abyss rounded-full h-2 overflow-hidden border border-text-muted/20">
                 <div
                   className="h-full"
                   style={{
@@ -584,9 +571,14 @@ function EffortBucketSummary({ period }: { period: Period }) {
 
 // ── Readiness Trend Chart (Garmin Health) ──────────────────
 function ReadinessTrendChart({ period }: { period: Period }) {
-  const end = new Date().toISOString().slice(0, 10);
-  const startDays = period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : 180;
-  const start = new Date(Date.now() - startDays * 86400000).toISOString().slice(0, 10);
+  const { start, end } = useMemo(() => {
+    const now = new Date();
+    const startDays = period === '7d' ? 7 : period === '30d' ? 30 : period === '90d' ? 90 : 180;
+    return {
+      end: now.toISOString().slice(0, 10),
+      start: new Date(now.getTime() - startDays * 86400000).toISOString().slice(0, 10),
+    };
+  }, [period]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['garmin-health', 'range', start, end],

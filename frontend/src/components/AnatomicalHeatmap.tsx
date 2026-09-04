@@ -72,7 +72,7 @@ export function AnatomicalHeatmap({
     return 0; // None
   };
 
-  const getHeatColor = (muscleId: string, _view: 'front' | 'back' = 'front') => {
+  const getHeatColor = (muscleId: string) => {
     const volume = getNormalizedVolume(muscleId);
     const level = getHeatLevel(volume);
     const isHovered = hoveredMuscle === muscleId;
@@ -341,7 +341,7 @@ export function AnatomicalHeatmap({
             {/* Traps (upper) */}
             <path
               d="M 48 36 Q 60 30 72 36 L 72 48 Q 60 52 48 48 Z"
-              className={getHeatColor('traps', 'back')}
+              className={getHeatColor('traps')}
               onMouseEnter={() => setHoveredMuscle('traps')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('traps')}
@@ -351,7 +351,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="36" cy="44"
               rx="6" ry="5"
-              className={getHeatColor('rear_delts', 'back')}
+              className={getHeatColor('rear_delts')}
               onMouseEnter={() => setHoveredMuscle('rear_delts')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('rear_delts')}
@@ -360,7 +360,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="84" cy="44"
               rx="6" ry="5"
-              className={getHeatColor('rear_delts', 'back')}
+              className={getHeatColor('rear_delts')}
               onMouseEnter={() => setHoveredMuscle('rear_delts')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('rear_delts')}
@@ -369,14 +369,14 @@ export function AnatomicalHeatmap({
             {/* Rhomboids */}
             <path
               d="M 48 48 L 52 48 L 52 62 L 48 66 Z"
-              className={getHeatColor('rhomboids', 'back')}
+              className={getHeatColor('rhomboids')}
               onMouseEnter={() => setHoveredMuscle('rhomboids')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('rhomboids')}
             />
             <path
               d="M 72 48 L 68 48 L 68 62 L 72 66 Z"
-              className={getHeatColor('rhomboids', 'back')}
+              className={getHeatColor('rhomboids')}
               onMouseEnter={() => setHoveredMuscle('rhomboids')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('rhomboids')}
@@ -385,7 +385,7 @@ export function AnatomicalHeatmap({
             {/* Lats - Left */}
             <path
               d="M 38 50 Q 32 62 36 80 L 48 80 L 52 62 L 48 50 Z"
-              className={getHeatColor('lats', 'back')}
+              className={getHeatColor('lats')}
               onMouseEnter={() => setHoveredMuscle('lats')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('lats')}
@@ -393,7 +393,7 @@ export function AnatomicalHeatmap({
             {/* Lats - Right */}
             <path
               d="M 82 50 Q 88 62 84 80 L 72 80 L 68 62 L 72 50 Z"
-              className={getHeatColor('lats', 'back')}
+              className={getHeatColor('lats')}
               onMouseEnter={() => setHoveredMuscle('lats')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('lats')}
@@ -403,7 +403,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="28" cy="58"
               rx="5" ry="12"
-              className={getHeatColor('triceps', 'back')}
+              className={getHeatColor('triceps')}
               onMouseEnter={() => setHoveredMuscle('triceps')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('triceps')}
@@ -412,7 +412,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="92" cy="58"
               rx="5" ry="12"
-              className={getHeatColor('triceps', 'back')}
+              className={getHeatColor('triceps')}
               onMouseEnter={() => setHoveredMuscle('triceps')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('triceps')}
@@ -422,7 +422,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="24" cy="78"
               rx="4" ry="10"
-              className={getHeatColor('forearms', 'back')}
+              className={getHeatColor('forearms')}
               onMouseEnter={() => setHoveredMuscle('forearms')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('forearms')}
@@ -431,7 +431,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="96" cy="78"
               rx="4" ry="10"
-              className={getHeatColor('forearms', 'back')}
+              className={getHeatColor('forearms')}
               onMouseEnter={() => setHoveredMuscle('forearms')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('forearms')}
@@ -440,14 +440,14 @@ export function AnatomicalHeatmap({
             {/* Lower Back / Erectors */}
             <path
               d="M 52 66 L 56 66 L 58 92 L 56 96 L 52 96 Z"
-              className={getHeatColor('lower_back', 'back')}
+              className={getHeatColor('lower_back')}
               onMouseEnter={() => setHoveredMuscle('lower_back')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('lower_back')}
             />
             <path
               d="M 68 66 L 64 66 L 62 92 L 64 96 L 68 96 Z"
-              className={getHeatColor('lower_back', 'back')}
+              className={getHeatColor('lower_back')}
               onMouseEnter={() => setHoveredMuscle('lower_back')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('lower_back')}
@@ -457,7 +457,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="48" cy="108"
               rx="10" ry="8"
-              className={getHeatColor('glutes', 'back')}
+              className={getHeatColor('glutes')}
               onMouseEnter={() => setHoveredMuscle('glutes')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('glutes')}
@@ -466,7 +466,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="72" cy="108"
               rx="10" ry="8"
-              className={getHeatColor('glutes', 'back')}
+              className={getHeatColor('glutes')}
               onMouseEnter={() => setHoveredMuscle('glutes')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('glutes')}
@@ -476,7 +476,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="46" cy="135"
               rx="7" ry="18"
-              className={getHeatColor('hamstrings', 'back')}
+              className={getHeatColor('hamstrings')}
               onMouseEnter={() => setHoveredMuscle('hamstrings')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('hamstrings')}
@@ -485,7 +485,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="74" cy="135"
               rx="7" ry="18"
-              className={getHeatColor('hamstrings', 'back')}
+              className={getHeatColor('hamstrings')}
               onMouseEnter={() => setHoveredMuscle('hamstrings')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('hamstrings')}
@@ -495,7 +495,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="46" cy="168"
               rx="5" ry="14"
-              className={getHeatColor('calves', 'back')}
+              className={getHeatColor('calves')}
               onMouseEnter={() => setHoveredMuscle('calves')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('calves')}
@@ -504,7 +504,7 @@ export function AnatomicalHeatmap({
             <ellipse
               cx="74" cy="168"
               rx="5" ry="14"
-              className={getHeatColor('calves', 'back')}
+              className={getHeatColor('calves')}
               onMouseEnter={() => setHoveredMuscle('calves')}
               onMouseLeave={() => setHoveredMuscle(null)}
               onClick={() => handleMuscleInteraction('calves')}
@@ -559,22 +559,5 @@ export function AnatomicalHeatmap({
         </div>
       )}
     </div>
-  );
-}
-
-// Compact version for smaller spaces
-export function AnatomicalHeatmapCompact({
-  volumeByMuscle,
-  className,
-}: {
-  volumeByMuscle: Record<string, number>;
-  className?: string;
-}) {
-  return (
-    <AnatomicalHeatmap
-      volumeByMuscle={volumeByMuscle}
-      className={className}
-      showLabels={false}
-    />
   );
 }

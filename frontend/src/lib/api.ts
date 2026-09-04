@@ -137,30 +137,7 @@ export const strengthApi = {
     }),
 
   parseWorkout: (text: string, date?: string, save = false) =>
-    fetchAPI<{
-      success: boolean;
-      date: string;
-      name: string | null;
-      exercises: Array<{
-        name: string;
-        exercise_id: string | null;
-        exercise_matched: boolean;
-        sets: Array<{
-          set_number: number;
-          reps: number | null; // null for failure sets
-          weight_kg: number | null;
-          rpe: number | null;
-          is_warmup: boolean;
-          is_failure: boolean;
-        }>;
-        notes: string | null;
-      }>;
-      duration_min: number | null;
-      overall_rpe: number | null;
-      notes: string | null;
-      session_id: number | null;
-      message: string | null;
-    }>("/strength/sessions/parse", {
+    fetchAPI<import("@/types").ParsedWorkout>("/strength/sessions/parse", {
       method: "POST",
       body: JSON.stringify({ text, date, save }),
     }),
@@ -282,29 +259,49 @@ export const stravaApi = {
 // ========================= //
 
 export const analyticsApi = {
-  getVolume: (period = '30d', sport = 'all') =>
-    fetchAPI<any>(`/analytics/volume?period=${period}&sport=${sport}`),
-  getTrainingLoad: (period = '90d') =>
-    fetchAPI<any>(`/analytics/training-load?period=${period}`),
-  getPace: (period = '90d', sport = 'running') =>
-    fetchAPI<any>(`/analytics/pace?period=${period}&sport=${sport}`),
-  getHrZones: (period = '30d') =>
-    fetchAPI<any>(`/analytics/hr-zones?period=${period}`),
-  getSportDistribution: (period = '90d') =>
-    fetchAPI<any>(`/analytics/sport-distribution?period=${period}`),
-  getBestEfforts: (sport = 'running') =>
-    fetchAPI<any>(`/analytics/best-efforts?sport=${sport}`),
-  getCardiacEfficiency: (period = '90d') =>
-    fetchAPI<any>(`/analytics/cardiac-efficiency?period=${period}`),
-  getHrPaceScatter: (period = '90d') =>
-    fetchAPI<any>(`/analytics/hr-pace-scatter?period=${period}`),
-  getHrDrift: (period = '1y', minDurationMin = 40) =>
-    fetchAPI<any>(`/analytics/hr-drift?period=${period}&min_duration_min=${minDurationMin}`),
+  getVolume: (period = "30d", sport = "all") =>
+    fetchAPI<import("@/types").VolumeResponse>(
+      `/analytics/volume?period=${period}&sport=${sport}`
+    ),
+  getTrainingLoad: (period = "90d") =>
+    fetchAPI<import("@/types").TrainingLoadResponse>(
+      `/analytics/training-load?period=${period}`
+    ),
+  getPace: (period = "90d", sport = "running") =>
+    fetchAPI<import("@/types").PaceResponse>(
+      `/analytics/pace?period=${period}&sport=${sport}`
+    ),
+  getHrZones: (period = "30d") =>
+    fetchAPI<import("@/types").HrZonesResponse>(
+      `/analytics/hr-zones?period=${period}`
+    ),
+  getSportDistribution: (period = "90d") =>
+    fetchAPI<import("@/types").SportDistributionResponse>(
+      `/analytics/sport-distribution?period=${period}`
+    ),
+  getBestEfforts: (sport = "running") =>
+    fetchAPI<import("@/types").BestEffortsResponse>(
+      `/analytics/best-efforts?sport=${sport}`
+    ),
+  getCardiacEfficiency: (period = "90d") =>
+    fetchAPI<import("@/types").CardiacEfficiencyResponse>(
+      `/analytics/cardiac-efficiency?period=${period}`
+    ),
+  getHrPaceScatter: (period = "90d") =>
+    fetchAPI<import("@/types").HrPaceScatterResponse>(
+      `/analytics/hr-pace-scatter?period=${period}`
+    ),
+  getHrDrift: (period = "1y", minDurationMin = 40) =>
+    fetchAPI<import("@/types").HrDriftResponse>(
+      `/analytics/hr-drift?period=${period}&min_duration_min=${minDurationMin}`
+    ),
   getSessions: (limit = 20, offset = 0) =>
-    fetchAPI<any>(`/analytics/sessions?limit=${limit}&offset=${offset}`),
+    fetchAPI<import("@/types").CardioSessionsResponse>(
+      `/analytics/sessions?limit=${limit}&offset=${offset}`
+    ),
   updateSession: (id: number, data: { rpe?: number; notes?: string }) =>
-    fetchAPI<any>(`/analytics/sessions/${id}`, {
-      method: 'PATCH',
+    fetchAPI<{ success: boolean }>(`/analytics/sessions/${id}`, {
+      method: "PATCH",
       body: JSON.stringify(data),
     }),
 };

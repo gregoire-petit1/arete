@@ -34,7 +34,6 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
         setError(null);
       } else {
         queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
-        queryClient.invalidateQueries({ queryKey: ['garminSyncStatus'] });
         handleClose();
         onSuccess();
       }

@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from arete.dataio.db import connect
-from arete.garmin.health_sync import sync_day, sync_range
+from arete.garmin.health_sync import sync_range
 from arete.garmin.readiness import update_readiness_range
 
 logger = logging.getLogger(__name__)

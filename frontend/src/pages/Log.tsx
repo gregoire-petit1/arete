@@ -2,11 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  TrendingUp,
-  TrendingDown,
-  Minus,
   X,
-  Wrench,
   Check,
   Sparkles,
   AlertCircle,
@@ -21,49 +17,18 @@ import { LoadingState, EmptyState, StrengthIcon, FitDropzone } from '@/component
 import { AnatomicalHeatmap } from '@/components/AnatomicalHeatmap';
 import { strengthApi, garminApi, tipsApi, analyticsApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import type { StrengthSession } from '@/types';
-
-// Parsed workout types
-interface ParsedSet {
-  set_number: number;
-  reps: number | null;
-  weight_kg: number | null;
-  rpe: number | null;
-  is_warmup: boolean;
-  is_failure: boolean;
-}
-
-interface ParsedExercise {
-  name: string;
-  exercise_id: string | null;
-  exercise_matched: boolean;
-  sets: ParsedSet[];
-  notes: string | null;
-}
-
-interface ParseResult {
-  success: boolean;
-  date: string;
-  name: string | null;
-  exercises: ParsedExercise[];
-  duration_min: number | null;
-  overall_rpe: number | null;
-  notes: string | null;
-  session_id: number | null;
-  message: string | null;
-}
+import type { CardioSession, ParsedWorkout, StrengthSession } from '@/types';
 
 export function LogPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'force' | 'cardio'>('force');
-  const [showComingSoon, setShowComingSoon] = useState<string | null>(null);
   const [showNewSession, setShowNewSession] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
 
   // Workout parsing state
   const [workoutText, setWorkoutText] = useState('');
   const [workoutDate, setWorkoutDate] = useState(new Date().toISOString().split('T')[0]);
-  const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [parseResult, setParseResult] = useState<ParsedWorkout | null>(null);
   const [parseStep, setParseStep] = useState<'input' | 'preview' | 'saved'>('input');
 
   // Cardio state
@@ -185,7 +150,7 @@ export function LogPage() {
           animate={{ opacity: 1, y: 0 }}
           className="flex justify-between items-center mb-4 sm:mb-8"
         >
-          <h1 className="text-lg sm:text-2xl font-display font-bold text-neon-cyan tracking-wider">
+          <h1 className="text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wider">
             LOG
           </h1>
           {activeTab === 'force' && (
@@ -293,45 +258,6 @@ export function LogPage() {
 
             {/* Right Column */}
             <div className="space-y-4 sm:space-y-8">
-              {/* Personal Records */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="glass-panel p-3 sm:p-4"
-              >
-                <h3 className="text-xs sm:text-sm font-mono text-text-muted mb-4 uppercase tracking-wider flex items-center gap-2">
-                  <span className="text-neon-gold">◆</span>
-                  PERSONAL RECORDS [HALL OF FAME]
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                  <PRCard
-                    exercise="SQUAT"
-                    weight={140}
-                    estimated1RM={140}
-                    trend="up"
-                    trendValue={5}
-                    date="28 Nov"
-                  />
-                  <PRCard
-                    exercise="BENCH"
-                    weight={100}
-                    estimated1RM={100}
-                    trend="up"
-                    trendValue={2.5}
-                    date="01 Dec"
-                  />
-                  <PRCard
-                    exercise="DEADLIFT"
-                    weight={180}
-                    estimated1RM={180}
-                    trend="plateau"
-                    trendValue={0}
-                    date="15 Nov"
-                  />
-                </div>
-              </motion.div>
-
               {/* Recent Sessions */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
@@ -422,7 +348,7 @@ export function LogPage() {
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-5 h-5 text-neon-gold" />
-                  <h3 className="text-lg font-display text-neon-gold">LOG SESSION</h3>
+                  <h3 className="text-lg font-sans text-neon-gold">LOG SESSION</h3>
                 </div>
                 <button
                   onClick={resetModal}
@@ -608,7 +534,7 @@ Triceps pushdown 4x12 RPE 8`}
                     <Check className="w-8 h-8 text-success-green" />
                   </div>
                   <div>
-                    <h4 className="font-display text-lg text-success-green">SESSION SAVED</h4>
+                    <h4 className="font-sans text-lg text-success-green">SESSION SAVED</h4>
                     <p className="text-sm font-mono text-text-muted mt-1">
                       {parseResult.message || `${parseResult.exercises.length} exercice(s) enregistré(s)`}
                     </p>
@@ -626,55 +552,6 @@ Triceps pushdown 4x12 RPE 8`}
                   </button>
                 </div>
               )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Coming Soon Modal */}
-      <AnimatePresence>
-        {showComingSoon && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-void/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-            onClick={() => setShowComingSoon(null)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="glass-panel p-6 max-w-md w-full"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Wrench className="w-5 h-5 text-warning-orange" />
-                  <h3 className="text-lg font-display text-warning-orange">EN CONSTRUCTION</h3>
-                </div>
-                <button
-                  onClick={() => setShowComingSoon(null)}
-                  className="p-1 hover:bg-text-muted/20 rounded transition-colors"
-                >
-                  <X className="w-5 h-5 text-text-muted" />
-                </button>
-              </div>
-              <p className="text-sm font-mono text-text-muted mb-4">
-                La fonctionnalité "<span className="text-neon-cyan">{showComingSoon}</span>"
-                est en cours de développement.
-              </p>
-              <div className="h-1 bg-shadow rounded overflow-hidden">
-                <motion.div
-                  className="h-full bg-warning-orange"
-                  initial={{ width: '0%' }}
-                  animate={{ width: '60%' }}
-                  transition={{ duration: 1 }}
-                />
-              </div>
-              <p className="text-[10px] font-mono text-text-muted mt-2">
-                Progression: 60% │ ETA: v1.2.0
-              </p>
             </motion.div>
           </motion.div>
         )}
@@ -924,7 +801,7 @@ function RecentSessions() {
     },
   });
 
-  const startEdit = (session: any) => {
+  const startEdit = (session: CardioSession) => {
     setEditingId(session.id);
     setEditRpe(session.rpe);
     setEditNotes(session.notes || '');
@@ -980,7 +857,7 @@ function RecentSessions() {
         RECENT SESSIONS
       </h3>
       <div className="space-y-2">
-        {sessions.map((s: any) => (
+        {sessions.map((s) => (
           <div
             key={s.id}
             className="p-3 bg-abyss rounded border border-text-muted/10 hover:border-neon-cyan/20 transition-all"
@@ -1120,46 +997,6 @@ function RecentSessions() {
         ))}
       </div>
     </motion.div>
-  );
-}
-
-function PRCard({
-  exercise,
-  weight,
-  estimated1RM: _estimated1RM,
-  trend,
-  trendValue,
-  date,
-}: {
-  exercise: string;
-  weight: number;
-  estimated1RM: number;
-  trend: 'up' | 'down' | 'plateau';
-  trendValue: number;
-  date: string;
-}) {
-  const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus;
-
-  return (
-    <div className="p-3 bg-abyss rounded border border-neon-gold/30 text-center">
-      <div className="text-xs text-text-muted font-mono mb-1 uppercase tracking-wider">[{exercise}]</div>
-      <div className="text-lg sm:text-2xl font-mono font-bold text-neon-gold">{weight} kg</div>
-      <div className="text-xs text-text-muted font-mono">Est 1RM</div>
-      <div
-        className={cn(
-          'flex items-center justify-center gap-1 mt-2 text-xs font-mono',
-          trend === 'up' && 'text-success-green',
-          trend === 'down' && 'text-danger-red',
-          trend === 'plateau' && 'text-text-muted'
-        )}
-      >
-        <TrendIcon className="w-3 h-3" />
-        {trend === 'up' && `+${trendValue}kg`}
-        {trend === 'down' && `-${trendValue}kg`}
-        {trend === 'plateau' && 'Plateau'}
-      </div>
-      <div className="text-[10px] text-text-muted mt-1">{date}</div>
-    </div>
   );
 }
 

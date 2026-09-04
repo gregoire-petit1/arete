@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import {
@@ -8,11 +8,9 @@ import {
   Database,
   Bell,
   Palette,
-  Download,
   Save,
   Check,
   X,
-  AlertTriangle,
   Terminal,
   RefreshCw,
   Server,
@@ -33,7 +31,6 @@ const TABS = [
   { id: 'goals', label: 'GOALS', icon: Target },
   { id: 'workout', label: 'WORKOUT', icon: Dumbbell },
   { id: 'connections', label: 'CONNECTIONS', icon: Watch },
-  { id: 'data', label: 'DATA', icon: Database },
   { id: 'appearance', label: 'APPEARANCE', icon: Palette },
   { id: 'system', label: 'SYSTEM', icon: Terminal },
 ] as const;
@@ -64,24 +61,20 @@ export function SettingsPage() {
     exercise_abbreviations: {},
   });
 
-  // Sync local state with fetched settings
-  useEffect(() => {
-    if (savedSettings) {
-      const { user_id, ...rest } = savedSettings;
-      setSettings(rest);
-    }
-  }, [savedSettings]);
+  // Adopt fetched settings into local form state whenever the server copy changes
+  const [syncedFrom, setSyncedFrom] = useState<UserSettings | null>(null);
+  if (savedSettings && savedSettings !== syncedFrom) {
+    setSyncedFrom(savedSettings);
+    const { user_id, ...rest } = savedSettings;
+    setSettings(rest);
+  }
 
-  const [hasChanges, setHasChanges] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  // Check for changes
-  useEffect(() => {
-    if (savedSettings) {
-      const { user_id, ...saved } = savedSettings;
-      const changed = JSON.stringify(saved) !== JSON.stringify(settings);
-      setHasChanges(changed);
-    }
+  const hasChanges = useMemo(() => {
+    if (!savedSettings) return false;
+    const { user_id, ...saved } = savedSettings;
+    return JSON.stringify(saved) !== JSON.stringify(settings);
   }, [settings, savedSettings]);
 
   // Save mutation
@@ -129,7 +122,7 @@ export function SettingsPage() {
           animate={{ opacity: 1, y: 0 }}
           className="flex justify-between items-center mb-8"
         >
-          <h1 className="text-2xl font-display font-bold text-text-primary tracking-wider">
+          <h1 className="text-2xl font-sans font-bold text-text-primary tracking-wider">
             SETTINGS
           </h1>
           {hasChanges && (
@@ -214,10 +207,7 @@ export function SettingsPage() {
             {activeTab === 'workout' && (
               <WorkoutTab settings={settings} updateSetting={updateSetting} />
             )}
-            {activeTab === 'connections' && (
-              <ConnectionsTab onGoToSystem={() => setActiveTab('system')} />
-            )}
-            {activeTab === 'data' && <DataTab />}
+            {activeTab === 'connections' && <ConnectionsTab />}
             {activeTab === 'appearance' && (
               <AppearanceTab settings={settings} updateSetting={updateSetting} />
             )}
@@ -244,7 +234,7 @@ function ProfileTab({
 }) {
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-display text-text-primary mb-4">PROFILE SETTINGS</h2>
+      <h2 className="text-lg font-sans text-text-primary mb-4">PROFILE SETTINGS</h2>
 
       <div className="space-y-4">
         <div>
@@ -320,7 +310,7 @@ function GoalsTab({
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-display text-text-primary mb-4">TRAINING GOALS</h2>
+      <h2 className="text-lg font-sans text-text-primary mb-4">TRAINING GOALS</h2>
 
       <div className="space-y-6">
         {/* Fitness Goal */}
@@ -460,7 +450,7 @@ function WorkoutTab({
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-display text-text-primary mb-4">WORKOUT NOTATION</h2>
+      <h2 className="text-lg font-sans text-text-primary mb-4">WORKOUT NOTATION</h2>
 
       {/* Abbreviations */}
       <div>
@@ -580,9 +570,9 @@ function WorkoutTab({
   );
 }
 
-function ConnectionsTab({ onGoToSystem }: { onGoToSystem: () => void }) {
+function ConnectionsTab() {
   const { data: syncStatus } = useQuery({
-    queryKey: ['garminSyncStatus'],
+    queryKey: ['syncStatus'],
     queryFn: garminApi.getSyncStatus,
     retry: false,
   });
@@ -629,7 +619,7 @@ function ConnectionsTab({ onGoToSystem }: { onGoToSystem: () => void }) {
       setSyncResult(`${result.imported} imported, ${result.skipped} skipped`);
       const status = await stravaApi.getStatus();
       setStravaStatus(status);
-    } catch (_e) {
+    } catch {
       setSyncResult('Sync failed');
     } finally {
       setSyncing(false);
@@ -650,7 +640,7 @@ function ConnectionsTab({ onGoToSystem }: { onGoToSystem: () => void }) {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-display text-text-primary mb-4">CONNECTED SERVICES</h2>
+      <h2 className="text-lg font-sans text-text-primary mb-4">CONNECTED SERVICES</h2>
 
       <div className="space-y-3">
         {/* Garmin */}
@@ -731,102 +721,6 @@ function ConnectionsTab({ onGoToSystem }: { onGoToSystem: () => void }) {
           )}
         </div>
 
-        {/* Runalyze */}
-        <div
-          className={cn(
-            'flex items-center gap-4 p-4 rounded',
-            'bg-abyss/50 border border-text-muted/20'
-          )}
-        >
-          <Database className="w-6 h-6 text-text-muted" />
-          <div className="flex-1">
-            <div className="font-mono text-sm text-text-primary">Runalyze</div>
-          </div>
-          <span className="text-xs font-mono text-text-muted">Coming Soon</span>
-        </div>
-      </div>
-
-      <button
-        onClick={onGoToSystem}
-        className={cn(
-          'w-full px-4 py-3 rounded text-sm font-mono',
-          'bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan',
-          'hover:bg-neon-cyan/20 transition-all'
-        )}
-      >
-        Manage connections in System tab
-      </button>
-    </div>
-  );
-}
-
-function DataTab() {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-lg font-display text-text-primary mb-4">DATA MANAGEMENT</h2>
-
-      <div className="space-y-4">
-        {/* Export */}
-        <div className="p-4 rounded bg-abyss/50 border border-text-muted/20">
-          <div className="flex items-center gap-3 mb-2">
-            <Download className="w-5 h-5 text-neon-cyan" />
-            <div>
-              <div className="font-mono text-sm text-text-primary">Export Data</div>
-              <div className="text-xs text-text-muted font-mono">Download all your training data</div>
-            </div>
-          </div>
-          <div className="flex gap-2 mt-3">
-            <button
-              className={cn(
-                'px-3 py-1.5 rounded text-xs font-mono',
-                'bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan',
-                'hover:bg-neon-cyan/20 transition-all'
-              )}
-            >
-              Export CSV
-            </button>
-            <button
-              className={cn(
-                'px-3 py-1.5 rounded text-xs font-mono',
-                'bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan',
-                'hover:bg-neon-cyan/20 transition-all'
-              )}
-            >
-              Export JSON
-            </button>
-          </div>
-        </div>
-
-        {/* Danger Zone */}
-        <div className="p-4 rounded bg-danger-red/5 border border-danger-red/30">
-          <div className="flex items-center gap-3 mb-2">
-            <AlertTriangle className="w-5 h-5 text-danger-red" />
-            <div>
-              <div className="font-mono text-sm text-danger-red">Danger Zone</div>
-              <div className="text-xs text-text-muted font-mono">Irreversible actions</div>
-            </div>
-          </div>
-          <div className="flex gap-2 mt-3">
-            <button
-              className={cn(
-                'px-3 py-1.5 rounded text-xs font-mono',
-                'bg-danger-red/10 border border-danger-red/30 text-danger-red',
-                'hover:bg-danger-red/20 transition-all'
-              )}
-            >
-              Clear Cache
-            </button>
-            <button
-              className={cn(
-                'px-3 py-1.5 rounded text-xs font-mono',
-                'bg-danger-red/10 border border-danger-red/30 text-danger-red',
-                'hover:bg-danger-red/20 transition-all'
-              )}
-            >
-              Delete All Data
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -840,14 +734,14 @@ function AppearanceTab({
   updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
 }) {
   const THEMES = [
-    { value: 'dark', label: 'DARK', color: 'bg-[#0a0f1a]' },
-    { value: 'darker', label: 'DARKER', color: 'bg-[#050810]' },
+    { value: 'dark', label: 'DARK', color: 'bg-[#0A0A0F]' },
+    { value: 'darker', label: 'DARKER', color: 'bg-[#050508]' },
     { value: 'abyss', label: 'ABYSS', color: 'bg-[#000000]' },
   ];
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-display text-text-primary mb-4">APPEARANCE</h2>
+      <h2 className="text-lg font-sans text-text-primary mb-4">APPEARANCE</h2>
 
       <div className="space-y-6">
         {/* Theme */}
@@ -971,7 +865,7 @@ function SystemTab() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-lg font-display text-text-primary">SYSTEM</h2>
+        <h2 className="text-lg font-sans text-text-primary">SYSTEM</h2>
         <button
           onClick={handleRefresh}
           className={cn(
