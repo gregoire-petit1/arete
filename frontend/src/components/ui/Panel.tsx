@@ -1,0 +1,57 @@
+import type { CSSProperties, ReactNode } from 'react';
+import { cn } from '@/lib/utils';
+
+interface PanelProps {
+  title?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  /** Tailwind text color class for the title (default text-text-muted). */
+  titleTone?: string;
+  /** glass = translucent card (pages), inset = darker inner block (settings). */
+  variant?: 'glass' | 'inset';
+  /** Entrance animation delay in seconds (0 disables the stagger). */
+  delay?: number;
+  animate?: boolean;
+  style?: CSSProperties;
+}
+
+/**
+ * Titled card. `glass` replaces `<div className="glass-panel p-3 sm:p-4">` + h3,
+ * `inset` replaces `<div className="p-4 bg-abyss/50 rounded border border-text-muted/20">` + h3.
+ */
+export function Panel({
+  title,
+  children,
+  className,
+  titleTone = 'text-text-muted',
+  variant = 'glass',
+  delay = 0,
+  animate = variant === 'glass',
+  style,
+}: PanelProps) {
+  return (
+    <div
+      className={cn(
+        variant === 'glass'
+          ? 'glass-panel p-3 sm:p-4'
+          : 'p-4 bg-abyss/50 rounded border border-text-muted/20',
+        animate && 'animate-fade-up',
+        className
+      )}
+      style={delay ? { animationDelay: `${delay}s`, ...style } : style}
+    >
+      {title && (
+        <h3
+          className={cn(
+            'font-mono uppercase tracking-wider',
+            variant === 'glass' ? 'text-xs sm:text-sm mb-4' : 'text-xs mb-3',
+            titleTone
+          )}
+        >
+          {title}
+        </h3>
+      )}
+      {children}
+    </div>
+  );
+}

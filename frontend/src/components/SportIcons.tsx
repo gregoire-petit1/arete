@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 
-interface SportIconProps {
+export interface SportIconProps {
   className?: string;
   size?: 'sm' | 'md' | 'lg';
 }
@@ -215,38 +215,4 @@ export function FlameIcon({ className, size = 'md' }: SportIconProps) {
       <path d="M12 2c-3 4-6 6-6 11a6 6 0 0 0 12 0c0-5-3-7-6-11zm0 15a2.5 2.5 0 0 1-2.5-2.5c0-1.5 1-2.5 2.5-4 1.5 1.5 2.5 2.5 2.5 4A2.5 2.5 0 0 1 12 17z" />
     </svg>
   );
-}
-
-// Map sport string to icon component
-export function getSportIconComponent(sport: string): React.ComponentType<SportIconProps> {
-  const sportLower = sport.toLowerCase();
-  
-  if (sportLower.includes('run') || sportLower.includes('running')) return RunIcon;
-  if (sportLower.includes('row') || sportLower.includes('rowing')) return RowIcon;
-  if (sportLower.includes('strength') || sportLower.includes('weight') || sportLower.includes('gym')) return StrengthIcon;
-  if (sportLower.includes('cycl') || sportLower.includes('bike')) return CycleIcon;
-  if (sportLower.includes('swim')) return SwimIcon;
-  if (sportLower.includes('yoga') || sportLower.includes('mobil') || sportLower.includes('stretch')) return YogaIcon;
-  if (sportLower.includes('hik')) return HikeIcon;
-  if (sportLower.includes('walk')) return WalkIcon;
-  if (sportLower.includes('rest') || sportLower.includes('recovery')) return RestIcon;
-  
-  return OtherIcon;
-}
-
-// Get color for sport type
-export function getSportColor(sport: string): string {
-  const sportLower = sport.toLowerCase();
-  
-  if (sportLower.includes('run') || sportLower.includes('running')) return 'text-neon-cyan';
-  if (sportLower.includes('row') || sportLower.includes('rowing')) return 'text-neon-purple';
-  if (sportLower.includes('strength') || sportLower.includes('weight') || sportLower.includes('gym')) return 'text-warning-orange';
-  if (sportLower.includes('cycl') || sportLower.includes('bike')) return 'text-success-green';
-  if (sportLower.includes('swim')) return 'text-neon-cyan';
-  if (sportLower.includes('yoga') || sportLower.includes('mobil')) return 'text-neon-purple';
-  if (sportLower.includes('hik')) return 'text-success-green';
-  if (sportLower.includes('walk')) return 'text-text-secondary';
-  if (sportLower.includes('rest')) return 'text-text-muted';
-  
-  return 'text-neon-gold';
 }

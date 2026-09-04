@@ -7,7 +7,7 @@ import {
   LoadingState,
   ErrorState,
 } from '@/components';
-import { getSportIconComponent } from '@/components/SportIcons';
+import { getSportIconComponent } from '@/lib/sport';
 import { metricsApi, garminApi, garminHealthApi, tipsApi, settingsApi } from '@/lib/api';
 import { cn, getZoneColor } from '@/lib/utils';
 

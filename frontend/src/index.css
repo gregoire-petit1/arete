@@ -31,6 +31,7 @@
 /* ========================= */
 /* TAILWIND THEME CONFIG    */
 /* ========================= */
+/* Hex values are mirrored in src/lib/chartTheme.ts for recharts (needs literals). */
 
 @theme {
   /* Colors - Solo Leveling Theme */
@@ -43,9 +44,34 @@
   --color-success-green: #00FF88;
   --color-warning-orange: #FF8C00;
   --color-danger-red: #FF3B3B;
+  --color-info-blue: #3B82F6;
   --color-text-primary: #E8E8E8;
   --color-text-secondary: #A0A0A0;
   --color-text-muted: #606060;
+
+  /* Brands */
+  --color-strava: #FC4C02;
+
+  /* Chart palette (recharts) */
+  --color-chart-surface: #1A1A2E;
+  --color-chart-grid: #333333;
+  --color-chart-axis: #888888;
+  --color-chart-label: #666666;
+  --color-chart-text: #CCCCCC;
+  --color-chart-blue: #3B82F6;
+  --color-chart-green: #22C55E;
+  --color-chart-yellow: #EAB308;
+  --color-chart-orange: #F97316;
+  --color-chart-red: #EF4444;
+  --color-chart-grey: #6B7280;
+
+  /* Muscle heatmap */
+  --color-heat-none: #334155;
+  --color-heat-low: #F59E0B;
+  --color-heat-mid: #F97316;
+  --color-heat-high: #EF4444;
+  --color-outline-dim: #475569;
+  --color-outline: #64748B;
 
   /* Fonts */
   --font-sans: 'Inter', system-ui, sans-serif;
@@ -81,6 +107,54 @@ body {
   border: 1px solid rgba(0, 240, 255, 0.15);
   border-radius: 4px;
 }
+
+/* ========================= */
+/* ENTRANCE ANIMATIONS      */
+/* ========================= */
+/* Replace framer-motion fade/slide-ins. Stagger with inline `animationDelay`. */
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-down {
+  from { opacity: 0; transform: translateY(-16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fade-left {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes scale-out {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.92); }
+}
+
+.animate-fade-in { animation: fade-in 0.2s ease-out both; }
+.animate-fade-out { animation: fade-out 0.15s ease-in both; }
+.animate-fade-up { animation: fade-up 0.3s ease-out both; }
+.animate-fade-down { animation: fade-down 0.3s ease-out both; }
+.animate-fade-left { animation: fade-left 0.3s ease-out both; }
+.animate-scale-in { animation: scale-in 0.2s ease-out both; }
+.animate-scale-out { animation: scale-out 0.15s ease-in both; }
 
 /* ========================= */
 /* SCROLLBAR STYLING        */

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { getSportIconComponent, getSportColor } from './SportIcons';
+import { getSportIconComponent, getSportColor } from '@/lib/sport';
 import type { PlannedSession, ActualSession } from '@/types';
 
 interface CalendarDayProps {
