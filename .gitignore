@@ -40,3 +40,6 @@ frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 *.tsbuildinfo
+
+# Claude Code local state (agent worktrees, settings)
+.claude/
