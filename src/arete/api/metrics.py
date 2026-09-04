@@ -13,6 +13,8 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from arete.dataio.db import connect
+from arete.dataio.queries import training_loads, tss_history, weekly_tss
+from arete.dataio.settings import get_user_settings
 from arete.features.cardio import (
     ZONE_DEFINITIONS,
     Sex,
@@ -21,7 +23,6 @@ from arete.features.cardio import (
     get_hr_zone,
 )
 from arete.features.fitness import (
-    DailyTSS,
     compute_performance_model,
 )
 from arete.features.recommendations import (
@@ -38,7 +39,6 @@ from arete.features.strength import (
 )
 from arete.features.workload import (
     ACWRZone,
-    DailyLoad,
     compute_workload_metrics,
 )
 
@@ -169,150 +169,9 @@ class RecommendationsResponse(BaseModel):
 
 
 # ---------- Helper Functions ----------
-def _get_training_loads(days: int = 28) -> list[DailyLoad]:
-    """Fetch daily training loads from actual_sessions.
-
-    Returns list of DailyLoad objects for the last N days.
-    Uses RPE * duration as load metric.
-    """
-    con = connect(read_only=True)
-    try:
-        end_date = date.today()
-        start_date = end_date - timedelta(days=days)
-
-        # Get daily aggregated loads
-        rows = con.execute(
-            """
-            SELECT date,
-                   SUM(COALESCE(duration_sec, 0)) / 60.0 as total_duration,
-                   AVG(COALESCE(rpe, 5)) as avg_rpe
-            FROM app.actual_sessions
-            WHERE date >= ? AND date <= ?
-              AND user_id = 1
-            GROUP BY date
-            ORDER BY date ASC
-            """,
-            [start_date, end_date],
-        ).fetchall()
-
-        # Create a dict of date -> (duration, rpe)
-        data_by_date = {row[0]: (int(row[1]), float(row[2])) for row in rows}
-
-        # Build DailyLoad list for all days (zeros for missing)
-        loads = []
-        current = start_date
-        while current <= end_date:
-            if current in data_by_date:
-                duration, rpe = data_by_date[current]
-                loads.append(DailyLoad(date=current, duration_min=duration, rpe=rpe))
-            else:
-                loads.append(DailyLoad(date=current, duration_min=0, rpe=0))
-            current += timedelta(days=1)
-
-        return loads
-    finally:
-        con.close()
-
-
-def _get_tss_history(days: int = 42) -> list[DailyTSS]:
-    """Fetch daily TSS-like values from actual_sessions.
-
-    Uses TSS fallback chain: RPE → suffer_score → HR-based → default (RPE 5).
-    TSS estimation: (duration * intensity^2) / 0.36
-    where intensity = RPE / 10. This approximates 100 TSS for 1 hour at RPE 6.
-    """
-    con = connect(read_only=True)
-    try:
-        end_date = date.today()
-        start_date = end_date - timedelta(days=days)
-
-        rows = con.execute(
-            """
-            SELECT date,
-                   SUM(
-                     CASE
-                       WHEN rpe IS NOT NULL THEN
-                         (COALESCE(duration_sec, 0) / 60.0) * POWER(rpe / 10.0, 2) / 0.36
-                       WHEN suffer_score IS NOT NULL THEN
-                         suffer_score * 0.8
-                       WHEN avg_hr IS NOT NULL THEN
-                         (COALESCE(duration_sec, 0) / 60.0) * POWER(LEAST(avg_hr, 200) / 180.0, 2) / 0.36
-                       ELSE
-                         (COALESCE(duration_sec, 0) / 60.0) * 0.25 / 0.36
-                     END
-                   ) as daily_tss
-            FROM app.actual_sessions
-            WHERE date >= ? AND date <= ?
-              AND user_id = 1
-            GROUP BY date
-            ORDER BY date ASC
-            """,
-            [start_date, end_date],
-        ).fetchall()
-
-        tss_by_date = {row[0]: float(row[1]) for row in rows}
-
-        tss_list = []
-        current = start_date
-        while current <= end_date:
-            tss = tss_by_date.get(current, 0.0)
-            tss_list.append(DailyTSS(date=current, tss=tss))
-            current += timedelta(days=1)
-
-        return tss_list
-    finally:
-        con.close()
 
 
 # ---------- Endpoints ----------
-
-
-def _get_user_settings() -> dict:
-    """Fetch user settings or return defaults."""
-    con = connect(read_only=True)
-    try:
-        row = con.execute(
-            "SELECT * FROM app.user_settings WHERE user_id = 1"
-        ).fetchone()
-        if row:
-            columns = [desc[0] for desc in con.description]
-            return dict(zip(columns, row, strict=True))
-        return {}
-    except Exception:
-        return {}
-    finally:
-        con.close()
-
-
-def _compute_weekly_tss(start_monday: date, end_date: date) -> float:
-    """Sum TSS from start_monday to end_date (inclusive)."""
-    con = connect(read_only=True)
-    try:
-        row = con.execute(
-            """
-            SELECT COALESCE(SUM(
-              CASE
-                WHEN rpe IS NOT NULL THEN
-                  (COALESCE(duration_sec, 0) / 60.0) * POWER(rpe / 10.0, 2) / 0.36
-                WHEN suffer_score IS NOT NULL THEN
-                  suffer_score * 0.8
-                WHEN avg_hr IS NOT NULL THEN
-                  (COALESCE(duration_sec, 0) / 60.0) * POWER(LEAST(avg_hr, 200) / 180.0, 2) / 0.36
-                ELSE
-                  (COALESCE(duration_sec, 0) / 60.0) * 0.25 / 0.36
-              END
-            ), 0)
-            FROM app.actual_sessions
-            WHERE date >= ? AND date <= ?
-              AND user_id = 1
-            """,
-            [start_monday, end_date],
-        ).fetchone()
-        return float(row[0]) if row else 0.0
-    except Exception:
-        return 0.0
-    finally:
-        con.close()
 
 
 def _compute_level(weekly_tss_goal: float) -> int:
@@ -338,14 +197,12 @@ def _compute_level(weekly_tss_goal: float) -> int:
         week_start = start_monday
         while week_start < current_monday:
             week_end = week_start + timedelta(days=6)
-            week_tss = _compute_weekly_tss(week_start, week_end)
+            week_tss = weekly_tss(con, week_start, week_end)
             if week_tss >= weekly_tss_goal:
                 level += 1
             week_start += timedelta(days=7)
 
         return level
-    except Exception:
-        return 0
     finally:
         con.close()
 
@@ -362,15 +219,15 @@ def get_player_stats():
     today = date.today()
 
     # --- Settings ---
-    settings = _get_user_settings()
+    settings = get_user_settings(user_id=1) or {}
     target_ctl = float(settings.get("desired_training_load", 0) or 0) or 50.0
     weekly_tss_goal = 300.0  # Default; not in user_settings schema
 
     # --- HP: Readiness ---
-    tss_history = _get_tss_history(days=42)
-    has_data = any(tss.tss > 0 for tss in tss_history)
+    history = tss_history(days=42)
+    has_data = any(tss.tss > 0 for tss in history)
     if has_data:
-        model = compute_performance_model(tss_history, today)
+        model = compute_performance_model(history, today)
         hp_current = round(model.readiness_score, 1)
         ctl_value = model.ctl
     else:
@@ -382,7 +239,11 @@ def get_player_stats():
 
     # --- XP: Weekly TSS ---
     monday = today - timedelta(days=today.weekday())
-    xp_current = round(_compute_weekly_tss(monday, today), 1)
+    con = connect(read_only=True)
+    try:
+        xp_current = round(weekly_tss(con, monday, today), 1)
+    finally:
+        con.close()
 
     # --- Level ---
     level = _compute_level(weekly_tss_goal)
@@ -406,7 +267,7 @@ def get_workload_metrics(
     - Monotony: Training load variability
     - Strain: Accumulated fatigue
     """
-    loads = _get_training_loads(days=days)
+    loads = training_loads(days=days)
     target_date = date.today()
 
     # Check if there's any training data
@@ -453,11 +314,11 @@ def get_fitness_metrics(
     - ATL: Acute Training Load (7-day EWMA) = Fatigue
     - TSB: Training Stress Balance = Form (CTL - ATL)
     """
-    tss_history = _get_tss_history(days=days)
+    history = tss_history(days=days)
     target_date = date.today()
 
     # Check for data
-    has_data = any(tss.tss > 0 for tss in tss_history)
+    has_data = any(tss.tss > 0 for tss in history)
     if not has_data:
         # Return default values when no data
         return FitnessMetricsOut(
@@ -471,7 +332,7 @@ def get_fitness_metrics(
             days_analyzed=0,
         )
 
-    model = compute_performance_model(tss_history, target_date)
+    model = compute_performance_model(history, target_date)
 
     return FitnessMetricsOut(
         ctl=round(model.ctl, 1),
@@ -481,7 +342,7 @@ def get_fitness_metrics(
         readiness_score=round(model.readiness_score, 1),
         readiness_level=model.readiness_level.value,
         ramp_rate=round(model.ramp_rate, 2) if model.ramp_rate else None,
-        days_analyzed=len([tss for tss in tss_history if tss.tss > 0]),
+        days_analyzed=len([tss for tss in history if tss.tss > 0]),
     )
 
 
@@ -588,7 +449,7 @@ def get_recommendations(
     workload = None
     loads = None
     try:
-        loads = _get_training_loads(days=28)
+        loads = training_loads(days=28)
         if any(load.duration_min > 0 for load in loads):
             workload = compute_workload_metrics(loads, target_date)
     except Exception:
@@ -597,7 +458,7 @@ def get_recommendations(
     fitness = None
     tss = None
     try:
-        tss = _get_tss_history(days=42)
+        tss = tss_history(days=42)
         if any(t.tss > 0 for t in tss):
             fitness = compute_performance_model(tss, target_date)
     except Exception:

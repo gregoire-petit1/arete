@@ -143,14 +143,15 @@ class StrengthRepository:
         conn = self._get_connection()
 
         # Count duplicates first
-        dup_count = conn.execute(
+        dup_row = conn.execute(
             """
             SELECT COUNT(*) FROM app.exercises
             WHERE id NOT IN (
                 SELECT MIN(id) FROM app.exercises GROUP BY LOWER(name)
             )
             """
-        ).fetchone()[0]
+        ).fetchone()
+        dup_count = int(dup_row[0]) if dup_row else 0
 
         # Delete duplicates
         conn.execute(
@@ -433,7 +434,7 @@ class StrengthRepository:
             """
             SELECT id, user_id, date, name, program, duration_min,
                    overall_rpe, fatigue_level, sleep_quality, notes, created_at,
-                   garmin_activity_id
+                   actual_session_id
             FROM app.strength_sessions WHERE id = ?
             """,
             [session_id],
@@ -455,7 +456,7 @@ class StrengthRepository:
             sleep_quality=session_row[8],
             notes=session_row[9],
             created_at=session_row[10],
-            garmin_activity_id=session_row[11],
+            actual_session_id=session_row[11],
         )
 
         # Get exercises
@@ -811,7 +812,7 @@ class StrengthRepository:
     # Garmin linking methods
     # ─────────────────────────────────────────────────────────────────────────
 
-    def link_to_garmin_activity(self, session_id: int, garmin_id: int) -> bool:
+    def link_to_actual_session(self, session_id: int, garmin_id: int | None) -> bool:
         """Link a strength session to a Garmin activity."""
         conn = self._get_connection()
 
@@ -825,7 +826,7 @@ class StrengthRepository:
             return False
 
         conn.execute(
-            "UPDATE app.strength_sessions SET garmin_activity_id = ? WHERE id = ?",
+            "UPDATE app.strength_sessions SET actual_session_id = ? WHERE id = ?",
             (garmin_id, session_id),
         )
         conn.close()

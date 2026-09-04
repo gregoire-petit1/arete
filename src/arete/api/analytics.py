@@ -11,12 +11,19 @@ import logging
 from collections import defaultdict
 from datetime import date, timedelta
 
-import numpy as np
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from arete.api.metrics import _get_tss_history
 from arete.dataio.db import connect
+from arete.dataio.queries import (
+    FOOT_SPORTS,
+    RUNNING_SPORTS,
+    SPORT_GROUPS,
+    sql_in,
+    tss_history,
+)
+from arete.features.fitness import ctl_atl_series
+from arete.features.hr_drift import analyze_runs
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +38,6 @@ PERIOD_MAP: dict[str, int] = {
     "6m": 180,
     "1y": 365,
     "all": 3650,
-}
-
-SPORT_FILTER: dict[str, tuple[str, ...]] = {
-    "running": ("run", "trail_run"),
-    "cycling": ("ride", "virtual_ride"),
 }
 
 EFFORT_NAMES = ("400m", "1k", "1 mile", "5k", "10k", "Half-Marathon")
@@ -116,25 +118,16 @@ def get_training_load(
 ):
     """Daily CTL / ATL / TSB time series."""
     days = _parse_period(period)
-    tss_history = _get_tss_history(days=days)
-
-    ctl = 0.0
-    atl = 0.0
-    data = []
-    for day_tss in tss_history:
-        ctl = ctl + (day_tss.tss - ctl) / 42.0
-        atl = atl + (day_tss.tss - atl) / 7.0
-        tsb = ctl - atl
-        data.append(
-            {
-                "date": str(day_tss.date),
-                "ctl": round(ctl, 1),
-                "atl": round(atl, 1),
-                "tsb": round(tsb, 1),
-                "tss": round(day_tss.tss, 1),
-            }
-        )
-
+    data = [
+        {
+            "date": str(day.date),
+            "ctl": round(ctl, 1),
+            "atl": round(atl, 1),
+            "tsb": round(ctl - atl, 1),
+            "tss": round(day.tss, 1),
+        }
+        for day, ctl, atl in ctl_atl_series(tss_history(days=days))
+    ]
     return {"data": data}
 
 
@@ -146,7 +139,7 @@ def get_pace(
     """Pace trend for running or cycling activities."""
     days = _parse_period(period)
     start_date = date.today() - timedelta(days=days)
-    sports = SPORT_FILTER.get(sport, ("run",))
+    sports = SPORT_GROUPS.get(sport, RUNNING_SPORTS)
     placeholders = ", ".join("?" for _ in sports)
 
     con = connect(read_only=True)
@@ -265,7 +258,7 @@ def get_best_efforts(
     sport: str = Query("running"),
 ):
     """All-time best efforts (PRs) for common distances."""
-    sports = SPORT_FILTER.get(sport, ("run",))
+    sports = SPORT_GROUPS.get(sport, RUNNING_SPORTS)
     placeholders = ", ".join("?" for _ in sports)
 
     con = connect(read_only=True)
@@ -397,302 +390,30 @@ def get_hr_drift(
     period: str = Query("1y"),
     min_duration_min: int = Query(40, ge=20, le=240),
 ):
-    """HR drift per run with proper normalization (cardiac decoupling + residual).
+    """HR drift / aerobic decoupling per run, with athlete baseline.
 
-    The raw HR drift (last_2km_hr - first_2km_hr) / first_hr is confounded by
-    distance, gradient, and D+. This endpoint computes:
-
-    1. **Per-km HR profile** (split by half) — raw data for visualization
-    2. **HR drift %** (raw) — first half vs second half average HR
-    3. **Pace drift %** (raw) — first half vs second half average pace
-    4. **Cardiac decoupling %** (Friel) = pace_drift + hr_drift
-       - <5% = excellent aerobic fitness (HR stable despite effort)
-       - 5-10% = good
-       - >10% = cardiac drift (aerobic capacity under-trained, fatigue, or heat)
-    5. **Residual drift** = actual_decoupling - predicted_by_baseline
-       Baseline = linear regression of decoupling ~ distance + D+/km + avg_pace
-       Negative residual = better than athlete's own baseline (good day)
-       Positive residual = worse than baseline (fatigue, illness, overtraining)
-    6. **Drift score** based on residual + decoupling combination
-
-    Only includes runs >= min_duration_min with >= 4 full 1-km laps.
+    Only runs >= min_duration_min with >= 4 full 1-km laps. See
+    ``arete.features.hr_drift`` for the method.
     """
-    days = _parse_period(period)
-    start_date = date.today() - timedelta(days=days)
-    min_duration_sec = min_duration_min * 60
-
+    start_date = date.today() - timedelta(days=_parse_period(period))
     con = connect(read_only=True)
     try:
         rows = con.execute(
-            """
+            f"""
             SELECT id, date, name, distance_m, ascent_m,
                    moving_time_sec, avg_hr, avg_pace_sec_km, laps_json
             FROM app.actual_sessions
             WHERE date >= ? AND user_id = 1
-              AND sport IN ('run', 'trail_run', 'running', 'virtualrun')
+              AND sport IN ({sql_in(RUNNING_SPORTS)})
               AND moving_time_sec >= ?
               AND laps_json IS NOT NULL
             ORDER BY date ASC
             """,
-            [start_date, min_duration_sec],
+            [start_date, min_duration_min * 60],
         ).fetchall()
     finally:
         con.close()
-
-    # ---- Step 1: compute per-run metrics from laps ----
-    raw_runs: list[dict] = []
-    for r in rows:
-        rid, date_v, name, dist_m, dplus, dur, avg_hr, pace_sec, laps_str = r
-        try:
-            laps = json.loads(laps_str) if laps_str else []
-        except (json.JSONDecodeError, TypeError):
-            continue
-
-        km_laps = [
-            lap
-            for lap in laps
-            if 900 <= (lap.get("distance") or 0) <= 1100
-            and lap.get("average_heartrate")
-            and lap.get("average_speed")
-        ]
-        if len(km_laps) < 4:
-            continue
-
-        # Per-km HR, pace, elevation
-        hr_series = [lap["average_heartrate"] for lap in km_laps]
-        pace_series = [3600.0 / lap["average_speed"] for lap in km_laps]  # sec/km
-        elev_series = [lap.get("total_elevation_gain", 0) or 0 for lap in km_laps]
-
-        n = len(km_laps)
-        half = n // 2
-        first_hr = sum(hr_series[:half]) / half
-        last_hr = sum(hr_series[-half:]) / half
-        first_pace = sum(pace_series[:half]) / half
-        last_pace = sum(pace_series[-half:]) / half
-        if first_hr <= 0 or first_pace <= 0:
-            continue
-
-        # Raw drifts (positive = HR rises / pace slows)
-        hr_drift_pct = (last_hr - first_hr) / first_hr * 100
-        # Pace drift: positive when pace slows (last_pace > first_pace)
-        pace_drift_pct = (last_pace - first_pace) / first_pace * 100
-        # Friel cardiac decoupling = pace_drift + hr_drift
-        decoupling_pct = pace_drift_pct + hr_drift_pct
-
-        # Per-km profile (rounded for display)
-        splits = [
-            {
-                "km": i + 1,
-                "hr": round(hr_series[i], 1),
-                "pace_sec_km": round(pace_series[i]),
-                "elev_m": round(elev_series[i]),
-            }
-            for i in range(n)
-        ]
-
-        raw_runs.append(
-            {
-                "id": rid,
-                "date": str(date_v),
-                "name": name,
-                "distance_km": round(dist_m / 1000, 1) if dist_m else None,
-                "elevation_m": int(dplus) if dplus else None,
-                "duration_min": int(dur / 60) if dur else None,
-                "avg_hr": int(avg_hr) if avg_hr else None,
-                "avg_pace_sec_km": pace_sec,
-                "hr_drift_pct": round(hr_drift_pct, 1),
-                "pace_drift_pct": round(pace_drift_pct, 1),
-                "decoupling_pct": round(decoupling_pct, 1),
-                "splits": splits,
-            }
-        )
-
-    # ---- Step 2 helpers: classify run type + score ----
-
-    def _classify_run_type(r: dict) -> str:
-        elev_per_km = (r["elevation_m"] or 0) / max(r["distance_km"] or 1, 1)
-        pace = r["avg_pace_sec_km"] or 0
-        dist = r["distance_km"] or 0
-        if dist < 12 and pace < 360 and elev_per_km < 20:
-            return "intensity"
-        if elev_per_km > 30 and dist >= 15:
-            return "trail_long"
-        if elev_per_km > 30:
-            return "trail_short"
-        if dist >= 18:
-            return "long_run"
-        return "base"
-
-    def _score_run(run_type: str, hr: float, residual: float | None) -> str:
-        if run_type == "intensity":
-            if hr < 5:
-                return "excellent"
-            if hr < 12:
-                return "good" if (residual is None or residual < 8) else "moderate"
-            if hr < 18:
-                return "moderate"
-            return "concerning"
-        if run_type in ("trail_long", "trail_short"):
-            if hr < 0:
-                return "excellent"
-            if hr < 5:
-                return "excellent" if (residual is None or residual < 5) else "good"
-            if hr < 10:
-                return "good" if (residual is None or residual < 8) else "moderate"
-            return "concerning"
-        # base or long_run
-        if hr < 0:
-            return "excellent"
-        if hr < 3:
-            return "excellent" if (residual is None or residual < 5) else "good"
-        if hr < 6:
-            return "good" if (residual is None or residual < 8) else "moderate"
-        if hr < 10:
-            return "moderate"
-        return "concerning"
-
-    # ---- Step 2: fit baseline regression on athlete's own data ----
-    baseline = None
-    if len(raw_runs) >= 10:
-        # Predictors: distance_km, elev_per_km, avg_pace_sec_km
-        X = np.array(
-            [
-                [
-                    r["distance_km"] or 0,
-                    (r["elevation_m"] or 0) / max(r["distance_km"] or 1, 1),
-                    r["avg_pace_sec_km"] or 0,
-                ]
-                for r in raw_runs
-            ],
-            dtype=float,
-        )
-        y = np.array([r["decoupling_pct"] for r in raw_runs], dtype=float)
-
-        # Standardize for numerical stability
-        X_mean = X.mean(axis=0)
-        X_std = X.std(axis=0)
-        X_std[X_std == 0] = 1.0
-        X_norm = (X - X_mean) / X_std
-
-        # Add intercept
-        X_full = np.column_stack([np.ones(len(X_norm)), X_norm])
-        # OLS via normal equations
-        coeffs, *_ = np.linalg.lstsq(X_full, y, rcond=None)
-        y_pred = X_full @ coeffs
-        ss_res = float(np.sum((y - y_pred) ** 2))
-        ss_tot = float(np.sum((y - y.mean()) ** 2))
-        r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
-
-        # De-normalize coefficients for interpretability
-        # y = c0 + c1 * (x1 - m1)/s1 + c2 * (x2 - m2)/s2 + c3 * (x3 - m3)/s3
-        # Original-space: y = (c0 - c1*m1/s1 - c2*m2/s2 - c3*m3/s3)
-        #                   + c1/s1 * x1 + c2/s2 * x2 + c3/s3 * x3
-        orig_coeffs = [
-            float(
-                coeffs[0] - sum(coeffs[i + 1] * X_mean[i] / X_std[i] for i in range(3))
-            ),
-            float(coeffs[1] / X_std[0]),
-            float(coeffs[2] / X_std[1]),
-            float(coeffs[3] / X_std[2]),
-        ]
-
-        baseline = {
-            "formula": "decoupling = b0 + b1*distance_km + b2*elev_per_km + b3*avg_pace_sec_km",
-            "coefficients": {
-                "intercept": round(orig_coeffs[0], 3),
-                "distance_km": round(orig_coeffs[1], 3),
-                "elev_per_km": round(orig_coeffs[2], 3),
-                "avg_pace_sec_km": round(orig_coeffs[3], 3),
-            },
-            "r_squared": round(r_squared, 3),
-            "n_samples": len(raw_runs),
-        }
-
-        # ---- Step 3: compute residual drift + classify run type + score ----
-        for r in raw_runs:
-            x = np.array(
-                [
-                    r["distance_km"] or 0,
-                    (r["elevation_m"] or 0) / max(r["distance_km"] or 1, 1),
-                    r["avg_pace_sec_km"] or 0,
-                ],
-                dtype=float,
-            )
-            expected = orig_coeffs[0] + sum(orig_coeffs[i + 1] * x[i] for i in range(3))
-            residual = r["decoupling_pct"] - expected
-            r["expected_decoupling_pct"] = round(expected, 1)
-            r["drift_residual_pct"] = round(residual, 1)
-
-            r["run_type"] = _classify_run_type(r)
-
-            tags: list[str] = []
-            if r["hr_drift_pct"] < 0:
-                tags.append("negative_hr_drift")
-            if r["pace_drift_pct"] > 15:
-                tags.append("large_pace_slowdown")
-            if r["decoupling_pct"] > 10:
-                tags.append("high_coupling")
-            if residual > 5:
-                tags.append("worse_than_baseline")
-            if residual < -5:
-                tags.append("well_below_baseline")
-            r["tags"] = tags
-
-            r["drift_score"] = _score_run(r["run_type"], r["hr_drift_pct"], residual)
-
-    else:
-        # Not enough data for baseline — fall back to run-type-aware scoring
-        for r in raw_runs:
-            r["expected_decoupling_pct"] = None
-            r["drift_residual_pct"] = None
-            r["run_type"] = _classify_run_type(r)
-
-            tags: list[str] = []
-            if r["hr_drift_pct"] < 0:
-                tags.append("negative_hr_drift")
-            if r["pace_drift_pct"] > 15:
-                tags.append("large_pace_slowdown")
-            r["tags"] = tags
-
-            r["drift_score"] = _score_run(r["run_type"], r["hr_drift_pct"], None)
-
-    # ---- Step 4: bucket by effort class for context ----
-    def effort_class(r: dict) -> str:
-        d = r["distance_km"] or 0
-        e = r["elevation_m"] or 0
-        elev_per_km = e / max(d, 1)
-        if d < 10:
-            return "short"
-        if d < 18 and elev_per_km < 30:
-            return "moderate_flat"
-        if d < 18 and elev_per_km >= 30:
-            return "moderate_hilly"
-        if d >= 18 and elev_per_km < 40:
-            return "long_flat"
-        if d >= 18 and elev_per_km < 80:
-            return "long_hilly"
-        return "long_mountain"
-
-    buckets: dict[str, list[float]] = defaultdict(list)
-    for r in raw_runs:
-        buckets[effort_class(r)].append(r["decoupling_pct"])
-
-    bucket_summary = {
-        k: {
-            "n": len(v),
-            "avg_decoupling_pct": round(sum(v) / len(v), 1) if v else None,
-            "best_decoupling_pct": round(min(v), 1) if v else None,
-            "worst_decoupling_pct": round(max(v), 1) if v else None,
-        }
-        for k, v in sorted(buckets.items())
-    }
-
-    return {
-        "runs": raw_runs,
-        "count": len(raw_runs),
-        "baseline": baseline,
-        "effort_buckets": bucket_summary,
-    }
+    return analyze_runs(rows)
 
 
 @router.get("/cardiac-efficiency")
@@ -709,14 +430,14 @@ def get_cardiac_efficiency(
     con = connect(read_only=True)
     try:
         rows = con.execute(
-            """
+            f"""
             SELECT DATE_TRUNC('week', date) as week,
                    avg_hr,
                    avg_pace_sec_km,
                    duration_sec
             FROM app.actual_sessions
             WHERE date >= ? AND user_id = 1
-              AND sport IN ('run', 'trail_run', 'running')
+              AND sport IN ({sql_in(RUNNING_SPORTS)})
               AND avg_hr IS NOT NULL
               AND avg_pace_sec_km IS NOT NULL
               AND avg_pace_sec_km > 0
@@ -776,7 +497,7 @@ def get_hr_pace_scatter(
     con = connect(read_only=True)
     try:
         rows = con.execute(
-            """
+            f"""
             SELECT date, sport, name,
                    avg_hr, max_hr,
                    avg_pace_sec_km,
@@ -786,7 +507,7 @@ def get_hr_pace_scatter(
             FROM app.actual_sessions
             WHERE date >= ? AND user_id = 1
               AND avg_hr IS NOT NULL
-              AND sport IN ('run', 'trail_run', 'running', 'walk', 'walking', 'hike')
+              AND sport IN ({sql_in(FOOT_SPORTS)})
             ORDER BY date ASC
             """,
             [start_date],

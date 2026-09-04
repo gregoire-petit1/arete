@@ -117,6 +117,22 @@ def calculate_ctl(
     return ctl
 
 
+def ctl_atl_series(
+    tss_values: Sequence[DailyTSS],
+    ctl_time_constant: int = 42,
+    atl_time_constant: int = 7,
+) -> list[tuple[DailyTSS, float, float]]:
+    """Day-by-day CTL/ATL EWMA over a contiguous TSS series (for charts)."""
+    ctl = 0.0
+    atl = 0.0
+    out = []
+    for day in tss_values:
+        ctl = ctl + (day.tss - ctl) / ctl_time_constant
+        atl = atl + (day.tss - atl) / atl_time_constant
+        out.append((day, ctl, atl))
+    return out
+
+
 def calculate_atl(
     tss_values: Sequence[DailyTSS],
     target_date: date,

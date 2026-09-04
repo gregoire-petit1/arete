@@ -7,62 +7,29 @@ using cardiac efficiency (HR / speed) as the performance proxy.
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date
 
 import numpy as np
-from sklearn.linear_model import Ridge
 
 from arete.dataio.db import connect
+from arete.dataio.queries import RUNNING_SPORTS, daily_tss, sql_in
 from arete.features.fitness import DailyTSS
 
 logger = logging.getLogger(__name__)
 
 
 def get_tss_history(con, start_date: date, end_date: date) -> list[DailyTSS]:
-    """Fetch daily TSS from actual_sessions."""
-    rows = con.execute(
-        """
-        SELECT date,
-               SUM(
-                 CASE
-                   WHEN rpe IS NOT NULL THEN
-                     (COALESCE(duration_sec, 0) / 60.0) * POWER(rpe / 10.0, 2) / 0.36
-                   WHEN suffer_score IS NOT NULL THEN
-                     suffer_score * 0.8
-                   WHEN avg_hr IS NOT NULL THEN
-                     (COALESCE(duration_sec, 0) / 60.0) * POWER(LEAST(avg_hr, 200) / 180.0, 2) / 0.36
-                   ELSE
-                     (COALESCE(duration_sec, 0) / 60.0) * 0.25 / 0.36
-                 END
-               ) as daily_tss
-        FROM app.actual_sessions
-        WHERE date >= ? AND date <= ?
-          AND user_id = 1
-        GROUP BY date
-        ORDER BY date ASC
-        """,
-        [start_date, end_date],
-    ).fetchall()
-
-    tss_by_date = {row[0]: float(row[1]) for row in rows}
-
-    tss_list = []
-    current = start_date
-    while current <= end_date:
-        tss = tss_by_date.get(current, 0.0)
-        tss_list.append(DailyTSS(date=current, tss=tss))
-        current += timedelta(days=1)
-
-    return tss_list
+    """Daily TSS between two dates (shared query, see arete.dataio.queries)."""
+    return daily_tss(con, start_date, end_date)
 
 
 def get_running_sessions(con, start_date: date, end_date: date) -> list[dict]:
     """Fetch running sessions with HR and speed data."""
     rows = con.execute(
-        """
+        f"""
         SELECT date, avg_hr, avg_speed_mps
         FROM app.actual_sessions
-        WHERE sport IN ('running', 'run')
+        WHERE sport IN ({sql_in(RUNNING_SPORTS)})
           AND avg_hr IS NOT NULL
           AND avg_speed_mps IS NOT NULL
           AND avg_speed_mps > 0
@@ -83,6 +50,29 @@ def compute_efficiency(avg_hr: float, avg_speed_mps: float) -> float:
     """Cardiac efficiency: HR per km/h. Lower = more efficient."""
     speed_kmh = avg_speed_mps * 3.6
     return avg_hr / speed_kmh
+
+
+def _ridge(
+    X: np.ndarray, y: np.ndarray, alpha: float
+) -> tuple[np.ndarray, float, float]:
+    """Ridge regression with an unpenalised intercept (closed form).
+
+    Same estimator as sklearn's Ridge(alpha, fit_intercept=True): centre X and y,
+    solve (X'X + alpha*I) w = X'y, intercept = mean(y) - mean(X) @ w.
+    Returns (coefficients, intercept, r2).
+    """
+    x_mean = X.mean(axis=0)
+    y_mean = float(y.mean())
+    Xc = X - x_mean
+    yc = y - y_mean
+    n_features = X.shape[1]
+    w = np.linalg.solve(Xc.T @ Xc + alpha * np.eye(n_features), Xc.T @ yc)
+    intercept = y_mean - float(x_mean @ w)
+    y_pred = X @ w + intercept
+    ss_res = float(np.sum((y - y_pred) ** 2))
+    ss_tot = float(np.sum((y - y_mean) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    return w, intercept, r2
 
 
 def fit_coefficients(sessions: list[dict]) -> dict | None:
@@ -107,16 +97,12 @@ def fit_coefficients(sessions: list[dict]) -> dict | None:
         [compute_efficiency(s["avg_hr"], s["avg_speed_mps"]) for s in sessions]
     )
 
-    model = Ridge(alpha=1.0, fit_intercept=True)
-    model.fit(X, y)
+    coef, intercept, r2 = _ridge(X, y, alpha=1.0)
 
     # Model: efficiency = baseline + k1*CTL - k2*ATL
-    # Ridge coef for ATL is the raw coefficient (not negated)
-    k1_raw, k2_raw = float(model.coef_[0]), float(model.coef_[1])
-    k1 = max(0.0, k1_raw)
-    k2 = max(0.0, -k2_raw)  # Negate: ATL should decrease efficiency
-    baseline = float(model.intercept_)
-    r2 = float(model.score(X, y))
+    k1 = max(0.0, float(coef[0]))
+    k2 = max(0.0, -float(coef[1]))  # Negate: ATL should decrease efficiency
+    baseline = float(intercept)
 
     return {
         "k1": round(k1, 4),

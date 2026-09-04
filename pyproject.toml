@@ -17,7 +17,6 @@ dependencies = [
     "python-dotenv>=1.1.1",
     "python-multipart>=0.0.20",
     "rapidfuzz>=3.14.6",
-    "scikit-learn>=1.7.2",
     "uvicorn>=0.37.0",
 ]
 
@@ -55,8 +54,6 @@ ignore = [
     "B008", # function call in default argument (FastAPI pattern: Query, File, Depends)
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"src/arete/api/main.py" = ["E402"] # imports at bottom to avoid circular imports
 
 [tool.ruff.format]
 quote-style = "double"

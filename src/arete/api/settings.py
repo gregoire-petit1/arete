@@ -3,7 +3,7 @@ from typing import Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from arete.dataio import repository as repo
+from arete.dataio import settings as repo
 
 router = APIRouter()
 

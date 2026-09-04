@@ -1,4 +1,6 @@
 import logging
+from collections.abc import Callable
+from typing import Any
 
 from arete.dataio.db import connect
 
@@ -6,6 +8,11 @@ logger = logging.getLogger(__name__)
 
 DDL = """
 CREATE SCHEMA IF NOT EXISTS app;
+
+CREATE TABLE IF NOT EXISTS app.schema_version (
+    version     INTEGER PRIMARY KEY,
+    applied_at  TIMESTAMP DEFAULT now()
+);
 
 -- ============================================================
 -- Garmin Pipeline Tables (Phase 1)
@@ -135,7 +142,7 @@ CREATE TABLE IF NOT EXISTS app.strength_sessions (
     fatigue_level   INTEGER,                   -- Pre-workout fatigue (1-5)
     sleep_quality   INTEGER,                   -- Night before (1-5)
     notes           VARCHAR,
-    garmin_activity_id INTEGER,                -- FK to actual_sessions (optional link)
+    actual_session_id INTEGER,                 -- FK to app.actual_sessions.id (optional link)
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -251,23 +258,19 @@ CREATE TABLE IF NOT EXISTS app.daily_metrics (
 """
 
 
-def _run_migrations(con) -> None:
-    """Apply schema migrations for existing databases.
+def _columns(con, table: str) -> set[str]:
+    return {row[0] for row in con.execute(f"DESCRIBE app.{table}").fetchall()}
 
-    Each migration checks if the change is needed before applying,
-    making them safe to run repeatedly (idempotent).
-    """
-    # Migration 1: Add exercise_abbreviations column to user_settings
-    cols = {row[0] for row in con.execute("DESCRIBE app.user_settings").fetchall()}
-    if "exercise_abbreviations" not in cols:
+
+def _m1_exercise_abbreviations(con) -> None:
+    if "exercise_abbreviations" not in _columns(con, "user_settings"):
         con.execute(
-            "ALTER TABLE app.user_settings "
-            "ADD COLUMN exercise_abbreviations VARCHAR DEFAULT '{}'"
+            "ALTER TABLE app.user_settings ADD COLUMN exercise_abbreviations VARCHAR DEFAULT '{}'"
         )
-        logger.info("Migration: added exercise_abbreviations to user_settings")
 
-    # Migration 2: add analytics columns to actual_sessions
-    _analytics_cols = {
+
+def _m2_analytics_columns(con) -> None:
+    wanted = {
         "name": "VARCHAR",
         "notes": "TEXT",
         "rpe": "INTEGER",
@@ -281,14 +284,43 @@ def _run_migrations(con) -> None:
         "weighted_avg_watts": "INTEGER",
         "device_name": "VARCHAR",
     }
-    for col_name, col_type in _analytics_cols.items():
-        try:
+    existing = _columns(con, "actual_sessions")
+    for col_name, col_type in wanted.items():
+        if col_name not in existing:
             con.execute(
                 f"ALTER TABLE app.actual_sessions ADD COLUMN {col_name} {col_type}"
             )
-            logger.info("Added column %s to actual_sessions", col_name)
-        except Exception:
-            pass  # Column already exists
+
+
+def _m3_rename_strength_link(con) -> None:
+    cols = _columns(con, "strength_sessions")
+    if "garmin_activity_id" in cols and "actual_session_id" not in cols:
+        con.execute(
+            "ALTER TABLE app.strength_sessions RENAME COLUMN garmin_activity_id TO actual_session_id"
+        )
+
+
+# (version, migration). Append only; each migration must be idempotent because
+# a fresh database already carries the latest DDL and gets every version recorded.
+MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
+    (1, _m1_exercise_abbreviations),
+    (2, _m2_analytics_columns),
+    (3, _m3_rename_strength_link),
+]
+
+
+def _run_migrations(con) -> None:
+    """Apply pending migrations and record them in app.schema_version."""
+    row = con.execute(
+        "SELECT COALESCE(MAX(version), 0) FROM app.schema_version"
+    ).fetchone()
+    current = int(row[0]) if row else 0
+    for version, migrate in MIGRATIONS:
+        if version <= current:
+            continue
+        migrate(con)
+        con.execute("INSERT INTO app.schema_version (version) VALUES (?)", [version])
+        logger.info("Schema migration %d applied", version)
 
 
 def main():

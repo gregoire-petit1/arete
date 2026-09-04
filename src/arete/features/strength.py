@@ -15,9 +15,12 @@ References:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
 from enum import Enum
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+    from arete.strength.models import StrengthSession
 
 
 class StrengthZone(Enum):
@@ -94,90 +97,6 @@ ZONE_DEFINITIONS: dict[StrengthZone, ZoneInfo] = {
         "1",
     ),
 }
-
-
-@dataclass
-class ExerciseSet:
-    """A single set of an exercise."""
-
-    reps: int
-    weight_kg: float
-    rpe: float | None = None
-    velocity_ms: float | None = None  # For VBT
-
-    @property
-    def volume(self) -> float:
-        """Volume = reps × weight."""
-        return self.reps * self.weight_kg
-
-
-@dataclass
-class Exercise:
-    """An exercise with multiple sets."""
-
-    name: str
-    sets: list[ExerciseSet] = field(default_factory=list)
-    one_rm: float | None = None  # Known 1RM for this exercise
-
-    @property
-    def total_volume(self) -> float:
-        """Total volume (tonnage) across all sets."""
-        return sum(s.volume for s in self.sets)
-
-    @property
-    def total_sets(self) -> int:
-        """Number of sets."""
-        return len(self.sets)
-
-    @property
-    def total_reps(self) -> int:
-        """Total reps across all sets."""
-        return sum(s.reps for s in self.sets)
-
-    @property
-    def avg_weight(self) -> float:
-        """Average weight used."""
-        if not self.sets:
-            return 0.0
-        return sum(s.weight_kg for s in self.sets) / len(self.sets)
-
-    @property
-    def max_weight(self) -> float:
-        """Maximum weight used."""
-        if not self.sets:
-            return 0.0
-        return max(s.weight_kg for s in self.sets)
-
-
-@dataclass
-class StrengthSession:
-    """A strength training session."""
-
-    exercises: list[Exercise] = field(default_factory=list)
-    duration_min: int | None = None
-    rpe: float | None = None  # Session RPE
-
-    @property
-    def total_volume(self) -> float:
-        """Total volume (tonnage) for the session."""
-        return sum(e.total_volume for e in self.exercises)
-
-    @property
-    def total_sets(self) -> int:
-        """Total number of sets."""
-        return sum(e.total_sets for e in self.exercises)
-
-    @property
-    def total_reps(self) -> int:
-        """Total number of reps."""
-        return sum(e.total_reps for e in self.exercises)
-
-    @property
-    def density(self) -> float | None:
-        """Training density = volume / duration (kg/min)."""
-        if not self.duration_min or self.duration_min == 0:
-            return None
-        return self.total_volume / self.duration_min
 
 
 # =============================================================================
@@ -417,23 +336,34 @@ def calculate_relative_intensity(weight: float, one_rm: float) -> float:
     return weight / one_rm
 
 
-def calculate_average_intensity(session: StrengthSession) -> float | None:
-    """Calculate average relative intensity across a session.
+def _one_rm_for(exercise_name: str | None, one_rm: Mapping[str, float]) -> float | None:
+    if not exercise_name:
+        return None
+    value = one_rm.get(exercise_name.lower())
+    return value if value and value > 0 else None
 
-    Only considers exercises with known 1RM.
+
+def calculate_average_intensity(
+    session: StrengthSession, one_rm: Mapping[str, float]
+) -> float | None:
+    """Average relative intensity (%1RM as 0-1) over working sets.
 
     Args:
-        session: Strength training session
+        session: Strength session (``arete.strength.models``)
+        one_rm: Known 1RM per exercise name (lowercase)
 
     Returns:
-        Average %1RM, or None if no exercises have known 1RM
+        Average relative intensity, or None if no exercise has a known 1RM
     """
     intensities = []
     for exercise in session.exercises:
-        if exercise.one_rm and exercise.one_rm > 0:
-            for s in exercise.sets:
-                ri = calculate_relative_intensity(s.weight_kg, exercise.one_rm)
-                intensities.append(ri)
+        name = exercise.exercise.name if exercise.exercise else None
+        max_load = _one_rm_for(name, one_rm)
+        if max_load is None:
+            continue
+        for s in exercise.sets:
+            if s.weight_kg and not s.is_warmup:
+                intensities.append(calculate_relative_intensity(s.weight_kg, max_load))
 
     if not intensities:
         return None
@@ -463,30 +393,31 @@ def calculate_inol(reps: int, intensity_pct: float) -> float:
     return reps / (100 - intensity_pct)
 
 
-def calculate_session_inol(session: StrengthSession) -> float | None:
-    """Calculate total INOL for a session.
+def calculate_session_inol(
+    session: StrengthSession, one_rm: Mapping[str, float]
+) -> float | None:
+    """Total INOL for a session (sum over working sets with a known 1RM).
 
     Weekly INOL recommendations:
     - < 2: Recovery/deload
     - 2-4: Optimal for progression
     - > 4: Risk of overtraining
 
-    Args:
-        session: Strength training session
-
-    Returns:
-        Total INOL, or None if no exercises have known 1RM
+    Returns None if no exercise has a known 1RM.
     """
     total_inol = 0.0
     has_data = False
 
     for exercise in session.exercises:
-        if exercise.one_rm and exercise.one_rm > 0:
-            for s in exercise.sets:
-                intensity_pct = (s.weight_kg / exercise.one_rm) * 100
-                set_inol = calculate_inol(s.reps, intensity_pct)
-                total_inol += set_inol
-                has_data = True
+        name = exercise.exercise.name if exercise.exercise else None
+        max_load = _one_rm_for(name, one_rm)
+        if max_load is None:
+            continue
+        for s in exercise.sets:
+            if not s.weight_kg or s.is_warmup:
+                continue
+            total_inol += calculate_inol(s.reps, (s.weight_kg / max_load) * 100)
+            has_data = True
 
     return total_inol if has_data else None
 
@@ -693,29 +624,21 @@ def calculate_session_volume(session: StrengthSession) -> float:
 
 
 def calculate_strength_training_load(
-    session: StrengthSession,
+    session: StrengthSession, one_rm: Mapping[str, float] | None = None
 ) -> float:
-    """Calculate training load for strength session.
+    """Training load for a strength session.
 
-    Uses volume × average intensity if 1RMs known,
-    otherwise uses volume × session RPE.
-
-    Args:
-        session: Strength training session
-
-    Returns:
-        Training load value
+    Volume x average intensity when 1RMs are known, else volume x session RPE,
+    else plain volume.
     """
     volume = session.total_volume
-    avg_intensity = calculate_average_intensity(session)
+    avg_intensity = calculate_average_intensity(session, one_rm or {})
 
     if avg_intensity:
-        # Volume × intensity factor
         return volume * avg_intensity
 
-    if session.rpe:
-        # Fall back to RPE-based load
-        return volume * (session.rpe / 10)
+    if session.overall_rpe:
+        return volume * (session.overall_rpe / 10)
 
     # Default: just volume
     return volume

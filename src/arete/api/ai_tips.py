@@ -13,7 +13,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from arete.api.metrics import _get_training_loads, _get_tss_history
+from arete.dataio.queries import training_loads, tss_history
 from arete.features.fitness import compute_performance_model
 from arete.features.workload import compute_workload_metrics
 from arete.garmin.repository import GarminRepository
@@ -157,7 +157,7 @@ def get_daily_tip() -> DailyTipResponse:
     # Fetch workload metrics
     acwr: float | None = None
     try:
-        loads = _get_training_loads(days=28)
+        loads = training_loads(days=28)
         if any(load.duration_min > 0 for load in loads):
             workload = compute_workload_metrics(loads, target_date)
             acwr = workload.acwr
@@ -168,7 +168,7 @@ def get_daily_tip() -> DailyTipResponse:
     tsb: float | None = None
     readiness_score: float | None = None
     try:
-        tss = _get_tss_history(days=42)
+        tss = tss_history(days=42)
         if any(t.tss > 0 for t in tss):
             model = compute_performance_model(tss, target_date)
             tsb = model.tsb

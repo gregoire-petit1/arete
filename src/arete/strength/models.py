@@ -122,10 +122,9 @@ class ExerciseSet:
         """Estimate 1RM using Epley formula."""
         if not self.weight_kg or self.reps == 0:
             return None
-        if self.reps == 1:
-            return self.weight_kg
-        # Epley: 1RM = weight × (1 + reps/30)
-        return self.weight_kg * (1 + self.reps / 30)
+        from arete.features.strength import estimate_1rm_epley
+
+        return estimate_1rm_epley(self.weight_kg, self.reps)
 
     @property
     def rpe_from_rir(self) -> float | None:
@@ -219,7 +218,7 @@ class StrengthSession:
     notes: str | None = None
     exercises: list[SessionExercise] = field(default_factory=list)
     created_at: datetime | None = None
-    garmin_activity_id: int | None = None  # Link to Garmin activity
+    actual_session_id: int | None = None  # Link to app.actual_sessions.id
 
     @property
     def total_volume(self) -> float:

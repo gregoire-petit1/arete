@@ -6,17 +6,13 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from arete.api.analytics import _format_pace, _parse_period, router
 
 
 @pytest.fixture
-def client():
-    app = FastAPI()
-    app.include_router(router)
-    return TestClient(app)
+def client(router_client):
+    return router_client(router)
 
 
 # ---------- Helper tests ----------
@@ -78,7 +74,7 @@ class TestVolume:
 
 
 class TestTrainingLoad:
-    @patch("arete.api.analytics._get_tss_history")
+    @patch("arete.api.analytics.tss_history")
     def test_returns_daily_ctl_atl_tsb(self, mock_tss, client):
         from arete.features.fitness import DailyTSS
 

@@ -14,6 +14,7 @@ from datetime import date as date_type
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from arete.data.cardio_muscle_impact import CARDIO_MUSCLE_IMPACT
 from arete.strength.models import (
     Exercise,
     ExerciseCategory,
@@ -380,14 +381,14 @@ class LinkGarminRequest(BaseModel):
     """Request to link a strength session to a Garmin activity."""
 
     garmin_activity_id: int | None = Field(
-        None, description="Garmin activity ID to link (null to unlink)"
+        None, description="actual_sessions.id to link (null to unlink)"
     )
 
 
 @router.post("/sessions/{session_id}/link-garmin")
 def link_session_to_garmin(session_id: int, data: LinkGarminRequest):
     """Link a strength session to a Garmin activity."""
-    success = _repo.link_to_garmin_activity(session_id, data.garmin_activity_id)
+    success = _repo.link_to_actual_session(session_id, data.garmin_activity_id)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")
     return {
@@ -408,12 +409,14 @@ def get_garmin_candidates(session_id: int):
     # Get actual sessions from Garmin for the same date range
     from datetime import timedelta
 
-    from arete.dataio.repository import get_actual_sessions
+    from arete.garmin.repository import GarminRepository
 
     start = session.date - timedelta(days=1)
     end = session.date + timedelta(days=1)
 
-    actual_sessions = get_actual_sessions(start.isoformat(), end.isoformat())
+    actual_sessions = GarminRepository().list_actual_sessions(
+        start_date=start, end_date=end, limit=200
+    )
 
     # Filter to strength activities
     candidates = [
@@ -421,8 +424,8 @@ def get_garmin_candidates(session_id: int):
             "id": s.id,
             "date": s.date.isoformat() if hasattr(s.date, "isoformat") else str(s.date),
             "sport": s.sport,
-            "activity_type": s.activity_type,
-            "duration_seconds": s.duration_seconds,
+            "activity_type": s.session_type,
+            "duration_seconds": s.duration_sec,
             "source": s.source,
         }
         for s in actual_sessions
@@ -437,48 +440,6 @@ def get_garmin_candidates(session_id: int):
 # ─────────────────────────────────────────────────────────────────────────
 
 
-# Cardio muscle impact mapping (pseudo-volume per minute of activity)
-# Based on primary/secondary muscle recruitment during cardio activities
-CARDIO_MUSCLE_IMPACT = {
-    "running": {
-        "primary": {"quads": 15, "calves": 12, "glutes": 10},
-        "secondary": {"hamstrings": 8, "hip_flexors": 6, "tibialis": 4, "core": 3},
-    },
-    "trail_running": {
-        "primary": {"quads": 18, "calves": 14, "glutes": 12},
-        "secondary": {"hamstrings": 10, "hip_flexors": 8, "tibialis": 5, "core": 5},
-    },
-    "rowing": {
-        "primary": {"lats": 15, "quads": 12, "glutes": 10},
-        "secondary": {
-            "biceps": 8,
-            "hamstrings": 6,
-            "rhomboids": 6,
-            "forearms": 4,
-            "core": 5,
-        },
-    },
-    "indoor_rowing": {
-        "primary": {"lats": 15, "quads": 12, "glutes": 10},
-        "secondary": {
-            "biceps": 8,
-            "hamstrings": 6,
-            "rhomboids": 6,
-            "forearms": 4,
-            "core": 5,
-        },
-    },
-    "cycling": {
-        "primary": {"quads": 12, "glutes": 10},
-        "secondary": {"hamstrings": 6, "calves": 4, "hip_flexors": 3},
-    },
-    "indoor_cycling": {
-        "primary": {"quads": 12, "glutes": 10},
-        "secondary": {"hamstrings": 6, "calves": 4, "hip_flexors": 3},
-    },
-}
-
-
 def _get_cardio_volume_by_muscle(
     start_date: date_type | None = None,
     end_date: date_type | None = None,
@@ -486,7 +447,7 @@ def _get_cardio_volume_by_muscle(
     """Calculate pseudo-volume from cardio activities based on muscle recruitment."""
     from datetime import date, timedelta
 
-    from arete.dataio.repository import get_actual_sessions
+    from arete.garmin.repository import GarminRepository
 
     # Default to last 7 days if not specified
     if not end_date:
@@ -494,13 +455,15 @@ def _get_cardio_volume_by_muscle(
     if not start_date:
         start_date = end_date - timedelta(days=7)
 
-    actual_sessions = get_actual_sessions(start_date.isoformat(), end_date.isoformat())
+    actual_sessions = GarminRepository().list_actual_sessions(
+        start_date=start_date, end_date=end_date, limit=1000
+    )
 
     muscle_volume: dict[str, float] = {}
 
     for session in actual_sessions:
         sport = session.sport.lower().replace(" ", "_") if session.sport else ""
-        duration_min = session.duration_seconds / 60 if session.duration_seconds else 0
+        duration_min = session.duration_sec / 60 if session.duration_sec else 0
 
         if sport not in CARDIO_MUSCLE_IMPACT:
             continue
@@ -652,7 +615,7 @@ def _session_to_detail_response(
         total_volume=round(session.total_volume, 1),
         total_sets=session.total_sets,
         muscles_worked=[m.value for m in session.muscles_worked],
-        garmin_activity_id=getattr(session, "garmin_activity_id", None),
+        garmin_activity_id=session.actual_session_id,
     )
 
 
@@ -735,11 +698,11 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
     not confidently matched come back with ``suggestions``.
     User abbreviations are loaded from settings automatically.
     """
-    from arete.dataio import repository as repo
+    from arete.dataio.settings import get_user_settings
     from arete.llm.workout_parser import parse_workout_text
 
     # Load user abbreviations from settings
-    user_settings = repo.get_user_settings(user_id=1)
+    user_settings = get_user_settings(user_id=1)
     abbreviations = (
         user_settings.get("exercise_abbreviations", {}) if user_settings else {}
     )
@@ -815,7 +778,7 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
                                 session_exercise.sets.append(
                                     ExerciseSet(
                                         set_number=s.set_number,
-                                        reps=s.reps,
+                                        reps=s.reps if s.reps is not None else 0,
                                         weight_kg=s.weight_kg,
                                         rpe=s.rpe,
                                         is_warmup=s.is_warmup,
@@ -845,6 +808,6 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
             message=message,
         )
 
-    except Exception as e:
-        logger.error(f"Workout parsing failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        # Nothing recognised in the text: a client problem, say so plainly
+        raise HTTPException(status_code=422, detail=str(e)) from e

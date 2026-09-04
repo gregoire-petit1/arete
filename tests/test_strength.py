@@ -1,9 +1,6 @@
 """Tests for strength module."""
 
 from arete.features.strength import (
-    Exercise,
-    ExerciseSet,
-    StrengthSession,
     StrengthZone,
     VBTZone,
     calculate_average_intensity,
@@ -22,6 +19,12 @@ from arete.features.strength import (
     percentage_from_reps,
     weight_for_reps_at_percentage,
     weight_for_target_reps,
+)
+from arete.strength.models import (
+    Exercise,
+    ExerciseSet,
+    SessionExercise,
+    StrengthSession,
 )
 
 
@@ -152,66 +155,40 @@ class TestINOL:
         assert inol_90 > inol_80
 
 
-class TestExerciseAndSession:
-    """Tests for Exercise and Session dataclasses."""
+def _session(*exercises: tuple[str, list[tuple[int, float]]]) -> StrengthSession:
+    """Build a StrengthSession from (name, [(reps, weight), ...]) tuples."""
+    return StrengthSession(
+        exercises=[
+            SessionExercise(
+                exercise=Exercise(name=name),
+                sets=[
+                    ExerciseSet(set_number=i + 1, reps=reps, weight_kg=weight)
+                    for i, (reps, weight) in enumerate(sets)
+                ],
+            )
+            for name, sets in exercises
+        ]
+    )
 
-    def test_exercise_set_volume(self) -> None:
-        """Set volume = reps × weight."""
-        s = ExerciseSet(reps=10, weight_kg=100)
-        assert s.volume == 1000
 
-    def test_exercise_total_volume(self) -> None:
-        """Exercise total volume."""
-        e = Exercise(
-            name="Squat",
-            sets=[
-                ExerciseSet(reps=5, weight_kg=100),
-                ExerciseSet(reps=5, weight_kg=100),
-                ExerciseSet(reps=5, weight_kg=100),
-            ],
-        )
-        assert e.total_volume == 1500
-        assert e.total_sets == 3
-        assert e.total_reps == 15
-        assert e.avg_weight == 100
-        assert e.max_weight == 100
+class TestSessionMetrics:
+    """Session-level metrics on arete.strength.models objects."""
 
-    def test_session_metrics(self) -> None:
-        """Session metrics."""
-        session = StrengthSession(
-            exercises=[
-                Exercise(
-                    name="Squat",
-                    sets=[ExerciseSet(reps=5, weight_kg=100) for _ in range(3)],
-                ),
-                Exercise(
-                    name="Bench",
-                    sets=[ExerciseSet(reps=8, weight_kg=60) for _ in range(3)],
-                ),
-            ],
-            duration_min=60,
-        )
-        assert session.total_volume == 1500 + 1440  # 2940
+    def test_set_volume(self) -> None:
+        assert ExerciseSet(reps=10, weight_kg=100).volume == 1000
+
+    def test_session_volume_and_sets(self) -> None:
+        session = _session(("Squat", [(5, 100)] * 3), ("Bench", [(8, 60)] * 3))
+        assert session.total_volume == 1500 + 1440
         assert session.total_sets == 6
-        assert session.density == session.total_volume / 60
 
     def test_session_inol(self) -> None:
-        """Session INOL calculation."""
-        session = StrengthSession(
-            exercises=[
-                Exercise(
-                    name="Squat",
-                    one_rm=140,
-                    sets=[
-                        ExerciseSet(reps=5, weight_kg=100),  # ~71%
-                        ExerciseSet(reps=5, weight_kg=110),  # ~79%
-                    ],
-                ),
-            ],
-        )
-        inol = calculate_session_inol(session)
-        assert inol is not None
-        assert inol > 0
+        session = _session(("Squat", [(5, 100), (5, 110)]))  # ~71 % and ~79 % of 140
+        inol = calculate_session_inol(session, {"squat": 140})
+        assert inol is not None and inol > 0
+
+    def test_session_inol_without_known_1rm(self) -> None:
+        assert calculate_session_inol(_session(("Squat", [(5, 100)])), {}) is None
 
 
 class TestIntensityMetrics:
@@ -223,18 +200,14 @@ class TestIntensityMetrics:
         assert ri == 0.8
 
     def test_average_intensity(self) -> None:
-        """Average intensity across session."""
-        session = StrengthSession(
-            exercises=[
-                Exercise(
-                    name="Squat",
-                    one_rm=100,
-                    sets=[ExerciseSet(reps=5, weight_kg=80)],
-                ),
-            ],
+        session = _session(("Squat", [(5, 80)]))
+        assert calculate_average_intensity(session, {"squat": 100}) == 0.8
+
+    def test_epley_single_implementation(self) -> None:
+        """models.ExerciseSet.estimated_1rm delegates to features.estimate_1rm_epley."""
+        assert ExerciseSet(reps=10, weight_kg=100).estimated_1rm == estimate_1rm_epley(
+            100, 10
         )
-        avg = calculate_average_intensity(session)
-        assert avg == 0.8
 
 
 class TestVolume:
