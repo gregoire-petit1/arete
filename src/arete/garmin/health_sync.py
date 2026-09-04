@@ -203,10 +203,3 @@ def sync_range(start: date, end: date) -> list[DailySyncResult]:
             logger.warning("Failed %s: %s", cur, r.error)
         cur += timedelta(days=1)
     return results
-
-
-def backfill(days: int = 30) -> list[DailySyncResult]:
-    """Sync the last N days (default 30)."""
-    end = date.today()
-    start = end - timedelta(days=days - 1)
-    return sync_range(start, end)

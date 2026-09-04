@@ -323,10 +323,7 @@ The API exposes training metrics via REST endpoints:
 | `/strength/sessions`         | POST   | Create session with sets    |
 | `/strength/sessions`         | GET    | List sessions               |
 | `/strength/sessions/{id}`    | GET    | Session details             |
-| `/strength/prs`              | GET    | All personal records        |
-| `/strength/prs/{exercise}`   | GET    | PR for specific exercise    |
-| `/strength/trends`           | GET    | 30-day training trends      |
-| `/strength/volume-by-muscle` | GET    | Volume by muscle group      |
+| `/strength/stats/volume-by-muscle` | GET | Volume by muscle group |
 
 ### Example API Calls
 

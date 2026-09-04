@@ -47,7 +47,7 @@ def main() -> int:
 
     garth.save(str(TOKENS_DIR))
     print(f"\nOK Tokens saved to {TOKENS_DIR}")
-    print("You can now run sync_daily_metrics.py to fetch health data.")
+    print("You can now call POST /garmin/health/sync to fetch health data.")
     return 0
 
 

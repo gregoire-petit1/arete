@@ -1,6 +1,6 @@
 # Garmin Connect Integration — Phase 2 Plan
 
-**Status:** Planned
+**Status:** Implemented (health_sync.py, readiness.py, api/garmin_health.py)
 **Date:** 2026-06-01
 **Goal:** Pull daily physiological metrics from Garmin Connect (Epix Pro Gen 2 47mm) into Arete for readiness scoring and TMB plan adaptation.
 
