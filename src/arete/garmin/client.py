@@ -102,6 +102,8 @@ class GarminClient:
     def _save(self, api: Garmin) -> None:
         self.token_dir.mkdir(parents=True, exist_ok=True)
         api.client.dump(str(self.token_dir))
+        if self.token_file.exists():
+            self.token_file.chmod(0o600)  # session tokens: owner-only
         self._api = api
         logger.info("Garmin tokens saved to %s", self.token_file)
 
@@ -117,7 +119,9 @@ class GarminClient:
         return {
             "display_name": api.display_name,
             "full_name": api.full_name,
-            "user_email": api.username,
+            # username is only known right after a credential login; fall back to the
+            # profile name so the UI can still show who is connected
+            "user_email": api.username or api.full_name or api.display_name,
         }
 
     def activities(self, start: date, end: date) -> list[dict[str, Any]]:
