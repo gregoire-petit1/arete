@@ -1,6 +1,5 @@
-"""LLM module for training plan generation and multi-provider support."""
+"""LLM module: multi-provider client (Ollama / OpenRouter / GitHub Models)."""
 
-from arete.llm.client import TrainingContext, generate_plan, get_client
 from arete.llm.provider import (
     generate,
     get_default_model,
@@ -10,10 +9,7 @@ from arete.llm.provider import (
 )
 
 __all__ = [
-    "TrainingContext",
     "generate",
-    "generate_plan",
-    "get_client",
     "get_default_model",
     "get_llm_client",
     "get_provider_config",

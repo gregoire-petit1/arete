@@ -61,11 +61,6 @@ class ParsedWorkout:
     notes: str | None = None
 
 
-def get_client():
-    """Get LLM client via provider abstraction."""
-    return get_llm_client()
-
-
 def _get_exercise_list_for_prompt() -> str:
     """Build compact exercise list for LLM context."""
     exercises = []
@@ -1056,7 +1051,7 @@ def parse_workout_text(
 
     # --- LLM-first strategy ---
     if use_llm:
-        client = get_client()
+        client = get_llm_client()
         if client:
             try:
                 model = get_default_model()

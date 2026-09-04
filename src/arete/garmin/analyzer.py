@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from arete.garmin.models import ActualSession, PlannedSession
-from arete.llm.client import get_client
+from arete.llm.provider import get_llm_client
 from arete.llm.token_manager import get_token_manager
 
 if TYPE_CHECKING:
@@ -173,7 +173,7 @@ def analyze_activity(
     Returns:
         ActivityAnalysis with insights and recommendations
     """
-    client = get_client()
+    client = get_llm_client()
 
     if client is None:
         logger.warning("No LLM client, using fallback analysis")
@@ -395,7 +395,7 @@ def analyze_activity_detailed(
         return analyze_activity(actual, planned, model)
 
     # Call LLM with detailed prompt
-    client = get_client()
+    client = get_llm_client()
     if client is None:
         return _generate_fallback_detailed_analysis(actual, metrics, parsed.workout_structure)
 

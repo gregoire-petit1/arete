@@ -54,9 +54,6 @@ uv sync --dev
 
 # Initialize the database (DuckDB)
 uv run python -c "from arete.dataio.init_duckdb import main; main()"
-
-# Ingest sample data (optional)
-uv run python -c "from arete.dataio.ingest import ingest_csv; ingest_csv('data/sample_log.csv')"
 ```
 
 ### Running the API
@@ -121,7 +118,7 @@ PYTHONPATH=src uv run pytest tests/ -v --cov=src/arete --cov-report=term-missing
 arete/
 ├── src/arete/           # Main source code
 │   ├── api/             # FastAPI routes and main app
-│   ├── dataio/          # Database and data ingestion
+│   ├── dataio/          # DuckDB connection, schema, user settings
 │   ├── features/        # Feature engineering (workload, cardio, strength, fitness)
 │   ├── garmin/          # Garmin FIT parsing, analysis, LLM coaching
 │   ├── llm/             # LLM client, token management
@@ -292,7 +289,6 @@ The API exposes training metrics via REST endpoints:
 | ------------- | ------ | ---------------------------------- |
 | `/health`     | GET    | Health check                       |
 | `/docs`       | GET    | OpenAPI documentation (Swagger UI) |
-| `/log/recent` | GET    | Recent training log entries        |
 
 ### Metrics Endpoints
 
