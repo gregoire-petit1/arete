@@ -87,6 +87,8 @@ def _setup_mocks(
 
     strava_client = MagicMock()
     strava_client.fetch_activities.return_value = FAKE_ACTIVITIES
+    strava_client.fetch_activity_detail.return_value = None  # fall back to the summary
+    strava_client.fetch_activity_zones.return_value = None
     mock_get_client.return_value = strava_client
 
     # Mock the DB connection used for dedup query
