@@ -14,7 +14,6 @@ CREATE SCHEMA IF NOT EXISTS app;
 -- Sequences for auto-increment
 CREATE SEQUENCE IF NOT EXISTS app.planned_sessions_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS app.actual_sessions_seq START 1;
-CREATE SEQUENCE IF NOT EXISTS app.session_analysis_seq START 1;
 
 -- Planned training sessions (recommendations from coach/LLM)
 CREATE TABLE IF NOT EXISTS app.planned_sessions (
@@ -100,16 +99,6 @@ CREATE TABLE IF NOT EXISTS app.actual_sessions (
     device_name         VARCHAR
 );
 
--- Session analysis/feedback (LLM-generated insights)
-CREATE TABLE IF NOT EXISTS app.session_analysis (
-    id                  INTEGER PRIMARY KEY DEFAULT nextval('app.session_analysis_seq'),
-    actual_session_id   INTEGER NOT NULL,      -- FK to actual_sessions
-    analysis_type       VARCHAR NOT NULL,      -- 'adherence', 'performance', 'recovery'
-    insights_json       VARCHAR,               -- JSON with structured insights
-    recommendations     VARCHAR,               -- text recommendations
-    generated_by        VARCHAR DEFAULT 'llm', -- 'llm', 'rules', 'manual'
-    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
 
 -- ============================================================
 -- Strength Training Tables

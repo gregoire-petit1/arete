@@ -1,5 +1,6 @@
 """Data module for Arete - exercise catalogs and seeding utilities."""
 
+from arete.data.exercise_matcher import ExerciseMatch, match_exercise
 from arete.data.exercises_catalog import (
     EXERCISE_ALIASES,
     EXERCISES_BY_ID,
@@ -12,6 +13,8 @@ from arete.data.exercises_catalog import (
 )
 
 __all__ = [
+    "ExerciseMatch",
+    "match_exercise",
     "EXERCISES_CATALOG",
     "EXERCISES_BY_ID",
     "EXERCISE_ALIASES",

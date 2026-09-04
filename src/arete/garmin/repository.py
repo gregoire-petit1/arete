@@ -1,6 +1,5 @@
 """Repository for Garmin sessions database operations."""
 
-import json
 from datetime import date, datetime, timedelta
 
 import duckdb
@@ -421,10 +420,6 @@ class GarminRepository:
     # Matching Operations
     # ─────────────────────────────────────────────────────────────────────
 
-    def get_unmatched_actual_sessions(self) -> list[ActualSession]:
-        """Get all actual sessions without a match."""
-        return self.list_actual_sessions(unmatched_only=True, limit=100)
-
     def get_potential_matches(
         self, actual_session: ActualSession, date_tolerance_days: int = 1
     ) -> list[PlannedSession]:
@@ -470,84 +465,6 @@ class GarminRepository:
         }
 
     # ==================== Session Analysis ====================
-
-    def save_analysis(
-        self,
-        actual_session_id: int,
-        analysis_type: str,
-        insights_json: str,
-        recommendations: str,
-        generated_by: str = "llm",
-    ) -> int:
-        """Save session analysis to database.
-
-        Args:
-            actual_session_id: ID of the analyzed session
-            analysis_type: Type of analysis ('adherence', 'summary', etc.)
-            insights_json: JSON string with structured insights
-            recommendations: Text recommendations
-            generated_by: Source of analysis ('llm', 'rules')
-
-        Returns:
-            ID of created analysis
-        """
-        conn = self._get_connection()
-        result = conn.execute(
-            """
-            INSERT INTO session_analysis (
-                actual_session_id, analysis_type, insights_json,
-                recommendations, generated_by, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            RETURNING id
-            """,
-            [
-                actual_session_id,
-                analysis_type,
-                insights_json,
-                recommendations,
-                generated_by,
-                datetime.now(),
-            ],
-        ).fetchone()
-        conn.close()
-        if result is None:
-            raise RuntimeError("Failed to insert analysis")
-        return int(result[0])
-
-    def get_analysis(self, actual_session_id: int) -> dict | None:
-        """Get the latest analysis for a session.
-
-        Args:
-            actual_session_id: ID of the session
-
-        Returns:
-            Analysis dict or None if not found
-        """
-        conn = self._get_connection()
-        result = conn.execute(
-            """
-            SELECT id, actual_session_id, analysis_type, insights_json,
-                   recommendations, generated_by, created_at
-            FROM session_analysis
-            WHERE actual_session_id = ?
-            ORDER BY created_at DESC
-            LIMIT 1
-            """,
-            [actual_session_id],
-        ).fetchone()
-        conn.close()
-
-        if result:
-            return {
-                "id": result[0],
-                "actual_session_id": result[1],
-                "analysis_type": result[2],
-                "insights": json.loads(result[3]) if result[3] else {},
-                "recommendations": result[4],
-                "generated_by": result[5],
-                "created_at": result[6].isoformat() if result[6] else None,
-            }
-        return None
 
     # ─────────────────────────────────────────────────────────────────────
     # RAG Context - Cardio Benchmarks

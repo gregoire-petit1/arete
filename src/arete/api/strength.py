@@ -685,6 +685,14 @@ class ParsedSetResponse(BaseModel):
     rest_sec: int | None = None  # Rest time after set in seconds
 
 
+class ExerciseSuggestion(BaseModel):
+    """Catalog candidate for an exercise name the parser could not settle."""
+
+    exercise_id: str
+    name: str
+    score: int
+
+
 class ParsedExerciseResponse(BaseModel):
     """Parsed exercise response."""
 
@@ -694,6 +702,8 @@ class ParsedExerciseResponse(BaseModel):
     sets: list[ParsedSetResponse]
     notes: str | None
     target_reps: str | None = None  # Rep range like "8-10" or "5"
+    match_score: int = 0
+    suggestions: list[ExerciseSuggestion] = []
 
 
 class WorkoutParseResponse(BaseModel):
@@ -708,6 +718,7 @@ class WorkoutParseResponse(BaseModel):
     notes: str | None
     session_id: int | None = None  # Set if saved
     message: str | None = None
+    unparsed_lines: list[str] = []  # Lines the grammar rejected (to fix by hand)
 
 
 @router.post("/sessions/parse", response_model=WorkoutParseResponse)
@@ -719,7 +730,9 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
     - "3@100, 1@105 squat" (descending sets)
     - "(pull ups, dips)" (supersets)
 
-    Deterministic grammar first; the LLM only sees lines the grammar rejects.
+    Deterministic grammar + semantic catalog matching (no LLM). Lines the
+    grammar cannot read come back in ``unparsed_lines``; exercise names that are
+    not confidently matched come back with ``suggestions``.
     User abbreviations are loaded from settings automatically.
     """
     from arete.dataio import repository as repo
@@ -735,7 +748,6 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
         parsed = parse_workout_text(
             text=request.text,
             workout_date=request.date,
-            use_llm=True,
             abbreviations=abbreviations,
         )
 
@@ -761,7 +773,14 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
                     exercise_matched=ex.exercise_id is not None,
                     sets=sets_response,
                     notes=ex.notes,
-                    target_reps=getattr(ex, "target_reps", None),
+                    target_reps=ex.target_reps,
+                    match_score=ex.match_score,
+                    suggestions=[
+                        ExerciseSuggestion(
+                            exercise_id=sg.exercise_id, name=sg.name, score=sg.score
+                        )
+                        for sg in ex.suggestions
+                    ],
                 )
             )
 

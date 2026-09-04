@@ -9,9 +9,9 @@ Self-hosted, single-user training assistant:
 
 - **Garmin Connect & Strava sync** of activities (FIT parsing, HR zones, best efforts) and daily health metrics (HRV, sleep, body battery, readiness score).
 - **Analytics**: volume, CTL/ATL/TSB (Banister model with personalized coefficients), pace trends, HR drift / aerobic decoupling, cardiac efficiency.
-- **Strength log** with a free-text workout parser (regex first, LLM fallback), muscle-volume heatmap and Garmin activity linking.
+- **Strength log** with a free-text workout parser (Lark grammar + fuzzy catalog matching, no LLM), muscle-volume heatmap and Garmin activity linking.
 - **Planning**: planned sessions matched against actual activities, adherence dashboard.
-- **LLM coaching tips** (daily + post-session) through any OpenAI-compatible provider: Ollama, OpenRouter or GitHub Models.
+- **LLM coaching tips** (daily + post-session), the only LLM use, through any OpenAI-compatible provider: Ollama, OpenRouter or GitHub Models.
 
 ## Stack
 
@@ -64,10 +64,10 @@ src/arete/
 ├── api/        FastAPI routers: analytics, garmin, garmin_health, strength, strava, ai_tips, metrics, settings; main.py wires them
 ├── dataio/     DuckDB connection (db.py), schema + migrations (init_duckdb.py), user settings repository
 ├── features/   Training science: workload (ACWR), cardio (TRIMP, zones), fitness (CTL/ATL/TSB), strength (1RM, INOL), banister fit, recommendations
-├── garmin/     FIT parser, time-series metrics, planned/actual matching, Garmin Connect client + activity/health sync, readiness, LLM analyzer
+├── garmin/     FIT parser, time-series metrics, planned/actual matching, Garmin Connect client + activity/health sync, readiness
 ├── strength/   Strength models + repository (exercises, sessions, sets, PRs)
 ├── strava/     Strava API client and activity mapping
-├── llm/        Provider abstraction, workout text parser, token budget manager
+├── llm/        Provider abstraction (tips), workout grammar + text parser
 └── data/       Exercise catalog
 frontend/       React app (pages: Dashboard, Planning, Analytics, Log, Settings)
 scripts/        fit_banister.py (fit personal CTL/ATL coefficients), garmin_login.py (one-time token bootstrap), import_strava_history.py (full history backfill)
@@ -84,7 +84,7 @@ Interactive docs at `/docs`. Routers and their prefixes:
 | `/health`, `/settings` | Health check; user settings GET/PUT |
 | `/analytics` | `volume`, `training-load`, `pace`, `hr-zones`, `sport-distribution`, `best-efforts`, `cardiac-efficiency`, `hr-pace-scatter`, `hr-drift`, `sessions` (GET, PATCH `/{id}`) |
 | `/metrics` | `workload`, `fitness`, `player-stats`, `recommendations`; calculators `cardio/trimp`, `strength/1rm`, `strength/inol` (POST) |
-| `/garmin` | `planned` CRUD, `upload-fit`, `actual`, manual match/unmatch, `summary`, `unmatched`, `actual/{id}/analyze` (LLM), `sync/{status,login,logout,activities,user}` |
+| `/garmin` | `planned` (list/create/delete), `upload-fit`, `actual`, `summary`, `sync/{status,login,logout,activities}` |
 | `/garmin/health` | `sync` (POST), `daily`, `range`, `status` |
 | `/strength` | `exercises` CRUD + `/{id}/prs`, `sessions` CRUD, `sessions/parse` (free-text → structured, optional save), Garmin linking, `stats/volume-by-muscle` |
 | `/strava` | `authorize`, `callback`, `status`, `sync` (POST), `disconnect` |

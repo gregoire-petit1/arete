@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
 from datetime import date
-from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 
@@ -80,12 +77,11 @@ class TestExpandAbbreviations:
 
 
 class TestParseWorkoutTextNoLLM:
-    """Test the full parse_workout_text with use_llm=False."""
+    """Test the full parse_workout_text with ."""
 
     def test_basic_with_abbreviations(self):
         result = parse_workout_text(
             "4x8 bp @80",
-            use_llm=False,
             abbreviations={"bp": "bench press"},
         )
         assert result.exercises[0].name == "bench press"
@@ -95,7 +91,6 @@ class TestParseWorkoutTextNoLLM:
         """Smart quotes and rest typos should be fixed before parsing."""
         result = parse_workout_text(
             "Bench press 4x8 80kg\nr\u2019130",
-            use_llm=False,
         )
         assert result.exercises[0].sets[-1].rest_sec == 90
 
@@ -103,7 +98,6 @@ class TestParseWorkoutTextNoLLM:
         """Date prefix on the same line as the first exercise (DD/MM/YY)."""
         result = parse_workout_text(
             "05/12/25: Bench press 4x8 80kg",
-            use_llm=False,
         )
         assert result.date == date(2025, 12, 5)
         assert result.exercises[0].name.lower() == "bench press"
@@ -113,67 +107,33 @@ class TestParseWorkoutTextNoLLM:
         """Date alone on the first line."""
         result = parse_workout_text(
             "05/12/2025:\nBench press 4x8 80kg",
-            use_llm=False,
         )
         assert result.date == date(2025, 12, 5)
         assert len(result.exercises) == 1
 
     def test_empty_text(self):
         with pytest.raises(ValueError, match="no exercises found"):
-            parse_workout_text("", use_llm=False)
+            parse_workout_text("")
 
 
-# ─── grammar-first orchestration with the LLM ────────────────────────
+# ─── grammar + semantic matching orchestration ────────────────────────
 
 
-def _fake_client(payload: dict):
-    """OpenAI-like client whose chat completion returns ``payload`` as JSON."""
-    message = SimpleNamespace(content=json.dumps(payload))
-    response = SimpleNamespace(choices=[SimpleNamespace(message=message)])
-    completions = SimpleNamespace(create=lambda **_: response)
-    return SimpleNamespace(chat=SimpleNamespace(completions=completions))
-
-
-class TestGrammarFirst:
-    def test_llm_not_called_when_grammar_covers_everything(self):
-        with patch("arete.llm.workout_parser.get_llm_client") as get_client:
-            result = parse_workout_text(
-                "Bench press 4x8 80kg\n(dips) 3x amrap", use_llm=True
-            )
-        get_client.assert_not_called()
+class TestParseWorkoutOrchestration:
+    def test_catalog_match_and_score(self):
+        result = parse_workout_text("Bench press 4x8 80kg\n(dips) 3x amrap")
         assert [e.name for e in result.exercises] == ["Bench press", "dips"]
-        assert result.exercises[0].exercise_id is not None  # catalog match kept
+        assert result.exercises[0].exercise_id == "bench_press"
+        assert result.exercises[0].match_score == 100
+        assert result.unparsed_lines == []
 
-    def test_llm_only_sees_rejected_lines(self):
-        payload = {
-            "exercises": [
-                {
-                    "name": "farmer walk",
-                    "sets": [{"set_number": 1, "reps": 1, "weight_kg": 32}],
-                }
-            ],
-            "duration_min": 45,
-        }
-        client = _fake_client(payload)
-        prompts: list[str] = []
-        with (
-            patch("arete.llm.workout_parser.get_llm_client", return_value=client),
-            patch("arete.llm.workout_parser.get_default_model", return_value="m"),
-            patch(
-                "arete.llm.workout_parser._build_parser_prompt",
-                side_effect=lambda text, *a, **k: prompts.append(text) or ("sys", text),
-            ),
-        ):
-            result = parse_workout_text(
-                "Bench press 4x8 80kg\nfarmer walk 2 lengths heavy", use_llm=True
-            )
-        assert prompts == ["farmer walk 2 lengths heavy"]
-        assert [e.name for e in result.exercises] == ["Bench press", "farmer walk"]
-        assert result.duration_min == 45
-
-    def test_llm_failure_keeps_grammar_result(self):
-        with patch("arete.llm.workout_parser.get_llm_client", return_value=None):
-            result = parse_workout_text(
-                "Bench press 4x8 80kg\nsome free text", use_llm=True
-            )
+    def test_unparsed_lines_are_reported_not_lost(self):
+        result = parse_workout_text("Bench press 4x8 80kg\nfarmer walk 2 lengths heavy")
         assert len(result.exercises) == 1
+        assert result.unparsed_lines == ["farmer walk 2 lengths heavy"]
+
+    def test_unknown_name_keeps_suggestions(self):
+        result = parse_workout_text("3x10 @20 incline dumbell pres")
+        ex = result.exercises[0]
+        assert ex.exercise_id in (None, "incline_dumbbell_press", "incline_bench_press")
+        assert ex.suggestions, "typo'd name should still produce catalog suggestions"
