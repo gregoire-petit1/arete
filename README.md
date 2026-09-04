@@ -64,7 +64,7 @@ All settings come from environment variables (see `.env.example`):
 ```
 src/arete/
 ├── config.py   All environment variables in one place; scheduler.py: optional nightly sync
-├── api/        FastAPI routers: analytics, garmin, garmin_health, strength, strava, ai_tips, metrics, settings; main.py wires them
+├── api/        FastAPI routers: analytics, garmin (sessions/FIT), garmin_sync, garmin_health, strength, strava, ai_tips, metrics, settings; main.py wires them
 ├── dataio/     DuckDB connection (db.py), schema + versioned migrations (init_duckdb.py), shared queries, user settings
 ├── features/   Training science: workload (ACWR), cardio (TRIMP, zones), fitness (CTL/ATL/TSB), strength (1RM, INOL), banister fit, hr_drift, recommendations
 ├── garmin/     FIT parser, time-series metrics, planned/actual matching, Garmin Connect client + activity/health sync, readiness

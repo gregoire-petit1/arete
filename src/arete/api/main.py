@@ -9,6 +9,7 @@ from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
 from arete.api.garmin import router as garmin_router
 from arete.api.garmin_health import router as garmin_health_router
+from arete.api.garmin_sync import router as garmin_sync_router
 from arete.api.metrics import router as metrics_router
 from arete.api.settings import router as settings_router
 from arete.api.strava import router as strava_router
@@ -67,6 +68,7 @@ for router in (
     metrics_router,
     garmin_router,
     garmin_health_router,
+    garmin_sync_router,
     strength_router,
     ai_tips_router,
     strava_router,
