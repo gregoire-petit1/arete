@@ -1,30 +1,20 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
-import {
-  User,
-  Target,
-  Watch,
-  Database,
-  Bell,
-  Palette,
-  Save,
-  Check,
-  X,
-  Terminal,
-  RefreshCw,
-  Server,
-  Cloud,
-  CheckCircle,
-  XCircle,
-  LogOut,
-  Dumbbell,
-  Plus,
-  Trash2,
-} from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Check, Dumbbell, Palette, Save, Target, Terminal, User, Watch, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { LoadingState, GarminLoginModal, SystemAlert } from '@/components';
-import { settingsApi, garminApi, garminHealthApi, stravaApi, healthApi, type UserSettings } from '@/lib/api';
+import { ErrorState, LoadingState } from '@/components';
+import { Button, Spinner } from '@/components/ui';
+import { settingsApi, type UserSettings } from '@/lib/api';
+import {
+  AppearanceTab,
+  ConnectionsTab,
+  DEFAULT_SETTINGS,
+  GoalsTab,
+  ProfileTab,
+  SystemTab,
+  WorkoutTab,
+  type LocalSettings,
+} from './settings/index';
 
 const TABS = [
   { id: 'profile', label: 'PROFILE', icon: User },
@@ -35,31 +25,19 @@ const TABS = [
   { id: 'system', label: 'SYSTEM', icon: Terminal },
 ] as const;
 
-type TabId = typeof TABS[number]['id'];
+type TabId = (typeof TABS)[number]['id'];
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabId>('profile');
   const queryClient = useQueryClient();
 
-  // Fetch settings from API
-  const { data: savedSettings, isLoading } = useQuery({
+  const { data: savedSettings, isLoading, isError, refetch } = useQuery({
     queryKey: ['settings'],
     queryFn: settingsApi.get,
   });
 
-  // Local state for editing
-  const [settings, setSettings] = useState<Omit<UserSettings, 'user_id'>>({
-    display_name: 'HUNTER',
-    email: null,
-    timezone: 'Europe/Paris',
-    weekly_training_goal: 6,
-    rest_day_preference: ['monday'],
-    fatigue_threshold: 85,
-    fitness_goal: 'build',
-    notifications_enabled: true,
-    theme: 'dark',
-    exercise_abbreviations: {},
-  });
+  const [settings, setSettings] = useState<LocalSettings>(DEFAULT_SETTINGS);
 
   // Adopt fetched settings into local form state whenever the server copy changes
   const [syncedFrom, setSyncedFrom] = useState<UserSettings | null>(null);
@@ -69,7 +47,7 @@ export function SettingsPage() {
     setSettings(rest);
   }
 
-  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 
   const hasChanges = useMemo(() => {
     if (!savedSettings) return false;
@@ -77,12 +55,9 @@ export function SettingsPage() {
     return JSON.stringify(saved) !== JSON.stringify(settings);
   }, [settings, savedSettings]);
 
-  // Save mutation
   const saveMutation = useMutation({
     mutationFn: settingsApi.update,
-    onMutate: () => {
-      setSaveStatus('saving');
-    },
+    onMutate: () => setSaveStatus('saving'),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       setSaveStatus('saved');
@@ -94,15 +69,8 @@ export function SettingsPage() {
     },
   });
 
-  const updateSetting = <K extends keyof Omit<UserSettings, 'user_id'>>(
-    key: K,
-    value: Omit<UserSettings, 'user_id'>[K]
-  ) => {
+  const updateSetting = <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const handleSave = () => {
-    saveMutation.mutate(settings);
   };
 
   if (isLoading) {
@@ -113,68 +81,37 @@ export function SettingsPage() {
     );
   }
 
+  if (isError) {
+    return <ErrorState message="FAILED TO LOAD SETTINGS" onRetry={() => refetch()} />;
+  }
+
+  const tabProps = { settings, updateSetting };
+
   return (
     <div className="min-h-screen bg-void p-6">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <motion.header
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center mb-8"
-        >
-          <h1 className="text-2xl font-sans font-bold text-text-primary tracking-wider">
-            SETTINGS
-          </h1>
+        <header className="flex justify-between items-center mb-8 animate-fade-down">
+          <h1 className="text-2xl font-sans font-bold text-text-primary tracking-wider">SETTINGS</h1>
           {hasChanges && (
-            <motion.button
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              onClick={handleSave}
+            <Button
+              variant="green"
+              strong
+              onClick={() => saveMutation.mutate(settings)}
               disabled={saveStatus === 'saving'}
-              className={cn(
-                'flex items-center gap-2 px-4 py-2 rounded',
-                'bg-success-green/20 border border-success-green/30',
-                'text-success-green font-mono text-sm',
-                'hover:bg-success-green/30 transition-all',
-                'disabled:opacity-50 disabled:cursor-not-allowed'
-              )}
+              className="animate-scale-in"
             >
-              {saveStatus === 'saving' ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-success-green border-t-transparent rounded-full animate-spin" />
-                  SAVING...
-                </>
-              ) : saveStatus === 'saved' ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  SAVED!
-                </>
-              ) : saveStatus === 'error' ? (
-                <>
-                  <X className="w-4 h-4 text-danger-red" />
-                  ERROR
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  SAVE CHANGES
-                </>
-              )}
-            </motion.button>
+              <SaveStatusContent status={saveStatus} />
+            </Button>
           )}
-        </motion.header>
+        </header>
 
         <div className="flex gap-6">
-          {/* Sidebar */}
-          <motion.nav
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="w-48 shrink-0"
-          >
+          <nav className="w-48 shrink-0 animate-fade-left">
             <div className="space-y-1">
               {TABS.map((tab) => (
                 <button
                   key={tab.id}
+                  type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
                     'w-full flex items-center gap-3 px-4 py-3 rounded',
@@ -189,380 +126,15 @@ export function SettingsPage() {
                 </button>
               ))}
             </div>
-          </motion.nav>
+          </nav>
 
-          {/* Content */}
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex-1 glass-panel p-6"
-          >
-            {activeTab === 'profile' && (
-              <ProfileTab settings={settings} updateSetting={updateSetting} />
-            )}
-            {activeTab === 'goals' && (
-              <GoalsTab settings={settings} updateSetting={updateSetting} />
-            )}
-            {activeTab === 'workout' && (
-              <WorkoutTab settings={settings} updateSetting={updateSetting} />
-            )}
+          <div key={activeTab} className="flex-1 glass-panel p-6 animate-fade-up">
+            {activeTab === 'profile' && <ProfileTab {...tabProps} />}
+            {activeTab === 'goals' && <GoalsTab {...tabProps} />}
+            {activeTab === 'workout' && <WorkoutTab {...tabProps} />}
             {activeTab === 'connections' && <ConnectionsTab />}
-            {activeTab === 'appearance' && (
-              <AppearanceTab settings={settings} updateSetting={updateSetting} />
-            )}
+            {activeTab === 'appearance' && <AppearanceTab {...tabProps} />}
             {activeTab === 'system' && <SystemTab />}
-          </motion.div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Sub-components (module-level)
-// ---------------------------------------------------------------------------
-
-type LocalSettings = Omit<UserSettings, 'user_id'>;
-
-function ProfileTab({
-  settings,
-  updateSetting,
-}: {
-  settings: LocalSettings;
-  updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
-}) {
-  return (
-    <div className="space-y-6">
-      <h2 className="text-lg font-sans text-text-primary mb-4">PROFILE SETTINGS</h2>
-
-      <div className="space-y-4">
-        <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-2">
-            Display Name
-          </label>
-          <input
-            type="text"
-            value={settings.display_name}
-            onChange={(e) => updateSetting('display_name', e.target.value)}
-            className={cn(
-              'w-full bg-abyss border border-text-muted/30 rounded px-4 py-2',
-              'text-text-primary font-mono',
-              'focus:border-neon-cyan/50 outline-none transition-colors'
-            )}
-          />
-        </div>
-
-        <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-2">
-            Email
-          </label>
-          <input
-            type="email"
-            value={settings.email ?? ''}
-            onChange={(e) => updateSetting('email', e.target.value || null)}
-            className={cn(
-              'w-full bg-abyss border border-text-muted/30 rounded px-4 py-2',
-              'text-text-primary font-mono',
-              'focus:border-neon-cyan/50 outline-none transition-colors'
-            )}
-          />
-        </div>
-
-        <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-2">
-            Timezone
-          </label>
-          <select
-            value={settings.timezone}
-            onChange={(e) => updateSetting('timezone', e.target.value)}
-            className={cn(
-              'w-full bg-abyss border border-text-muted/30 rounded px-4 py-2',
-              'text-text-primary font-mono',
-              'focus:border-neon-cyan/50 outline-none transition-colors'
-            )}
-          >
-            <option value="Europe/Paris">Europe/Paris (CET)</option>
-            <option value="Europe/London">Europe/London (GMT)</option>
-            <option value="America/New_York">America/New_York (EST)</option>
-            <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
-          </select>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function GoalsTab({
-  settings,
-  updateSetting,
-}: {
-  settings: LocalSettings;
-  updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
-}) {
-  const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-  const GOALS = [
-    { value: 'maintenance', label: 'MAINTENANCE', desc: 'Maintain current fitness' },
-    { value: 'build', label: 'BUILD', desc: 'Progressive overload' },
-    { value: 'peak', label: 'PEAK', desc: 'Peak for event' },
-    { value: 'recovery', label: 'RECOVERY', desc: 'Active recovery phase' },
-  ];
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-lg font-sans text-text-primary mb-4">TRAINING GOALS</h2>
-
-      <div className="space-y-6">
-        {/* Fitness Goal */}
-        <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-3">
-            Primary Goal
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            {GOALS.map((goal) => (
-              <button
-                key={goal.value}
-                onClick={() => updateSetting('fitness_goal', goal.value as UserSettings['fitness_goal'])}
-                className={cn(
-                  'p-4 rounded border text-left transition-all',
-                  settings.fitness_goal === goal.value
-                    ? 'bg-neon-cyan/10 border-neon-cyan/50 text-neon-cyan'
-                    : 'bg-abyss border-text-muted/20 text-text-muted hover:border-text-muted/40'
-                )}
-              >
-                <div className="font-mono text-sm mb-1">{goal.label}</div>
-                <div className="text-xs opacity-70 font-mono">{goal.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Weekly Goal */}
-        <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-2">
-            Weekly Training Sessions Target
-          </label>
-          <div className="flex items-center gap-4">
-            <input
-              type="range"
-              min="1"
-              max="14"
-              value={settings.weekly_training_goal}
-              onChange={(e) => updateSetting('weekly_training_goal', parseInt(e.target.value))}
-              className="flex-1"
-            />
-            <span className="text-xl font-mono text-neon-cyan w-12 text-center">
-              {settings.weekly_training_goal}
-            </span>
-          </div>
-        </div>
-
-        {/* Rest Days */}
-        <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-3">
-            Preferred Rest Days
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {DAYS.map((day) => (
-              <button
-                key={day}
-                onClick={() => {
-                  const current = settings.rest_day_preference;
-                  const updated = current.includes(day)
-                    ? current.filter((d) => d !== day)
-                    : [...current, day];
-                  updateSetting('rest_day_preference', updated);
-                }}
-                className={cn(
-                  'px-3 py-1.5 rounded text-xs font-mono uppercase transition-all',
-                  settings.rest_day_preference.includes(day)
-                    ? 'bg-neon-purple/20 text-neon-purple border border-neon-purple/30'
-                    : 'bg-abyss text-text-muted border border-text-muted/20 hover:border-text-muted/40'
-                )}
-              >
-                {day.slice(0, 3)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Fatigue Threshold */}
-        <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-2">
-            Fatigue Alert Threshold (%)
-          </label>
-          <div className="flex items-center gap-4">
-            <input
-              type="range"
-              min="50"
-              max="100"
-              value={settings.fatigue_threshold}
-              onChange={(e) => updateSetting('fatigue_threshold', parseInt(e.target.value))}
-              className="flex-1"
-            />
-            <span className="text-xl font-mono text-warning-orange w-12 text-center">
-              {settings.fatigue_threshold}
-            </span>
-          </div>
-          <p className="text-xs text-text-muted mt-1 font-mono">
-            System will warn when fatigue exceeds this level
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function WorkoutTab({
-  settings,
-  updateSetting,
-}: {
-  settings: LocalSettings;
-  updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
-}) {
-  const [newAbbrev, setNewAbbrev] = useState('');
-  const [newFull, setNewFull] = useState('');
-
-  const abbreviations = settings.exercise_abbreviations ?? {};
-  const entries = Object.entries(abbreviations).sort(([a], [b]) => a.localeCompare(b));
-
-  const handleAdd = () => {
-    const key = newAbbrev.trim().toLowerCase();
-    const value = newFull.trim().toLowerCase();
-    if (!key || !value) return;
-    updateSetting('exercise_abbreviations', { ...abbreviations, [key]: value });
-    setNewAbbrev('');
-    setNewFull('');
-  };
-
-  const handleRemove = (key: string) => {
-    const updated = { ...abbreviations };
-    delete updated[key];
-    updateSetting('exercise_abbreviations', updated);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAdd();
-    }
-  };
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-lg font-sans text-text-primary mb-4">WORKOUT NOTATION</h2>
-
-      {/* Abbreviations */}
-      <div>
-        <label className="text-xs font-mono text-text-muted uppercase block mb-2">
-          Exercise Abbreviations
-        </label>
-        <p className="text-xs text-text-muted font-mono mb-4">
-          Map your shorthand to full exercise names so the parser understands your notation.
-          <br />
-          Example: <span className="text-neon-cyan">bp</span> &rarr; <span className="text-neon-cyan">bench press</span>,{' '}
-          <span className="text-neon-cyan">ng</span> &rarr; <span className="text-neon-cyan">neutral grip</span>
-        </p>
-
-        {/* Existing abbreviations */}
-        {entries.length > 0 && (
-          <div className="space-y-1 mb-4">
-            {entries.map(([abbrev, full]) => (
-              <div
-                key={abbrev}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2 rounded',
-                  'bg-abyss/50 border border-text-muted/20',
-                  'group hover:border-text-muted/40 transition-all'
-                )}
-              >
-                <span className="font-mono text-sm text-neon-cyan w-20 shrink-0">{abbrev}</span>
-                <span className="text-text-muted font-mono text-xs">&rarr;</span>
-                <span className="font-mono text-sm text-text-primary flex-1">{full}</span>
-                <button
-                  onClick={() => handleRemove(abbrev)}
-                  className="opacity-0 group-hover:opacity-100 text-danger-red hover:text-danger-red/80 transition-all"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Add new abbreviation */}
-        <div className="flex items-center gap-2">
-          <input
-            type="text"
-            value={newAbbrev}
-            onChange={(e) => setNewAbbrev(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="abbrev"
-            className={cn(
-              'w-24 bg-abyss border border-text-muted/30 rounded px-3 py-2',
-              'text-neon-cyan font-mono text-sm',
-              'focus:border-neon-cyan/50 outline-none transition-colors',
-              'placeholder:text-text-muted/40'
-            )}
-          />
-          <span className="text-text-muted font-mono text-xs">&rarr;</span>
-          <input
-            type="text"
-            value={newFull}
-            onChange={(e) => setNewFull(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="full exercise name"
-            className={cn(
-              'flex-1 bg-abyss border border-text-muted/30 rounded px-3 py-2',
-              'text-text-primary font-mono text-sm',
-              'focus:border-neon-cyan/50 outline-none transition-colors',
-              'placeholder:text-text-muted/40'
-            )}
-          />
-          <button
-            onClick={handleAdd}
-            disabled={!newAbbrev.trim() || !newFull.trim()}
-            className={cn(
-              'p-2 rounded border transition-all',
-              'bg-neon-cyan/10 border-neon-cyan/30 text-neon-cyan',
-              'hover:bg-neon-cyan/20',
-              'disabled:opacity-30 disabled:cursor-not-allowed'
-            )}
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Quick reference */}
-      <div className="p-4 rounded bg-abyss/50 border border-text-muted/20">
-        <h3 className="text-xs font-mono text-text-muted uppercase mb-3">
-          Notation Quick Reference
-        </h3>
-        <div className="space-y-1.5 font-mono text-xs">
-          <div className="flex gap-3">
-            <span className="text-neon-cyan w-44 shrink-0">2x8 @80 bench press</span>
-            <span className="text-text-muted">2 sets of 8 reps at 80kg</span>
-          </div>
-          <div className="flex gap-3">
-            <span className="text-neon-cyan w-44 shrink-0">3@100, 1@105 squat</span>
-            <span className="text-text-muted">descending sets</span>
-          </div>
-          <div className="flex gap-3">
-            <span className="text-neon-cyan w-44 shrink-0">3x8 + reverse</span>
-            <span className="text-text-muted">pyramid (up then down)</span>
-          </div>
-          <div className="flex gap-3">
-            <span className="text-neon-cyan w-44 shrink-0">(pull ups, dips)</span>
-            <span className="text-text-muted">superset</span>
-          </div>
-          <div className="flex gap-3">
-            <span className="text-neon-cyan w-44 shrink-0">r1'30</span>
-            <span className="text-text-muted">rest 1 min 30 sec</span>
-          </div>
-          <div className="flex gap-3">
-            <span className="text-neon-cyan w-44 shrink-0">35' incline walk</span>
-            <span className="text-text-muted">35 min cardio</span>
           </div>
         </div>
       </div>
@@ -570,581 +142,35 @@ function WorkoutTab({
   );
 }
 
-function ConnectionsTab() {
-  const { data: syncStatus } = useQuery({
-    queryKey: ['syncStatus'],
-    queryFn: garminApi.getSyncStatus,
-    retry: false,
-  });
-
-  // Strava state
-  const [stravaStatus, setStravaStatus] = useState<{
-    connected: boolean;
-    athlete_name: string | null;
-  }>({ connected: false, athlete_name: null });
-  const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<string | null>(null);
-
-  useEffect(() => {
-    stravaApi.getStatus()
-      .then(setStravaStatus)
-      .catch(() => {}); // silently fail if backend unavailable
-
-    // Handle redirect back from Strava OAuth
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('strava') === 'connected') {
-      // Clean URL without reloading
-      window.history.replaceState({}, '', window.location.pathname);
-      // Refresh status
-      stravaApi.getStatus()
-        .then(setStravaStatus)
-        .catch(() => {});
-    }
-  }, []);
-
-  const handleStravaConnect = async () => {
-    try {
-      const { url } = await stravaApi.getAuthorizeUrl();
-      window.location.href = url;
-    } catch (e) {
-      console.error('Failed to get Strava auth URL', e);
-    }
-  };
-
-  const handleStravaSync = async () => {
-    setSyncing(true);
-    setSyncResult(null);
-    try {
-      const result = await stravaApi.sync(30);
-      setSyncResult(`${result.imported} imported, ${result.skipped} skipped`);
-      const status = await stravaApi.getStatus();
-      setStravaStatus(status);
-    } catch {
-      setSyncResult('Sync failed');
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  const handleStravaDisconnect = async () => {
-    try {
-      await stravaApi.disconnect();
-      setStravaStatus({ connected: false, athlete_name: null });
-      setSyncResult(null);
-    } catch (e) {
-      console.error('Failed to disconnect Strava', e);
-    }
-  };
-
-  const garminConnected = syncStatus?.garmin_authenticated;
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-lg font-sans text-text-primary mb-4">CONNECTED SERVICES</h2>
-
-      <div className="space-y-3">
-        {/* Garmin */}
-        <div
-          className={cn(
-            'flex items-center gap-4 p-4 rounded',
-            'bg-abyss/50 border',
-            garminConnected ? 'border-success-green/30' : 'border-text-muted/20'
-          )}
-        >
-          <Watch className="w-6 h-6 text-text-muted" />
-          <div className="flex-1">
-            <div className="font-mono text-sm text-text-primary">Garmin Connect</div>
-            {syncStatus?.user_email && (
-              <div className="text-xs text-neon-cyan">{syncStatus.user_email}</div>
-            )}
-          </div>
-          {garminConnected ? (
-            <div className="flex items-center gap-1 text-xs text-success-green">
-              <Check className="w-4 h-4" />
-              Connected
-            </div>
-          ) : (
-            <span className="text-xs font-mono text-text-muted">Not connected</span>
-          )}
-        </div>
-
-        {/* Strava */}
-        <div
-          className={cn(
-            'flex items-center gap-4 p-4 rounded',
-            'bg-abyss/50 border',
-            stravaStatus.connected ? 'border-success-green/30' : 'border-text-muted/20'
-          )}
-        >
-          <Target className="w-6 h-6 text-text-muted" />
-          <div className="flex-1">
-            <div className="font-mono text-sm text-text-primary">Strava</div>
-            {stravaStatus.connected && stravaStatus.athlete_name && (
-              <div className="text-xs text-[#FC4C02]">{stravaStatus.athlete_name}</div>
-            )}
-            {syncResult && (
-              <div className="text-xs text-text-muted mt-1 font-mono">{syncResult}</div>
-            )}
-          </div>
-          {stravaStatus.connected ? (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleStravaSync}
-                disabled={syncing}
-                className={cn(
-                  'px-3 py-1.5 rounded text-xs font-mono',
-                  'bg-[#FC4C02]/10 border border-[#FC4C02]/30 text-[#FC4C02]',
-                  'hover:bg-[#FC4C02]/20 transition-all',
-                  syncing && 'opacity-50'
-                )}
-              >
-                {syncing ? 'SYNCING...' : 'SYNC NOW'}
-              </button>
-              <button
-                onClick={handleStravaDisconnect}
-                className="px-3 py-1.5 rounded text-xs font-mono bg-danger-red/10 border border-danger-red/30 text-danger-red hover:bg-danger-red/20 transition-all"
-              >
-                <LogOut className="w-3 h-3" />
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={handleStravaConnect}
-              className={cn(
-                'px-3 py-1.5 rounded text-xs font-mono',
-                'bg-[#FC4C02]/10 border border-[#FC4C02]/30 text-[#FC4C02]',
-                'hover:bg-[#FC4C02]/20 transition-all'
-              )}
-            >
-              CONNECT
-            </button>
-          )}
-        </div>
-
-      </div>
-    </div>
-  );
-}
-
-function AppearanceTab({
-  settings,
-  updateSetting,
-}: {
-  settings: LocalSettings;
-  updateSetting: <K extends keyof LocalSettings>(key: K, value: LocalSettings[K]) => void;
-}) {
-  const THEMES = [
-    { value: 'dark', label: 'DARK', color: 'bg-[#0A0A0F]' },
-    { value: 'darker', label: 'DARKER', color: 'bg-[#050508]' },
-    { value: 'abyss', label: 'ABYSS', color: 'bg-[#000000]' },
-  ];
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-lg font-sans text-text-primary mb-4">APPEARANCE</h2>
-
-      <div className="space-y-6">
-        {/* Theme */}
-        <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-3">
-            Theme
-          </label>
-          <div className="flex gap-3">
-            {THEMES.map((theme) => (
-              <button
-                key={theme.value}
-                onClick={() => updateSetting('theme', theme.value as LocalSettings['theme'])}
-                className={cn(
-                  'flex flex-col items-center gap-2 p-3 rounded border transition-all',
-                  settings.theme === theme.value
-                    ? 'border-neon-cyan/50'
-                    : 'border-text-muted/20 hover:border-text-muted/40'
-                )}
-              >
-                <div className={cn('w-16 h-10 rounded', theme.color)} />
-                <span className="text-xs font-mono text-text-muted">{theme.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Notifications */}
-        <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-3">
-            Notifications
-          </label>
-          <button
-            onClick={() => updateSetting('notifications_enabled', !settings.notifications_enabled)}
-            className={cn(
-              'flex items-center gap-3 p-4 rounded border w-full',
-              settings.notifications_enabled
-                ? 'bg-success-green/10 border-success-green/30'
-                : 'bg-abyss border-text-muted/20'
-            )}
-          >
-            <Bell
-              className={cn(
-                'w-5 h-5',
-                settings.notifications_enabled ? 'text-success-green' : 'text-text-muted'
-              )}
-            />
-            <div className="flex-1 text-left">
-              <div className="font-mono text-sm text-text-primary">Push Notifications</div>
-              <div className="text-xs text-text-muted font-mono">Receive alerts and reminders</div>
-            </div>
-            <div
-              className={cn(
-                'w-12 h-6 rounded-full transition-all relative',
-                settings.notifications_enabled ? 'bg-success-green' : 'bg-text-muted/30'
-              )}
-            >
-              <div
-                className={cn(
-                  'absolute top-1 w-4 h-4 rounded-full bg-white transition-all',
-                  settings.notifications_enabled ? 'left-7' : 'left-1'
-                )}
-              />
-            </div>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// System tab (absorbed from Matrix.tsx)
-// ---------------------------------------------------------------------------
-
-function SystemTab() {
-  const queryClient = useQueryClient();
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [alert, setAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-
-  const { data: health, isLoading: healthLoading, refetch: refetchHealth } = useQuery({
-    queryKey: ['health'],
-    queryFn: healthApi.check,
-    retry: false,
-  });
-
-  const { data: syncStatus, isLoading: syncLoading, refetch: refetchSync } = useQuery({
-    queryKey: ['syncStatus'],
-    queryFn: garminApi.getSyncStatus,
-    refetchInterval: 30000,
-    retry: false,
-  });
-
-
-  const logoutMutation = useMutation({
-    mutationFn: garminApi.logout,
-    onSuccess: () => {
-      setAlert({ type: 'success', message: 'LOGGED OUT' });
-      queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
-    },
-  });
-
-  const { data: healthStatus } = useQuery({
-    queryKey: ['garminHealthStatus'],
-    queryFn: garminHealthApi.getStatus,
-    retry: false,
-  });
-  const healthSyncMutation = useMutation({
-    mutationFn: () => {
-      const end = new Date();
-      const start = new Date(end.getTime() - 7 * 86400000);
-      return garminHealthApi.sync(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
-    },
-    onSuccess: (result) => {
-      setAlert({
-        type: result.days_failed ? 'error' : 'success',
-        message: `HEALTH: ${result.days_synced} DAYS SYNCED${result.days_failed ? `, ${result.days_failed} FAILED` : ''}`,
-      });
-      queryClient.invalidateQueries({ queryKey: ['garminHealthStatus'] });
-      queryClient.invalidateQueries({ queryKey: ['garmin-health'] });
-    },
-    onError: (error) => {
-      setAlert({ type: 'error', message: `HEALTH SYNC FAILED: ${error}` });
-    },
-  });
-  const syncMutation = useMutation({
-    mutationFn: (options: { start_date?: string; end_date?: string; download_fit?: boolean; max_activities?: number }) =>
-      garminApi.syncActivities(options),
-    onSuccess: (result) => {
-      setAlert({ type: 'success', message: `SYNCED ${result.synced} ACTIVITIES` });
-      queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
-      queryClient.invalidateQueries({ queryKey: ['actual'] });
-    },
-    onError: (error) => {
-      setAlert({ type: 'error', message: `SYNC FAILED: ${error}` });
-    },
-  });
-
-
-  const handleRefresh = () => {
-    refetchHealth();
-    refetchSync();
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-sans text-text-primary">SYSTEM</h2>
-        <button
-          onClick={handleRefresh}
-          className={cn(
-            'flex items-center gap-2 px-3 py-1.5 rounded',
-            'bg-abyss border border-text-muted/30',
-            'text-text-secondary font-mono text-xs',
-            'hover:border-neon-cyan/50 hover:text-neon-cyan transition-all duration-200'
-          )}
-        >
-          <RefreshCw className="w-3 h-3" />
-          REFRESH
-        </button>
-      </div>
-
-      {/* Alert */}
-      {alert && (
-        <motion.div
-          initial={{ opacity: 0, y: -10 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <SystemAlert
-            type={alert.type}
-            message={alert.message}
-            onDismiss={() => setAlert(null)}
-          />
-        </motion.div>
-      )}
-
-      {/* System Status */}
-      <div className="p-4 bg-abyss/50 rounded border border-text-muted/20">
-        <h3 className="text-xs font-mono text-text-muted mb-3 uppercase tracking-wider">
-          STATUS
-        </h3>
-        <div className="space-y-2">
-          <StatusRow
-            icon={<Server className="w-4 h-4" />}
-            label="API Health"
-            status={health?.status === 'ok' ? 'online' : healthLoading ? 'loading' : 'offline'}
-          />
-          <StatusRow
-            icon={<Database className="w-4 h-4" />}
-            label="DuckDB"
-            status={health?.database === 'connected' ? 'online' : 'offline'}
-          />
-          <StatusRow
-            icon={<Cloud className="w-4 h-4" />}
-            label="Garmin Connect"
-            status={syncStatus?.garmin_authenticated ? 'online' : syncLoading ? 'loading' : 'offline'}
-          />
-        </div>
-      </div>
-
-      {/* Garmin Sync Center */}
-      <div className="p-4 bg-abyss/50 rounded border border-text-muted/20">
-        <h3 className="text-xs font-mono text-text-muted mb-3 uppercase tracking-wider">
-          GARMIN SYNC CENTER
-        </h3>
-
-        {syncStatus?.garmin_authenticated ? (
-          <div className="space-y-4">
-            <div className="p-3 rounded border border-success-green/30">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-success-green font-mono flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" />
-                    {syncStatus.user_email ? `Authenticated as ${syncStatus.user_email}` : 'Authenticated'}
-                  </div>
-                  <div className="text-xs text-text-muted mt-1 font-mono">
-                    Last sync: {syncStatus.last_sync || 'Never'}
-                    {' | '}
-                    Activities: {syncStatus.activities_synced}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => syncMutation.mutate({ max_activities: 50, download_fit: true })}
-                    disabled={syncMutation.isPending}
-                    className={cn(
-                      'px-3 py-1.5 rounded text-xs font-mono',
-                      'bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan',
-                      'hover:bg-neon-cyan/20 transition-all',
-                      syncMutation.isPending && 'opacity-50'
-                    )}
-                  >
-                    {syncMutation.isPending ? 'SYNCING...' : 'SYNC NOW'}
-                  </button>
-                  <button
-                    onClick={() => logoutMutation.mutate()}
-                    className="px-3 py-1.5 rounded text-xs font-mono bg-danger-red/10 border border-danger-red/30 text-danger-red hover:bg-danger-red/20 transition-all"
-                  >
-                    <LogOut className="w-3 h-3" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <SyncOptionsForm onSync={(options) => syncMutation.mutate(options)} isLoading={syncMutation.isPending} />
-
-            <div className="p-3 rounded border border-neon-purple/30 flex items-center justify-between">
-              <div>
-                <div className="text-sm text-neon-purple font-mono">Health metrics (HRV, sleep, body battery)</div>
-                <div className="text-xs text-text-muted mt-1 font-mono">
-                  {healthStatus?.days_stored
-                    ? `${healthStatus.days_stored} days stored, last ${healthStatus.last_date}`
-                    : 'No health data yet'}
-                </div>
-              </div>
-              <button
-                onClick={() => healthSyncMutation.mutate()}
-                disabled={healthSyncMutation.isPending}
-                className={cn(
-                  'px-3 py-1.5 rounded text-xs font-mono',
-                  'bg-neon-purple/10 border border-neon-purple/30 text-neon-purple',
-                  'hover:bg-neon-purple/20 transition-all',
-                  healthSyncMutation.isPending && 'opacity-50'
-                )}
-              >
-                {healthSyncMutation.isPending ? 'SYNCING...' : 'SYNC LAST 7 DAYS'}
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="p-4 rounded border border-text-muted/30 text-center">
-            <XCircle className="w-6 h-6 text-danger-red mx-auto mb-2" />
-            <div className="text-sm text-text-muted font-mono">NOT CONNECTED</div>
-            <button
-              onClick={() => setShowLoginModal(true)}
-              className="mt-3 px-4 py-2 rounded text-sm font-mono bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan hover:bg-neon-cyan/20 transition-all"
-            >
-              [CONNECT]
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Login Modal */}
-      <GarminLoginModal
-        isOpen={showLoginModal}
-        onClose={() => setShowLoginModal(false)}
-        onSuccess={() => {
-          setShowLoginModal(false);
-          setAlert({ type: 'success', message: 'GARMIN CONNECT AUTHENTICATED' });
-          queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
-        }}
-      />
-    </div>
-  );
-}
-
-function StatusRow({
-  icon,
-  label,
-  status,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  status: 'online' | 'offline' | 'loading';
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="text-text-muted">{icon}</span>
-      <span className="text-text-secondary font-mono flex-1">{label}</span>
-      <div className="flex items-center gap-2">
-        {status === 'loading' ? (
-          <div className="w-3 h-3 rounded-full bg-warning-orange animate-pulse" />
-        ) : status === 'online' ? (
-          <div className="w-3 h-3 rounded-full bg-success-green" />
-        ) : (
-          <div className="w-3 h-3 rounded-full bg-danger-red" />
-        )}
-        <span
-          className={cn(
-            'text-xs font-mono uppercase',
-            status === 'online' && 'text-success-green',
-            status === 'offline' && 'text-danger-red',
-            status === 'loading' && 'text-warning-orange'
-          )}
-        >
-          {status === 'loading' ? 'CHECKING' : status.toUpperCase()}
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function SyncOptionsForm({
-  onSync,
-  isLoading,
-}: {
-  onSync: (options: { start_date?: string; end_date?: string; download_fit?: boolean; max_activities?: number }) => void;
-  isLoading: boolean;
-}) {
-  const [days, setDays] = useState(30);
-  const [downloadFit, setDownloadFit] = useState(true);
-  const [maxActivities, setMaxActivities] = useState(50);
-
-  const handleSync = () => {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    onSync({
-      start_date: startDate.toISOString().split('T')[0],
-      download_fit: downloadFit,
-      max_activities: maxActivities,
-    });
-  };
-
-  return (
-    <div className="p-3 rounded border border-text-muted/20">
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <label className="text-xs text-text-muted font-mono block mb-1">Date range</label>
-          <select
-            value={days}
-            onChange={(e) => setDays(Number(e.target.value))}
-            className="w-full bg-shadow border border-text-muted/30 rounded px-2 py-1 text-text-primary font-mono"
-          >
-            <option value={7}>Last 7 days</option>
-            <option value={30}>Last 30 days</option>
-            <option value={90}>Last 90 days</option>
-            <option value={365}>Last year</option>
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-text-muted font-mono block mb-1">Max activities</label>
-          <input
-            type="number"
-            value={maxActivities}
-            onChange={(e) => setMaxActivities(Number(e.target.value))}
-            className="w-full bg-shadow border border-text-muted/30 rounded px-2 py-1 text-text-primary font-mono"
-          />
-        </div>
-        <div className="col-span-2 flex items-center gap-2">
-          <input
-            type="checkbox"
-            id="systemDownloadFit"
-            checked={downloadFit}
-            onChange={(e) => setDownloadFit(e.target.checked)}
-            className="accent-neon-cyan"
-          />
-          <label htmlFor="systemDownloadFit" className="text-xs text-text-muted font-mono">
-            Download FIT files
-          </label>
-        </div>
-      </div>
-      <button
-        onClick={handleSync}
-        disabled={isLoading}
-        className={cn(
-          'mt-3 w-full px-4 py-2 rounded text-sm font-mono',
-          'bg-neon-cyan/10 border border-neon-cyan/30 text-neon-cyan',
-          'hover:bg-neon-cyan/20 transition-all duration-200',
-          isLoading && 'opacity-50'
-        )}
-      >
-        {isLoading ? 'SYNCING...' : '[START SYNC]'}
-      </button>
-    </div>
-  );
+function SaveStatusContent({ status }: { status: SaveStatus }) {
+  switch (status) {
+    case 'saving':
+      return (
+        <>
+          <Spinner />
+          SAVING...
+        </>
+      );
+    case 'saved':
+      return (
+        <>
+          <Check className="w-4 h-4" />
+          SAVED!
+        </>
+      );
+    case 'error':
+      return (
+        <>
+          <X className="w-4 h-4 text-danger-red" />
+          ERROR
+        </>
+      );
+    default:
+      return (
+        <>
+          <Save className="w-4 h-4" />
+          SAVE CHANGES
+        </>
+      );
+  }
 }
