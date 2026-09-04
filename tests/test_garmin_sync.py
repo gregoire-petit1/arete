@@ -94,6 +94,10 @@ class TestGarminActivity:
         assert session.distance_m == 10000.0
         assert session.avg_hr == 145
         assert session.garmin_activity_id == "12345"
+        # analytics columns derived at sync time
+        assert session.name == "Test Run"
+        assert session.avg_pace_sec_km == round(1000 / 2.78)
+        assert session.moving_time_sec == 3600  # no movingDuration -> duration
 
     def test_map_activity_type(self):
         """Test activity type mapping."""
@@ -235,6 +239,49 @@ class TestGarminSyncClient:
             result = client.sync_activities(start_date=date(2025, 12, 1))
         assert result.success is False
         assert "no tokens" in result.errors[0]
+
+
+class TestAnalyticsColumns:
+    def test_pace_only_for_foot_sports(self):
+        from arete.garmin.sync import pace_from_speed
+
+        assert pace_from_speed(2.5, "running") == 400
+        assert pace_from_speed(2.5, "walking") == 400
+        assert pace_from_speed(8.0, "cycling") is None
+        assert pace_from_speed(None, "running") is None
+        assert pace_from_speed(0.0, "running") is None
+
+    def test_moving_duration_from_api(self):
+        activity = GarminActivity.from_api_response(
+            {
+                "activityId": 1,
+                "startTimeLocal": "2025-12-01T08:00:00",
+                "duration": 3600,
+                "movingDuration": 3400.0,
+            }
+        )
+        assert activity.to_actual_session().moving_time_sec == 3400
+
+    def test_laps_json_matches_strava_shape(self):
+        import json
+        from types import SimpleNamespace
+
+        from arete.garmin.sync import laps_to_json
+
+        lap = SimpleNamespace(
+            lap_number=1,
+            distance_m=1000.4,
+            duration_sec=300.0,
+            avg_speed_mps=3.3,
+            avg_hr=150,
+            max_hr=160,
+            avg_cadence=170,
+        )
+        parsed = SimpleNamespace(workout_structure=SimpleNamespace(laps=[lap]))
+        laps = json.loads(laps_to_json(parsed))
+        assert laps[0]["distance"] == 1000.4
+        assert laps[0]["average_heartrate"] == 150 and laps[0]["average_speed"] == 3.3
+        assert laps_to_json(SimpleNamespace(workout_structure=None)) is None
 
 
 class TestSyncResult:

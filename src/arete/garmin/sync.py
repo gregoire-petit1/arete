@@ -6,6 +6,7 @@ Respects rate limits and handles authentication securely.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -64,6 +65,7 @@ class GarminActivity:
     descent_m: float | None
     avg_cadence: int | None
     max_cadence: int | None
+    moving_duration_sec: int | None = None
 
     @classmethod
     def from_api_response(cls, data: dict[str, Any]) -> GarminActivity:
@@ -98,15 +100,22 @@ class GarminActivity:
             or data.get("averageBikingCadenceInRevPerMinute"),
             max_cadence=data.get("maxRunningCadenceInStepsPerMinute")
             or data.get("maxBikingCadenceInRevPerMinute"),
+            moving_duration_sec=int(data["movingDuration"])
+            if data.get("movingDuration")
+            else None,
         )
 
     def to_actual_session(self) -> ActualSession:
         """Convert to ActualSession model."""
+        sport = self._map_activity_type()
         return ActualSession(
             date=self.start_time.date(),
-            sport=self._map_activity_type(),
+            sport=sport,
             session_type=self.activity_type,
+            name=self.activity_name or None,
             duration_sec=self.duration_sec,
+            moving_time_sec=self.moving_duration_sec or self.duration_sec,
+            avg_pace_sec_km=pace_from_speed(self.avg_speed_mps, sport),
             distance_m=self.distance_m,
             calories=self.calories,
             avg_hr=self.avg_hr,
@@ -139,6 +148,38 @@ class GarminActivity:
             "hiking": "hiking",
         }
         return type_mapping.get(self.activity_type, "other")
+
+
+FOOT_SPORTS_FOR_PACE = {"running", "walking", "hiking"}
+
+
+def pace_from_speed(avg_speed_mps: float | None, sport: str) -> int | None:
+    """sec/km from m/s, only for sports where pace is meaningful."""
+    if not avg_speed_mps or avg_speed_mps <= 0 or sport not in FOOT_SPORTS_FOR_PACE:
+        return None
+    return int(round(1000 / avg_speed_mps))
+
+
+def laps_to_json(parsed: Any) -> str | None:
+    """Serialize FIT laps in the shape the analytics expect (Strava lap fields)."""
+    structure = getattr(parsed, "workout_structure", None)
+    if not structure or not structure.laps:
+        return None
+    laps = [
+        {
+            "lap_index": lap.lap_number,
+            "distance": round(lap.distance_m, 1),
+            "elapsed_time": int(lap.duration_sec),
+            "moving_time": int(lap.duration_sec),
+            "average_speed": lap.avg_speed_mps,
+            "average_heartrate": lap.avg_hr,
+            "max_heartrate": lap.max_hr,
+            "average_cadence": lap.avg_cadence,
+            "total_elevation_gain": None,  # not exposed per lap by the FIT parser
+        }
+        for lap in structure.laps
+    ]
+    return json.dumps(laps)
 
 
 class GarminSyncClient:
@@ -350,11 +391,16 @@ class GarminSyncClient:
         """Enrich session with detailed data from FIT file."""
         try:
             parser = FITParser()
-            parsed = parser.parse_file(fit_path)
+            parsed = parser.parse_file(fit_path, detailed=True)
 
             # Update with more detailed data from FIT
             if parsed.hr_zones:
                 session.hr_zones_json = parsed.hr_zones.to_json()
+            session.laps_json = laps_to_json(parsed) or session.laps_json
+            if session.avg_pace_sec_km is None:
+                session.avg_pace_sec_km = pace_from_speed(
+                    parsed.avg_speed_mps, session.sport
+                )
 
             # Update cadence from FIT (may be more accurate)
             if parsed.avg_cadence:
@@ -368,6 +414,67 @@ class GarminSyncClient:
             logger.warning(f"Could not parse FIT file {fit_path}: {e}")
 
         return session
+
+    def reprocess_existing(self, fit_dir: Path | None = None) -> dict[str, int]:
+        """Fill analytics columns on already-synced Garmin sessions.
+
+        Recomputes pace from speed, re-reads laps / HR zones from the FIT files on
+        disk and fetches the activity names from Garmin. Idempotent.
+        """
+        fit_dir = fit_dir or Path("data/fit_files")
+        sessions = [
+            s
+            for s in self.repository.list_actual_sessions(limit=10000)
+            if s.source == ActivitySource.GARMIN_CONNECT and s.id is not None
+        ]
+        if not sessions:
+            return {"sessions": 0, "updated": 0, "named": 0}
+
+        names: dict[str, str] = {}
+        try:
+            dates = [s.date for s in sessions]
+            for data in self.client.activities(min(dates), max(dates)):
+                if isinstance(data, dict) and data.get("activityId"):
+                    names[str(data["activityId"])] = data.get("activityName") or ""
+        except Exception as e:
+            logger.warning("Could not fetch activity names: %s", e)
+
+        updated = named = 0
+        for session in sessions:
+            fields: dict[str, Any] = {}
+            if session.avg_pace_sec_km is None:
+                pace = pace_from_speed(session.avg_speed_mps, session.sport)
+                if pace:
+                    fields["avg_pace_sec_km"] = pace
+            if session.moving_time_sec is None and session.duration_sec:
+                fields["moving_time_sec"] = session.duration_sec
+            if not session.name and names.get(session.garmin_activity_id or ""):
+                fields["name"] = names[session.garmin_activity_id or ""]
+                named += 1
+            fit_path = fit_dir / f"{session.garmin_activity_id}.fit"
+            if fit_path.exists() and (
+                session.laps_json is None or session.hr_zones_json
+            ):
+                try:
+                    parsed = FITParser().parse_file(fit_path, detailed=True)
+                    laps = laps_to_json(parsed)
+                    if laps:
+                        fields["laps_json"] = laps
+                    if parsed.hr_zones:
+                        fields["hr_zones_json"] = parsed.hr_zones.to_json()
+                except Exception as e:
+                    logger.warning("FIT reparse failed for %s: %s", fit_path, e)
+            if fields:
+                assert session.id is not None
+                self.repository.update_actual_session_fields(session.id, **fields)
+                updated += 1
+        logger.info(
+            "Reprocessed %d Garmin sessions (%d updated, %d named)",
+            len(sessions),
+            updated,
+            named,
+        )
+        return {"sessions": len(sessions), "updated": updated, "named": named}
 
     def get_user_summary(self) -> dict[str, Any]:
         """Garmin profile of the authenticated user."""

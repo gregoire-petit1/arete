@@ -1,6 +1,7 @@
 """Repository for Garmin sessions database operations."""
 
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import duckdb
 
@@ -379,6 +380,37 @@ class GarminRepository:
         conn.close()
 
         return [self._row_to_actual_session(row) for row in results]
+
+    ENRICHMENT_COLUMNS = frozenset(
+        {
+            "name",
+            "avg_pace_sec_km",
+            "moving_time_sec",
+            "laps_json",
+            "splits_json",
+            "hr_zones_json",
+            "avg_cadence",
+            "max_cadence",
+            "source_file",
+        }
+    )
+
+    def update_actual_session_fields(self, session_id: int, **fields: Any) -> None:
+        """Update enrichment columns of an actual session (whitelisted)."""
+        unknown = set(fields) - self.ENRICHMENT_COLUMNS
+        if unknown:
+            raise ValueError(f"Not updatable: {sorted(unknown)}")
+        if not fields:
+            return
+        assignments = ", ".join(f"{col} = ?" for col in fields)
+        conn = self._get_connection()
+        try:
+            conn.execute(
+                f"UPDATE actual_sessions SET {assignments} WHERE id = ?",
+                [*fields.values(), session_id],
+            )
+        finally:
+            conn.close()
 
     def update_actual_session_match(
         self,

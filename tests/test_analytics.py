@@ -614,3 +614,26 @@ class TestTrainingLoadWarmup:
         assert data[0]["date"] == str(history[-(days + 1)].date)
         # after 84 days at a constant 100 TSS, CTL is close to 100 on the first shown day
         assert data[0]["ctl"] > 80
+
+
+class TestHRZonesKeyCase:
+    @patch("arete.api.analytics.connect")
+    def test_uppercase_legacy_keys_are_merged(self, mock_connect, client):
+        import json
+        from datetime import datetime
+
+        mock_conn = mock_connect.return_value
+        mock_conn.execute.return_value.fetchall.return_value = [
+            (
+                datetime(2026, 6, 1),
+                json.dumps({"Z1": 60, "Z2": 120}),
+            ),  # FIT before the fix
+            (
+                datetime(2026, 6, 1),
+                json.dumps({"z1": 30, "z3": 90}),
+            ),  # Strava / new FIT
+        ]
+        resp = client.get("/analytics/hr-zones?period=30d")
+        assert resp.status_code == 200
+        zones = resp.json()["weeks"][0]["zones"]
+        assert zones == {"z1": 90, "z2": 120, "z3": 90}

@@ -35,7 +35,8 @@ export function ConnectionsTab() {
     onSuccess: ({ url }) => {
       window.location.href = url;
     },
-    onError: () => setSyncResult('Could not start Strava authorization'),
+    onError: (err) =>
+      setSyncResult(`Strava: ${err instanceof Error ? err.message : 'could not start authorization'}`),
   });
 
   const syncMutation = useMutation({
@@ -45,7 +46,7 @@ export function ConnectionsTab() {
       queryClient.invalidateQueries({ queryKey: ['stravaStatus'] });
       queryClient.invalidateQueries({ queryKey: ['actual'] });
     },
-    onError: () => setSyncResult('Sync failed'),
+    onError: (err) => setSyncResult(`Sync failed: ${err instanceof Error ? err.message : err}`),
   });
 
   const disconnectMutation = useMutation({

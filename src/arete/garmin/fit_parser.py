@@ -31,13 +31,14 @@ class HRZoneData:
 
     def to_json(self) -> str:
         """Convert to JSON string."""
+        # Same shape as the Strava import ({"z1": sec, ...}) so analytics can merge both
         return json.dumps(
             {
-                "Z1": self.zone1_sec,
-                "Z2": self.zone2_sec,
-                "Z3": self.zone3_sec,
-                "Z4": self.zone4_sec,
-                "Z5": self.zone5_sec,
+                "z1": self.zone1_sec,
+                "z2": self.zone2_sec,
+                "z3": self.zone3_sec,
+                "z4": self.zone4_sec,
+                "z5": self.zone5_sec,
             }
         )
 

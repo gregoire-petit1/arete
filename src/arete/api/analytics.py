@@ -214,7 +214,7 @@ def get_hr_zones(
         week_str = str(week_ts.date()) if hasattr(week_ts, "date") else str(week_ts)
         zones = json.loads(hr_json) if isinstance(hr_json, str) else hr_json
         for zone_name, seconds in zones.items():
-            weeks_map[week_str][zone_name] += int(seconds)
+            weeks_map[week_str][str(zone_name).lower()] += int(seconds)
 
     result = [{"week": w, "zones": dict(z)} for w, z in sorted(weeks_map.items())]
     return {"weeks": result}

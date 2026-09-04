@@ -185,3 +185,20 @@ def sync_activities(request: SyncRequest):
         if result.last_activity_date
         else None,
     )
+
+
+@router.post("/reprocess")
+def reprocess_synced_activities():
+    """Backfill analytics columns (pace, laps, HR zones, names) on synced sessions.
+
+    Reads the FIT files already on disk and asks Garmin for the activity names.
+    Safe to run repeatedly.
+    """
+    from arete.garmin.sync import GarminSyncClient
+
+    client = GarminSyncClient(repository=_repo)
+    if not client.is_authenticated():
+        raise HTTPException(
+            status_code=401, detail="Not authenticated with Garmin Connect"
+        )
+    return client.reprocess_existing()
