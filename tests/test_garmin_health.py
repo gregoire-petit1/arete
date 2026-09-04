@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from arete.api.garmin_health import router
+from arete.garmin.health_sync import _upsert_daily_metrics
 from arete.garmin.readiness import compute_readiness
 
 
@@ -220,3 +221,22 @@ class TestGarminHealthApi:
         data = resp.json()
         assert len(data["days"]) == 2
         assert data["days"][0]["readiness_score"] == 78
+
+
+class TestDailyMetricsTable:
+    """app.daily_metrics must exist in the schema and support upsert (real temp DB)."""
+
+    def test_upsert_then_read_via_api(self, client):
+        _upsert_daily_metrics(
+            {"date": date(2026, 6, 15), "hrv_last_night": 55, "sleep_score": 80}
+        )
+        # second write on the same day must update, not fail on PK conflict
+        _upsert_daily_metrics(
+            {"date": date(2026, 6, 15), "hrv_last_night": 60, "sleep_score": 82}
+        )
+
+        resp = client.get("/garmin/health/daily?date=2026-06-15")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["hrv_last_night"] == 60
+        assert body["sleep_score"] == 82

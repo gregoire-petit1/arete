@@ -228,6 +228,37 @@ CREATE TABLE IF NOT EXISTS app.banister_coefficients (
     n_samples       INTEGER,
     fitted_at       TIMESTAMP DEFAULT now()
 );
+
+-- ============================================================
+-- Garmin Health (daily HRV / sleep / body battery / readiness)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS app.daily_metrics (
+    user_id              INTEGER NOT NULL,
+    date                 DATE NOT NULL,
+    hrv_weekly_avg       INTEGER,
+    hrv_last_night       INTEGER,
+    hrv_status           VARCHAR,
+    sleep_duration_sec   INTEGER,
+    sleep_score          INTEGER,
+    sleep_deep_sec       INTEGER,
+    sleep_light_sec      INTEGER,
+    sleep_rem_sec        INTEGER,
+    sleep_awake_sec      INTEGER,
+    body_battery_charged INTEGER,
+    body_battery_drained INTEGER,
+    body_battery_high    INTEGER,
+    body_battery_low     INTEGER,
+    resting_hr           INTEGER,
+    stress_avg           INTEGER,
+    stress_max           INTEGER,
+    steps                INTEGER,
+    intensity_minutes    INTEGER,
+    readiness_score      INTEGER,
+    source               VARCHAR DEFAULT 'garmin',
+    fetched_at           TIMESTAMP DEFAULT now(),
+    PRIMARY KEY (user_id, date)
+);
 """
 
 
@@ -270,25 +301,6 @@ def _run_migrations(con) -> None:
         except Exception:
             pass  # Column already exists
 
-    # Migration 3: add banister_coefficients table
-    _banister_exists = con.execute(
-        "SELECT EXISTS (SELECT 1 FROM information_schema.tables "
-        "WHERE table_schema='app' AND table_name='banister_coefficients')"
-    ).fetchone()[0]
-    if not _banister_exists:
-        con.execute("""
-            CREATE TABLE app.banister_coefficients (
-                user_id         INTEGER PRIMARY KEY DEFAULT 1,
-                k1              FLOAT NOT NULL DEFAULT 1.0,
-                k2              FLOAT NOT NULL DEFAULT 2.0,
-                baseline        FLOAT NOT NULL DEFAULT 100.0,
-                r2              FLOAT,
-                n_samples       INTEGER,
-                fitted_at       TIMESTAMP DEFAULT now()
-            )
-        """)
-        logger.info("Migration: created banister_coefficients table")
-
 
 def main():
     """Initialize the DuckDB database with the required schema."""
@@ -306,7 +318,6 @@ def main():
             "SELECT table_name FROM information_schema.tables WHERE table_schema='app'"
         ).fetchall()
         logger.info(f"Tables created: {tables}")
-        print("Tables:", tables)
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise

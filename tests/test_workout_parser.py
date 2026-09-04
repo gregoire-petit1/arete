@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
 from arete.llm.workout_parser import (
@@ -313,12 +315,24 @@ class TestParseWorkoutTextNoLLM:
         )
         assert result.exercises[0].sets[-1].rest_sec == 90
 
-    def test_date_extraction(self):
+    def test_date_extraction_inline(self):
+        """Date prefix on the same line as the first exercise (DD/MM/YY)."""
         result = parse_workout_text(
             "05/12/25: Bench press 4x8 80kg",
             use_llm=False,
         )
-        assert result.date.month == 5 or result.date.month == 12  # DD/MM or MM/DD
+        assert result.date == date(2025, 12, 5)
+        assert result.exercises[0].name.lower() == "bench press"
+        assert len(result.exercises[0].sets) == 4
+
+    def test_date_extraction_own_line(self):
+        """Date alone on the first line."""
+        result = parse_workout_text(
+            "05/12/2025:\nBench press 4x8 80kg",
+            use_llm=False,
+        )
+        assert result.date == date(2025, 12, 5)
+        assert len(result.exercises) == 1
 
     def test_empty_text(self):
         with pytest.raises(ValueError, match="no exercises found"):

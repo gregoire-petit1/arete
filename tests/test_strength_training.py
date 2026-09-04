@@ -225,6 +225,13 @@ def strength_repo(tmp_path, monkeypatch):
     return StrengthRepository(db_path)
 
 
+def test_default_db_path_honours_arete_db(tmp_path, monkeypatch):
+    """Without explicit path the repository must follow ARETE_DB, not data/arete.duckdb."""
+    db_path = tmp_path / "from_env.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(db_path))
+    assert StrengthRepository().db_path == str(db_path)
+
+
 class TestStrengthRepository:
     """Tests for StrengthRepository."""
 

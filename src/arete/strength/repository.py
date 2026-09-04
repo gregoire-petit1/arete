@@ -12,6 +12,7 @@ from datetime import date, datetime
 import duckdb
 
 from arete.data.exercises_catalog import EXERCISES_CATALOG
+from arete.dataio.db import get_db_path
 from arete.strength.models import (
     Exercise,
     ExerciseCategory,
@@ -25,8 +26,8 @@ from arete.strength.models import (
 class StrengthRepository:
     """Repository for strength training data in DuckDB."""
 
-    def __init__(self, db_path: str = "data/arete.duckdb"):
-        self.db_path = db_path
+    def __init__(self, db_path: str | None = None):
+        self.db_path = db_path or str(get_db_path())
 
     def _get_connection(self) -> duckdb.DuckDBPyConnection:
         """Get a database connection."""

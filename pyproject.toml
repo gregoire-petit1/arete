@@ -9,6 +9,7 @@ dependencies = [
     "fastapi>=0.119.0",
     "fitparse>=1.2.0",
     "garth>=0.5.19",
+    "httpx>=0.28.0",
     "numpy>=2.3.5",
     "openai>=1.82.0",
     "pydantic>=2",
@@ -27,7 +28,6 @@ packages = ["src/arete"]
 
 [project.optional-dependencies]
 dev = [
-    "httpx>=0.28.0",
     "mypy>=1.19.0",
     "pytest>=9.0.1",
     "pytest-asyncio>=0.25.0",
