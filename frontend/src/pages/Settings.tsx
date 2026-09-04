@@ -16,7 +16,6 @@ import {
   Terminal,
   RefreshCw,
   Server,
-  Brain,
   Cloud,
   CheckCircle,
   XCircle,
@@ -27,7 +26,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LoadingState, GarminLoginModal, SystemAlert } from '@/components';
-import { settingsApi, garminApi, stravaApi, healthApi, ragApi, type UserSettings } from '@/lib/api';
+import { settingsApi, garminApi, stravaApi, healthApi, type UserSettings } from '@/lib/api';
 
 const TABS = [
   { id: 'profile', label: 'PROFILE', icon: User },
@@ -584,11 +583,8 @@ function WorkoutTab({
 function ConnectionsTab({ onGoToSystem }: { onGoToSystem: () => void }) {
   const { data: syncStatus } = useQuery({
     queryKey: ['garminSyncStatus'],
-    queryFn: async () => {
-      const res = await fetch('/api/garmin/sync/status');
-      if (!res.ok) return null;
-      return res.json();
-    },
+    queryFn: garminApi.getSyncStatus,
+    retry: false,
   });
 
   // Strava state
@@ -944,11 +940,6 @@ function SystemTab() {
     retry: false,
   });
 
-  const { data: collections } = useQuery({
-    queryKey: ['ragCollections'],
-    queryFn: ragApi.getCollections,
-    retry: false,
-  });
 
   const logoutMutation = useMutation({
     mutationFn: garminApi.logout,
@@ -971,18 +962,10 @@ function SystemTab() {
     },
   });
 
-  const seedMutation = useMutation({
-    mutationFn: ragApi.seedKnowledgeBase,
-    onSuccess: () => {
-      setAlert({ type: 'success', message: 'KNOWLEDGE BASE SEEDED' });
-      queryClient.invalidateQueries({ queryKey: ['ragCollections'] });
-    },
-  });
 
   const handleRefresh = () => {
     refetchHealth();
     refetchSync();
-    queryClient.invalidateQueries({ queryKey: ['ragCollections'] });
   };
 
   return (
@@ -1032,11 +1015,6 @@ function SystemTab() {
             icon={<Database className="w-4 h-4" />}
             label="DuckDB"
             status={health?.database === 'connected' ? 'online' : 'offline'}
-          />
-          <StatusRow
-            icon={<Brain className="w-4 h-4" />}
-            label="ChromaDB (RAG)"
-            status={health?.rag === 'connected' ? 'online' : 'offline'}
           />
           <StatusRow
             icon={<Cloud className="w-4 h-4" />}
@@ -1104,44 +1082,6 @@ function SystemTab() {
             </button>
           </div>
         )}
-      </div>
-
-      {/* Knowledge Base */}
-      <div className="p-4 bg-abyss/50 rounded border border-text-muted/20">
-        <h3 className="text-xs font-mono text-text-muted mb-3 uppercase tracking-wider">
-          KNOWLEDGE BASE
-        </h3>
-        <table className="w-full text-sm font-mono">
-          <thead>
-            <tr className="text-text-muted text-left">
-              <th className="pb-2">Collection</th>
-              <th className="pb-2">Documents</th>
-            </tr>
-          </thead>
-          <tbody>
-            {collections?.collections.map((name: string) => (
-              <tr key={name} className="border-t border-text-muted/10">
-                <td className="py-2 text-text-primary">{name}</td>
-                <td className="py-2 text-text-secondary">
-                  {collections.document_counts[name] || 0}
-                </td>
-              </tr>
-            )) || (
-              <tr>
-                <td colSpan={2} className="py-4 text-center text-text-muted">
-                  No collections found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-        <button
-          onClick={() => seedMutation.mutate()}
-          disabled={seedMutation.isPending}
-          className="mt-3 px-3 py-1.5 rounded text-xs font-mono bg-neon-purple/10 border border-neon-purple/30 text-neon-purple hover:bg-neon-purple/20 transition-all"
-        >
-          {seedMutation.isPending ? 'SEEDING...' : '[SEED KB]'}
-        </button>
       </div>
 
       {/* Login Modal */}

@@ -9,13 +9,12 @@
 
 ## 🚧 Status
 
-Active development — Frontend React "Hunter" theme + RAG with adaptive responses complete.
+Active development.
 
 ## Goals
 
 - Personalized workout planner
 - Smart memory of previous sessions
-- RAG-based recommendations with personal benchmarks
 - AI Agent to orchestrate planning and adaptation
 - **Scientific training metrics** (ACWR, CTL/ATL/TSB, TRIMP, 1RM estimation)
 - **Garmin FIT file analysis** with interval detection and LLM coaching
@@ -29,7 +28,6 @@ Active development — Frontend React "Hunter" theme + RAG with adaptive respons
 - Python 3.11 (via [uv](https://github.com/astral-sh/uv))
 - FastAPI + Pydantic v2
 - DuckDB (analytical database)
-- ChromaDB (RAG vector store)
 - Groq LLaMA 3.3 70B (LLM)
 
 ### Frontend
@@ -127,15 +125,13 @@ arete/
 │   ├── features/        # Feature engineering (workload, cardio, strength, fitness)
 │   ├── garmin/          # Garmin FIT parsing, analysis, LLM coaching
 │   ├── llm/             # LLM client, token management
-│   ├── rag/             # RAG system with ChromaDB + personal benchmarks
 │   ├── strength/        # Strength training module (exercises, sets, PRs)
 │   ├── models/          # ML models (coming soon)
 │   ├── rules/           # Business rules (coming soon)
 │   └── utils/           # Utility functions
 ├── tests/               # Test suite (248 tests)
 ├── data/                # Data files (not in git)
-├── notebooks/           # Jupyter notebooks
-└── experiments/         # MLflow experiments
+└── notebooks/           # Jupyter notebooks
 ```
 
 ## Garmin Pipeline
@@ -321,15 +317,6 @@ The API exposes training metrics via REST endpoints:
 | `/garmin/actual/{id}/analysis` | GET    | Get cached analysis               |
 | `/garmin/summary`              | GET    | Matching statistics               |
 | `/garmin/unmatched`            | GET    | Unmatched sessions                |
-
-### RAG Endpoints
-
-| Endpoint      | Method | Description                   |
-| ------------- | ------ | ----------------------------- |
-| `/rag/query`  | POST   | RAG-augmented plan generation |
-| `/rag/search` | GET    | Search knowledge base         |
-| `/rag/stats`  | GET    | Collection statistics         |
-| `/rag/seed`   | POST   | Seed knowledge base           |
 
 ### Strength Endpoints
 

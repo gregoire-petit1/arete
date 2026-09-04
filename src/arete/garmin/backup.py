@@ -280,19 +280,6 @@ class RunalyzeClient:
 
         return result
 
-    def get_fitness_data(self) -> dict[str, Any]:
-        """Get fitness/form data from Runalyze.
-
-        Returns CTL, ATL, TSB equivalent metrics if available.
-        """
-        try:
-            response = self.client.get("/metrics/fitness")
-            response.raise_for_status()
-            result: dict[str, Any] = response.json()
-            return result
-        except httpx.HTTPError as e:
-            logger.error(f"Failed to get fitness data: {e}")
-            return {}
 
     def compare_with_garmin(
         self,

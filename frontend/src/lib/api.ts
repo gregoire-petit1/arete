@@ -31,11 +31,6 @@ export const metricsApi = {
   getWorkload: () =>
     fetchAPI<import("@/types").WorkloadMetrics>("/metrics/workload"),
 
-  getRecommendations: () =>
-    fetchAPI<import("@/types").RecommendationsResponse>(
-      "/metrics/recommendations"
-    ),
-
   getPlayerStats: () =>
     fetchAPI<{
       hp: { current: number; max: number; label: string };
@@ -43,20 +38,6 @@ export const metricsApi = {
       xp: { current: number; max: number; label: string };
       level: number;
     }>("/metrics/player-stats"),
-};
-
-// ========================= //
-// LOG API                  //
-// ========================= //
-
-export const logApi = {
-  getRecent: (n = 10) =>
-    fetchAPI<import("@/types").SessionLogResponse>(`/log/recent?n=${n}`),
-
-  getByDateRange: (start: string, end: string) =>
-    fetchAPI<import("@/types").SessionLogResponse>(
-      `/log?start=${start}&end=${end}`
-    ),
 };
 
 // ========================= //
@@ -91,9 +72,6 @@ export const garminApi = {
       body: JSON.stringify(session),
     }),
 
-  deletePlanned: (id: number) =>
-    fetchAPI<void>(`/garmin/planned/${id}`, { method: "DELETE" }),
-
   getActual: (unmatchedOnly = false) => {
     const params = new URLSearchParams();
     if (unmatchedOnly) params.set("unmatched_only", "true");
@@ -121,21 +99,9 @@ export const garminApi = {
     return response.json();
   },
 
-  analyzeSession: (sessionId: number, detailed = false, force = false) =>
-    fetchAPI<import("@/types").ActivityAnalysis>(
-      `/garmin/actual/${sessionId}/analyze?detailed=${detailed}&force=${force}`,
-      { method: "POST" }
-    ),
-
   // Sync endpoints
   getSyncStatus: () =>
     fetchAPI<import("@/types").SyncStatus>("/garmin/sync/status"),
-
-  login: (credentials?: { email: string; password: string }) =>
-    fetchAPI<{ status: string; user_email: string }>("/garmin/sync/login", {
-      method: "POST",
-      body: credentials ? JSON.stringify(credentials) : undefined,
-    }),
 
   logout: () =>
     fetchAPI<{ status: string }>("/garmin/sync/logout", { method: "POST" }),
@@ -157,20 +123,6 @@ export const garminApi = {
 // ========================= //
 
 export const strengthApi = {
-  getExercises: (filters?: {
-    category?: string;
-    muscle?: string;
-    search?: string;
-  }) => {
-    const params = new URLSearchParams();
-    if (filters?.category) params.set("category", filters.category);
-    if (filters?.muscle) params.set("muscle", filters.muscle);
-    if (filters?.search) params.set("search", filters.search);
-    return fetchAPI<import("@/types").Exercise[]>(
-      `/strength/exercises?${params}`
-    );
-  },
-
   getSessions: (limit = 50) =>
     fetchAPI<import("@/types").StrengthSession[]>(
       `/strength/sessions?limit=${limit}`
@@ -182,30 +134,6 @@ export const strengthApi = {
   deleteSession: (id: number) =>
     fetchAPI<{ message: string }>(`/strength/sessions/${id}`, {
       method: "DELETE",
-    }),
-
-  createSession: (session: {
-    date: string;
-    name?: string | null;
-    program?: string | null;
-    duration_min?: number | null;
-    overall_rpe?: number | null;
-    fatigue_level?: number | null;
-    notes?: string | null;
-    exercises?: Array<{
-      exercise_id: number;
-      order: number;
-      sets?: Array<{
-        set_number: number;
-        reps: number;
-        weight_kg?: number;
-        rpe?: number;
-      }>;
-    }>;
-  }) =>
-    fetchAPI<import("@/types").StrengthSession>("/strength/sessions", {
-      method: "POST",
-      body: JSON.stringify(session),
     }),
 
   parseWorkout: (text: string, date?: string, save = false) =>
@@ -246,11 +174,6 @@ export const strengthApi = {
     );
   },
 
-  getExercisePRs: (exerciseId: number) =>
-    fetchAPI<import("@/types").PersonalRecord[]>(
-      `/strength/exercises/${exerciseId}/prs`
-    ),
-
   // Garmin linking
   getGarminCandidates: (sessionId: number) =>
     fetchAPI<{
@@ -276,33 +199,12 @@ export const strengthApi = {
 };
 
 // ========================= //
-// RAG API                  //
-// ========================= //
-
-export const ragApi = {
-  query: (request: import("@/types").RAGQueryRequest) =>
-    fetchAPI<import("@/types").RAGResponse>("/rag/query", {
-      method: "POST",
-      body: JSON.stringify(request),
-    }),
-
-  getCollections: () =>
-    fetchAPI<{
-      collections: string[];
-      document_counts: Record<string, number>;
-    }>("/rag/collections"),
-
-  seedKnowledgeBase: () =>
-    fetchAPI<{ status: string }>("/rag/seed", { method: "POST" }),
-};
-
-// ========================= //
 // HEALTH API               //
 // ========================= //
 
 export const healthApi = {
   check: () =>
-    fetchAPI<{ status: string; database: string; rag: string }>("/health"),
+    fetchAPI<{ status: string; database: string }>("/health"),
 };
 
 // ========================= //

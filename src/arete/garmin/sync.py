@@ -430,10 +430,6 @@ class GarminSyncClient:
             }
         return str(activity_id) in self._synced_ids_cache
 
-    def _add_to_synced_cache(self, activity_id: int) -> None:
-        """Add activity ID to synced cache after successful sync."""
-        if hasattr(self, "_synced_ids_cache"):
-            self._synced_ids_cache.add(str(activity_id))
 
     def _enrich_from_fit(self, session: ActualSession, fit_path: Path) -> ActualSession:
         """Enrich session with detailed data from FIT file."""
@@ -477,34 +473,3 @@ class GarminSyncClient:
         except GarthHTTPError as e:
             logger.error(f"Failed to get user summary: {e}")
             return {}
-
-
-def sync_garmin_activities(
-    start_date: date | None = None,
-    end_date: date | None = None,
-    download_fit: bool = True,
-) -> SyncResult:
-    """Convenience function for syncing Garmin activities.
-
-    Uses environment variables for credentials:
-    - GARMIN_EMAIL
-    - GARMIN_PASSWORD
-
-    Args:
-        start_date: Start date for sync.
-        end_date: End date for sync.
-        download_fit: Whether to download FIT files.
-
-    Returns:
-        SyncResult with statistics.
-    """
-    client = GarminSyncClient()
-
-    if not client.is_authenticated():
-        client.login()
-
-    return client.sync_activities(
-        start_date=start_date,
-        end_date=end_date,
-        download_fit=download_fit,
-    )

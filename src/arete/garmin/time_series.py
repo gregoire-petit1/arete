@@ -319,10 +319,6 @@ class TimeSeriesData:
         """Check if running dynamics data is available."""
         return any(p.stance_time is not None for p in self.points)
 
-    def has_power(self) -> bool:
-        """Check if power data is available."""
-        return any(p.power is not None for p in self.points)
-
 
 @dataclass
 class DerivedMetrics:

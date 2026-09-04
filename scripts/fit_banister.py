@@ -24,31 +24,6 @@ from arete.features.fitness import calculate_atl, calculate_ctl
 logger = logging.getLogger(__name__)
 
 
-def try_mlflow_log(coeffs: dict, n_days: int) -> None:
-    """Log to MLflow if available."""
-    try:
-        import mlflow
-
-        with mlflow.start_run(run_name="banister_fit") as run:
-            mlflow.log_params(
-                {
-                    "n_samples": coeffs["n_samples"],
-                    "n_days_history": n_days,
-                }
-            )
-            mlflow.log_metrics(
-                {
-                    "k1": coeffs["k1"],
-                    "k2": coeffs["k2"],
-                    "baseline": coeffs["baseline"],
-                    "r2": coeffs["r2"],
-                }
-            )
-            logger.info("MLflow run logged: %s", run.info.run_id)
-    except Exception as e:
-        logger.warning("MLflow logging skipped: %s", e)
-
-
 def main(
     dry_run: bool = False,
     start_date_str: str | None = None,
@@ -92,7 +67,6 @@ def main(
     else:
         store_coefficients(result)
         print("\nCoefficients saved to app.banister_coefficients.")
-        try_mlflow_log(result, (end - start).days)
 
     return result
 

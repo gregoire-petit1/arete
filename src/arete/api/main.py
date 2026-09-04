@@ -53,23 +53,9 @@ def health():
         logger.warning("DuckDB health check failed: %s", e)
         db_status = "disconnected"
 
-    # Check RAG (ChromaDB) - use the existing singleton from rag.py
-    rag_status = "disconnected"
-    try:
-        from pathlib import Path
-
-        chroma_path = Path("data/chromadb")
-        if chroma_path.exists() and (chroma_path / "chroma.sqlite3").exists():
-            # Just check if the file exists, don't create a new client
-            # The actual connection is tested when using /rag/query
-            rag_status = "connected"
-    except Exception as e:
-        logger.warning("RAG health check failed: %s", e)
-
     return {
         "status": "ok",
         "database": db_status,
-        "rag": rag_status,
     }
 
 
@@ -194,11 +180,6 @@ app.include_router(api_router)
 
 # Routes metrics (workload/fitness/cardio/strength/recommendations)
 app.include_router(metrics_router)
-
-# Routes RAG (knowledge-augmented recommendations)
-from arete.api.rag import router as rag_router
-
-app.include_router(rag_router)
 
 # Routes Garmin (planned/actual sessions, FIT upload, matching)
 from arete.api.garmin import router as garmin_router

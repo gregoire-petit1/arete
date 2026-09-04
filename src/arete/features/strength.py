@@ -675,18 +675,6 @@ def calculate_e1rm_volume(
     return sets * reps * weight * intensity
 
 
-def calculate_volume_load(exercise: Exercise) -> float:
-    """Calculate total volume load for an exercise.
-
-    Args:
-        exercise: Exercise with sets
-
-    Returns:
-        Total volume (tonnage)
-    """
-    return exercise.total_volume
-
-
 def calculate_session_volume(session: StrengthSession) -> float:
     """Calculate total session volume.
 

@@ -14,7 +14,6 @@ from arete.garmin.models import (
     MatchConfidence,
     PlannedSession,
     SessionMatch,
-    SessionStatus,
     SessionType,
 )
 
@@ -112,42 +111,6 @@ class SessionMatcher:
             notes=notes,
         )
 
-    def match_sessions(
-        self,
-        actual_sessions: list[ActualSession],
-        planned_sessions: list[PlannedSession],
-    ) -> list[SessionMatch]:
-        """Match multiple actual sessions to planned sessions.
-
-        Args:
-            actual_sessions: List of actual sessions to match.
-            planned_sessions: List of planned sessions.
-
-        Returns:
-            List of SessionMatch results.
-        """
-        # Copy planned list to track which have been matched
-        available_planned = list(planned_sessions)
-        matches: list[SessionMatch] = []
-
-        # Sort actual by date
-        sorted_actual = sorted(actual_sessions, key=lambda s: s.date)
-
-        for actual in sorted_actual:
-            # Only consider pending planned sessions
-            pending = [p for p in available_planned if p.status == SessionStatus.PENDING]
-
-            match = self.find_match(actual, pending)
-            matches.append(match)
-
-            # Mark matched session as completed
-            if match.is_matched and match.planned_session:
-                match.planned_session.status = SessionStatus.COMPLETED
-                # Remove from available to prevent double-matching
-                if match.planned_session in available_planned:
-                    available_planned.remove(match.planned_session)
-
-        return matches
 
     def _filter_by_date(
         self,

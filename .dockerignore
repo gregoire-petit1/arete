@@ -30,11 +30,6 @@ tests/
 .mypy_cache/
 .ruff_cache/
 
-# Docs (keep README.md for pyproject.toml)
-STATUS.md
-TODO.md
-TROUBLESHOOT.md
-
 # Env (injected via docker-compose)
 .env
 .env.*

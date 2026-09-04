@@ -574,17 +574,3 @@ class FITParser:
         structure.analyze()
 
         return structure
-
-
-def parse_fit_file(file_path: str | Path, hr_max: int = 190) -> ParsedActivity:
-    """Convenience function to parse a FIT file.
-
-    Args:
-        file_path: Path to .FIT file.
-        hr_max: Maximum heart rate for zone calculations.
-
-    Returns:
-        ParsedActivity with extracted data.
-    """
-    parser = FITParser(hr_max=hr_max)
-    return parser.parse_file(file_path)
