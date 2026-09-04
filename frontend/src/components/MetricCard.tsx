@@ -1,5 +1,4 @@
-import { motion } from 'framer-motion';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MetricCardProps {
@@ -11,6 +10,7 @@ interface MetricCardProps {
   trend?: 'up' | 'down' | 'stable';
 }
 
+// Glow shadows use the theme colors (success-green, warning-orange, danger-red, neon-cyan) at 30%.
 const zoneColorMap = {
   green: {
     border: 'border-success-green/50',
@@ -34,34 +34,20 @@ const zoneColorMap = {
   },
 };
 
-export function MetricCard({
-  title,
-  value,
-  zone,
-  zoneColor,
-  subtitle,
-  trend,
-}: MetricCardProps) {
+export function MetricCard({ title, value, zone, zoneColor, subtitle, trend }: MetricCardProps) {
   const colors = zoneColorMap[zoneColor];
-  
   const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ scale: 1.02 }}
+    <div
       className={cn(
-        'glass-panel p-4 transition-all duration-300',
+        'glass-panel p-4 transition-all duration-300 hover:scale-[1.02] animate-fade-up',
         colors.border,
         colors.glow
       )}
     >
-      {/* Title */}
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-mono text-text-muted uppercase tracking-wider">
-          {title}
-        </span>
+        <span className="text-xs font-mono text-text-muted uppercase tracking-wider">{title}</span>
         {trend && (
           <TrendIcon
             className={cn(
@@ -74,27 +60,17 @@ export function MetricCard({
         )}
       </div>
 
-      {/* Value */}
-      <div className="text-3xl font-mono font-bold text-text-primary mb-2">
-        {value}
-      </div>
+      <div className="text-3xl font-mono font-bold text-text-primary mb-2">{value}</div>
 
-      {/* Zone Badge */}
       <div
-        className={cn(
-          'inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono uppercase',
-          colors.badge
-        )}
+        className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono uppercase', colors.badge)}
       >
         {zone.replace('_', ' ')}
         {zoneColor === 'green' && ' ✓'}
         {zoneColor === 'red' && ' ⚠'}
       </div>
 
-      {/* Subtitle */}
-      {subtitle && (
-        <div className="mt-2 text-xs text-text-muted">{subtitle}</div>
-      )}
-    </motion.div>
+      {subtitle && <div className="mt-2 text-xs text-text-muted">{subtitle}</div>}
+    </div>
   );
 }
