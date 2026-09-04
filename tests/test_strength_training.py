@@ -378,3 +378,22 @@ class TestStrengthRepository:
 
 class TestStrengthRepositoryRagIntegration:
     """Tests for RAG-related methods in strength repository."""
+
+
+def test_parse_endpoint_reports_unparsed_lines_and_suggestions(client):
+    """API contract used by the Log page: unparsed_lines + per-exercise suggestions."""
+    resp = client.post(
+        "/strength/sessions/parse",
+        json={"text": "4x8 @80 bench press\nline that means nothing", "save": False},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["unparsed_lines"] == ["line that means nothing"]
+    ex = body["exercises"][0]
+    assert ex["exercise_id"] == "bench_press" and ex["exercise_matched"] is True
+    assert ex["suggestions"][0]["exercise_id"] == "bench_press"
+
+    resp = client.post(
+        "/strength/sessions/parse", json={"text": "hello world", "save": False}
+    )
+    assert resp.status_code == 422

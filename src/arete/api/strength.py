@@ -806,6 +806,7 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
             notes=parsed.notes,
             session_id=session_id,
             message=message,
+            unparsed_lines=parsed.unparsed_lines,
         )
 
     except ValueError as e:
