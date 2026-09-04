@@ -21,6 +21,7 @@ from arete.garmin.client import GarminAuthError, GarminClient
 from arete.garmin.fit_parser import FITParser
 from arete.garmin.models import ActivitySource, ActualSession
 from arete.garmin.repository import GarminRepository
+from arete.strava.merge import garmin_takeover
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ class SyncResult:
 
     success: bool
     activities_synced: int = 0
+    activities_merged: int = 0
     activities_skipped: int = 0
     errors: list[str] = field(default_factory=list)
     last_activity_date: date | None = None
@@ -345,9 +347,22 @@ class GarminSyncClient:
                         if fit_path:
                             session = self._enrich_from_fit(session, fit_path)
 
-                    # Save to database
-                    self.repository.create_actual_session(session)
-                    result.activities_synced += 1
+                    # Same workout already imported from Strava? Garmin takes it over.
+                    twin = self.repository.find_overlapping_session(
+                        session.start_time, session.duration_sec
+                    )
+                    if (
+                        twin is not None
+                        and twin.id is not None
+                        and twin.source == ActivitySource.STRAVA
+                    ):
+                        self.repository.update_actual_session_fields(
+                            twin.id, **garmin_takeover(session)
+                        )
+                        result.activities_merged += 1
+                    else:
+                        self.repository.create_actual_session(session)
+                        result.activities_synced += 1
                     result.last_activity_date = activity.start_time.date()
 
                     logger.info(
@@ -362,6 +377,7 @@ class GarminSyncClient:
             result.success = True
             logger.info(
                 f"Sync complete: {result.activities_synced} synced, "
+                f"{result.activities_merged} merged into Strava rows, "
                 f"{result.activities_skipped} skipped, "
                 f"{len(result.errors)} errors"
             )

@@ -198,23 +198,14 @@ def sync(body: SyncRequest | None = None):
     activities = client.fetch_activities(access_token, after=after)
     activities.sort(key=lambda a: a.get("start_date", ""))
 
-    # Dedup: get existing strava IDs
-    from arete.dataio.db import connect
-
-    con = connect(True)
-    try:
-        rows = con.execute(
-            "SELECT garmin_activity_id FROM app.actual_sessions WHERE source = 'strava'"
-        ).fetchall()
-        existing_ids = {str(r[0]) for r in rows}
-    finally:
-        con.close()
-
     from arete.garmin.repository import GarminRepository
+    from arete.strava.merge import strava_extras
     from arete.strava.models import strava_activity_to_actual_session
 
     repo = GarminRepository()
+    existing_ids = repo.known_strava_ids()
     imported = 0
+    merged = 0
     skipped = 0
     errors: list[str] = []
 
@@ -238,18 +229,34 @@ def sync(body: SyncRequest | None = None):
             session = strava_activity_to_actual_session(
                 activity_data, hr_zones=hr_zones
             )
-            repo.create_actual_session(session)
-            imported += 1
+            twin = repo.find_overlapping_session(
+                session.start_time, session.duration_sec
+            )
+            if twin is not None and twin.id is not None:
+                # Same workout already synced from Garmin: keep Garmin, add Strava extras
+                repo.update_actual_session_fields(
+                    twin.id, **strava_extras(twin, session)
+                )
+                merged += 1
+            else:
+                repo.create_actual_session(session)
+                imported += 1
 
             # Rate limiting: pause briefly between detail calls
             # Each activity = 2 API calls (detail + zones), so pause at 45 activities
-            if imported % 45 == 0:
+            if (imported + merged) % 45 == 0:
                 logger.info("Approaching rate limit, pausing 60s...")
                 time.sleep(60)
         except Exception as exc:
             errors.append(f"Activity {act_id}: {exc}")
 
-    return {"success": True, "imported": imported, "skipped": skipped, "errors": errors}
+    return {
+        "success": True,
+        "imported": imported,
+        "merged": merged,
+        "skipped": skipped,
+        "errors": errors,
+    }
 
 
 @router.get("/status")

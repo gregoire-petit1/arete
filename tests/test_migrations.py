@@ -47,4 +47,4 @@ def test_legacy_column_is_renamed_once(tmp_path, monkeypatch):
     ]
     con.close()
     assert "actual_session_id" in cols and "garmin_activity_id" not in cols
-    assert versions == [1, 2, 3]
+    assert versions == [1, 2, 3, 4]

@@ -74,7 +74,8 @@ CREATE TABLE IF NOT EXISTS app.actual_sessions (
     -- Source tracking
     source              VARCHAR NOT NULL,      -- 'fit_file', 'garmin_connect', 'manual', 'strava'
     source_file         VARCHAR,               -- original filename
-    garmin_activity_id  VARCHAR,               -- Garmin Connect activity ID
+    garmin_activity_id  VARCHAR,               -- Garmin Connect activity ID (or Strava ID when source = strava)
+    strava_activity_id  VARCHAR,               -- Strava ID merged into a Garmin session
 
     -- Running dynamics (from Garmin sensors)
     avg_cadence         INTEGER,               -- steps per minute (running) or RPM (cycling)
@@ -302,10 +303,18 @@ def _m3_rename_strength_link(con) -> None:
 
 # (version, migration). Append only; each migration must be idempotent because
 # a fresh database already carries the latest DDL and gets every version recorded.
+def _m4_strava_activity_id(con) -> None:
+    if "strava_activity_id" not in _columns(con, "actual_sessions"):
+        con.execute(
+            "ALTER TABLE app.actual_sessions ADD COLUMN strava_activity_id VARCHAR"
+        )
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
     (3, _m3_rename_strength_link),
+    (4, _m4_strava_activity_id),
 ]
 
 

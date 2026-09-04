@@ -42,7 +42,7 @@ export function ConnectionsTab() {
   const syncMutation = useMutation({
     mutationFn: () => stravaApi.sync(30),
     onSuccess: (result) => {
-      setSyncResult(`${result.imported} imported, ${result.skipped} skipped`);
+      setSyncResult(`${result.imported} imported, ${result.merged} merged into Garmin sessions, ${result.skipped} skipped`);
       queryClient.invalidateQueries({ queryKey: ['stravaStatus'] });
       queryClient.invalidateQueries({ queryKey: ['actual'] });
     },

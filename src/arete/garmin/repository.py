@@ -383,17 +383,89 @@ class GarminRepository:
 
     ENRICHMENT_COLUMNS = frozenset(
         {
+            # analytics
             "name",
+            "notes",
             "avg_pace_sec_km",
             "moving_time_sec",
             "laps_json",
             "splits_json",
+            "best_efforts_json",
             "hr_zones_json",
             "avg_cadence",
             "max_cadence",
+            "descent_m",
+            "calories",
+            # Strava extras
+            "suffer_score",
+            "workout_type",
+            "device_name",
+            "avg_watts",
+            "weighted_avg_watts",
+            "strava_activity_id",
+            # provenance (when a Strava row is taken over by Garmin)
+            "source",
             "source_file",
+            "session_type",
+            "garmin_activity_id",
         }
     )
+
+    def find_overlapping_session(
+        self,
+        start_time: datetime | None,
+        duration_sec: int,
+        tolerance_sec: int = 120,
+    ) -> ActualSession | None:
+        """Session that is the same workout: starts within ``tolerance_sec``.
+
+        Without a start time, falls back to same day and duration within
+        max(tolerance, 5 %). Used to merge Garmin and Strava copies.
+        """
+        if start_time is None:
+            return None
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                """
+                SELECT id FROM actual_sessions
+                WHERE date = ?
+                  AND start_time IS NOT NULL
+                  AND abs(epoch(start_time) - epoch(CAST(? AS TIMESTAMP))) <= ?
+                ORDER BY abs(epoch(start_time) - epoch(CAST(? AS TIMESTAMP)))
+                LIMIT 1
+                """,
+                [start_time.date(), start_time, tolerance_sec, start_time],
+            ).fetchone()
+            if row is None:
+                tol = max(tolerance_sec, int(duration_sec * 0.05))
+                row = conn.execute(
+                    """
+                    SELECT id FROM actual_sessions
+                    WHERE date = ? AND start_time IS NULL
+                      AND abs(duration_sec - ?) <= ?
+                    LIMIT 1
+                    """,
+                    [start_time.date(), duration_sec, tol],
+                ).fetchone()
+        finally:
+            conn.close()
+        return self.get_actual_session(int(row[0])) if row else None
+
+    def known_strava_ids(self) -> set[str]:
+        """Strava activity IDs already imported (own rows or merged into Garmin rows)."""
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(
+                """
+                SELECT garmin_activity_id FROM actual_sessions WHERE source = 'strava'
+                UNION
+                SELECT strava_activity_id FROM actual_sessions WHERE strava_activity_id IS NOT NULL
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+        return {str(r[0]) for r in rows if r[0] is not None}
 
     def update_actual_session_fields(self, session_id: int, **fields: Any) -> None:
         """Update enrichment columns of an actual session (whitelisted)."""

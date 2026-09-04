@@ -243,6 +243,7 @@ export const stravaApi = {
     fetchAPI<{
       success: boolean;
       imported: number;
+      merged: number;
       skipped: number;
       errors: string[];
     }>("/strava/sync", {

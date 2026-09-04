@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from arete.api.strava import router
+from arete.strava.models import strava_activity_to_actual_session
 
 FAKE_TOKENS = {
     "athlete_id": 42,
@@ -66,7 +67,7 @@ def _patch_sync():
         patch("arete.dataio.db.connect"),
         patch(
             "arete.strava.models.strava_activity_to_actual_session",
-            side_effect=lambda a, hr_zones=None: {"id": a["id"]},
+            wraps=strava_activity_to_actual_session,  # real mapping, observable
         ),
         patch("arete.garmin.repository.GarminRepository"),
     )
@@ -95,6 +96,8 @@ def _setup_mocks(
     mock_connect.return_value = con
 
     repo = MagicMock()
+    repo.known_strava_ids.return_value = set(existing_ids or [])
+    repo.find_overlapping_session.return_value = None  # no Garmin twin by default
     mock_repo_cls.return_value = repo
 
     return repo
@@ -215,3 +218,34 @@ class TestStravaDisconnect:
         resp = client.delete("/strava/disconnect")
         assert resp.status_code == 200
         mock_delete.assert_called_once()
+
+
+class TestStravaMergeIntoGarmin:
+    def test_twin_is_enriched_not_duplicated(self, client):
+        from arete.garmin.models import ActivitySource, ActualSession
+
+        p_tok, p_fresh, p_client, p_con, p_map, p_repo = _patch_sync()
+        with (
+            p_tok as m_tok,
+            p_fresh as m_fresh,
+            p_client as m_cli,
+            p_con as m_con,
+            p_map,
+            p_repo as m_repo,
+        ):
+            repo = _setup_mocks(m_tok, m_fresh, m_cli, m_con, m_repo)
+            twin = ActualSession(
+                id=7,
+                sport="running",
+                source=ActivitySource.GARMIN_CONNECT,
+                garmin_activity_id="g1",
+            )
+            repo.find_overlapping_session.return_value = twin
+            resp = client.post("/strava/sync", json={"days": 30})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["merged"] == 2 and body["imported"] == 0
+        assert repo.create_actual_session.call_count == 0
+        kwargs = repo.update_actual_session_fields.call_args_list[0].kwargs
+        assert kwargs["strava_activity_id"] == "1001"
+        assert kwargs["name"] == "Morning Run"  # Garmin row had no name
