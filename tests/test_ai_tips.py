@@ -6,17 +6,13 @@ from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from arete.api.ai_tips import router
 
 
-@pytest.fixture()
-def client():
-    app = FastAPI()
-    app.include_router(router)
-    return TestClient(app)
+@pytest.fixture
+def client(router_client):
+    return router_client(router)
 
 
 # ─── Strength tests ──────────────────────────────────────────────────

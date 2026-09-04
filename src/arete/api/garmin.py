@@ -441,8 +441,7 @@ def garmin_login(request: GarminLoginRequest | None = None):
     call again with mfa_code to complete. Credentials default to
     GARMIN_EMAIL / GARMIN_PASSWORD. Tokens are stored on disk for later requests.
     """
-    import os
-
+    from arete.config import config
     from arete.garmin.client import GarminAuthError, GarminClient
 
     client = GarminClient()
@@ -461,8 +460,8 @@ def garmin_login(request: GarminLoginRequest | None = None):
             success=True, message="Successfully authenticated with Garmin Connect"
         )
 
-    email = (request.email if request else None) or os.getenv("GARMIN_EMAIL")
-    password = (request.password if request else None) or os.getenv("GARMIN_PASSWORD")
+    email = (request.email if request else None) or config.garmin_email
+    password = (request.password if request else None) or config.garmin_password
     if not email or not password:
         raise HTTPException(
             status_code=400,

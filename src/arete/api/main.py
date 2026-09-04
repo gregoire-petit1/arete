@@ -1,83 +1,75 @@
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 
+from arete import scheduler
+from arete.api.ai_tips import router as ai_tips_router
+from arete.api.analytics import router as analytics_router
+from arete.api.garmin import router as garmin_router
+from arete.api.garmin_health import router as garmin_health_router
 from arete.api.metrics import router as metrics_router
 from arete.api.settings import router as settings_router
+from arete.api.strava import router as strava_router
+from arete.api.strength import router as strength_router
+from arete.config import config
+from arete.dataio.db import db_connection
+from arete.dataio.init_duckdb import main as init_schema
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-app = FastAPI(title="Arete API", version="0.1.0")
+
+def configure_logging() -> None:
+    """Root logger to stderr; level from ARETE_LOG_LEVEL (default INFO)."""
+    logging.basicConfig(
+        level=config.log_level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        force=False,
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
-@app.on_event("startup")
-def startup_init_db():
-    """Initialize DuckDB schema on startup if needed."""
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    configure_logging()
     try:
-        from arete.dataio.init_duckdb import main as init_schema
-
         init_schema()
         logger.info("Database schema initialized")
     except Exception as e:
         logger.warning("Database init failed (non-fatal): %s", e)
+    task = scheduler.start()
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+
+
+app = FastAPI(title="Arete API", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")
 def health():
-    """Health check endpoint with detailed status."""
-
-    # Check DuckDB
+    """Health check endpoint with database status."""
     db_status = "connected"
     try:
-        from arete.dataio.db import connect
-
-        conn = connect(read_only=True)
-        conn.execute("SELECT 1").fetchone()
-        conn.close()
+        with db_connection() as con:
+            con.execute("SELECT 1").fetchone()
     except Exception as e:
         logger.warning("DuckDB health check failed: %s", e)
         db_status = "disconnected"
-
-    return {
-        "status": "ok",
-        "database": db_status,
-    }
+    return {"status": "ok", "database": db_status}
 
 
-# Routes user settings
-app.include_router(settings_router)
-
-# Routes metrics (workload/fitness/cardio/strength/recommendations)
-app.include_router(metrics_router)
-
-# Routes Garmin (planned/actual sessions, FIT upload, matching)
-from arete.api.garmin import router as garmin_router
-
-app.include_router(garmin_router)
-
-# Routes Garmin Health (HRV, sleep, body battery, readiness)
-from arete.api.garmin_health import router as garmin_health_router
-
-app.include_router(garmin_health_router)
-
-# Routes Strength (exercises, strength sessions, sets, PRs)
-from arete.api.strength import router as strength_router
-
-app.include_router(strength_router)
-
-# Routes AI Tips (daily contextual tips)
-from arete.api.ai_tips import router as ai_tips_router
-
-app.include_router(ai_tips_router)
-
-# Routes Strava
-from arete.api.strava import router as strava_router
-
-app.include_router(strava_router)
-
-# Routes Analytics
-from arete.api.analytics import router as analytics_router
-
-app.include_router(analytics_router)
+for router in (
+    settings_router,
+    metrics_router,
+    garmin_router,
+    garmin_health_router,
+    strength_router,
+    ai_tips_router,
+    strava_router,
+    analytics_router,
+):
+    app.include_router(router)

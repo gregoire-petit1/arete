@@ -2,10 +2,11 @@
 
 import os
 import tempfile
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 import pytest
+from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
 # Set test database path before importing app modules
@@ -39,3 +40,15 @@ def client() -> Generator[TestClient, None, None]:
 
     with TestClient(app) as c:
         yield c
+
+
+@pytest.fixture
+def router_client() -> Callable[[APIRouter], TestClient]:
+    """Build a TestClient around a single router (no lifespan, no other routes)."""
+
+    def make(router: APIRouter) -> TestClient:
+        app = FastAPI()
+        app.include_router(router)
+        return TestClient(app)
+
+    return make

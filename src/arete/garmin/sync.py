@@ -7,7 +7,6 @@ Respects rate limits and handles authentication securely.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -16,6 +15,7 @@ from typing import Any
 
 from garminconnect import GarminConnectTooManyRequestsError
 
+from arete.config import config
 from arete.garmin.client import GarminAuthError, GarminClient
 from arete.garmin.fit_parser import FITParser
 from arete.garmin.models import ActivitySource, ActualSession
@@ -169,8 +169,8 @@ class GarminSyncClient:
 
         Credentials default to GARMIN_EMAIL / GARMIN_PASSWORD.
         """
-        email = email or os.getenv("GARMIN_EMAIL")
-        password = password or os.getenv("GARMIN_PASSWORD")
+        email = email or config.garmin_email
+        password = password or config.garmin_password
         if not email or not password:
             raise ValueError(
                 "Garmin credentials required. Set GARMIN_EMAIL and GARMIN_PASSWORD "

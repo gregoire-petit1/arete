@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from typing import cast
 from urllib.parse import urlencode
 
 import httpx
@@ -52,7 +53,7 @@ class StravaClient:
         if resp.status_code != 200:
             logger.error("Strava token exchange failed: %s", resp.text)
             raise ValueError(f"Strava token exchange failed: {resp.text}")
-        return resp.json()
+        return cast(dict, resp.json())
 
     def refresh_token(self, refresh_tok: str) -> dict:
         """Refresh an expired access token."""
@@ -68,7 +69,7 @@ class StravaClient:
         if resp.status_code != 200:
             logger.error("Strava token refresh failed: %s", resp.text)
             raise ValueError(f"Strava token refresh failed: {resp.text}")
-        return resp.json()
+        return cast(dict, resp.json())
 
     @staticmethod
     def needs_refresh(expires_at: int, margin_sec: int = 300) -> bool:
@@ -124,7 +125,7 @@ class StravaClient:
         if resp.status_code == 404:
             return None
         resp.raise_for_status()
-        return resp.json()
+        return cast(dict, resp.json())
 
     def fetch_activity_zones(self, access_token: str, activity_id: int) -> dict | None:
         """Fetch HR zone distribution for a single activity.

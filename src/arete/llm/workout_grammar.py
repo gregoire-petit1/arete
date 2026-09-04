@@ -22,7 +22,7 @@ Output: list of exercise dicts consumed by ``workout_parser.parse_workout_text``
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, cast
 
 from lark import Lark, Token, Transformer, UnexpectedInput
 
@@ -309,7 +309,7 @@ def parse_line(line: str) -> list[dict] | dict | None:
         tree = _PARSER.parse(line.strip())
     except UnexpectedInput:
         return None
-    return _TRANSFORM.transform(tree)
+    return cast("list[dict] | dict | None", _TRANSFORM.transform(tree))
 
 
 def parse_workout_grammar(text: str) -> list[dict] | None:

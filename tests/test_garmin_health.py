@@ -6,8 +6,6 @@ from datetime import date
 from unittest.mock import patch
 
 import pytest
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
 from arete.api.garmin_health import router
 from arete.garmin.health_sync import _upsert_daily_metrics
@@ -15,10 +13,8 @@ from arete.garmin.readiness import compute_readiness
 
 
 @pytest.fixture
-def client():
-    app = FastAPI()
-    app.include_router(router)
-    return TestClient(app)
+def client(router_client):
+    return router_client(router)
 
 
 def _seed_metrics(rows: list[tuple]) -> None:

@@ -125,10 +125,12 @@ def get_daily_metrics(
         )
 
     def _to_str(v: Any) -> str | None:
-        return v.isoformat() if hasattr(v, "isoformat") else v
+        if v is None:
+            return None
+        return str(v.isoformat()) if hasattr(v, "isoformat") else str(v)
 
     return DailyMetricsResponse(
-        date=_to_str(row[0]),
+        date=str(row[0]),
         hrv_weekly_avg=row[1],
         hrv_last_night=row[2],
         hrv_status=row[3],
@@ -207,7 +209,7 @@ def sync_status() -> dict:
             SELECT COUNT(*), MIN(date), MAX(date), MAX(fetched_at)
             FROM app.daily_metrics WHERE user_id = 1
             """
-        ).fetchone()
+        ).fetchone() or (0, None, None, None)
     finally:
         con.close()
 

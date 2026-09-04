@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
+from typing import TYPE_CHECKING
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+
+from arete.config import config
+
+if TYPE_CHECKING:
+    from arete.strava.client import StravaClient
 
 logger = logging.getLogger(__name__)
 
@@ -79,18 +85,15 @@ def _delete_strava_tokens(user_id: int = 1) -> None:
         con.close()
 
 
-def _get_strava_client() -> StravaClient:  # noqa: F821
-    """Create StravaClient from env vars."""
+def _get_strava_client() -> StravaClient:
+    """Create StravaClient from configuration."""
     from arete.strava.client import StravaClient
 
-    client_id = os.getenv("STRAVA_CLIENT_ID", "")
-    client_secret = os.getenv("STRAVA_CLIENT_SECRET", "")
-    redirect_uri = os.getenv(
-        "STRAVA_REDIRECT_URI", "http://localhost:8000/strava/callback"
-    )
-    if not client_id or not client_secret:
+    if not config.strava_client_id or not config.strava_client_secret:
         raise ValueError("STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET env vars required")
-    return StravaClient(client_id, client_secret, redirect_uri)
+    return StravaClient(
+        config.strava_client_id, config.strava_client_secret, config.strava_redirect_uri
+    )
 
 
 def _ensure_fresh_token(tokens: dict) -> str:
@@ -98,13 +101,13 @@ def _ensure_fresh_token(tokens: dict) -> str:
     from arete.strava.client import StravaClient
 
     if not StravaClient.needs_refresh(tokens["expires_at"]):
-        return tokens["access_token"]
+        return str(tokens["access_token"])
     client = _get_strava_client()
     new_tokens = client.refresh_token(tokens["refresh_token"])
     new_tokens["athlete_id"] = tokens.get("athlete_id")
     new_tokens["athlete_name"] = tokens.get("athlete_name")
     _save_strava_tokens(new_tokens)
-    return new_tokens["access_token"]
+    return str(new_tokens["access_token"])
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +118,28 @@ def _ensure_fresh_token(tokens: dict) -> str:
 class SyncRequest(BaseModel):
     """Request body for /strava/sync."""
 
-    days: int = Field(default=30, ge=1, le=365)
+    days: int = Field(default=30, ge=1, le=3650)
+    full: bool = Field(
+        default=False, description="Ignore days: import the whole history"
+    )
+
+
+RATE_LIMIT_BACKOFF_SEC = 300  # Strava: 100 requests / 15 min
+
+
+def _with_backoff(fn, *args, retries: int = 2):
+    """Call fn, sleeping through Strava 429s up to ``retries`` times."""
+    for attempt in range(retries + 1):
+        try:
+            return fn(*args)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code != 429 or attempt == retries:
+                raise
+            logger.warning(
+                "Strava rate limit hit, sleeping %ds", RATE_LIMIT_BACKOFF_SEC
+            )
+            time.sleep(RATE_LIMIT_BACKOFF_SEC)
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +177,7 @@ def callback(code: str, scope: str = ""):
     _save_strava_tokens(tokens)
 
     # Redirect back to the frontend Settings page after successful OAuth
-    frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3080")
+    frontend_url = config.frontend_url
     return RedirectResponse(url=f"{frontend_url}/settings?strava=connected")
 
 
@@ -170,8 +194,9 @@ def sync(body: SyncRequest | None = None):
     access_token = _ensure_fresh_token(tokens)
 
     client = _get_strava_client()
-    after = int(time.time()) - body.days * 86400
+    after = None if body.full else int(time.time()) - body.days * 86400
     activities = client.fetch_activities(access_token, after=after)
+    activities.sort(key=lambda a: a.get("start_date", ""))
 
     # Dedup: get existing strava IDs
     from arete.dataio.db import connect
@@ -200,11 +225,15 @@ def sync(body: SyncRequest | None = None):
             continue
         try:
             # Fetch detail for richer data (laps, splits, best_efforts)
-            detail = client.fetch_activity_detail(access_token, int(act_id))
+            detail = _with_backoff(
+                client.fetch_activity_detail, access_token, int(act_id)
+            )
             activity_data = detail if detail else activity
 
             # Fetch HR zone distribution
-            hr_zones = client.fetch_activity_zones(access_token, int(act_id))
+            hr_zones = _with_backoff(
+                client.fetch_activity_zones, access_token, int(act_id)
+            )
 
             session = strava_activity_to_actual_session(
                 activity_data, hr_zones=hr_zones

@@ -1,16 +1,18 @@
-import os
+"""DuckDB connection helpers."""
+
+from __future__ import annotations
+
 import pathlib
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import duckdb
-from dotenv import load_dotenv
 
-load_dotenv()
-DEFAULT_DB_PATH = pathlib.Path("data/arete.duckdb")
+from arete.config import config
 
 
 def get_db_path() -> pathlib.Path:
-    env_path = os.getenv("ARETE_DB")
-    return pathlib.Path(env_path) if env_path else DEFAULT_DB_PATH
+    return config.db_path
 
 
 def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
@@ -21,3 +23,13 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     con.execute("PRAGMA threads=4;")
     con.execute(f"PRAGMA temp_directory='{db_path.parent}';")
     return con
+
+
+@contextmanager
+def db_connection(read_only: bool = True) -> Iterator[duckdb.DuckDBPyConnection]:
+    """``with db_connection() as con:`` — always closed, even on error."""
+    con = connect(read_only=read_only)
+    try:
+        yield con
+    finally:
+        con.close()

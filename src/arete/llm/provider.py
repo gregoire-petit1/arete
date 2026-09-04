@@ -16,11 +16,12 @@ Configuration via environment variables:
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from typing import Any
 
 from openai import OpenAI
+
+from arete.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +59,11 @@ def _resolve_provider_config() -> ProviderConfig:
     Raises:
         ValueError: If required env vars are missing for the chosen provider.
     """
-    provider = os.getenv("LLM_PROVIDER", "ollama").lower().strip()
-    model_override = os.getenv("LLM_MODEL")
+    provider = config.llm_provider
+    model_override = config.llm_model
 
     if provider == "ollama":
-        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+        base_url = config.ollama_base_url
         return ProviderConfig(
             name="ollama",
             base_url=base_url,
@@ -71,7 +72,7 @@ def _resolve_provider_config() -> ProviderConfig:
         )
 
     if provider == "openrouter":
-        api_key = os.getenv("OPENROUTER_API_KEY", "")
+        api_key = config.openrouter_api_key
         if not api_key:
             raise ValueError(
                 "OPENROUTER_API_KEY env var required for openrouter provider"
@@ -84,7 +85,7 @@ def _resolve_provider_config() -> ProviderConfig:
         )
 
     if provider == "github":
-        api_key = os.getenv("GITHUB_TOKEN", "")
+        api_key = config.github_token
         if not api_key:
             raise ValueError("GITHUB_TOKEN env var required for github provider")
         return ProviderConfig(

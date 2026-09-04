@@ -50,6 +50,8 @@ All settings come from environment variables (see `.env.example`):
 | Variable | Purpose |
 | --- | --- |
 | `ARETE_DB` | DuckDB file path (default `data/arete.duckdb`) |
+| `ARETE_LOG_LEVEL` | Backend log level (default `INFO`) |
+| `ARETE_AUTO_SYNC_HOUR` | Local hour of the nightly Garmin activities + health and Strava sync; unset = manual only |
 | `LLM_PROVIDER`, `LLM_MODEL` | `ollama` \| `openrouter` \| `github`, and the model name |
 | `OLLAMA_BASE_URL` / `OPENROUTER_API_KEY` / `GITHUB_TOKEN` | Credentials for the chosen provider |
 | `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REDIRECT_URI` | Strava OAuth app |
@@ -61,16 +63,17 @@ All settings come from environment variables (see `.env.example`):
 
 ```
 src/arete/
+├── config.py   All environment variables in one place; scheduler.py: optional nightly sync
 ├── api/        FastAPI routers: analytics, garmin, garmin_health, strength, strava, ai_tips, metrics, settings; main.py wires them
-├── dataio/     DuckDB connection (db.py), schema + migrations (init_duckdb.py), user settings repository
-├── features/   Training science: workload (ACWR), cardio (TRIMP, zones), fitness (CTL/ATL/TSB), strength (1RM, INOL), banister fit, recommendations
+├── dataio/     DuckDB connection (db.py), schema + versioned migrations (init_duckdb.py), shared queries, user settings
+├── features/   Training science: workload (ACWR), cardio (TRIMP, zones), fitness (CTL/ATL/TSB), strength (1RM, INOL), banister fit, hr_drift, recommendations
 ├── garmin/     FIT parser, time-series metrics, planned/actual matching, Garmin Connect client + activity/health sync, readiness
 ├── strength/   Strength models + repository (exercises, sessions, sets, PRs)
 ├── strava/     Strava API client and activity mapping
 ├── llm/        Provider abstraction (tips), workout grammar + text parser
 └── data/       Exercise catalog
 frontend/       React app (pages: Dashboard, Planning, Analytics, Log, Settings)
-scripts/        fit_banister.py (fit personal CTL/ATL coefficients), garmin_login.py (one-time token bootstrap), import_strava_history.py (full history backfill)
+scripts/        fit_banister.py (fit personal CTL/ATL coefficients), garmin_login.py (one-time token bootstrap)
 tests/          pytest suite (isolated temp DuckDB via ARETE_DB, no network)
 docs/plans/     Design documents
 ```
@@ -87,8 +90,12 @@ Interactive docs at `/docs`. Routers and their prefixes:
 | `/garmin` | `planned` (list/create/delete), `upload-fit`, `actual`, `summary`, `sync/{status,login,logout,activities}` |
 | `/garmin/health` | `sync` (POST), `daily`, `range`, `status` |
 | `/strength` | `exercises` CRUD + `/{id}/prs`, `sessions` CRUD, `sessions/parse` (free-text → structured, optional save), Garmin linking, `stats/volume-by-muscle` |
-| `/strava` | `authorize`, `callback`, `status`, `sync` (POST), `disconnect` |
+| `/strava` | `authorize`, `callback`, `status`, `sync` (POST, `days` or `full: true` for the whole history), `disconnect` |
 | `/tips` | `daily` (GET), `post-session` (POST) |
+
+## Single-user by design
+
+Arete assumes one athlete: `user_id = 1` everywhere, no authentication on the API, Strava tokens stored in DuckDB and Garmin session tokens on disk in clear text. Run it on your own machine or behind something that authenticates (VPN, reverse proxy with auth). Do not expose port 8000 to the internet as is.
 
 ## Development
 

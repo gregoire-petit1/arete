@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import io
 import logging
-import os
 import zipfile
 from datetime import date
 from pathlib import Path
@@ -20,13 +19,15 @@ from typing import Any, cast
 
 from garminconnect import Garmin
 
+from arete.config import config
+
 logger = logging.getLogger(__name__)
 
 TOKEN_FILE = "garmin_tokens.json"
 
 
 def default_token_dir() -> Path:
-    return Path(os.getenv("ARETE_GARMIN_TOKENS_DIR", "data/garmin_tokens"))
+    return config.garmin_tokens_dir
 
 
 class GarminAuthError(RuntimeError):
