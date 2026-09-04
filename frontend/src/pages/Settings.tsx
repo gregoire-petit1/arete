@@ -24,7 +24,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LoadingState, GarminLoginModal, SystemAlert } from '@/components';
-import { settingsApi, garminApi, stravaApi, healthApi, type UserSettings } from '@/lib/api';
+import { settingsApi, garminApi, garminHealthApi, stravaApi, healthApi, type UserSettings } from '@/lib/api';
 
 const TABS = [
   { id: 'profile', label: 'PROFILE', icon: User },
@@ -843,6 +843,29 @@ function SystemTab() {
     },
   });
 
+  const { data: healthStatus } = useQuery({
+    queryKey: ['garminHealthStatus'],
+    queryFn: garminHealthApi.getStatus,
+    retry: false,
+  });
+  const healthSyncMutation = useMutation({
+    mutationFn: () => {
+      const end = new Date();
+      const start = new Date(end.getTime() - 7 * 86400000);
+      return garminHealthApi.sync(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
+    },
+    onSuccess: (result) => {
+      setAlert({
+        type: result.days_failed ? 'error' : 'success',
+        message: `HEALTH: ${result.days_synced} DAYS SYNCED${result.days_failed ? `, ${result.days_failed} FAILED` : ''}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['garminHealthStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['garmin-health'] });
+    },
+    onError: (error) => {
+      setAlert({ type: 'error', message: `HEALTH SYNC FAILED: ${error}` });
+    },
+  });
   const syncMutation = useMutation({
     mutationFn: (options: { start_date?: string; end_date?: string; download_fit?: boolean; max_activities?: number }) =>
       garminApi.syncActivities(options),
@@ -963,6 +986,29 @@ function SystemTab() {
             </div>
 
             <SyncOptionsForm onSync={(options) => syncMutation.mutate(options)} isLoading={syncMutation.isPending} />
+
+            <div className="p-3 rounded border border-neon-purple/30 flex items-center justify-between">
+              <div>
+                <div className="text-sm text-neon-purple font-mono">Health metrics (HRV, sleep, body battery)</div>
+                <div className="text-xs text-text-muted mt-1 font-mono">
+                  {healthStatus?.days_stored
+                    ? `${healthStatus.days_stored} days stored, last ${healthStatus.last_date}`
+                    : 'No health data yet'}
+                </div>
+              </div>
+              <button
+                onClick={() => healthSyncMutation.mutate()}
+                disabled={healthSyncMutation.isPending}
+                className={cn(
+                  'px-3 py-1.5 rounded text-xs font-mono',
+                  'bg-neon-purple/10 border border-neon-purple/30 text-neon-purple',
+                  'hover:bg-neon-purple/20 transition-all',
+                  healthSyncMutation.isPending && 'opacity-50'
+                )}
+              >
+                {healthSyncMutation.isPending ? 'SYNCING...' : 'SYNC LAST 7 DAYS'}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="p-4 rounded border border-text-muted/30 text-center">

@@ -1,6 +1,6 @@
 """Garmin daily metrics sync (HRV, sleep, body battery, stress).
 
-Fetches one day of health metrics from Garmin Connect via garth and persists
+Fetches one day of health metrics from Garmin Connect and persists
 to app.daily_metrics. Computes a daily readiness score from the signals.
 
 Readiness formula (0-100):
@@ -17,106 +17,110 @@ is in `compute_readiness()` and can also be re-run retroactively.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass
 from datetime import date, timedelta
-from pathlib import Path
 from typing import Any
 
-import garth
-
 from arete.dataio.db import connect
+from arete.garmin.client import GarminAuthError, GarminClient
 
 logger = logging.getLogger(__name__)
 
 
-TOKENS_DIR = Path(os.environ.get("ARETE_GARMIN_TOKENS_DIR", "/app/data/garmin_tokens"))
+# ---------- Per-day fetchers (raw Garmin JSON -> daily_metrics columns) ----------
 
 
-# ---------- Token management ----------
-
-
-def _ensure_authenticated() -> None:
-    """Load saved tokens, raise if missing."""
-    if not TOKENS_DIR.exists() or not any(TOKENS_DIR.iterdir()):
-        raise FileNotFoundError(
-            f"No Garmin tokens found at {TOKENS_DIR}. "
-            "Run `uv run python scripts/garmin_login.py` first."
-        )
-    garth.resume(str(TOKENS_DIR))
-
-
-# ---------- Per-day fetchers ----------
-
-
-def _fetch_hrv(target_date: date) -> dict[str, Any]:
-    """Fetch HRV summary for the given date (last_night + weekly_avg)."""
+def _fetch_hrv(client: GarminClient, target_date: date) -> dict[str, Any]:
     try:
-        hrv = garth.HRVData.get(target_date.isoformat())
+        data = client.hrv(target_date) or {}
     except Exception as e:
         logger.warning("HRV fetch failed for %s: %s", target_date, e)
         return {}
-    if not hrv or not hrv.hrv_summary:
-        return {}
-    s = hrv.hrv_summary
+    summary = data.get("hrvSummary") or {}
     return {
-        "hrv_last_night": getattr(s, "last_night_avg", None),
-        "hrv_weekly_avg": getattr(s, "weekly_avg", None),
-        "hrv_status": getattr(s, "status", None),
+        "hrv_last_night": summary.get("lastNightAvg"),
+        "hrv_weekly_avg": summary.get("weeklyAvg"),
+        "hrv_status": summary.get("status"),
     }
 
 
-def _fetch_sleep(target_date: date) -> dict[str, Any]:
-    """Fetch sleep summary for the given date."""
+def _fetch_sleep(client: GarminClient, target_date: date) -> dict[str, Any]:
     try:
-        sleep = garth.SleepData.get(target_date.isoformat())
+        data = client.sleep(target_date) or {}
     except Exception as e:
         logger.warning("Sleep fetch failed for %s: %s", target_date, e)
         return {}
-    if not sleep or not sleep.daily_sleep_dto:
+    dto = data.get("dailySleepDTO") or {}
+    if not dto.get("id"):
         return {}
-    dto = sleep.daily_sleep_dto
-    score = getattr(dto.sleep_scores, "overall", None) if dto.sleep_scores else None
+    score = (dto.get("sleepScores") or {}).get("overall") or {}
     return {
-        "sleep_duration_sec": getattr(dto, "sleep_time_seconds", None),
-        "sleep_score": getattr(score, "value", None) if score else None,
-        "sleep_deep_sec": getattr(dto, "deep_sleep_seconds", None),
-        "sleep_light_sec": getattr(dto, "light_sleep_seconds", None),
-        "sleep_rem_sec": getattr(dto, "rem_sleep_seconds", None),
-        "sleep_awake_sec": getattr(dto, "awake_sleep_seconds", None),
+        "sleep_duration_sec": dto.get("sleepTimeSeconds"),
+        "sleep_score": score.get("value"),
+        "sleep_deep_sec": dto.get("deepSleepSeconds"),
+        "sleep_light_sec": dto.get("lightSleepSeconds"),
+        "sleep_rem_sec": dto.get("remSleepSeconds"),
+        "sleep_awake_sec": dto.get("awakeSleepSeconds"),
     }
 
 
-def _fetch_body_battery(target_date: date) -> dict[str, Any]:
-    """Fetch body battery charged/drained/high/low."""
+def _fetch_stress(client: GarminClient, target_date: date) -> dict[str, Any]:
     try:
-        bb = garth.DailyBodyBatteryStress.get(target_date.isoformat())
+        data = client.stress(target_date) or {}
+    except Exception as e:
+        logger.warning("Stress fetch failed for %s: %s", target_date, e)
+        return {}
+    return {
+        "stress_avg": data.get("avgStressLevel"),
+        "stress_max": data.get("maxStressLevel"),
+    }
+
+
+def _fetch_body_battery(client: GarminClient, target_date: date) -> dict[str, Any]:
+    try:
+        days = client.body_battery(target_date)
     except Exception as e:
         logger.warning("BodyBattery fetch failed for %s: %s", target_date, e)
         return {}
+    if not days:
+        return {}
+    day = days[0]
+    values = [
+        v[1]
+        for v in (day.get("bodyBatteryValuesArray") or [])
+        if isinstance(v, list | tuple) and len(v) > 1 and v[1] is not None
+    ]
     return {
-        "body_battery_charged": getattr(bb, "body_battery_charged", None),
-        "body_battery_drained": getattr(bb, "body_battery_drained", None),
-        "body_battery_high": getattr(bb, "max_body_battery", None),
-        "body_battery_low": getattr(bb, "min_body_battery", None),
-        "stress_avg": getattr(bb, "avg_stress_level", None),
-        "stress_max": getattr(bb, "max_stress_level", None),
+        "body_battery_charged": day.get("charged"),
+        "body_battery_drained": day.get("drained"),
+        "body_battery_high": max(values) if values else None,
+        "body_battery_low": min(values) if values else None,
     }
 
 
-def _fetch_steps(target_date: date) -> dict[str, Any]:
-    """Fetch steps + intensity minutes."""
+def _fetch_steps(client: GarminClient, target_date: date) -> dict[str, Any]:
     try:
-        items = garth.DailySteps.list(target_date, 1)
+        items = client.steps(target_date)
     except Exception as e:
         logger.warning("Steps fetch failed for %s: %s", target_date, e)
         return {}
     if not items:
         return {}
-    s = items[0]
-    return {
-        "steps": getattr(s, "total_steps", None),
-    }
+    return {"steps": items[0].get("totalSteps")}
+
+
+def _fetch_resting_hr(client: GarminClient, target_date: date) -> dict[str, Any]:
+    try:
+        data = client.resting_hr(target_date) or {}
+    except Exception as e:
+        logger.warning("Resting HR fetch failed for %s: %s", target_date, e)
+        return {}
+    metrics = (data.get("allMetrics") or {}).get("metricsMap") or {}
+    entries = metrics.get("WELLNESS_RESTING_HEART_RATE") or []
+    value = (
+        entries[0].get("value") if entries and isinstance(entries[0], dict) else None
+    )
+    return {"resting_hr": value}
 
 
 # ---------- Aggregation + persistence ----------
@@ -130,15 +134,19 @@ class DailySyncResult:
     error: str | None = None
 
 
-def _gather_metrics(target_date: date) -> dict[str, Any]:
+def _gather_metrics(client: GarminClient, target_date: date) -> dict[str, Any]:
     """Fetch all signals for one day. Failures on individual signals are non-fatal."""
     metrics: dict[str, Any] = {"date": target_date, "source": "garmin"}
-    metrics.update(_fetch_hrv(target_date))
-    metrics.update(_fetch_sleep(target_date))
-    metrics.update(_fetch_body_battery(target_date))
-    metrics.update(_fetch_steps(target_date))
-    metrics = {k: v for k, v in metrics.items() if v is not None}
-    return metrics
+    for fetch in (
+        _fetch_hrv,
+        _fetch_sleep,
+        _fetch_stress,
+        _fetch_body_battery,
+        _fetch_steps,
+        _fetch_resting_hr,
+    ):
+        metrics.update(fetch(client, target_date))
+    return {k: v for k, v in metrics.items() if v is not None}
 
 
 def _upsert_daily_metrics(metrics: dict[str, Any]) -> None:
@@ -163,16 +171,17 @@ def _upsert_daily_metrics(metrics: dict[str, Any]) -> None:
         con.close()
 
 
-def sync_day(target_date: date) -> DailySyncResult:
+def sync_day(target_date: date, client: GarminClient | None = None) -> DailySyncResult:
     """Sync one day of Garmin health data."""
+    client = client or GarminClient()
     try:
-        _ensure_authenticated()
-    except FileNotFoundError as e:
+        client.connect()
+    except GarminAuthError as e:
         return DailySyncResult(
             date=target_date, success=False, fields_synced=0, error=str(e)
         )
     try:
-        metrics = _gather_metrics(target_date)
+        metrics = _gather_metrics(client, target_date)
     except Exception as e:
         logger.exception("Failed to gather metrics for %s", target_date)
         return DailySyncResult(
@@ -191,11 +200,12 @@ def sync_day(target_date: date) -> DailySyncResult:
 
 
 def sync_range(start: date, end: date) -> list[DailySyncResult]:
-    """Sync a range of dates. Each day is one API call group (3-4 calls)."""
+    """Sync a range of dates with one authenticated session (about 6 calls per day)."""
+    client = GarminClient()
     results: list[DailySyncResult] = []
     cur = start
     while cur <= end:
-        r = sync_day(cur)
+        r = sync_day(cur, client)
         results.append(r)
         if r.success:
             logger.info("Synced %s (%d fields)", cur, r.fields_synced)

@@ -7,6 +7,7 @@ services:
     env_file: .env
     environment:
       - ARETE_DB=/app/data/arete.duckdb
+      - ARETE_GARMIN_TOKENS_DIR=/app/data/garmin_tokens
       # Ollama running on the Docker host (default). Switch to
       # http://ollama:11434/v1 when enabling the ollama service below.
       - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1

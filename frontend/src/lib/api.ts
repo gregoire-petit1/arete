@@ -311,6 +311,21 @@ export const analyticsApi = {
 // ========================= //
 
 export const garminHealthApi = {
+  getStatus: () =>
+    fetchAPI<{
+      tokens_present: boolean;
+      days_stored: number;
+      first_date: string | null;
+      last_date: string | null;
+      last_sync: string | null;
+    }>("/garmin/health/status"),
+
+  sync: (start: string, end: string) =>
+    fetchAPI<{ start: string; end: string; days_synced: number; days_failed: number; errors: string[] }>(
+      `/garmin/health/sync?start=${start}&end=${end}`,
+      { method: "POST" }
+    ),
+
   getDaily: (date: string) =>
     fetchAPI<{
       date: string;

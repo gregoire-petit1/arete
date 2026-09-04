@@ -15,7 +15,7 @@ Self-hosted, single-user training assistant:
 
 ## Stack
 
-- **Backend**: Python 3.11, FastAPI + Pydantic v2, DuckDB, `garth` (Garmin), `fitparse`, `openai` SDK (provider-agnostic).
+- **Backend**: Python 3.11, FastAPI + Pydantic v2, DuckDB, `garminconnect` (Garmin Connect, unofficial API), `fitparse`, `lark` (workout grammar), `openai` SDK (provider-agnostic).
 - **Frontend**: React 19 + Vite, Tailwind 4, TanStack Query, recharts, PWA (see `frontend/README.md`).
 - **Tooling**: uv, ruff, mypy, pytest; Docker Compose (backend + nginx-served frontend).
 
@@ -55,8 +55,7 @@ All settings come from environment variables (see `.env.example`):
 | `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REDIRECT_URI` | Strava OAuth app |
 | `FRONTEND_URL` | Where the Strava callback redirects (default `http://localhost:3080`) |
 | `GARMIN_EMAIL`, `GARMIN_PASSWORD` | Garmin Connect login (or log in from the Settings page) |
-| `ARETE_GARMIN_TOKENS_DIR` | Where garth stores Garmin OAuth tokens |
-| `RUNALYZE_TOKEN` | Optional Runalyze backup |
+| `ARETE_GARMIN_TOKENS_DIR` | Where the Garmin session tokens are stored (default `data/garmin_tokens`) |
 
 ## Project layout
 
@@ -65,7 +64,7 @@ src/arete/
 ├── api/        FastAPI routers: analytics, garmin, garmin_health, strength, strava, ai_tips, metrics, settings; main.py wires them
 ├── dataio/     DuckDB connection (db.py), schema + migrations (init_duckdb.py), user settings repository
 ├── features/   Training science: workload (ACWR), cardio (TRIMP, zones), fitness (CTL/ATL/TSB), strength (1RM, INOL), banister fit, recommendations
-├── garmin/     FIT parser, time-series metrics, planned/actual matching, Garmin Connect sync, health sync + readiness, LLM analyzer, Runalyze backup
+├── garmin/     FIT parser, time-series metrics, planned/actual matching, Garmin Connect client + activity/health sync, readiness, LLM analyzer
 ├── strength/   Strength models + repository (exercises, sessions, sets, PRs)
 ├── strava/     Strava API client and activity mapping
 ├── llm/        Provider abstraction, workout text parser, token budget manager
@@ -85,7 +84,7 @@ Interactive docs at `/docs`. Routers and their prefixes:
 | `/health`, `/settings` | Health check; user settings GET/PUT |
 | `/analytics` | `volume`, `training-load`, `pace`, `hr-zones`, `sport-distribution`, `best-efforts`, `cardiac-efficiency`, `hr-pace-scatter`, `hr-drift`, `sessions` (GET, PATCH `/{id}`) |
 | `/metrics` | `workload`, `fitness`, `player-stats`, `recommendations`; calculators `cardio/trimp`, `strength/1rm`, `strength/inol` (POST) |
-| `/garmin` | `planned` CRUD, `upload-fit`, `actual`, manual match/unmatch, `summary`, `unmatched`, `actual/{id}/analyze` (LLM), `sync/{status,login,logout,activities,user}`, `backup/runalyze` |
+| `/garmin` | `planned` CRUD, `upload-fit`, `actual`, manual match/unmatch, `summary`, `unmatched`, `actual/{id}/analyze` (LLM), `sync/{status,login,logout,activities,user}` |
 | `/garmin/health` | `sync` (POST), `daily`, `range`, `status` |
 | `/strength` | `exercises` CRUD + `/{id}/prs`, `sessions` CRUD, `sessions/parse` (free-text → structured, optional save), Garmin linking, `stats/volume-by-muscle` |
 | `/strava` | `authorize`, `callback`, `status`, `sync` (POST), `disconnect` |

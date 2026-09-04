@@ -64,7 +64,7 @@ def trigger_sync(
 ) -> SyncResultResponse:
     """Trigger a sync of Garmin health metrics for [start, end] range.
 
-    Requires saved tokens at $ARETE_GARMIN_TOKENS_DIR (default /app/data/garmin_tokens).
+    Requires a Garmin login (Settings > System) — tokens live in $ARETE_GARMIN_TOKENS_DIR.
     Returns count of days synced + any per-day errors.
     """
     if end < start:
@@ -197,14 +197,9 @@ def get_metrics_range(
 @router.get("/status")
 def sync_status() -> dict:
     """Check sync state: are tokens present, how many days stored, last sync."""
-    import os
-    from pathlib import Path
+    from arete.garmin.client import GarminClient
 
-    tokens_dir = Path(
-        os.environ.get("ARETE_GARMIN_TOKENS_DIR", "/app/data/garmin_tokens")
-    )
-    tokens_present = tokens_dir.exists() and any(tokens_dir.iterdir())
-
+    client = GarminClient()
     con = connect()
     try:
         stats = con.execute(
@@ -217,8 +212,8 @@ def sync_status() -> dict:
         con.close()
 
     return {
-        "tokens_present": tokens_present,
-        "tokens_dir": str(tokens_dir),
+        "tokens_present": client.has_tokens(),
+        "tokens_dir": str(client.token_dir),
         "days_stored": stats[0] or 0,
         "first_date": str(stats[1]) if stats[1] else None,
         "last_date": str(stats[2]) if stats[2] else None,

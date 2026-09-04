@@ -152,7 +152,6 @@ export interface VolumeByMuscle {
 
 export interface SyncStatus {
   garmin_authenticated: boolean;
-  runalyze_configured: boolean;
   user_email: string | null;
   last_sync: string | null;
   activities_synced: number;

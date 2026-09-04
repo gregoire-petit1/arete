@@ -155,12 +155,7 @@ class TestGarminHealthApi:
             "2026-06-01",
             None,
         )
-        with (
-            patch("pathlib.Path.exists") as mock_exists,
-            patch("pathlib.Path.iterdir") as mock_iter,
-        ):
-            mock_exists.return_value = True
-            mock_iter.return_value = ["token1"]
+        with patch("arete.garmin.client.GarminClient.has_tokens", return_value=True):
             resp = client.get("/garmin/health/status")
             assert resp.status_code == 200
             data = resp.json()

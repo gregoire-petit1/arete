@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from arete.garmin.client import GarminAuthError
 from arete.garmin.sync import (
     GarminActivity,
     GarminSyncClient,
@@ -131,88 +131,55 @@ class TestGarminActivity:
 
 
 class TestGarminSyncClient:
-    """Tests for GarminSyncClient."""
+    """Tests for GarminSyncClient (Garmin access mocked through GarminClient)."""
 
-    def test_init_default_token_dir(self):
-        """Test default token directory."""
-        client = GarminSyncClient()
-        assert client.token_dir == Path.home() / ".garth"
+    def _client(self, **attrs) -> GarminSyncClient:
+        garmin = MagicMock()
+        for k, v in attrs.items():
+            setattr(garmin, k, v)
+        return GarminSyncClient(client=garmin)
 
-    def test_init_custom_token_dir(self, tmp_path):
-        """Test custom token directory."""
-        client = GarminSyncClient(token_dir=tmp_path / "tokens")
-        assert client.token_dir == tmp_path / "tokens"
-        assert client.token_dir.exists()
-
-    @patch("arete.garmin.sync.garth")
-    def test_is_authenticated_success(self, mock_garth, tmp_path):
-        """Test successful authentication check."""
-        client = GarminSyncClient(token_dir=tmp_path)
-        mock_garth.resume.return_value = None
-
+    def test_is_authenticated_delegates(self):
+        client = self._client()
+        client.client.is_authenticated.return_value = True
         assert client.is_authenticated() is True
-        mock_garth.resume.assert_called_once()
-
-    @patch("arete.garmin.sync.garth")
-    def test_is_authenticated_failure(self, mock_garth, tmp_path):
-        """Test failed authentication check."""
-        client = GarminSyncClient(token_dir=tmp_path)
-        mock_garth.resume.side_effect = Exception("No tokens")
-
+        client.client.is_authenticated.return_value = False
         assert client.is_authenticated() is False
 
-    @patch("arete.garmin.sync.garth")
-    def test_login_success(self, mock_garth, tmp_path):
-        """Test successful login."""
-        client = GarminSyncClient(token_dir=tmp_path)
+    def test_login_success(self):
+        client = self._client()
+        client.client.login.return_value = "ok"
+        assert client.login(email="test@example.com", password="password123") == "ok"
+        client.client.login.assert_called_once_with("test@example.com", "password123")
 
-        result = client.login(email="test@example.com", password="password123")
+    def test_login_needs_mfa(self):
+        client = self._client()
+        client.client.login.return_value = "needs_mfa"
+        assert client.login(email="a@b.c", password="x") == "needs_mfa"
 
-        assert result is True
-        mock_garth.login.assert_called_once_with("test@example.com", "password123")
-        mock_garth.save.assert_called_once()
-
-    def test_login_no_credentials(self, tmp_path, monkeypatch):
-        """Test login without credentials."""
+    def test_login_no_credentials(self, monkeypatch):
         monkeypatch.delenv("GARMIN_EMAIL", raising=False)
         monkeypatch.delenv("GARMIN_PASSWORD", raising=False)
-
-        client = GarminSyncClient(token_dir=tmp_path)
-
         with pytest.raises(ValueError, match="Garmin credentials required"):
-            client.login()
+            self._client().login()
 
-    @patch("arete.garmin.sync.garth")
-    def test_login_from_env(self, mock_garth, tmp_path, monkeypatch):
-        """Test login using environment variables."""
+    def test_login_from_env(self, monkeypatch):
         monkeypatch.setenv("GARMIN_EMAIL", "env@example.com")
         monkeypatch.setenv("GARMIN_PASSWORD", "envpass")
-
-        client = GarminSyncClient(token_dir=tmp_path)
+        client = self._client()
+        client.client.login.return_value = "ok"
         client.login()
+        client.client.login.assert_called_once_with("env@example.com", "envpass")
 
-        mock_garth.login.assert_called_once_with("env@example.com", "envpass")
-
-    def test_logout(self, tmp_path):
-        """Test logout clears tokens."""
-        client = GarminSyncClient(token_dir=tmp_path)
-
-        # Create fake token files
-        (tmp_path / "oauth1_token.json").write_text("{}")
-        (tmp_path / "oauth2_token.json").write_text("{}")
-
+    def test_logout_delegates(self):
+        client = self._client()
         client.logout()
+        client.client.logout.assert_called_once()
 
-        assert not (tmp_path / "oauth1_token.json").exists()
-        assert not (tmp_path / "oauth2_token.json").exists()
-
-    @patch("arete.garmin.sync.garth")
-    def test_get_activities(self, mock_garth, tmp_path):
-        """Test fetching activities."""
-        client = GarminSyncClient(token_dir=tmp_path)
-        client._authenticated = True
-
-        mock_garth.connectapi.return_value = [
+    def test_get_activities(self):
+        client = self._client()
+        client._last_request_time = 0.0
+        client.client.activities.return_value = [
             {
                 "activityId": 1,
                 "activityName": "Run 1",
@@ -228,44 +195,46 @@ class TestGarminSyncClient:
                 "duration": 2700,
             },
         ]
-
-        activities = client.get_activities(limit=10)
-
-        assert len(activities) == 2
-        assert activities[0].activity_id == 1
-        assert activities[1].activity_id == 2
-
-    @patch("arete.garmin.sync.garth")
-    def test_get_activities_with_date_filter(self, mock_garth, tmp_path):
-        """Test filtering activities by date."""
-        client = GarminSyncClient(token_dir=tmp_path)
-        client._authenticated = True
-
-        mock_garth.connectapi.return_value = [
-            {
-                "activityId": 1,
-                "startTimeLocal": "2025-11-15T08:00:00",
-                "duration": 3600,
-            },
-            {
-                "activityId": 2,
-                "startTimeLocal": "2025-12-01T08:00:00",
-                "duration": 2700,
-            },
-            {
-                "activityId": 3,
-                "startTimeLocal": "2025-12-10T08:00:00",
-                "duration": 1800,
-            },
-        ]
-
-        activities = client.get_activities(
-            start_date=date(2025, 12, 1), end_date=date(2025, 12, 5)
+        with patch("arete.garmin.sync.time.sleep"):
+            activities = client.get_activities(
+                start_date=date(2025, 12, 1), end_date=date(2025, 12, 5), limit=10
+            )
+        assert [a.activity_id for a in activities] == [1, 2]
+        client.client.activities.assert_called_once_with(
+            date(2025, 12, 1), date(2025, 12, 5)
         )
 
-        # Only activity 2 should match
-        assert len(activities) == 1
-        assert activities[0].activity_id == 2
+    def test_get_activities_respects_limit_and_skips_garbage(self):
+        client = self._client()
+        client.client.activities.return_value = [
+            "not-a-dict",
+            {"activityId": 1, "startTimeLocal": "2025-12-01T08:00:00", "duration": 1},
+            {"activityId": 2, "startTimeLocal": "2025-12-02T08:00:00", "duration": 1},
+        ]
+        with patch("arete.garmin.sync.time.sleep"):
+            activities = client.get_activities(limit=2)
+        assert [a.activity_id for a in activities] == [1]
+
+    def test_download_fit_file_writes_and_caches(self, tmp_path):
+        client = self._client()
+        client.client.download_fit.return_value = b"FITDATA"
+        with patch("arete.garmin.sync.time.sleep"):
+            path = client.download_fit_file(42, output_dir=tmp_path)
+            assert path == tmp_path / "42.fit"
+            assert path.read_bytes() == b"FITDATA"
+            # second call: served from disk, no API call
+            client.download_fit_file(42, output_dir=tmp_path)
+        client.client.download_fit.assert_called_once()
+
+    def test_sync_activities_reports_auth_error(self):
+        client = self._client()
+        client.client.activities.side_effect = GarminAuthError("no tokens")
+        client._repository = MagicMock()
+        client._repository.list_actual_sessions.return_value = []
+        with patch("arete.garmin.sync.time.sleep"):
+            result = client.sync_activities(start_date=date(2025, 12, 1))
+        assert result.success is False
+        assert "no tokens" in result.errors[0]
 
 
 class TestSyncResult:

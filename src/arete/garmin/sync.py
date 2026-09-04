@@ -1,4 +1,4 @@
-"""Garmin Connect synchronization using garth library.
+"""Garmin Connect activity synchronization (via arete.garmin.client).
 
 Provides automated sync of activities from Garmin Connect to Arete.
 Respects rate limits and handles authentication securely.
@@ -14,9 +14,9 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import garth
-from garth.exc import GarthException, GarthHTTPError
+from garminconnect import GarminConnectTooManyRequestsError
 
+from arete.garmin.client import GarminAuthError, GarminClient
 from arete.garmin.fit_parser import FITParser
 from arete.garmin.models import ActivitySource, ActualSession
 from arete.garmin.repository import GarminRepository
@@ -142,28 +142,15 @@ class GarminActivity:
 
 
 class GarminSyncClient:
-    """Client for syncing activities from Garmin Connect.
-
-    Uses garth library for authentication and API access.
-    Stores OAuth tokens securely for persistent sessions.
-    """
+    """Syncs activities from Garmin Connect into the local database."""
 
     def __init__(
         self,
-        token_dir: str | Path | None = None,
+        client: GarminClient | None = None,
         repository: GarminRepository | None = None,
     ):
-        """Initialize sync client.
-
-        Args:
-            token_dir: Directory to store OAuth tokens.
-                       Defaults to ~/.garth/
-            repository: GarminRepository for storing synced activities.
-        """
-        self.token_dir = Path(token_dir) if token_dir else Path.home() / ".garth"
-        self.token_dir.mkdir(parents=True, exist_ok=True)
+        self.client = client or GarminClient()
         self._repository = repository
-        self._authenticated = False
         self._last_request_time = 0.0
 
     @property
@@ -174,61 +161,28 @@ class GarminSyncClient:
         return self._repository
 
     def is_authenticated(self) -> bool:
-        """Check if we have valid authentication."""
-        try:
-            # Try to resume session from saved tokens
-            garth.resume(str(self.token_dir))
-            self._authenticated = True
-            return True
-        except Exception:
-            self._authenticated = False
-            return False
+        """True when a saved Garmin session can be restored."""
+        return self.client.is_authenticated()
 
-    def login(self, email: str | None = None, password: str | None = None) -> bool:
-        """Authenticate with Garmin Connect.
+    def login(self, email: str | None = None, password: str | None = None) -> str:
+        """Authenticate with Garmin Connect. Returns "ok" or "needs_mfa".
 
-        Args:
-            email: Garmin Connect email. If None, uses GARMIN_EMAIL env var.
-            password: Garmin Connect password. If None, uses GARMIN_PASSWORD env var.
-
-        Returns:
-            True if login successful.
-
-        Raises:
-            GarthException: If authentication fails.
+        Credentials default to GARMIN_EMAIL / GARMIN_PASSWORD.
         """
         email = email or os.getenv("GARMIN_EMAIL")
         password = password or os.getenv("GARMIN_PASSWORD")
-
         if not email or not password:
             raise ValueError(
                 "Garmin credentials required. Set GARMIN_EMAIL and GARMIN_PASSWORD "
                 "environment variables or pass them directly."
             )
-
-        try:
-            garth.login(email, password)
-            garth.save(str(self.token_dir))
-            self._authenticated = True
-            logger.info("Successfully authenticated with Garmin Connect")
-            return True
-        except GarthHTTPError as e:
-            logger.error(f"Garmin authentication failed: {e}")
-            raise
-        except GarthException as e:
-            logger.error(f"Garmin authentication error: {e}")
-            raise
+        status = self.client.login(email, password)
+        logger.info("Garmin login: %s", status)
+        return status
 
     def logout(self) -> None:
         """Clear saved authentication tokens."""
-        token_file = self.token_dir / "oauth1_token.json"
-        if token_file.exists():
-            token_file.unlink()
-        token_file = self.token_dir / "oauth2_token.json"
-        if token_file.exists():
-            token_file.unlink()
-        self._authenticated = False
-        logger.info("Logged out from Garmin Connect")
+        self.client.logout()
 
     def _rate_limit(self) -> None:
         """Apply rate limiting between requests."""
@@ -243,99 +197,53 @@ class GarminSyncClient:
         end_date: date | None = None,
         limit: int = 50,
     ) -> list[GarminActivity]:
-        """Fetch activity list from Garmin Connect.
-
-        Args:
-            start_date: Start date for filtering (inclusive).
-            end_date: End date for filtering (inclusive).
-            limit: Maximum number of activities to fetch.
-
-        Returns:
-            List of GarminActivity objects.
-        """
-        if not self._authenticated and not self.is_authenticated():
-            raise RuntimeError("Not authenticated. Call login() first.")
-
+        """Fetch activities between two dates (inclusive), newest first."""
+        end_date = end_date or date.today()
+        start_date = start_date or end_date - timedelta(days=30)
         self._rate_limit()
-
         try:
-            # Garmin API uses start index and limit
-            activities_data = garth.connectapi(
-                "/activitylist-service/activities/search/activities",
-                params={"start": 0, "limit": min(limit, 100)},
-            )
-
-            activities = []
-            if not isinstance(activities_data, list):
-                logger.warning("Unexpected response format from Garmin API")
-                return []
-
-            for data in activities_data:
-                if not isinstance(data, dict):
-                    continue
-                try:
-                    activity = GarminActivity.from_api_response(data)
-
-                    # Filter by date if specified
-                    if start_date and activity.start_time.date() < start_date:
-                        continue
-                    if end_date and activity.start_time.date() > end_date:
-                        continue
-
-                    activities.append(activity)
-                except (KeyError, ValueError) as e:
-                    logger.warning(f"Failed to parse activity: {e}")
-                    continue
-
-            logger.info(f"Fetched {len(activities)} activities from Garmin Connect")
-            return activities
-
-        except GarthHTTPError as e:
-            if hasattr(e, "response") and e.response.status_code == 429:
-                logger.warning("Rate limited by Garmin. Waiting...")
-                time.sleep(RATE_LIMITS["delay_after_429"])
+            raw = self.client.activities(start_date, end_date)
+        except GarminConnectTooManyRequestsError:
+            logger.warning("Rate limited by Garmin. Waiting...")
+            time.sleep(RATE_LIMITS["delay_after_429"])
             raise
+
+        activities = []
+        for data in raw[: min(limit, 100)]:
+            if not isinstance(data, dict):
+                continue
+            try:
+                activities.append(GarminActivity.from_api_response(data))
+            except (KeyError, ValueError) as e:
+                logger.warning(f"Failed to parse activity: {e}")
+        logger.info(f"Fetched {len(activities)} activities from Garmin Connect")
+        return activities
 
     def download_fit_file(
         self, activity_id: int, output_dir: Path | None = None
     ) -> Path | None:
-        """Download original FIT file for an activity.
-
-        Args:
-            activity_id: Garmin activity ID.
-            output_dir: Directory to save FIT file. Defaults to data/fit_files/
-
-        Returns:
-            Path to downloaded file, or None if download failed.
-        """
-        if not self._authenticated and not self.is_authenticated():
-            raise RuntimeError("Not authenticated. Call login() first.")
-
+        """Download the original FIT file for an activity (cached on disk)."""
         output_dir = output_dir or Path("data/fit_files")
         output_dir.mkdir(parents=True, exist_ok=True)
-
         output_path = output_dir / f"{activity_id}.fit"
-
-        # Skip if already downloaded
         if output_path.exists():
             logger.debug(f"FIT file already exists: {output_path}")
             return output_path
 
         self._rate_limit()
-
         try:
-            # Download original FIT file
-            fit_data = garth.download(f"/download-service/files/activity/{activity_id}")
-
-            output_path.write_bytes(fit_data)
-            logger.info(f"Downloaded FIT file: {output_path}")
-            return output_path
-
-        except GarthHTTPError as e:
-            logger.error(f"Failed to download FIT file {activity_id}: {e}")
-            if hasattr(e, "response") and e.response.status_code == 429:
-                time.sleep(RATE_LIMITS["delay_after_429"])
+            fit_data = self.client.download_fit(activity_id)
+        except GarminConnectTooManyRequestsError:
+            time.sleep(RATE_LIMITS["delay_after_429"])
             return None
+        except Exception as e:
+            logger.error(f"Failed to download FIT file {activity_id}: {e}")
+            return None
+        if not fit_data:
+            return None
+        output_path.write_bytes(fit_data)
+        logger.info(f"Downloaded FIT file: {output_path}")
+        return output_path
 
     def sync_activities(
         self,
@@ -417,7 +325,7 @@ class GarminSyncClient:
                 f"{len(result.errors)} errors"
             )
 
-        except GarthException as e:
+        except (GarminAuthError, Exception) as e:
             result.errors.append(f"Garmin API error: {e}")
             logger.error(f"Sync failed: {e}")
 
@@ -462,21 +370,5 @@ class GarminSyncClient:
         return session
 
     def get_user_summary(self) -> dict[str, Any]:
-        """Get user profile and summary stats."""
-        if not self._authenticated and not self.is_authenticated():
-            raise RuntimeError("Not authenticated.")
-
-        self._rate_limit()
-
-        try:
-            profile = garth.connectapi("/userprofile-service/socialProfile")
-            if isinstance(profile, dict):
-                return {
-                    "display_name": profile.get("displayName"),
-                    "profile_image_url": profile.get("profileImageUrlLarge"),
-                    "user_id": profile.get("id"),
-                }
-            return {}
-        except GarthHTTPError as e:
-            logger.error(f"Failed to get user summary: {e}")
-            return {}
+        """Garmin profile of the authenticated user."""
+        return self.client.profile()

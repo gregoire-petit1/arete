@@ -57,7 +57,6 @@ class ActivitySource(str, Enum):
     FIT_FILE = "fit_file"
     GARMIN_CONNECT = "garmin_connect"
     STRAVA = "strava"
-    RUNALYZE = "runalyze"
     MANUAL = "manual"
 
 

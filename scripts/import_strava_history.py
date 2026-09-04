@@ -12,17 +12,17 @@ Strategy:
 Resumable: skips activities already in DB (by garmin_activity_id).
 """
 
+import logging
 import os
 import sys
 import time
-import logging
-from datetime import datetime
 
 import httpx
+
 from arete.dataio.db import connect
+from arete.garmin.repository import GarminRepository
 from arete.strava.client import StravaClient
 from arete.strava.models import strava_activity_to_actual_session
-from arete.garmin.repository import GarminRepository
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("import_history")

@@ -615,7 +615,7 @@ def get_analysis(session_id: int):
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Sync Endpoints (Garmin Connect + Runalyze)
+# Sync Endpoints (Garmin Connect)
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -623,7 +623,6 @@ class SyncStatusResponse(BaseModel):
     """Sync status response."""
 
     garmin_authenticated: bool
-    runalyze_configured: bool
     user_email: str | None = None
     last_sync: str | None = None
     activities_synced: int = 0
@@ -648,15 +647,6 @@ class SyncResponse(BaseModel):
     last_activity_date: str | None = None
 
 
-class BackupResponse(BaseModel):
-    """Backup result response."""
-
-    success: bool
-    activities_backed_up: int
-    export_path: str | None = None
-    errors: list[str]
-
-
 class GarminLoginRequest(BaseModel):
     """Garmin login credentials (secure, not logged)."""
 
@@ -673,30 +663,20 @@ class GarminLoginResponse(BaseModel):
     message: str
 
 
-# In-memory storage for MFA state (simple implementation)
-_mfa_pending_state: dict | None = None
-
-
 @router.get("/sync/status", response_model=SyncStatusResponse)
 def get_sync_status():
     """Get current sync status and authentication state."""
-    import garth
+    from arete.garmin.client import GarminClient
 
-    from arete.garmin.backup import RunalyzeClient
-    from arete.garmin.sync import GarminSyncClient
-
-    garmin_client = GarminSyncClient()
-    runalyze_client = RunalyzeClient()
-
-    # Get user email if authenticated
+    client = GarminClient()
+    authenticated = client.is_authenticated()
     user_email = None
-    if garmin_client.is_authenticated():
+    if authenticated:
         with contextlib.suppress(Exception):
-            user_email = garth.client.username
+            user_email = client.profile().get("user_email")
 
     return SyncStatusResponse(
-        garmin_authenticated=garmin_client.is_authenticated(),
-        runalyze_configured=runalyze_client.is_configured(),
+        garmin_authenticated=authenticated,
         user_email=user_email,
         activities_synced=_repo.count_actual_sessions(),
     )
@@ -706,64 +686,32 @@ def get_sync_status():
 def garmin_login(request: GarminLoginRequest | None = None):
     """Authenticate with Garmin Connect.
 
-    Supports MFA (Multi-Factor Authentication) flow:
-    1. First call with email/password - may return needs_mfa=True
-    2. Second call with mfa_code to complete authentication
-
-    Credentials can be passed in request body or via environment variables:
-    - GARMIN_EMAIL
-    - GARMIN_PASSWORD
-
-    Tokens are stored locally for subsequent requests.
+    MFA flow: first call with email/password may return needs_mfa=True;
+    call again with mfa_code to complete. Credentials default to
+    GARMIN_EMAIL / GARMIN_PASSWORD. Tokens are stored on disk for later requests.
     """
     import os
 
-    import garth
-    from garth import sso
+    from arete.garmin.client import GarminAuthError, GarminClient
 
-    global _mfa_pending_state
+    client = GarminClient()
 
-    # If MFA code is provided, complete the MFA flow
-    if request and request.mfa_code and _mfa_pending_state:
+    if request and request.mfa_code:
         try:
-            # resume_login returns (oauth1_token, oauth2_token)
-            oauth1, oauth2 = sso.resume_login(
-                _mfa_pending_state,
-                request.mfa_code,
-            )
-
-            # IMPORTANT: Assign tokens to the global client
-            garth.client.oauth1_token = oauth1
-            garth.client.oauth2_token = oauth2
-
-            # Save tokens
-            from pathlib import Path
-
-            token_dir = Path.home() / ".garth"
-            token_dir.mkdir(parents=True, exist_ok=True)
-            garth.client.dump(str(token_dir))
-
-            logger.info(f"Tokens saved to {token_dir}")
-
-            _mfa_pending_state = None
-            return GarminLoginResponse(
-                success=True,
-                needs_mfa=False,
-                message="Successfully authenticated with Garmin Connect",
-            )
+            client.complete_mfa(request.mfa_code)
+        except GarminAuthError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
             logger.error(f"MFA verification failed: {e}")
-            _mfa_pending_state = None
             raise HTTPException(
                 status_code=401, detail=f"MFA verification failed: {e}"
             ) from e
+        return GarminLoginResponse(
+            success=True, message="Successfully authenticated with Garmin Connect"
+        )
 
-    # Initial login attempt
-    email = request.email if request else None
-    password = request.password if request else None
-    email = email or os.getenv("GARMIN_EMAIL")
-    password = password or os.getenv("GARMIN_PASSWORD")
-
+    email = (request.email if request else None) or os.getenv("GARMIN_EMAIL")
+    password = (request.password if request else None) or os.getenv("GARMIN_PASSWORD")
     if not email or not password:
         raise HTTPException(
             status_code=400,
@@ -772,43 +720,30 @@ def garmin_login(request: GarminLoginRequest | None = None):
         )
 
     try:
-        # Try login with return_on_mfa=True to handle MFA
-        result = sso.login(email, password, return_on_mfa=True)
-
-        if result[0] == "needs_mfa":
-            # MFA required - save state for next call
-            _mfa_pending_state = result[1]
-            return GarminLoginResponse(
-                success=False,
-                needs_mfa=True,
-                message="MFA code required. Please provide the code sent to your device.",
-            )
-
-        # Login successful without MFA
-        from pathlib import Path
-
-        token_dir = Path.home() / ".garth"
-        token_dir.mkdir(parents=True, exist_ok=True)
-        garth.save(str(token_dir))
-        return GarminLoginResponse(
-            success=True,
-            needs_mfa=False,
-            message="Successfully authenticated with Garmin Connect",
-        )
+        status = client.login(email, password)
     except Exception as e:
         logger.error(f"Garmin login failed: {e}")
         raise HTTPException(
             status_code=401, detail=f"Authentication failed: {e}"
         ) from e
 
+    if status == "needs_mfa":
+        return GarminLoginResponse(
+            success=False,
+            needs_mfa=True,
+            message="MFA code required. Please provide the code sent to your device.",
+        )
+    return GarminLoginResponse(
+        success=True, message="Successfully authenticated with Garmin Connect"
+    )
+
 
 @router.post("/sync/logout")
 def garmin_logout():
     """Clear Garmin Connect authentication tokens."""
-    from arete.garmin.sync import GarminSyncClient
+    from arete.garmin.client import GarminClient
 
-    client = GarminSyncClient()
-    client.logout()
+    GarminClient().logout()
     return {"success": True, "message": "Logged out from Garmin Connect"}
 
 
@@ -824,7 +759,13 @@ def sync_activities(request: SyncRequest):
 
     if not client.is_authenticated():
         try:
-            client.login()
+            if client.login() == "needs_mfa":
+                raise HTTPException(
+                    status_code=401,
+                    detail="Garmin requires an MFA code: log in from Settings first.",
+                )
+        except HTTPException:
+            raise
         except Exception as e:
             raise HTTPException(
                 status_code=401,
@@ -855,79 +796,8 @@ def get_garmin_user():
     from arete.garmin.sync import GarminSyncClient
 
     client = GarminSyncClient()
-
     if not client.is_authenticated():
         raise HTTPException(
             status_code=401, detail="Not authenticated with Garmin Connect"
         )
-
     return client.get_user_summary()
-
-
-@router.post("/backup/runalyze", response_model=BackupResponse)
-def backup_runalyze(
-    start_date: date | None = None,
-    end_date: date | None = None,
-    format: Literal["json", "csv"] = "json",
-):
-    """Export activities from Runalyze as backup.
-
-    Requires RUNALYZE_TOKEN environment variable.
-    Get your token from: https://runalyze.com/settings/account/api
-    """
-
-    from arete.garmin.backup import RunalyzeClient
-
-    client = RunalyzeClient()
-
-    if not client.is_configured():
-        raise HTTPException(
-            status_code=400,
-            detail="Runalyze not configured. Set RUNALYZE_TOKEN environment variable.",
-        )
-
-    try:
-        result = client.export_activities(
-            start_date=start_date,
-            end_date=end_date,
-            format=format,
-        )
-
-        return BackupResponse(
-            success=result.success,
-            activities_backed_up=result.activities_backed_up,
-            export_path=str(result.export_path) if result.export_path else None,
-            errors=result.errors,
-        )
-    except Exception as e:
-        logger.error(f"Runalyze backup failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    finally:
-        client.close()
-
-
-@router.get("/backup/compare")
-def compare_garmin_runalyze():
-    """Compare synced Garmin data with Runalyze for validation.
-
-    Useful to verify sync completeness and data integrity.
-    """
-    from arete.garmin.backup import RunalyzeClient
-
-    client = RunalyzeClient()
-
-    if not client.is_configured():
-        raise HTTPException(
-            status_code=400,
-            detail="Runalyze not configured. Set RUNALYZE_TOKEN environment variable.",
-        )
-
-    try:
-        garmin_sessions = _repo.list_actual_sessions(limit=500)
-        comparison = client.compare_with_garmin(garmin_sessions)
-        return comparison
-    except Exception as e:
-        logger.error(f"Comparison failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) from e
-    finally:
-        client.close()
