@@ -5,23 +5,19 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Copy dependency files first (cache layer)
-COPY pyproject.toml uv.lock README.md ./
-
-# Install production dependencies only
+# Dependencies first (cache layer). README is needed by hatchling but must not bust the deps layer.
+COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-# Copy source code
+# Project sources
+COPY README.md ./
 COPY src/ src/
-
-# Install the project itself
+COPY scripts/ scripts/
 RUN uv sync --frozen --no-dev
 
-# Create data directory
+# Data directory (mounted as a volume in docker-compose)
 RUN mkdir -p data
 
-# Expose API port
 EXPOSE 8000
 
-# Run with uvicorn
-CMD ["uv", "run", "uvicorn", "arete.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/.venv/bin/uvicorn", "arete.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
