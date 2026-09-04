@@ -27,7 +27,7 @@ export function getZoneColor(
   }
 }
 
-// Format duration from seconds to human readable
+// Format duration from seconds to human readable ("1h 5m", "12m 30s")
 export function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -40,4 +40,19 @@ export function formatDuration(seconds: number): string {
     return `${minutes}m ${secs}s`;
   }
   return `${secs}s`;
+}
+
+// Compact duration for dense lists ("1h05", "45min", "—")
+export function formatDurationCompact(seconds: number | null | undefined): string {
+  if (!seconds) return "—";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return h > 0 ? `${h}h${m.toString().padStart(2, "0")}` : `${m}min`;
+}
+
+// Pace in seconds per km → "m:ss"
+export function formatPace(secondsPerKm: number): string {
+  const mins = Math.floor(secondsPerKm / 60);
+  const secs = Math.round(secondsPerKm % 60);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
 }

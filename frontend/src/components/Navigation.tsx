@@ -1,12 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import {
-  LayoutDashboard,
-  CalendarDays,
-  BarChart3,
-  Dumbbell,
-  Settings,
-} from 'lucide-react';
+import { BarChart3, CalendarDays, Dumbbell, LayoutDashboard, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
@@ -31,18 +24,10 @@ export function Navigation() {
       >
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-14">
-            {/* Logo */}
-            <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              className="flex items-center gap-2"
-            >
-              <span className="text-xl font-bold text-neon-cyan font-mono tracking-wider">
-                [ARETE]
-              </span>
-            </motion.div>
+            <div className="flex items-center gap-2 animate-fade-left">
+              <span className="text-xl font-bold text-neon-cyan font-mono tracking-wider">[ARETE]</span>
+            </div>
 
-            {/* Nav Links */}
             <div className="flex items-center gap-1">
               {navItems.map((item) => (
                 <NavLink
@@ -65,7 +50,7 @@ export function Navigation() {
               ))}
             </div>
 
-            {/* Spacer for layout balance */}
+            {/* Spacer: same width as the logo so the links stay centered */}
             <div className="w-[72px]" />
           </div>
         </div>
@@ -85,11 +70,9 @@ export function Navigation() {
               end={item.path === '/'}
               className={({ isActive }) =>
                 cn(
-                  'flex flex-col items-center justify-center gap-0.5 py-1 px-3 rounded-lg',
+                  'relative flex flex-col items-center justify-center gap-0.5 py-1 px-3 rounded-lg',
                   'transition-all duration-200 min-w-[56px]',
-                  isActive
-                    ? 'text-neon-cyan'
-                    : 'text-text-muted active:text-text-secondary'
+                  isActive ? 'text-neon-cyan' : 'text-text-muted active:text-text-secondary'
                 )
               }
             >
@@ -97,12 +80,14 @@ export function Navigation() {
                 <>
                   <item.icon className={cn('w-5 h-5', isActive && 'drop-shadow-[0_0_6px_rgba(0,240,255,0.5)]')} />
                   <span className="text-[10px] font-mono">{item.label}</span>
-                  {isActive && (
-                    <motion.div
-                      layoutId="mobile-tab-indicator"
-                      className="absolute -top-px left-2 right-2 h-0.5 bg-neon-cyan rounded-full"
-                    />
-                  )}
+                  {/* Active indicator; the NavLink is `relative` so it sits on this tab */}
+                  <span
+                    aria-hidden
+                    className={cn(
+                      'absolute -top-px left-2 right-2 h-0.5 bg-neon-cyan rounded-full transition-opacity duration-200',
+                      isActive ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
                 </>
               )}
             </NavLink>

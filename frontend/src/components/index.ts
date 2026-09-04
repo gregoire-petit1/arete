@@ -8,3 +8,4 @@ export { FitDropzone } from "./FitDropzone";
 export * from "./SportIcons";
 export { AnatomicalHeatmap } from "./AnatomicalHeatmap";
 export { GarminLoginModal } from "./GarminLoginModal";
+export * from "./ui";

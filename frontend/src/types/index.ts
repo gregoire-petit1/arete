@@ -195,6 +195,8 @@ export interface ParsedWorkout {
   notes: string | null;
   session_id: number | null;
   message: string | null;
+  /** Lines the grammar could not parse (LLM fallback disabled or failed). */
+  unparsed_lines?: string[];
 }
 
 // ========================= //
