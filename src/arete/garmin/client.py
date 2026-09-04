@@ -128,8 +128,10 @@ class GarminClient:
 
     def download_fit(self, activity_id: int | str) -> bytes | None:
         """Original FIT bytes for an activity (Garmin ships them zipped)."""
-        raw = self.connect().download_activity(
-            str(activity_id), dl_fmt=Garmin.ActivityDownloadFormat.ORIGINAL
+        raw = bytes(
+            self.connect().download_activity(
+                str(activity_id), dl_fmt=Garmin.ActivityDownloadFormat.ORIGINAL
+            )
         )
         if raw[:2] != b"PK":  # not a zip: assume it is already the FIT payload
             return raw
