@@ -1,29 +1,19 @@
-"""Tests for workout_parser regex fallback, normalize, and abbreviation expansion."""
+"""Tests for workout_parser: normalize, abbreviations, grammar/LLM orchestration."""
 
 from __future__ import annotations
 
+import json
 from datetime import date
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
 from arete.llm.workout_parser import (
     _expand_abbreviations,
     _normalize_workout_text,
-    _parse_simple_format,
     parse_workout_text,
 )
-
-# ─── Helper ──────────────────────────────────────────────────────────
-
-
-def _names(exercises: list[dict]) -> list[str]:
-    """Extract exercise names from parsed result."""
-    return [e["name"] for e in exercises]
-
-
-def _first(exercises: list[dict]) -> dict:
-    return exercises[0]
-
 
 # ─── _normalize_workout_text ─────────────────────────────────────────
 
@@ -86,211 +76,6 @@ class TestExpandAbbreviations:
         assert result == "bps and bench press"
 
 
-# ─── _parse_simple_format: traditional pattern ──────────────────────
-
-
-class TestTraditionalPattern:
-    """'Exercise NxM @weight' format."""
-
-    def test_basic(self):
-        result = _parse_simple_format("Bench press 4x8 80kg")
-        assert result is not None
-        assert len(result) == 1
-        ex = _first(result)
-        assert ex["name"].lower() == "bench press"
-        assert len(ex["sets"]) == 4
-        assert ex["sets"][0]["reps"] == 8
-        assert ex["sets"][0]["weight_kg"] == 80.0
-
-    def test_failure_notation(self):
-        result = _parse_simple_format("Dips 3xF")
-        assert result is not None
-        ex = _first(result)
-        assert len(ex["sets"]) == 3
-        assert ex["sets"][0]["reps"] is None
-        assert ex["sets"][0]["is_failure"] is True
-
-    def test_amrap(self):
-        result = _parse_simple_format("Pull ups 4xamrap")
-        assert result is not None
-        ex = _first(result)
-        assert ex["sets"][0]["is_failure"] is True
-        assert ex["sets"][0]["reps"] is None
-
-    def test_with_rpe(self):
-        result = _parse_simple_format("Squat 3x5 @100kg RPE 8")
-        assert result is not None
-        ex = _first(result)
-        assert ex["sets"][-1]["rpe"] == 8.0
-
-    def test_rep_range(self):
-        result = _parse_simple_format("Dips 3x8-10")
-        assert result is not None
-        ex = _first(result)
-        assert ex["target_reps"] == "8-10"
-        assert ex["sets"][0]["reps"] == 8
-
-
-# ─── _parse_simple_format: terse pattern ────────────────────────────
-
-
-class TestTersePattern:
-    """'NxM @weight exercise' format (user's preferred notation)."""
-
-    def test_basic_terse(self):
-        result = _parse_simple_format("4x8 @80 bench press")
-        assert result is not None
-        ex = _first(result)
-        assert ex["name"].lower() == "bench press"
-        assert len(ex["sets"]) == 4
-        assert ex["sets"][0]["weight_kg"] == 80.0
-
-    def test_terse_with_rest(self):
-        result = _parse_simple_format("4x10 @60 incline db press r2'")
-        assert result is not None
-        ex = _first(result)
-        assert ex["sets"][0]["rest_sec"] == 120
-
-    def test_terse_decimal_weight(self):
-        result = _parse_simple_format("3x10 @22.5 db press")
-        assert result is not None
-        assert _first(result)["sets"][0]["weight_kg"] == 22.5
-
-
-# ─── _parse_simple_format: rep-list pattern ──────────────────────────
-
-
-class TestRepListPattern:
-    """'(10,6,5) exercise @weight' format."""
-
-    def test_basic_rep_list(self):
-        result = _parse_simple_format("(10,6,5) squat @100")
-        assert result is not None
-        ex = _first(result)
-        assert len(ex["sets"]) == 3
-        assert ex["sets"][0]["reps"] == 10
-        assert ex["sets"][1]["reps"] == 6
-        assert ex["sets"][2]["reps"] == 5
-        assert ex["sets"][0]["weight_kg"] == 100.0
-
-    def test_rep_list_no_weight(self):
-        result = _parse_simple_format("(10,8,6) pull ups")
-        assert result is not None
-        ex = _first(result)
-        assert len(ex["sets"]) == 3
-        assert ex["sets"][0]["weight_kg"] is None
-
-
-# ─── _parse_simple_format: finisher pattern ──────────────────────────
-
-
-class TestFinisherPattern:
-    """'(exercise) NxM' standalone finisher format."""
-
-    def test_finisher_amrap(self):
-        result = _parse_simple_format("(dips) 3x amrap")
-        assert result is not None
-        ex = _first(result)
-        assert ex["name"].lower() == "dips"
-        assert len(ex["sets"]) == 3
-        assert ex["sets"][0]["reps"] is None
-        assert ex["sets"][0]["is_failure"] is True
-        assert ex["notes"] == "finisher"
-
-    def test_finisher_with_reps(self):
-        result = _parse_simple_format("(pull ups) 4x8 @20")
-        assert result is not None
-        ex = _first(result)
-        assert ex["name"].lower() == "pull ups"
-        assert len(ex["sets"]) == 4
-        assert ex["sets"][0]["reps"] == 8
-        assert ex["sets"][0]["weight_kg"] == 20.0
-        assert ex["notes"] == "finisher"
-
-    def test_finisher_no_weight(self):
-        result = _parse_simple_format("(burpees) 5x10")
-        assert result is not None
-        ex = _first(result)
-        assert ex["name"].lower() == "burpees"
-        assert len(ex["sets"]) == 5
-        assert ex["sets"][0]["weight_kg"] is None
-
-    def test_finisher_not_confused_with_rep_list(self):
-        """(10,6,5) should match rep-list, not finisher."""
-        result = _parse_simple_format("(10,6,5) squat @100")
-        assert result is not None
-        ex = _first(result)
-        # Rep-list: 3 sets with different reps
-        assert ex["sets"][0]["reps"] == 10
-        assert ex["sets"][1]["reps"] == 6
-
-
-# ─── _parse_simple_format: circuit pattern ───────────────────────────
-
-
-class TestCircuitPattern:
-    def test_basic_circuit(self):
-        result = _parse_simple_format("5x(8 pull ups, 10 dips) r2'")
-        assert result is not None
-        assert len(result) == 2
-        assert result[0]["sets"][0]["reps"] == 8
-        assert len(result[0]["sets"]) == 5
-
-    def test_circuit_global_weight(self):
-        result = _parse_simple_format("4x(8 bench, 8 rows) @60")
-        assert result is not None
-        for ex in result:
-            assert ex["sets"][0]["weight_kg"] == 60.0
-
-
-# ─── _parse_simple_format: rest notation ─────────────────────────────
-
-
-class TestRestNotation:
-    def test_standalone_rest_applied_to_previous(self):
-        result = _parse_simple_format("Bench press 4x8 80kg\nr2'")
-        assert result is not None
-        ex = _first(result)
-        assert ex["sets"][-1]["rest_sec"] == 120
-
-    def test_rest_with_seconds(self):
-        result = _parse_simple_format("Bench press 4x8 80kg\nr1'30")
-        assert result is not None
-        ex = _first(result)
-        assert ex["sets"][-1]["rest_sec"] == 90
-
-
-# ─── _parse_simple_format: multi-exercise session ───────────────────
-
-
-class TestMultiExercise:
-    def test_full_session(self):
-        text = "Bench press 4x8 80kg\n3x10 @22.5 db press\n(dips) 3x amrap"
-        result = _parse_simple_format(text)
-        assert result is not None
-        assert len(result) == 3
-        assert result[0]["name"].lower() == "bench press"
-        assert result[1]["name"].lower() == "db press"
-        assert result[2]["name"].lower() == "dips"
-        assert result[2]["sets"][0]["is_failure"] is True
-
-
-# ─── _parse_simple_format: descending/pyramid ───────────────────────
-
-
-class TestDescendingPattern:
-    def test_descending_sets(self):
-        result = _parse_simple_format("3@100, 1@105, 1@110 squat")
-        assert result is not None
-        ex = _first(result)
-        assert len(ex["sets"]) == 3  # 3@100=1set(3reps), 1@105=1set, 1@110=1set
-        assert ex["sets"][0]["reps"] == 3
-        assert ex["sets"][0]["weight_kg"] == 100.0
-        assert ex["sets"][1]["reps"] == 1
-        assert ex["sets"][1]["weight_kg"] == 105.0
-        assert ex["sets"][2]["weight_kg"] == 110.0
-
-
 # ─── parse_workout_text (integration, no LLM) ───────────────────────
 
 
@@ -336,3 +121,59 @@ class TestParseWorkoutTextNoLLM:
     def test_empty_text(self):
         with pytest.raises(ValueError, match="no exercises found"):
             parse_workout_text("", use_llm=False)
+
+
+# ─── grammar-first orchestration with the LLM ────────────────────────
+
+
+def _fake_client(payload: dict):
+    """OpenAI-like client whose chat completion returns ``payload`` as JSON."""
+    message = SimpleNamespace(content=json.dumps(payload))
+    response = SimpleNamespace(choices=[SimpleNamespace(message=message)])
+    completions = SimpleNamespace(create=lambda **_: response)
+    return SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+
+class TestGrammarFirst:
+    def test_llm_not_called_when_grammar_covers_everything(self):
+        with patch("arete.llm.workout_parser.get_llm_client") as get_client:
+            result = parse_workout_text(
+                "Bench press 4x8 80kg\n(dips) 3x amrap", use_llm=True
+            )
+        get_client.assert_not_called()
+        assert [e.name for e in result.exercises] == ["Bench press", "dips"]
+        assert result.exercises[0].exercise_id is not None  # catalog match kept
+
+    def test_llm_only_sees_rejected_lines(self):
+        payload = {
+            "exercises": [
+                {
+                    "name": "farmer walk",
+                    "sets": [{"set_number": 1, "reps": 1, "weight_kg": 32}],
+                }
+            ],
+            "duration_min": 45,
+        }
+        client = _fake_client(payload)
+        prompts: list[str] = []
+        with (
+            patch("arete.llm.workout_parser.get_llm_client", return_value=client),
+            patch("arete.llm.workout_parser.get_default_model", return_value="m"),
+            patch(
+                "arete.llm.workout_parser._build_parser_prompt",
+                side_effect=lambda text, *a, **k: prompts.append(text) or ("sys", text),
+            ),
+        ):
+            result = parse_workout_text(
+                "Bench press 4x8 80kg\nfarmer walk 2 lengths heavy", use_llm=True
+            )
+        assert prompts == ["farmer walk 2 lengths heavy"]
+        assert [e.name for e in result.exercises] == ["Bench press", "farmer walk"]
+        assert result.duration_min == 45
+
+    def test_llm_failure_keeps_grammar_result(self):
+        with patch("arete.llm.workout_parser.get_llm_client", return_value=None):
+            result = parse_workout_text(
+                "Bench press 4x8 80kg\nsome free text", use_llm=True
+            )
+        assert len(result.exercises) == 1

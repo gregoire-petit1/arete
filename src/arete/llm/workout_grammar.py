@@ -1,6 +1,5 @@
 """Grammar-based workout notation parser (Lark, LALR).
 
-Prototype replacement for the regex cascade in ``_parse_simple_format``.
 Each non-empty line is parsed independently against a small grammar that
 describes the user's shorthand:
 
@@ -17,7 +16,7 @@ describes the user's shorthand:
     EMOM 20' (odd: 10 pull ups, even: 10 chin ups)
     r1'30                                      standalone rest -> previous exercise
 
-Output shape is identical to ``_parse_simple_format`` (list of exercise dicts).
+Output: list of exercise dicts consumed by ``workout_parser.parse_workout_text``.
 """
 
 from __future__ import annotations
@@ -314,7 +313,7 @@ def parse_line(line: str) -> list[dict] | dict | None:
 
 
 def parse_workout_grammar(text: str) -> list[dict] | None:
-    """Parse a whole workout text. Same contract as ``_parse_simple_format``.
+    """Parse a whole workout text into a list of exercise dicts.
 
     Unparseable lines are skipped (the caller may fall back to the LLM for them);
     a standalone rest line applies its rest to every set of the previous line's

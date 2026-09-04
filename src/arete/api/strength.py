@@ -719,7 +719,7 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
     - "3@100, 1@105 squat" (descending sets)
     - "(pull ups, dips)" (supersets)
 
-    Uses LLM-first for best understanding, regex fallback.
+    Deterministic grammar first; the LLM only sees lines the grammar rejects.
     User abbreviations are loaded from settings automatically.
     """
     from arete.dataio import repository as repo
