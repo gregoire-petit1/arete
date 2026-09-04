@@ -589,3 +589,28 @@ class TestHrDrift:
         data = resp.json()
         assert data["baseline"] is None
         assert all(r.get("drift_residual_pct") is None for r in data["runs"])
+
+
+class TestTrainingLoadWarmup:
+    @patch("arete.api.analytics.tss_history")
+    def test_window_is_sliced_after_warmup(self, mock_tss, client):
+        from datetime import timedelta
+
+        from arete.features.fitness import DailyTSS
+
+        days = 7
+        start = date(2026, 1, 1)
+        history = [
+            DailyTSS(date=start + timedelta(days=i), tss=100.0)
+            for i in range(84 + days + 1)
+        ]
+        mock_tss.return_value = history
+
+        resp = client.get(f"/analytics/training-load?period={days}d")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        mock_tss.assert_called_once_with(days=days + 84)
+        assert len(data) == days + 1
+        assert data[0]["date"] == str(history[-(days + 1)].date)
+        # after 84 days at a constant 100 TSS, CTL is close to 100 on the first shown day
+        assert data[0]["ctl"] > 80

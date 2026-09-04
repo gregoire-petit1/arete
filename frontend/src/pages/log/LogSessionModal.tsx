@@ -74,6 +74,13 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
               accent="gold"
               value={workoutText}
               onChange={(e) => setWorkoutText(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter inserts a line; Ctrl/Cmd+Enter runs the parser
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && workoutText.trim()) {
+                  e.preventDefault();
+                  parseMutation.mutate({ save: false });
+                }
+              }}
               placeholder={`Bench press 4x8 80kg
 4x10 @60 incline db press r2'
 5x(10 pull ups, 15 dips) r1'30

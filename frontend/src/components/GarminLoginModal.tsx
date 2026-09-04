@@ -17,6 +17,7 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
   const [password, setPassword] = useState('');
   const [mfaCode, setMfaCode] = useState('');
   const [needsMfa, setNeedsMfa] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loginMutation = useMutation({
@@ -48,6 +49,7 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
     setPassword('');
     setMfaCode('');
     setNeedsMfa(false);
+    setShowPassword(false);
     setError(null);
     onClose();
   };
@@ -62,6 +64,12 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
 
   return (
     <Modal open={isOpen} onClose={handleClose} className="max-w-md">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!incomplete && !loginMutation.isPending) handleSubmit();
+        }}
+      >
       <h2 className="text-lg font-mono text-neon-cyan mb-4">
         GARMIN CONNECT — {needsMfa ? 'MFA Verification' : 'Authentication'}
       </h2>
@@ -99,17 +107,29 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
                 onChange={(e) => setEmail(e.target.value)}
                 className={FIELD}
                 placeholder="your@email.com"
+                autoComplete="username"
+                autoFocus
               />
             </div>
             <div>
               <label className={LABEL}>[PASSWORD]</label>
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className={FIELD}
                 placeholder="••••••••"
+                autoComplete="current-password"
               />
+              <label className="mt-2 flex items-center gap-2 text-xs font-mono text-text-muted cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showPassword}
+                  onChange={(e) => setShowPassword(e.target.checked)}
+                  className="accent-neon-cyan"
+                />
+                Show password
+              </label>
             </div>
           </div>
           <div className="mt-4 p-3 bg-warning-orange/10 border border-warning-orange/30 rounded">
@@ -130,10 +150,11 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
         <Button variant="ghost" onClick={handleClose}>
           [CANCEL]
         </Button>
-        <Button onClick={handleSubmit} disabled={incomplete} loading={loginMutation.isPending}>
+        <Button type="submit" disabled={incomplete} loading={loginMutation.isPending}>
           {loginMutation.isPending ? 'VERIFYING...' : needsMfa ? '[VERIFY]' : '[CONNECT]'}
         </Button>
       </div>
+      </form>
     </Modal>
   );
 }

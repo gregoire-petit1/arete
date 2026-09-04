@@ -42,6 +42,9 @@ PERIOD_MAP: dict[str, int] = {
 
 EFFORT_NAMES = ("400m", "1k", "1 mile", "5k", "10k", "Half-Marathon")
 
+# Two CTL time constants of history feed the EWMA before the first displayed day
+CTL_WARMUP_DAYS = 84
+
 
 def _parse_period(period: str) -> int:
     """Convert a period string to a number of days."""
@@ -116,8 +119,13 @@ def get_volume(
 def get_training_load(
     period: str = Query("90d"),
 ):
-    """Daily CTL / ATL / TSB time series."""
+    """Daily CTL / ATL / TSB time series.
+
+    The EWMA is warmed up on CTL_WARMUP_DAYS of history before the displayed
+    window so the first days of the chart do not start from zero.
+    """
     days = _parse_period(period)
+    series = ctl_atl_series(tss_history(days=days + CTL_WARMUP_DAYS))
     data = [
         {
             "date": str(day.date),
@@ -126,7 +134,7 @@ def get_training_load(
             "tsb": round(ctl - atl, 1),
             "tss": round(day.tss, 1),
         }
-        for day, ctl, atl in ctl_atl_series(tss_history(days=days))
+        for day, ctl, atl in series[-(days + 1) :]
     ]
     return {"data": data}
 
