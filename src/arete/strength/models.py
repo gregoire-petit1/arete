@@ -86,7 +86,9 @@ class Exercise:
             "name": self.name,
             "category": self.category.value,
             "primary_muscle": self.primary_muscle.value,
-            "secondary_muscles_json": json.dumps([m.value for m in self.secondary_muscles]),
+            "secondary_muscles_json": json.dumps(
+                [m.value for m in self.secondary_muscles]
+            ),
             "equipment": self.equipment,
             "is_unilateral": self.is_unilateral,
             "notes": self.notes,

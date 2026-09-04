@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -259,7 +259,9 @@ class TestGarminSyncClient:
             },
         ]
 
-        activities = client.get_activities(start_date=date(2025, 12, 1), end_date=date(2025, 12, 5))
+        activities = client.get_activities(
+            start_date=date(2025, 12, 1), end_date=date(2025, 12, 5)
+        )
 
         # Only activity 2 should match
         assert len(activities) == 1

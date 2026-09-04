@@ -8,6 +8,7 @@ Endpoints for:
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import date
 from typing import Literal
@@ -243,7 +244,9 @@ def delete_planned_session(session_id: int):
 @router.post("/upload-fit", response_model=FITUploadResponse)
 async def upload_fit_file(
     file: UploadFile = File(..., description="FIT file from Garmin device"),
-    auto_match: bool = Query(True, description="Automatically match to planned session"),
+    auto_match: bool = Query(
+        True, description="Automatically match to planned session"
+    ),
 ):
     """Upload a FIT file and parse the activity.
 
@@ -276,7 +279,9 @@ async def upload_fit_file(
         parsed.source_file = Path(file.filename).name
     except Exception as e:
         logger.error(f"Failed to parse FIT file: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to parse FIT file: {e}") from e
+        raise HTTPException(
+            status_code=400, detail=f"Failed to parse FIT file: {e}"
+        ) from e
 
     # Convert parsed activity to ActualSession
     actual = ActualSession(
@@ -324,7 +329,9 @@ async def upload_fit_file(
                 }
                 # Update planned session status
                 if planned_id is not None:
-                    _repo.update_planned_session_status(planned_id, SessionStatus.COMPLETED)
+                    _repo.update_planned_session_status(
+                        planned_id, SessionStatus.COMPLETED
+                    )
 
     # Save actual session
     activity_id = _repo.create_actual_session(actual)
@@ -408,7 +415,9 @@ def unmatch_session(session_id: int):
 
     if actual.planned_session_id:
         # Reset planned session status
-        _repo.update_planned_session_status(actual.planned_session_id, SessionStatus.PENDING)
+        _repo.update_planned_session_status(
+            actual.planned_session_id, SessionStatus.PENDING
+        )
 
     success = _repo.update_actual_session_match(session_id, None)
     if not success:
@@ -467,7 +476,9 @@ class AnalysisResponse(BaseModel):
 def analyze_activity(
     session_id: int,
     force: bool = Query(False, description="Force re-analysis"),
-    detailed: bool = Query(False, description="Enable in-depth analysis with time series metrics"),
+    detailed: bool = Query(
+        False, description="Enable in-depth analysis with time series metrics"
+    ),
 ):
     """Analyze an actual session using LLM.
 
@@ -546,7 +557,9 @@ def analyze_activity(
                         break
 
         if not fit_path:
-            logger.warning(f"FIT file not found for detailed analysis: {actual.source_file}")
+            logger.warning(
+                f"FIT file not found for detailed analysis: {actual.source_file}"
+            )
             raise HTTPException(
                 status_code=400,
                 detail="FIT file not found. Detailed analysis requires the original file.",
@@ -667,9 +680,10 @@ _mfa_pending_state: dict | None = None
 @router.get("/sync/status", response_model=SyncStatusResponse)
 def get_sync_status():
     """Get current sync status and authentication state."""
+    import garth
+
     from arete.garmin.backup import RunalyzeClient
     from arete.garmin.sync import GarminSyncClient
-    import garth
 
     garmin_client = GarminSyncClient()
     runalyze_client = RunalyzeClient()
@@ -677,10 +691,8 @@ def get_sync_status():
     # Get user email if authenticated
     user_email = None
     if garmin_client.is_authenticated():
-        try:
+        with contextlib.suppress(Exception):
             user_email = garth.client.username
-        except Exception:
-            pass
 
     return SyncStatusResponse(
         garmin_authenticated=garmin_client.is_authenticated(),
@@ -742,7 +754,9 @@ def garmin_login(request: GarminLoginRequest | None = None):
         except Exception as e:
             logger.error(f"MFA verification failed: {e}")
             _mfa_pending_state = None
-            raise HTTPException(status_code=401, detail=f"MFA verification failed: {e}") from e
+            raise HTTPException(
+                status_code=401, detail=f"MFA verification failed: {e}"
+            ) from e
 
     # Initial login attempt
     email = request.email if request else None
@@ -783,7 +797,9 @@ def garmin_login(request: GarminLoginRequest | None = None):
         )
     except Exception as e:
         logger.error(f"Garmin login failed: {e}")
-        raise HTTPException(status_code=401, detail=f"Authentication failed: {e}") from e
+        raise HTTPException(
+            status_code=401, detail=f"Authentication failed: {e}"
+        ) from e
 
 
 @router.post("/sync/logout")
@@ -827,7 +843,9 @@ def sync_activities(request: SyncRequest):
         activities_synced=result.activities_synced,
         activities_skipped=result.activities_skipped,
         errors=result.errors,
-        last_activity_date=str(result.last_activity_date) if result.last_activity_date else None,
+        last_activity_date=str(result.last_activity_date)
+        if result.last_activity_date
+        else None,
     )
 
 
@@ -839,7 +857,9 @@ def get_garmin_user():
     client = GarminSyncClient()
 
     if not client.is_authenticated():
-        raise HTTPException(status_code=401, detail="Not authenticated with Garmin Connect")
+        raise HTTPException(
+            status_code=401, detail="Not authenticated with Garmin Connect"
+        )
 
     return client.get_user_summary()
 

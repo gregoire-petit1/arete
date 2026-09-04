@@ -145,7 +145,7 @@ def _upsert_daily_metrics(metrics: dict[str, Any]) -> None:
     """Insert or replace a single daily_metrics row."""
     con = connect()
     try:
-        cols = [k for k in metrics.keys() if k != "date"]
+        cols = [k for k in metrics if k != "date"]
         placeholders = ", ".join(["?"] * (len(cols) + 2))  # +2 for user_id, date
         col_list = ", ".join(["user_id", "date", *cols])
         update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols)

@@ -2,6 +2,7 @@ import logging
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+
 from arete.api.metrics import router as metrics_router
 from arete.api.settings import router as settings_router
 

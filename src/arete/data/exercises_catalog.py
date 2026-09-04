@@ -545,7 +545,14 @@ EXERCISES_CATALOG: list[ExerciseDefinition] = [
         "category": "cardio",
         "equipment": ["machine"],
         "primary_muscles": ["lats", "quads", "glutes"],
-        "secondary_muscles": ["hamstrings", "biceps", "forearms", "lower_back", "abs", "calves"],
+        "secondary_muscles": [
+            "hamstrings",
+            "biceps",
+            "forearms",
+            "lower_back",
+            "abs",
+            "calves",
+        ],
         "movement_pattern": "compound",
     },
     {
@@ -632,11 +639,15 @@ def calculate_muscle_volume(
 
         # Primary muscles get full volume
         for muscle in ex["primary_muscles"]:
-            muscle_volume[muscle] = muscle_volume.get(muscle, 0) + volume * primary_weight
+            muscle_volume[muscle] = (
+                muscle_volume.get(muscle, 0) + volume * primary_weight
+            )
 
         # Secondary muscles get partial volume
         for muscle in ex["secondary_muscles"]:
-            muscle_volume[muscle] = muscle_volume.get(muscle, 0) + volume * secondary_weight
+            muscle_volume[muscle] = (
+                muscle_volume.get(muscle, 0) + volume * secondary_weight
+            )
 
     return muscle_volume
 
@@ -783,7 +794,6 @@ EXERCISE_ALIASES = {
     "treadmill": "treadmill",
     "treamill": "treadmill",  # Common typo
     # Wide pull ups
-    "wide pu": "wide_pull_ups",
     "wide pullups": "wide_pull_ups",
     # Pulls ups typo
     "pulls ups": "pull_ups",

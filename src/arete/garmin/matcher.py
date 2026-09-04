@@ -111,7 +111,6 @@ class SessionMatcher:
             notes=notes,
         )
 
-
     def _filter_by_date(
         self,
         target_date: date,

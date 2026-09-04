@@ -48,7 +48,9 @@ class ActivityAnalysis:
         }
 
 
-def _build_analysis_system_prompt(detailed: bool = False, is_interval: bool = False) -> str:
+def _build_analysis_system_prompt(
+    detailed: bool = False, is_interval: bool = False
+) -> str:
     """Compact system prompt for activity analysis (~200 tokens)."""
     if is_interval:
         return """Coach course expert, spécialiste séances qualité. Analyse interval workout. JSON uniquement.
@@ -397,7 +399,9 @@ def analyze_activity_detailed(
     # Call LLM with detailed prompt
     client = get_llm_client()
     if client is None:
-        return _generate_fallback_detailed_analysis(actual, metrics, parsed.workout_structure)
+        return _generate_fallback_detailed_analysis(
+            actual, metrics, parsed.workout_structure
+        )
 
     token_manager = get_token_manager()
     if model is None:
@@ -406,7 +410,9 @@ def analyze_activity_detailed(
     can_proceed, reason = token_manager.can_make_request(model, estimated_tokens=1200)
     if not can_proceed:
         logger.warning(f"Rate limit: {reason}, using fallback")
-        return _generate_fallback_detailed_analysis(actual, metrics, parsed.workout_structure)
+        return _generate_fallback_detailed_analysis(
+            actual, metrics, parsed.workout_structure
+        )
 
     token_manager.wait_if_needed(model, estimated_tokens=1200)
 
@@ -461,7 +467,9 @@ def analyze_activity_detailed(
     except Exception as e:
         logger.error(f"Detailed LLM analysis failed: {e}")
 
-    return _generate_fallback_detailed_analysis(actual, metrics, parsed.workout_structure)
+    return _generate_fallback_detailed_analysis(
+        actual, metrics, parsed.workout_structure
+    )
 
 
 def _generate_fallback_detailed_analysis(
@@ -572,14 +580,20 @@ def _generate_fallback_interval_analysis(
         if cv < 2:
             insights["execution"]["regularite"] = "excellente"
             insights["execution"]["note"] = "A"
-            insights["intervalles"]["analyse"] = "Allures très régulières entre les intervalles"
+            insights["intervalles"]["analyse"] = (
+                "Allures très régulières entre les intervalles"
+            )
         elif cv < 5:
             insights["execution"]["regularite"] = "bonne"
-            insights["intervalles"]["analyse"] = "Bonne régularité avec variations mineures"
+            insights["intervalles"]["analyse"] = (
+                "Bonne régularité avec variations mineures"
+            )
         else:
             insights["execution"]["regularite"] = "variable"
             insights["execution"]["note"] = "C"
-            insights["intervalles"]["analyse"] = f"Variations d'allure importantes (CV={cv:.1f}%)"
+            insights["intervalles"]["analyse"] = (
+                f"Variations d'allure importantes (CV={cv:.1f}%)"
+            )
 
     # Analyze HR progression across work intervals
     if workout.work_hr_progression is not None:
@@ -589,10 +603,14 @@ def _generate_fallback_interval_analysis(
             insights["physiologie"]["hr_evolution"] = "FC stable sur les intervalles"
         elif drift < 8:
             insights["intervalles"]["progression"] = "fatigue"
-            insights["physiologie"]["hr_evolution"] = f"Légère dérive cardiaque ({drift:.0f}%)"
+            insights["physiologie"]["hr_evolution"] = (
+                f"Légère dérive cardiaque ({drift:.0f}%)"
+            )
         else:
             insights["intervalles"]["progression"] = "fatigue"
-            insights["physiologie"]["hr_evolution"] = f"Fatigue marquée ({drift:.0f}% de dérive)"
+            insights["physiologie"]["hr_evolution"] = (
+                f"Fatigue marquée ({drift:.0f}% de dérive)"
+            )
             insights["execution"]["note"] = "C"
 
     # Find best/worst intervals based on pace
@@ -611,7 +629,9 @@ def _generate_fallback_interval_analysis(
     # Analyze recoveries
     if workout.rest_intervals:
         avg_rest = workout.avg_rest_duration_sec
-        insights["recuperations"]["analyse"] = f"Récupérations moyennes de {avg_rest / 60:.1f}min"
+        insights["recuperations"]["analyse"] = (
+            f"Récupérations moyennes de {avg_rest / 60:.1f}min"
+        )
 
         # Check if rest is too short or too long
         work_duration = workout.avg_work_duration_sec
@@ -629,7 +649,9 @@ def _generate_fallback_interval_analysis(
             "Travaillez la régularité d'allure sur les intervalles"
         )
     elif insights["intervalles"]["progression"] == "fatigue":
-        insights["recommendation_prioritaire"] = "Partez moins vite sur les premiers intervalles"
+        insights["recommendation_prioritaire"] = (
+            "Partez moins vite sur les premiers intervalles"
+        )
     elif insights["recuperations"]["adequates"] == "non":
         insights["recommendation_prioritaire"] = (
             "Allongez les récupérations pour maintenir la qualité"

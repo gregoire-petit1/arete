@@ -164,9 +164,7 @@ class TestStravaSyncFlow:
             p_map,
             p_repo as m_repo,
         ):
-            repo = _setup_mocks(
-                m_tok, m_fresh, m_cli, m_con, m_repo, existing_ids=["1001"]
-            )
+            _setup_mocks(m_tok, m_fresh, m_cli, m_con, m_repo, existing_ids=["1001"])
 
             resp = client.post("/strava/sync", json={"days": 30})
 

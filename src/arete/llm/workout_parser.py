@@ -17,9 +17,8 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
 
-from arete.data.exercises_catalog import EXERCISES_CATALOG, EXERCISE_ALIASES
+from arete.data.exercises_catalog import EXERCISE_ALIASES, EXERCISES_CATALOG
 from arete.llm.provider import get_default_model, get_llm_client
 
 logger = logging.getLogger(__name__)
@@ -304,7 +303,7 @@ def _parse_simple_format(text: str) -> list[dict] | None:
     - EMOM format: "EMOM 20' (odd: 10 pull ups, even: 10 chin ups)"
     - User format: "2x8 @80 bench press" (sets, then weight, then name)
     """
-    lines = [l.strip() for l in text.strip().split("\n") if l.strip()]
+    lines = [ln.strip() for ln in text.strip().split("\n") if ln.strip()]
     if not lines:
         return None
 
@@ -353,8 +352,6 @@ def _parse_simple_format(text: str) -> list[dict] | None:
         r"^(.+?)\s*:\s*(.+?)(?:\s*r(\d+)'(\d+)?)?(?:\s*[-–]\s*rpe\s*[\d.-]+)?$"
     )
 
-    # Mixed sets pattern for parsing "6@80kg, 4@100, 2x8@100, 3x1@110" etc.
-    mixed_set_pattern = r"(\d+)(?:x(\d+))?@(\d+(?:\.\d+)?)(?:kg)?"
     for line in lines:
         # Skip empty lines or pure cardio descriptions
         if not line or line.startswith("25'") or "/km" in line or "/500m" in line:

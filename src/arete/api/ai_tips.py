@@ -7,7 +7,7 @@ Falls back to rule-based text when LLM is unavailable.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
@@ -192,7 +192,7 @@ def get_daily_tip() -> DailyTipResponse:
         tip=tip,
         priority=priority,
         source=source,
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        generated_at=datetime.now(UTC).isoformat(),
     )
 
 

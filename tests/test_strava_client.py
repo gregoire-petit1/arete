@@ -1,9 +1,12 @@
 """Tests for Strava OAuth client."""
 
 from __future__ import annotations
+
 import time
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
+
 from arete.strava.client import StravaClient
 
 

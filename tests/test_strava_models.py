@@ -1,8 +1,7 @@
 """Tests for Strava -> ActualSession mapping."""
 
-from arete.strava.models import strava_activity_to_actual_session
 from arete.garmin.models import ActivitySource
-
+from arete.strava.models import strava_activity_to_actual_session
 
 SAMPLE_ACTIVITY = {
     "id": 123456789,

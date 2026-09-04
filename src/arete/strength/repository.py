@@ -179,7 +179,7 @@ class StrengthRepository:
             """
             SELECT id, name, category, primary_muscle, secondary_muscles_json,
                    equipment, is_unilateral, notes
-            FROM app.exercises 
+            FROM app.exercises
             WHERE notes LIKE ?
             LIMIT 1
             """,
@@ -194,7 +194,7 @@ class StrengthRepository:
                 """
                 SELECT id, name, category, primary_muscle, secondary_muscles_json,
                        equipment, is_unilateral, notes
-                FROM app.exercises 
+                FROM app.exercises
                 WHERE LOWER(name) = LOWER(?) OR LOWER(name) = LOWER(?)
                 LIMIT 1
                 """,
@@ -299,7 +299,9 @@ class StrengthRepository:
         try:
             exercise_id = self.create_exercise(new_exercise)
             new_exercise.id = exercise_id
-            logger.info(f"Created exercise {catalog_entry['name']} (id={exercise_id}) from catalog")
+            logger.info(
+                f"Created exercise {catalog_entry['name']} (id={exercise_id}) from catalog"
+            )
             return new_exercise
         except Exception as e:
             logger.error(f"Failed to create exercise from catalog: {e}")
@@ -392,7 +394,9 @@ class StrengthRepository:
 
         return session_exercise_id
 
-    def _create_set(self, conn: duckdb.DuckDBPyConnection, exercise_set: ExerciseSet) -> int:
+    def _create_set(
+        self, conn: duckdb.DuckDBPyConnection, exercise_set: ExerciseSet
+    ) -> int:
         """Create an exercise set."""
         result = conn.execute(
             """
@@ -476,8 +480,12 @@ class StrengthRepository:
                 exercise = Exercise(
                     id=ex_row[7],
                     name=ex_row[8],
-                    category=ExerciseCategory(ex_row[9]) if ex_row[9] else ExerciseCategory.OTHER,
-                    primary_muscle=MuscleGroup(ex_row[10]) if ex_row[10] else MuscleGroup.FULL_BODY,
+                    category=ExerciseCategory(ex_row[9])
+                    if ex_row[9]
+                    else ExerciseCategory.OTHER,
+                    primary_muscle=MuscleGroup(ex_row[10])
+                    if ex_row[10]
+                    else MuscleGroup.FULL_BODY,
                     secondary_muscles=[MuscleGroup(m) for m in secondary],
                     equipment=ex_row[12],
                     is_unilateral=ex_row[13],
@@ -598,7 +606,9 @@ class StrengthRepository:
         )
 
         # Delete session exercises
-        conn.execute("DELETE FROM app.session_exercises WHERE session_id = ?", [session_id])
+        conn.execute(
+            "DELETE FROM app.session_exercises WHERE session_id = ?", [session_id]
+        )
 
         # Delete session
         result = conn.execute(
@@ -708,7 +718,9 @@ class StrengthRepository:
 
             # Primary muscle gets full volume
             if primary_muscle:
-                muscle_volume[primary_muscle] = muscle_volume.get(primary_muscle, 0) + set_volume
+                muscle_volume[primary_muscle] = (
+                    muscle_volume.get(primary_muscle, 0) + set_volume
+                )
 
             # Secondary muscles get weighted volume
             if include_secondary and secondary_muscles_json:
@@ -723,12 +735,16 @@ class StrengthRepository:
                     if isinstance(secondary_muscles, list):
                         for muscle in secondary_muscles:
                             muscle_volume[muscle] = (
-                                muscle_volume.get(muscle, 0) + set_volume * secondary_weight
+                                muscle_volume.get(muscle, 0)
+                                + set_volume * secondary_weight
                             )
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-        return {k: round(v, 1) for k, v in sorted(muscle_volume.items(), key=lambda x: -x[1])}
+        return {
+            k: round(v, 1)
+            for k, v in sorted(muscle_volume.items(), key=lambda x: -x[1])
+        }
 
     def get_personal_records(self, exercise_id: int) -> dict:
         """Get personal records for an exercise."""
@@ -790,7 +806,6 @@ class StrengthRepository:
             result["max_volume_date"] = str(vdate) if vdate else None
 
         return result
-
 
     # ─────────────────────────────────────────────────────────────────────────
     # Garmin linking methods

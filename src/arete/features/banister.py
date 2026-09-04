@@ -13,7 +13,7 @@ import numpy as np
 from sklearn.linear_model import Ridge
 
 from arete.dataio.db import connect
-from arete.features.fitness import DailyTSS, calculate_atl, calculate_ctl
+from arete.features.fitness import DailyTSS
 
 logger = logging.getLogger(__name__)
 

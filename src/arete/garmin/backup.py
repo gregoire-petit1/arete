@@ -212,7 +212,9 @@ class RunalyzeClient:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            activities = self.get_activities(start_date=start_date, end_date=end_date, limit=1000)
+            activities = self.get_activities(
+                start_date=start_date, end_date=end_date, limit=1000
+            )
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             export_file = output_dir / f"runalyze_export_{timestamp}.{format}"
@@ -280,7 +282,6 @@ class RunalyzeClient:
 
         return result
 
-
     def compare_with_garmin(
         self,
         garmin_activities: list[ActualSession],
@@ -309,7 +310,9 @@ class RunalyzeClient:
                     continue
                 # Match by date and approximate time
                 if garmin.date == runalyze.datetime_start.date() and garmin.start_time:
-                    time_diff = abs((garmin.start_time - runalyze.datetime_start).total_seconds())
+                    time_diff = abs(
+                        (garmin.start_time - runalyze.datetime_start).total_seconds()
+                    )
                     if time_diff < tolerance_minutes * 60:
                         matches.append(
                             {
@@ -318,7 +321,8 @@ class RunalyzeClient:
                                 "garmin_duration": garmin.duration_sec,
                                 "runalyze_duration": runalyze.duration_sec,
                                 "duration_diff": abs(
-                                    (garmin.duration_sec or 0) - (runalyze.duration_sec or 0)
+                                    (garmin.duration_sec or 0)
+                                    - (runalyze.duration_sec or 0)
                                 ),
                             }
                         )
@@ -337,7 +341,9 @@ class RunalyzeClient:
 
         # Compute runalyze_only from unmatched indices
         runalyze_only_filtered = [
-            r for i, r in enumerate(runalyze_activities) if i not in matched_runalyze_indices
+            r
+            for i, r in enumerate(runalyze_activities)
+            if i not in matched_runalyze_indices
         ]
 
         return {

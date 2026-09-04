@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from datetime import date as date_type
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -407,8 +406,9 @@ def get_garmin_candidates(session_id: int):
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Get actual sessions from Garmin for the same date range
-    from arete.dataio.repository import get_actual_sessions
     from datetime import timedelta
+
+    from arete.dataio.repository import get_actual_sessions
 
     start = session.date - timedelta(days=1)
     end = session.date + timedelta(days=1)
@@ -484,8 +484,9 @@ def _get_cardio_volume_by_muscle(
     end_date: date_type | None = None,
 ) -> dict[str, float]:
     """Calculate pseudo-volume from cardio activities based on muscle recruitment."""
-    from arete.dataio.repository import get_actual_sessions
     from datetime import date, timedelta
+
+    from arete.dataio.repository import get_actual_sessions
 
     # Default to last 7 days if not specified
     if not end_date:
@@ -722,7 +723,7 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
     User abbreviations are loaded from settings automatically.
     """
     from arete.dataio import repository as repo
-    from arete.llm.workout_parser import parse_workout_text, ParsedWorkout
+    from arete.llm.workout_parser import parse_workout_text
 
     # Load user abbreviations from settings
     user_settings = repo.get_user_settings(user_id=1)
@@ -827,4 +828,4 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
 
     except Exception as e:
         logger.error(f"Workout parsing failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e

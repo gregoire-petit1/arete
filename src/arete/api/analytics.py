@@ -449,19 +449,19 @@ def get_hr_drift(
             continue
 
         km_laps = [
-            l
-            for l in laps
-            if 900 <= (l.get("distance") or 0) <= 1100
-            and l.get("average_heartrate")
-            and l.get("average_speed")
+            lap
+            for lap in laps
+            if 900 <= (lap.get("distance") or 0) <= 1100
+            and lap.get("average_heartrate")
+            and lap.get("average_speed")
         ]
         if len(km_laps) < 4:
             continue
 
         # Per-km HR, pace, elevation
-        hr_series = [l["average_heartrate"] for l in km_laps]
-        pace_series = [3600.0 / l["average_speed"] for l in km_laps]  # sec/km
-        elev_series = [l.get("total_elevation_gain", 0) or 0 for l in km_laps]
+        hr_series = [lap["average_heartrate"] for lap in km_laps]
+        pace_series = [3600.0 / lap["average_speed"] for lap in km_laps]  # sec/km
+        elev_series = [lap.get("total_elevation_gain", 0) or 0 for lap in km_laps]
 
         n = len(km_laps)
         half = n // 2

@@ -13,7 +13,6 @@ from arete.llm.workout_parser import (
     parse_workout_text,
 )
 
-
 # ─── Helper ──────────────────────────────────────────────────────────
 
 

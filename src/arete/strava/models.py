@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
-from arete.garmin.models import ActualSession, ActivitySource
+from arete.garmin.models import ActivitySource, ActualSession
 
 _SPORT_MAP: dict[str, str] = {
     "Run": "run",

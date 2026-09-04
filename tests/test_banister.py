@@ -10,13 +10,12 @@ import pytest
 from arete.features.banister import compute_efficiency, fit_coefficients
 from arete.features.fitness import DailyTSS, calculate_atl, calculate_ctl
 
-
 # ── Helpers ──────────────────────────────────────────────────
 
 
 def _make_daily_tss(dates: list[date], tss_values: list[float]):
     """Build list of DailyTSS for the fitness module."""
-    return [DailyTSS(date=d, tss=t) for d, t in zip(dates, tss_values)]
+    return [DailyTSS(date=d, tss=t) for d, t in zip(dates, tss_values, strict=True)]
 
 
 # ── Unit tests ───────────────────────────────────────────────
@@ -35,14 +34,14 @@ class TestFitCoefficients:
         eff = np.array(
             [
                 true_baseline + true_k1 * c - true_k2 * a
-                for c, a in zip(ctl_vals, atl_vals)
+                for c, a in zip(ctl_vals, atl_vals, strict=True)
             ]
         )
         noise = rng.normal(0, 3, size=len(eff))
         y = eff + noise
 
         sessions = []
-        for i, (ctl, atl) in enumerate(zip(ctl_vals, atl_vals)):
+        for i, (ctl, atl) in enumerate(zip(ctl_vals, atl_vals, strict=True)):
             speed_mps = rng.uniform(2.5, 4.5)
             eff_target = y[i]
             hr = eff_target * speed_mps * 3.6
@@ -81,7 +80,7 @@ class TestFitCoefficients:
         atl_vals = rng.uniform(30, 120, n).tolist()
 
         sessions = []
-        for c, a in zip(ctl_vals, atl_vals):
+        for c, a in zip(ctl_vals, atl_vals, strict=True):
             speed_mps = rng.uniform(2.5, 4.5)
             hr = (60.0 + 0.5 * c + 2.0 * a) * speed_mps * 3.6
             sessions.append(

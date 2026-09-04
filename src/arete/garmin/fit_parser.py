@@ -44,7 +44,13 @@ class HRZoneData:
     @property
     def total_sec(self) -> int:
         """Total time with HR data."""
-        return self.zone1_sec + self.zone2_sec + self.zone3_sec + self.zone4_sec + self.zone5_sec
+        return (
+            self.zone1_sec
+            + self.zone2_sec
+            + self.zone3_sec
+            + self.zone4_sec
+            + self.zone5_sec
+        )
 
     @property
     def dominant_zone(self) -> str:
@@ -219,7 +225,9 @@ class FITParser:
         else:
             return 5
 
-    def parse_file(self, file_path: str | Path, detailed: bool = False) -> ParsedActivity:
+    def parse_file(
+        self, file_path: str | Path, detailed: bool = False
+    ) -> ParsedActivity:
         """Parse a FIT file from disk.
 
         Args:
@@ -323,7 +331,9 @@ class FITParser:
 
         return activity
 
-    def _extract_time_series_point(self, record: Any, start_time: datetime | None) -> Any:
+    def _extract_time_series_point(
+        self, record: Any, start_time: datetime | None
+    ) -> Any:
         """Extract a time series point from a record.
 
         Args:
@@ -437,13 +447,19 @@ class FITParser:
             "total_anaerobic_training_effect" in fields
             and fields["total_anaerobic_training_effect"]
         ):
-            activity.anaerobic_training_effect = float(fields["total_anaerobic_training_effect"])
+            activity.anaerobic_training_effect = float(
+                fields["total_anaerobic_training_effect"]
+            )
 
         # GPS start position
         if "start_position_lat" in fields and fields["start_position_lat"]:
-            activity.start_lat = self._semicircles_to_degrees(fields["start_position_lat"])
+            activity.start_lat = self._semicircles_to_degrees(
+                fields["start_position_lat"]
+            )
         if "start_position_long" in fields and fields["start_position_long"]:
-            activity.start_lon = self._semicircles_to_degrees(fields["start_position_long"])
+            activity.start_lon = self._semicircles_to_degrees(
+                fields["start_position_long"]
+            )
 
     def _parse_activity_record(self, record: Any, activity: ParsedActivity) -> None:
         """Extract data from activity record."""
@@ -452,7 +468,9 @@ class FITParser:
         if "local_timestamp" in fields:
             activity.start_time = fields["local_timestamp"]
 
-    def _extract_hr_from_record(self, record: Any) -> tuple[int | None, datetime | None]:
+    def _extract_hr_from_record(
+        self, record: Any
+    ) -> tuple[int | None, datetime | None]:
         """Extract HR and timestamp from a data record."""
         fields = {f.name: f.value for f in record.fields}
 
@@ -531,7 +549,9 @@ class FITParser:
             "avg_vertical_oscillation": fields.get("avg_vertical_oscillation"),
         }
 
-    def _build_workout_structure(self, lap_records: list[dict[str, Any]]) -> WorkoutStructure:
+    def _build_workout_structure(
+        self, lap_records: list[dict[str, Any]]
+    ) -> WorkoutStructure:
         """Build workout structure from lap records.
 
         Args:

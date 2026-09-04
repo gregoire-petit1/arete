@@ -7,7 +7,7 @@ import os
 import time
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ def _delete_strava_tokens(user_id: int = 1) -> None:
         con.close()
 
 
-def _get_strava_client() -> "StravaClient":  # noqa: F821
+def _get_strava_client() -> StravaClient:  # noqa: F821
     """Create StravaClient from env vars."""
     from arete.strava.client import StravaClient
 
@@ -129,7 +129,9 @@ def authorize():
     try:
         client = _get_strava_client()
     except ValueError:
-        raise HTTPException(status_code=500, detail="Strava env vars not configured")
+        raise HTTPException(
+            status_code=500, detail="Strava env vars not configured"
+        ) from None
     return {"url": client.get_authorize_url()}
 
 
@@ -191,7 +193,7 @@ def sync(body: SyncRequest | None = None):
     skipped = 0
     errors: list[str] = []
 
-    for idx, activity in enumerate(activities):
+    for activity in activities:
         act_id = str(activity.get("id", ""))
         if act_id in existing_ids:
             skipped += 1
