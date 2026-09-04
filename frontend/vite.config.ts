@@ -65,7 +65,8 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        // Backend location; override when 8000 is taken: VITE_API_TARGET=http://localhost:8001 npm run dev
+        target: process.env.VITE_API_TARGET ?? "http://localhost:8000",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
