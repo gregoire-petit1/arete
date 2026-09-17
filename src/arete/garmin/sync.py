@@ -221,6 +221,22 @@ def auto_match(
     return planned_id
 
 
+def complete_planned(repo: GarminRepository, day: date, sport: str) -> int | None:
+    """Mark the first pending planned session of ``sport`` on ``day`` as completed.
+
+    Used for sessions that only exist in the strength log (no actual_sessions row).
+    """
+    for planned in repo.list_planned_sessions(start_date=day, end_date=day, limit=50):
+        if (
+            planned.sport == sport
+            and planned.status == SessionStatus.PENDING
+            and planned.id is not None
+        ):
+            repo.update_planned_session_status(planned.id, SessionStatus.COMPLETED)
+            return planned.id
+    return None
+
+
 class GarminSyncClient:
     """Syncs activities from Garmin Connect into the local database."""
 
@@ -493,6 +509,12 @@ class GarminSyncClient:
             logger.warning("Could not fetch activity names: %s", e)
 
         updated = named = matched = 0
+        # Strength sessions typed in the Log complete the planned strength session of the day
+        from arete.strength.repository import StrengthRepository
+
+        for logged in StrengthRepository().list_sessions(limit=1000):
+            if complete_planned(self.repository, logged.date, "strength"):
+                matched += 1
         for session in sessions:
             if (
                 session.planned_session_id is None

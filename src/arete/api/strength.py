@@ -331,6 +331,7 @@ def create_session(data: StrengthSessionCreate):
         session.exercises.append(session_exercise)
 
     session_id = _repo.create_session(session)
+    _complete_planned_strength(session.date)
     session.id = session_id
 
     return _session_to_summary_response(session)
@@ -684,6 +685,17 @@ class WorkoutParseResponse(BaseModel):
     unparsed_lines: list[str] = []  # Lines the grammar rejected (to fix by hand)
 
 
+def _complete_planned_strength(day: date_type) -> None:
+    """A logged strength session fulfils the planned strength session of that day."""
+    from arete.garmin.repository import GarminRepository
+    from arete.garmin.sync import complete_planned
+
+    try:
+        complete_planned(GarminRepository(), day, "strength")
+    except Exception as e:  # noqa: BLE001 - never block the save
+        logger.warning("Could not update planned session for %s: %s", day, e)
+
+
 @router.post("/sessions/parse", response_model=WorkoutParseResponse)
 def parse_workout_text_endpoint(request: WorkoutParseRequest):
     """Parse free-form workout text into structured session data.
@@ -788,6 +800,7 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
 
                 if session.exercises:
                     session_id = _repo.create_session(session)
+                    _complete_planned_strength(session.date)
                     message = f"Session saved with {len(session.exercises)} exercises"
                 else:
                     message = "No exercises matched - session not saved"

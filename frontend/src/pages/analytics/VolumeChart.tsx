@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Bar, BarChart, Legend, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { analyticsApi } from '@/lib/api';
 import { getSportHex } from '@/lib/sport';
-import { AXIS, ChartCard, ChartGrid, ChartTooltip, TICK_SM } from './ChartCard';
+import { AXIS, ChartCard, ChartGrid, ChartTooltip, DATE_AXIS } from './ChartCard';
 import type { ChartProps } from './types';
 
 export function VolumeChart({ period }: ChartProps) {
@@ -32,7 +32,7 @@ export function VolumeChart({ period }: ChartProps) {
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={volumeData}>
           <ChartGrid />
-          <XAxis dataKey="week" {...AXIS} tick={TICK_SM} />
+          <XAxis dataKey="week" {...DATE_AXIS} />
           <YAxis {...AXIS} />
           <ChartTooltip />
           <Legend />

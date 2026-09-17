@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { analyticsApi } from '@/lib/api';
 import { CHART, COLORS, SCALE, SCORE_COLORS } from '@/lib/chartTheme';
-import { AXIS, ChartCard, ChartGrid, ChartTooltip, TICK_SM, TooltipBox, axisLabel } from './ChartCard';
+import { AXIS, ChartCard, ChartGrid, ChartTooltip, TICK_SM, TooltipBox, axisLabel, DATE_AXIS } from './ChartCard';
 import type { ChartProps } from './types';
 
 /** Both HR-drift cards share the same query (deduped by React Query). */
@@ -73,7 +73,7 @@ export function HRDriftChart({ period }: ChartProps) {
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={weekly}>
           <ChartGrid />
-          <XAxis dataKey="week" {...AXIS} tick={{ fontSize: 10 }} />
+          <XAxis dataKey="week" {...DATE_AXIS} />
           <YAxis {...AXIS} tick={TICK_SM} label={axisLabel('Decoupling %', 'insideLeft')} />
           <ChartTooltip content={<WeekTooltip />} />
           <Line

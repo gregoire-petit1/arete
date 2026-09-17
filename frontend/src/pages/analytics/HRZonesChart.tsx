@@ -4,7 +4,7 @@ import { Bar, BarChart, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } fro
 import { analyticsApi } from '@/lib/api';
 import { HR_ZONE_COLORS } from '@/lib/chartTheme';
 import { cn } from '@/lib/utils';
-import { AXIS, ChartCard, ChartGrid, TICK_SM, TooltipBox, axisLabel } from './ChartCard';
+import { AXIS, ChartCard, ChartGrid, TooltipBox, axisLabel, DATE_AXIS } from './ChartCard';
 import type { ChartProps } from './types';
 
 const ZONES = ['z1', 'z2', 'z3', 'z4', 'z5'];
@@ -62,7 +62,7 @@ export function HRZonesChart({ period }: ChartProps) {
       <ResponsiveContainer width="100%" height={300}>
         <BarChart data={rows}>
           <ChartGrid />
-          <XAxis dataKey="week" {...AXIS} tick={TICK_SM} />
+          <XAxis dataKey="week" {...DATE_AXIS} />
           <YAxis
             {...AXIS}
             domain={mode === 'pct' ? [0, 100] : undefined}

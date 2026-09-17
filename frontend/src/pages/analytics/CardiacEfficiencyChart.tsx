@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Legend, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { analyticsApi } from '@/lib/api';
 import { CHART } from '@/lib/chartTheme';
-import { AXIS, ChartCard, ChartGrid, ChartTooltip, TICK_SM } from './ChartCard';
+import { ChartCard, ChartGrid, ChartTooltip, DATE_AXIS } from './ChartCard';
 import type { ChartProps } from './types';
 
 export function CardiacEfficiencyChart({ period }: ChartProps) {
@@ -24,7 +24,7 @@ export function CardiacEfficiencyChart({ period }: ChartProps) {
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={effData}>
           <ChartGrid />
-          <XAxis dataKey="week" {...AXIS} tick={TICK_SM} />
+          <XAxis dataKey="week" {...DATE_AXIS} />
           <YAxis yAxisId="eff" stroke={CHART.cyan} domain={['auto', 'auto']} />
           <YAxis yAxisId="hr" orientation="right" stroke={CHART.red} domain={['auto', 'auto']} />
           <ChartTooltip

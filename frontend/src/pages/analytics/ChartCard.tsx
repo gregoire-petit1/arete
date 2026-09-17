@@ -9,6 +9,13 @@ import { CHART } from '@/lib/chartTheme';
 export const AXIS = { stroke: CHART.axis } as const;
 export const TICK_SM = { fontSize: 12 } as const;
 
+/** "2026-06-01" -> "1 juin" (week starts and days share the same short label). */
+export function fmtDay(iso: string): string {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+}
+export const DATE_AXIS = { ...AXIS, tick: TICK_SM, tickFormatter: fmtDay, minTickGap: 24 } as const;
+
 /** `label` prop for an axis, in theme colors. */
 export function axisLabel(
   value: string,

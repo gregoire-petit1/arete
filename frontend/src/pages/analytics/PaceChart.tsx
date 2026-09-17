@@ -3,7 +3,7 @@ import { ResponsiveContainer, Scatter, ScatterChart, XAxis, YAxis } from 'rechar
 import { analyticsApi } from '@/lib/api';
 import { CHART } from '@/lib/chartTheme';
 import { formatPace } from '@/lib/utils';
-import { AXIS, ChartCard, ChartGrid, ChartTooltip, TICK_SM } from './ChartCard';
+import { AXIS, ChartCard, ChartGrid, ChartTooltip, DATE_AXIS } from './ChartCard';
 import type { ChartProps } from './types';
 
 export function PaceChart({ period }: ChartProps) {
@@ -25,7 +25,7 @@ export function PaceChart({ period }: ChartProps) {
       <ResponsiveContainer width="100%" height={300}>
         <ScatterChart>
           <ChartGrid />
-          <XAxis dataKey="date" {...AXIS} tick={TICK_SM} name="Date" />
+          <XAxis dataKey="date" {...DATE_AXIS} />
           <YAxis dataKey="pace_sec_km" {...AXIS} reversed tickFormatter={(v: number) => formatPace(v)} name="Pace" />
           <ChartTooltip
             formatter={(value: number, name: string) => [formatPace(value), name === 'pace_sec_km' ? 'Pace' : name]}

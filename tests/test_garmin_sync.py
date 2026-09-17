@@ -333,6 +333,46 @@ class TestAutoMatch:
         repo.update_actual_session_match.assert_not_called()
 
 
+class TestCompletePlanned:
+    def test_marks_first_pending_of_sport(self):
+        from arete.garmin.models import PlannedSession, SessionStatus, SessionType
+        from arete.garmin.sync import complete_planned
+
+        repo = MagicMock()
+        repo.list_planned_sessions.return_value = [
+            PlannedSession(
+                id=1,
+                date=date(2026, 9, 17),
+                sport="running",
+                session_type=SessionType.TEMPO,
+            ),
+            PlannedSession(
+                id=2,
+                date=date(2026, 9, 17),
+                sport="strength",
+                session_type=SessionType.STRENGTH,
+                status=SessionStatus.COMPLETED,
+            ),
+            PlannedSession(
+                id=3,
+                date=date(2026, 9, 17),
+                sport="strength",
+                session_type=SessionType.STRENGTH,
+            ),
+        ]
+        assert complete_planned(repo, date(2026, 9, 17), "strength") == 3
+        repo.update_planned_session_status.assert_called_once_with(
+            3, SessionStatus.COMPLETED
+        )
+
+    def test_nothing_to_complete(self):
+        from arete.garmin.sync import complete_planned
+
+        repo = MagicMock()
+        repo.list_planned_sessions.return_value = []
+        assert complete_planned(repo, date(2026, 9, 17), "strength") is None
+
+
 class TestSyncResult:
     """Tests for SyncResult dataclass."""
 

@@ -4,7 +4,8 @@ import { PlannedSessionCard, isPlannedDone } from '@/components/PlannedSessionCa
 import { ArrowRight, Bot, Calendar, Dumbbell, Zap } from 'lucide-react';
 import { ErrorState, LoadingState, MetricCard } from '@/components';
 import { Panel } from '@/components/ui';
-import { garminApi, garminHealthApi, metricsApi, settingsApi, tipsApi } from '@/lib/api';
+import { garminApi, garminHealthApi, metricsApi, settingsApi, strengthApi, tipsApi } from '@/lib/api';
+import { strengthAsActual } from '@/components/ActualSessionRow';
 import { cn, getZoneColor } from '@/lib/utils';
 import { toLocalISODate } from '@/lib/dates';
 
@@ -46,6 +47,12 @@ export function DashboardPage() {
     queryFn: () => garminApi.getActual(),
     select: (data) => data.filter((s) => s.date.slice(0, 10) === today),
   });
+  const { data: todayStrength } = useQuery({
+    queryKey: ['strength-sessions', 20],
+    queryFn: () => strengthApi.getSessions(20),
+    select: (data) => data.filter((s) => s.date === today).map(strengthAsActual),
+  });
+  const todayDone = [...(todayActual ?? []), ...(todayStrength ?? [])];
 
   const {
     data: playerStats,
@@ -115,7 +122,7 @@ export function DashboardPage() {
                 <PlannedSessionCard
                   key={session.id}
                   session={session}
-                  done={isPlannedDone(session, todayActual ?? [])}
+                  done={isPlannedDone(session, todayDone)}
                 />
               ))}
               <div className="flex justify-end gap-4 pt-1 text-xs font-mono">

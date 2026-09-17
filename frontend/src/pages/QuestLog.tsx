@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
 import { AdherenceBar, CalendarWeek, ErrorState, FlameIcon, LoadingState } from '@/components';
 import { Button, Field, Input, Modal, ModalHeader, Panel, Textarea } from '@/components/ui';
-import { garminApi, type PlannedSessionCreate } from '@/lib/api';
+import { garminApi, strengthApi, type PlannedSessionCreate } from '@/lib/api';
+import { strengthAsActual } from '@/components/ActualSessionRow';
 import { WeekPlanList } from './planning/WeekPlanList';
 import { cn } from '@/lib/utils';
 import { toLocalISODate } from '@/lib/dates';
@@ -113,6 +114,15 @@ export function PlanningPage() {
     queryKey: ['actual'],
     queryFn: () => garminApi.getActual(),
   });
+  const strengthQuery = useQuery({
+    queryKey: ['strength-sessions', 200],
+    queryFn: () => strengthApi.getSessions(200),
+  });
+  const planStartQuery = useQuery({
+    queryKey: ['planned', 'first'],
+    queryFn: () => garminApi.getPlanned('2000-01-01', toLocalISODate()),
+    select: (data) => (data.length ? data[data.length - 1].date : toLocalISODate()),
+  });
 
   const { data: summary } = useQuery({
     queryKey: ['matchSummary', weekStart, weekEnd],
@@ -129,11 +139,11 @@ export function PlanningPage() {
     },
   });
 
-  const weekActual =
-    actualQuery.data?.filter((s) => {
-      const date = s.date.split('T')[0];
-      return date >= weekStart && date <= weekEnd;
-    }) || [];
+  const inWeek = (d: string) => d.slice(0, 10) >= weekStart && d.slice(0, 10) <= weekEnd;
+  const weekActual = [
+    ...(actualQuery.data?.filter((s) => inWeek(s.date)) || []),
+    ...(strengthQuery.data?.filter((s) => inWeek(s.date)).map(strengthAsActual) || []),
+  ];
 
   if (plannedQuery.isLoading || actualQuery.isLoading) {
     return <LoadingState message="LOADING QUEST LOG..." />;
@@ -224,6 +234,7 @@ export function PlanningPage() {
             actual={weekActual}
             selectedDate={selectedDate}
             today={toLocalISODate()}
+            planStart={planStartQuery.data ?? toLocalISODate()}
             onSelect={setSelectedDate}
           />
         </Panel>
