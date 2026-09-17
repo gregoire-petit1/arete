@@ -6,6 +6,7 @@ import { AnatomicalHeatmap, EmptyState, ErrorState, LoadingState } from '@/compo
 import { Button, Panel } from '@/components/ui';
 import { strengthApi } from '@/lib/api';
 import { CardioTab, LogSessionModal, SessionDetailModal, SessionRow, WeeklyVolumeTracker } from './log/index';
+import { invalidateAfterSession } from '@/lib/queryKeys';
 
 type Tab = 'force' | 'cardio';
 
@@ -33,8 +34,7 @@ export function LogPage() {
   const deleteSessionMutation = useMutation({
     mutationFn: (sessionId: number) => strengthApi.deleteSession(sessionId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['strengthSessions'] });
-      queryClient.invalidateQueries({ queryKey: ['volumeByMuscle'] });
+      invalidateAfterSession(queryClient);
       setSelectedSessionId(null);
     },
   });

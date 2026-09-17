@@ -6,6 +6,7 @@ import { Button, Field, Input, Modal, ModalHeader, Textarea } from '@/components
 import { strengthApi } from '@/lib/api';
 import type { ParsedWorkout } from '@/types';
 import { toLocalISODate } from '@/lib/dates';
+import { invalidateAfterSession } from '@/lib/queryKeys';
 
 const today = () => toLocalISODate();
 
@@ -28,8 +29,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
       setParseResult(data);
       if (data.session_id) {
         setStep('saved');
-        queryClient.invalidateQueries({ queryKey: ['strengthSessions'] });
-        queryClient.invalidateQueries({ queryKey: ['volumeByMuscle'] });
+        invalidateAfterSession(queryClient);
       } else {
         setStep('preview');
       }

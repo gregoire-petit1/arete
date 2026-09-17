@@ -41,31 +41,28 @@ export interface PlannedSession {
 export interface ActualSession {
   id: number;
   planned_session_id: number | null;
-  garmin_activity_id?: string | null;
   date: string;
+  start_time: string | null;
   sport: string;
-  activity_type?: string | null;
-  session_type?: string | null;
-  duration_seconds?: number;
-  duration_min?: string | null;
-  distance_meters?: number | null;
-  distance_km?: number | null;
+  session_type: string | null;
+  name: string | null;
+  duration_sec: number;
+  duration_min: string; // "MM:SS"
+  moving_time_sec: number | null;
+  distance_m: number | null;
+  distance_km: number | null;
   avg_hr: number | null;
   max_hr: number | null;
-  avg_pace?: string | null;
-  avg_power?: number | null;
-  normalized_power?: number | null;
-  ascent_m?: number | null;
-  calories?: number | null;
-  tss?: number | null;
-  rpe?: number | null;
-  source?: string | null;
-  fit_file_path?: string | null;
-  analysis_json?: string | null;
-  llm_summary?: string | null;
-  matched_planned_id?: number | null;
-  adherence_score?: number | null;
-  created_at?: string;
+  avg_pace_sec_km: number | null;
+  avg_pace: string | null; // "MM:SS"
+  ascent_m: number | null;
+  calories: number | null;
+  rpe: number | null;
+  notes: string | null;
+  source: string;
+  garmin_activity_id: string | null;
+  strava_activity_id: string | null;
+  adherence_score: number | null;
 }
 
 export interface MatchSummary {

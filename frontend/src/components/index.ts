@@ -3,6 +3,7 @@ export { Navigation } from "./Navigation";
 export { ErrorBoundary } from "./ErrorBoundary";
 export { LoadingState, ErrorState, EmptyState, SystemAlert } from "./States";
 export { CalendarWeek } from "./CalendarWeek";
+export { SessionCard, OffPlanRow, SessionFacts, strengthAsActual, SESSION_TYPE_LABEL } from "./SessionCard";
 export { AdherenceBar } from "./AdherenceBar";
 export { FitDropzone } from "./FitDropzone";
 export * from "./SportIcons";

@@ -278,7 +278,7 @@ class GarminRepository:
                    adherence_score, intensity_deviation, start_time, created_at,
                    name, notes, rpe, workout_type, moving_time_sec,
                    suffer_score, laps_json, splits_json, best_efforts_json,
-                   avg_watts, weighted_avg_watts, device_name
+                   avg_watts, weighted_avg_watts, device_name, strava_activity_id
             FROM actual_sessions WHERE id = ?
             """,
             [session_id],
@@ -336,6 +336,7 @@ class GarminRepository:
             avg_watts=row[40] if len(row) > 40 else None,
             weighted_avg_watts=row[41] if len(row) > 41 else None,
             device_name=row[42] if len(row) > 42 else None,
+            strava_activity_id=row[43] if len(row) > 43 else None,
         )
 
     def list_actual_sessions(
@@ -359,7 +360,7 @@ class GarminRepository:
                    adherence_score, intensity_deviation, start_time, created_at,
                    name, notes, rpe, workout_type, moving_time_sec,
                    suffer_score, laps_json, splits_json, best_efforts_json,
-                   avg_watts, weighted_avg_watts, device_name
+                   avg_watts, weighted_avg_watts, device_name, strava_activity_id
             FROM actual_sessions WHERE 1=1
         """
         params: list = []

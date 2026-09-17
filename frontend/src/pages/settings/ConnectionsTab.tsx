@@ -4,6 +4,7 @@ import { Check, LogOut, Target, Watch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { garminApi, stravaApi } from '@/lib/api';
 import { Button } from '@/components/ui';
+import { invalidateAfterSession } from '@/lib/queryKeys';
 
 export function ConnectionsTab() {
   const queryClient = useQueryClient();
@@ -44,7 +45,7 @@ export function ConnectionsTab() {
     onSuccess: (result) => {
       setSyncResult(`${result.imported} imported, ${result.merged} merged into Garmin sessions, ${result.skipped} skipped`);
       queryClient.invalidateQueries({ queryKey: ['stravaStatus'] });
-      queryClient.invalidateQueries({ queryKey: ['actual'] });
+      invalidateAfterSession(queryClient);
     },
     onError: (err) => setSyncResult(`Sync failed: ${err instanceof Error ? err.message : err}`),
   });

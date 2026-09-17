@@ -1,43 +1,53 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
-import { AdherenceBar, CalendarWeek, ErrorState, FlameIcon, LoadingState } from '@/components';
+import { AdherenceBar, CalendarWeek, ErrorState, LoadingState, strengthAsActual } from '@/components';
 import { Button, Field, Input, Modal, ModalHeader, Panel, Textarea } from '@/components/ui';
-import { garminApi, strengthApi, type PlannedSessionCreate } from '@/lib/api';
-import { strengthAsActual } from '@/components/ActualSessionRow';
-import { WeekPlanList } from './planning/WeekPlanList';
-import { cn } from '@/lib/utils';
+import { garminApi, settingsApi, strengthApi, type PlannedSessionCreate } from '@/lib/api';
 import { toLocalISODate } from '@/lib/dates';
+import { qk } from '@/lib/queryKeys';
+import { weekStats } from '@/lib/sessionMatch';
+import { cn } from '@/lib/utils';
+import type { PlannedSession } from '@/types';
+import { WeekPlanList } from './planning/WeekPlanList';
 
 // Session types per sport category
 const CARDIO_SESSION_TYPES = [
-  { value: 'recovery', label: 'Recovery', color: 'text-success-green' },
+  { value: 'recovery', label: 'Récupération', color: 'text-success-green' },
   { value: 'endurance', label: 'Endurance', color: 'text-neon-cyan' },
-  { value: 'tempo', label: 'Tempo', color: 'text-warning-orange' },
-  { value: 'intervals', label: 'Intervals', color: 'text-danger-red' },
-  { value: 'long_run', label: 'Long Run', color: 'text-neon-purple' },
+  { value: 'tempo', label: 'Seuil', color: 'text-warning-orange' },
+  { value: 'intervals', label: 'Fractionné', color: 'text-danger-red' },
+  { value: 'long_run', label: 'Sortie longue', color: 'text-neon-purple' },
 ];
 
 const STRENGTH_SESSION_TYPES = [
-  { value: 'strength', label: 'Strength', color: 'text-neon-gold' },
-  { value: 'hypertrophy', label: 'Hypertrophy', color: 'text-neon-cyan' },
-  { value: 'power', label: 'Power', color: 'text-danger-red' },
-  { value: 'deload', label: 'Deload', color: 'text-success-green' },
+  { value: 'strength', label: 'Force', color: 'text-neon-gold' },
+  { value: 'hypertrophy', label: 'Hypertrophie', color: 'text-neon-cyan' },
+  { value: 'power', label: 'Puissance', color: 'text-danger-red' },
+  { value: 'deload', label: 'Décharge', color: 'text-success-green' },
 ];
 
 const OTHER_SESSION_TYPES = [
-  { value: 'recovery', label: 'Recovery', color: 'text-success-green' },
+  { value: 'recovery', label: 'Récupération', color: 'text-success-green' },
   { value: 'endurance', label: 'Endurance', color: 'text-neon-cyan' },
-  { value: 'other', label: 'Other', color: 'text-text-muted' },
+  { value: 'other', label: 'Autre', color: 'text-text-muted' },
 ];
 
 const SPORTS = [
-  { value: 'running', label: 'Running', category: 'cardio' },
-  { value: 'cycling', label: 'Cycling', category: 'cardio' },
-  { value: 'swimming', label: 'Swimming', category: 'cardio' },
-  { value: 'strength', label: 'Strength', category: 'strength' },
-  { value: 'other', label: 'Other', category: 'other' },
+  { value: 'running', label: 'Course', category: 'cardio' },
+  { value: 'cycling', label: 'Vélo', category: 'cardio' },
+  { value: 'swimming', label: 'Natation', category: 'cardio' },
+  { value: 'strength', label: 'Muscu', category: 'strength' },
+  { value: 'other', label: 'Autre', category: 'other' },
 ];
+
+const INTENSITIES = [
+  { value: 'easy', label: 'Facile', color: 'text-success-green' },
+  { value: 'moderate', label: 'Modérée', color: 'text-warning-orange' },
+  { value: 'hard', label: 'Dure', color: 'text-danger-red' },
+] as const;
+
+const HR_ZONES = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5'];
 
 const getSessionTypesForSport = (sport: string) => {
   const sportConfig = SPORTS.find((s) => s.value === sport);
@@ -53,10 +63,10 @@ const getSessionTypesForSport = (sport: string) => {
 
 const getDefaultSessionType = (sport: string) => getSessionTypesForSport(sport)[0]?.value || 'endurance';
 
-const emptyQuest = (): PlannedSessionCreate => ({
-  date: toLocalISODate(),
+const emptyQuest = (date?: string): PlannedSessionCreate => ({
+  date: date ?? toLocalISODate(),
   sport: 'running',
-  session_type: 'endurance',
+  session_type: getDefaultSessionType('running'),
   target_duration_min: 45,
   description: '',
   source: 'manual',
@@ -78,81 +88,102 @@ export function PlanningPage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const [showNewQuest, setShowNewQuest] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [newQuest, setNewQuest] = useState<PlannedSessionCreate>(emptyQuest);
+  const [newQuest, setNewQuest] = useState<PlannedSessionCreate>(emptyQuest());
+  const [toDelete, setToDelete] = useState<PlannedSession | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
 
-  const availableSessionTypes = useMemo(
-    () => getSessionTypesForSport(newQuest.sport || 'running'),
-    [newQuest.sport]
-  );
-
-  const handleSportChange = useCallback(
-    (sport: string) => {
-      const validTypes = getSessionTypesForSport(sport);
-      const currentTypeValid = validTypes.some((t) => t.value === newQuest.session_type);
-      setNewQuest((prev) => ({
-        ...prev,
-        sport,
-        session_type: currentTypeValid ? prev.session_type : getDefaultSessionType(sport),
-      }));
-    },
-    [newQuest.session_type]
-  );
-
+  const today = toLocalISODate();
   const weekStart = getWeekStart(weekOffset);
-  const weekEnd = (() => {
+  const weekEnd = useMemo(() => {
     const end = new Date(weekStart);
     end.setDate(end.getDate() + 6);
     return toLocalISODate(end);
-  })();
+  }, [weekStart]);
+  const days = useMemo(
+    () =>
+      Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(weekStart);
+        d.setDate(d.getDate() + i);
+        return toLocalISODate(d);
+      }),
+    [weekStart]
+  );
 
   const plannedQuery = useQuery({
-    queryKey: ['planned', weekStart, weekEnd],
+    queryKey: qk.planned(weekStart, weekEnd),
     queryFn: () => garminApi.getPlanned(weekStart, weekEnd),
   });
-
   const actualQuery = useQuery({
-    queryKey: ['actual'],
-    queryFn: () => garminApi.getActual(),
+    queryKey: qk.actual(weekStart, weekEnd),
+    queryFn: () => garminApi.getActual(weekStart, weekEnd),
   });
   const strengthQuery = useQuery({
-    queryKey: ['strength-sessions', 200],
+    queryKey: qk.strengthSessions(200),
     queryFn: () => strengthApi.getSessions(200),
   });
-  const planStartQuery = useQuery({
-    queryKey: ['planned', 'first'],
-    queryFn: () => garminApi.getPlanned('2000-01-01', toLocalISODate()),
-    select: (data) => (data.length ? data[data.length - 1].date : toLocalISODate()),
-  });
+  const { data: settings } = useQuery({ queryKey: qk.settings, queryFn: settingsApi.get });
 
-  const { data: summary } = useQuery({
-    queryKey: ['matchSummary', weekStart, weekEnd],
-    queryFn: () => garminApi.getSummary(weekStart, weekEnd),
-  });
+  const afterChange = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: qk.planned() });
+    queryClient.invalidateQueries({ queryKey: qk.actual() });
+    setBusyId(null);
+  }, [queryClient]);
 
   const createQuestMutation = useMutation({
     mutationFn: garminApi.createPlanned,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['planned'] });
-      queryClient.invalidateQueries({ queryKey: ['matchSummary'] });
+      afterChange();
       setShowNewQuest(false);
-      setNewQuest(emptyQuest());
+      setNewQuest(emptyQuest(selectedDate ?? undefined));
     },
   });
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: 'completed' | 'skipped' | 'pending' }) =>
+      garminApi.setPlannedStatus(id, status),
+    onSuccess: afterChange,
+    onError: () => setBusyId(null),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => garminApi.deletePlanned(id),
+    onSuccess: () => {
+      afterChange();
+      setToDelete(null);
+    },
+    onError: () => setBusyId(null),
+  });
 
-  const inWeek = (d: string) => d.slice(0, 10) >= weekStart && d.slice(0, 10) <= weekEnd;
-  const weekActual = [
-    ...(actualQuery.data?.filter((s) => inWeek(s.date)) || []),
-    ...(strengthQuery.data?.filter((s) => inWeek(s.date)).map(strengthAsActual) || []),
-  ];
+  const weekActual = useMemo(
+    () => [
+      ...(actualQuery.data ?? []),
+      ...(strengthQuery.data ?? [])
+        .filter((s) => s.date >= weekStart && s.date <= weekEnd)
+        .map(strengthAsActual),
+    ],
+    [actualQuery.data, strengthQuery.data, weekStart, weekEnd]
+  );
+
+  const stats = useMemo(
+    () => weekStats(days, plannedQuery.data ?? [], weekActual, today),
+    [days, plannedQuery.data, weekActual, today]
+  );
+
+  const availableSessionTypes = useMemo(
+    () => getSessionTypesForSport(newQuest.sport ?? 'running'),
+    [newQuest.sport]
+  );
+
+  const handleSportChange = useCallback((sport: string) => {
+    setNewQuest((prev) => ({ ...prev, sport, session_type: getDefaultSessionType(sport) }));
+  }, []);
 
   if (plannedQuery.isLoading || actualQuery.isLoading) {
-    return <LoadingState message="LOADING QUEST LOG..." />;
+    return <LoadingState message="CHARGEMENT DU PLANNING…" />;
   }
 
   if (plannedQuery.isError || actualQuery.isError) {
     return (
       <ErrorState
-        message="FAILED TO LOAD PLANNING"
+        message="ÉCHEC DU CHARGEMENT DU PLANNING"
         onRetry={() => {
           plannedQuery.refetch();
           actualQuery.refetch();
@@ -161,26 +192,29 @@ export function PlanningPage() {
     );
   }
 
-  const completed = summary?.completed || 0;
-  const due = summary?.planned_due || 0;
-
   return (
     <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
         <header className="flex justify-between items-center mb-4 sm:mb-8 animate-fade-down">
-          <h1 className="text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wider">QUEST LOG</h1>
+          <h1 className="text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wider">PLANNING</h1>
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => queryClient.invalidateQueries()}
+              onClick={afterChange}
               className="p-2 rounded transition-all duration-200 text-text-muted hover:text-neon-cyan hover:bg-abyss"
-              aria-label="Refresh"
+              aria-label="Rafraîchir"
             >
               <RefreshCw className="w-5 h-5" />
             </button>
-            <Button onClick={() => setShowNewQuest(true)} className="px-3 py-1.5 sm:px-4 sm:py-2">
+            <Button
+              onClick={() => {
+                setNewQuest(emptyQuest(selectedDate ?? undefined));
+                setShowNewQuest(true);
+              }}
+              className="px-3 py-1.5 sm:px-4 sm:py-2"
+            >
               <Plus className="w-4 h-4" />
-              NEW QUEST
+              NOUVELLE SÉANCE
             </Button>
           </div>
         </header>
@@ -191,24 +225,34 @@ export function PlanningPage() {
             type="button"
             onClick={() => setWeekOffset((prev) => prev - 1)}
             className="p-2 text-text-muted hover:text-neon-cyan transition-colors"
-            aria-label="Previous week"
+            aria-label="Semaine précédente"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <span className="font-mono text-xs sm:text-sm text-text-secondary">
-            {new Date(weekStart).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-            {' — '}
-            {new Date(weekEnd).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-xs sm:text-sm text-text-secondary">
+              {new Date(weekStart).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+              {' — '}
+              {new Date(weekEnd).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+            </span>
+            {weekOffset !== 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setWeekOffset(0);
+                  setSelectedDate(null);
+                }}
+                className="text-xs font-mono text-neon-cyan hover:underline"
+              >
+                Aujourd&apos;hui
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => setWeekOffset((prev) => prev + 1)}
-            disabled={weekOffset >= 0}
-            className={cn(
-              'p-2 transition-colors',
-              weekOffset >= 0 ? 'text-text-muted/30 cursor-not-allowed' : 'text-text-muted hover:text-neon-cyan'
-            )}
-            aria-label="Next week"
+            className="p-2 text-text-muted hover:text-neon-cyan transition-colors"
+            aria-label="Semaine suivante"
           >
             <ChevronRight className="w-5 h-5" />
           </button>
@@ -225,71 +269,66 @@ export function PlanningPage() {
 
         <Panel title="SÉANCES DE LA SEMAINE" className="mb-4 sm:mb-8" delay={0.05}>
           <WeekPlanList
-            days={Array.from({ length: 7 }, (_, i) => {
-              const d = new Date(weekStart);
-              d.setDate(d.getDate() + i);
-              return toLocalISODate(d);
-            })}
+            days={days}
             planned={plannedQuery.data || []}
             actual={weekActual}
             selectedDate={selectedDate}
-            today={toLocalISODate()}
-            planStart={planStartQuery.data ?? toLocalISODate()}
+            today={today}
+            restDays={settings?.rest_day_preference ?? []}
+            busyId={busyId}
             onSelect={setSelectedDate}
+            onStatus={(id, status) => {
+              setBusyId(id);
+              statusMutation.mutate({ id, status });
+            }}
+            onDelete={setToDelete}
           />
         </Panel>
 
-        <Panel title="ADHERENCE DASHBOARD" className="mb-4 sm:mb-8" delay={0.1}>
+        <Panel title="ADHÉRENCE DE LA SEMAINE" className="mb-4 sm:mb-8" delay={0.1}>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-6">
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-text-muted font-mono">Completion Rate</span>
-                <span className="text-base sm:text-lg font-mono text-text-primary">
-                  {Math.round(summary?.adherence_rate || 0)}%
-                </span>
+                <span className="text-xs text-text-muted font-mono">Taux d&apos;adhérence</span>
+                <span className="text-base sm:text-lg font-mono text-text-primary">{stats.rate}%</span>
               </div>
-              <AdherenceBar score={summary?.adherence_rate || 0} size="lg" showLabel={false} />
+              <AdherenceBar score={stats.rate} size="lg" showLabel={false} />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-text-muted font-mono">Dues à ce jour</span>
+                <span className="text-xs text-text-muted font-mono">Faites / dues à ce jour</span>
                 <span className="text-sm font-mono text-text-secondary">
-                  {completed} / {due}
+                  {stats.done} / {stats.due}
                 </span>
               </div>
               <div className="flex gap-1 flex-wrap">
-                {Array.from({ length: due }).map((_, i) => (
-                  <div key={i} className={cn('w-4 h-4 rounded-sm', i < completed ? 'bg-success-green' : 'bg-text-muted/20')} />
+                {Array.from({ length: stats.due }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={cn('w-4 h-4 rounded-sm', i < stats.done ? 'bg-success-green' : 'bg-text-muted/20')}
+                  />
                 ))}
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <div className="p-3 rounded-lg bg-warning-orange/10">
-                <FlameIcon className="w-6 h-6 text-warning-orange" />
+            <div className="flex items-center gap-6 text-xs font-mono">
+              <div>
+                <div className="text-xl sm:text-2xl font-mono font-bold text-danger-red">{stats.missed}</div>
+                <div className="text-text-muted">manquées</div>
               </div>
               <div>
-                <div className="text-xl sm:text-2xl font-mono font-bold text-warning-orange">{completed}</div>
-                <div className="text-xs text-text-muted font-mono">séances faites</div>
+                <div className="text-xl sm:text-2xl font-mono font-bold text-warning-orange">{stats.offPlan}</div>
+                <div className="text-text-muted">hors plan</div>
               </div>
             </div>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-text-muted/10 flex gap-4 sm:gap-6 text-xs font-mono">
-            <span className="text-text-muted">
-              Hors plan: <span className="text-warning-orange">{summary?.total_unmatched || 0}</span>
-            </span>
-            <span className="text-text-muted">
-              Manquées: <span className="text-danger-red">{summary?.skipped || 0}</span>
-            </span>
           </div>
         </Panel>
       </div>
 
       <Modal open={showNewQuest} onClose={() => setShowNewQuest(false)} className="max-w-md p-4 sm:p-6">
         <ModalHeader
-          title="NEW QUEST"
+          title="NOUVELLE SÉANCE"
           icon={<Plus className="w-5 h-5" />}
           onClose={() => setShowNewQuest(false)}
           className="mb-4 sm:mb-6"
@@ -347,39 +386,131 @@ export function PlanningPage() {
             </div>
           </Field>
 
-          <Field label="Target Duration (min)">
-            <Input
-              type="number"
-              value={newQuest.target_duration_min || ''}
-              onChange={(e) =>
-                setNewQuest((prev) => ({ ...prev, target_duration_min: parseInt(e.target.value) || undefined }))
-              }
-              placeholder="45"
-              min={1}
-              max={480}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Durée (min)">
+              <Input
+                type="number"
+                value={newQuest.target_duration_min || ''}
+                onChange={(e) =>
+                  setNewQuest((prev) => ({ ...prev, target_duration_min: parseInt(e.target.value) || undefined }))
+                }
+                placeholder="45"
+                min={1}
+                max={480}
+              />
+            </Field>
+            <Field label="Distance (km)">
+              <Input
+                type="number"
+                step="0.1"
+                value={newQuest.target_distance_km || ''}
+                onChange={(e) =>
+                  setNewQuest((prev) => ({ ...prev, target_distance_km: parseFloat(e.target.value) || undefined }))
+                }
+                placeholder="10"
+                min={0}
+                max={500}
+              />
+            </Field>
+          </div>
+
+          <Field label="Intensité">
+            <div className="flex flex-wrap gap-2">
+              {INTENSITIES.map((it) => (
+                <button
+                  key={it.value}
+                  type="button"
+                  onClick={() =>
+                    setNewQuest((prev) => ({
+                      ...prev,
+                      target_intensity: prev.target_intensity === it.value ? undefined : it.value,
+                    }))
+                  }
+                  className={cn(
+                    CHIP,
+                    newQuest.target_intensity === it.value ? `bg-abyss border-current ${it.color}` : CHIP_IDLE
+                  )}
+                >
+                  {it.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <Field label="Zone FC">
+            <div className="flex flex-wrap gap-2">
+              {HR_ZONES.map((zone) => (
+                <button
+                  key={zone}
+                  type="button"
+                  onClick={() =>
+                    setNewQuest((prev) => ({
+                      ...prev,
+                      target_hr_zone: prev.target_hr_zone === zone ? undefined : zone,
+                    }))
+                  }
+                  className={cn(
+                    CHIP,
+                    newQuest.target_hr_zone === zone ? 'bg-neon-cyan/20 border-neon-cyan/50 text-neon-cyan' : CHIP_IDLE
+                  )}
+                >
+                  {zone}
+                </button>
+              ))}
+            </div>
           </Field>
 
           <Field label="Description">
             <Textarea
               value={newQuest.description || ''}
               onChange={(e) => setNewQuest((prev) => ({ ...prev, description: e.target.value }))}
-              placeholder="Easy Z2 run, focus on form..."
+              placeholder="Footing Z2, relâchement…"
               rows={2}
             />
           </Field>
 
+          {createQuestMutation.isError && (
+            <p className="text-xs font-mono text-danger-red">
+              Création impossible : {createQuestMutation.error?.message}
+            </p>
+          )}
+
           <Button type="submit" strong size="lg" fullWidth loading={createQuestMutation.isPending}>
             {createQuestMutation.isPending ? (
-              'CREATING...'
+              'CRÉATION…'
             ) : (
               <>
                 <Check className="w-4 h-4" />
-                CREATE QUEST
+                CRÉER LA SÉANCE
               </>
             )}
           </Button>
         </form>
+      </Modal>
+
+      <Modal open={toDelete !== null} onClose={() => setToDelete(null)} className="max-w-sm p-4 sm:p-6">
+        <ModalHeader title="SUPPRIMER LA SÉANCE" onClose={() => setToDelete(null)} className="mb-4" />
+        <p className="text-sm font-mono text-text-secondary mb-6">
+          Supprimer la séance prévue le{' '}
+          {toDelete && new Date(toDelete.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} ?
+        </p>
+        <div className="flex gap-3 justify-end">
+          <Button variant="ghost" onClick={() => setToDelete(null)}>
+            Annuler
+          </Button>
+          <Button
+            variant="danger"
+            loading={deleteMutation.isPending}
+            onClick={() => {
+              if (toDelete) {
+                setBusyId(toDelete.id);
+                deleteMutation.mutate(toDelete.id);
+              }
+            }}
+          >
+            Supprimer
+          </Button>
+        </div>
       </Modal>
     </div>
   );

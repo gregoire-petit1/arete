@@ -9,7 +9,7 @@ Endpoints for:
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
@@ -70,20 +70,31 @@ class PlannedSessionResponse(BaseModel):
 
 
 class ActualSessionResponse(BaseModel):
-    """Actual session response."""
+    """Actual session response (what was really done)."""
 
     id: int
     planned_session_id: int | None
     date: date
+    start_time: datetime | None
     sport: str
     session_type: str | None
-    duration_min: str  # Format: "MM:SS"
+    name: str | None
+    duration_sec: int
+    duration_min: str  # Format: "MM:SS" (display)
+    moving_time_sec: int | None
+    distance_m: float | None
     distance_km: float | None  # Rounded to 2 decimals
     avg_hr: int | None
     max_hr: int | None
-    avg_pace: str | None
+    avg_pace_sec_km: int | None
+    avg_pace: str | None  # Format: "MM:SS" (display)
     ascent_m: float | None
+    calories: int | None
+    rpe: int | None
+    notes: str | None
     source: str
+    garmin_activity_id: str | None
+    strava_activity_id: str | None
     adherence_score: float | None
 
 
@@ -143,17 +154,28 @@ def _actual_to_response(session: ActualSession) -> ActualSessionResponse:
         id=session.id or 0,
         planned_session_id=session.planned_session_id,
         date=session.date,
+        start_time=session.start_time,
         sport=session.sport,
         session_type=session.session_type,
+        name=session.name,
+        duration_sec=session.duration_sec,
         duration_min=session.duration_min,
+        moving_time_sec=session.moving_time_sec,
+        distance_m=session.distance_m,
         distance_km=session.distance_km,
         avg_hr=session.avg_hr,
         max_hr=session.max_hr,
+        avg_pace_sec_km=session.avg_pace_sec_km,
         avg_pace=session.avg_pace_min_km,
         ascent_m=session.ascent_m,
+        calories=session.calories,
+        rpe=session.rpe,
+        notes=session.notes,
         source=session.source.value
         if isinstance(session.source, ActivitySource)
         else session.source,
+        garmin_activity_id=session.garmin_activity_id,
+        strava_activity_id=session.strava_activity_id,
         adherence_score=session.adherence_score,
     )
 
@@ -195,7 +217,7 @@ def list_planned_sessions(
     start_date: date | None = Query(None, description="Filter by start date"),
     end_date: date | None = Query(None, description="Filter by end date"),
     status: SessionStatus | None = Query(None, description="Filter by status"),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(500, ge=1, le=2000),
 ):
     """List planned training sessions.
 
@@ -208,6 +230,23 @@ def list_planned_sessions(
         limit=limit,
     )
     return [_planned_to_response(s) for s in sessions]
+
+
+class PlannedStatusUpdate(BaseModel):
+    """Manual status change for a planned session."""
+
+    status: SessionStatus
+
+
+@router.patch("/planned/{session_id}", response_model=PlannedSessionResponse)
+def update_planned_status(session_id: int, payload: PlannedStatusUpdate):
+    """Mark a planned session as done, skipped or back to pending."""
+    if not _repo.update_planned_session_status(session_id, payload.status):
+        raise HTTPException(status_code=404, detail="Planned session not found")
+    session = _repo.get_planned_session(session_id)
+    if session is None:  # pragma: no cover - just deleted concurrently
+        raise HTTPException(status_code=404, detail="Planned session not found")
+    return _planned_to_response(session)
 
 
 @router.delete("/planned/{session_id}")
@@ -342,7 +381,7 @@ def list_actual_sessions(
     start_date: date | None = Query(None),
     end_date: date | None = Query(None),
     unmatched_only: bool = Query(False, description="Only show unmatched sessions"),
-    limit: int = Query(50, ge=1, le=200),
+    limit: int = Query(500, ge=1, le=2000),
 ):
     """List actual training sessions (from FIT files/Garmin Connect)."""
     sessions = _repo.list_actual_sessions(

@@ -1,5 +1,5 @@
-import { ActualSessionRow } from '@/components/ActualSessionRow';
-import { PlannedSessionCard, isPlannedDone } from '@/components/PlannedSessionCard';
+import { OffPlanRow, SessionCard } from '@/components/SessionCard';
+import { linkDay } from '@/lib/sessionMatch';
 import { cn } from '@/lib/utils';
 import type { ActualSession, PlannedSession } from '@/types';
 
@@ -13,16 +13,22 @@ export function WeekPlanList({
   actual,
   selectedDate,
   today,
-  planStart,
+  restDays,
+  busyId,
   onSelect,
+  onStatus,
+  onDelete,
 }: {
   days: string[];
   planned: PlannedSession[];
   actual: ActualSession[];
   selectedDate: string | null;
   today: string;
-  planStart: string;
+  restDays: string[];
+  busyId: number | null;
   onSelect: (date: string | null) => void;
+  onStatus: (id: number, status: 'completed' | 'skipped' | 'pending') => void;
+  onDelete: (session: PlannedSession) => void;
 }) {
   const shown = selectedDate ? days.filter((d) => d === selectedDate) : days;
 
@@ -38,13 +44,17 @@ export function WeekPlanList({
         </button>
       )}
       {shown.map((date) => {
-        const sessions = planned.filter((p) => p.date === date);
-        const done = actual.filter((a) => a.date.slice(0, 10) === date);
-        // realised sessions not explained by a planned one of the same sport that day
-        const offPlan = done.filter(
-          (a) => a.planned_session_id == null && !sessions.some((p) => p.sport === a.sport)
+        const link = linkDay(
+          date,
+          planned.filter((p) => p.date === date),
+          actual,
+          today
         );
         const isToday = date === today;
+        const weekday = new Date(date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+        const isRestDay = restDays.includes(weekday);
+        const empty = link.planned.length === 0 && link.offPlan.length === 0;
+
         return (
           <section key={date}>
             <h3
@@ -54,17 +64,27 @@ export function WeekPlanList({
               )}
             >
               {dayLabel(date)}
-              {isToday && <span className="text-[10px] border border-neon-cyan/40 rounded px-1">aujourd'hui</span>}
+              {isToday && <span className="text-[11px] border border-neon-cyan/40 rounded px-1">aujourd&apos;hui</span>}
             </h3>
-            {sessions.length === 0 && done.length === 0 ? (
-              <p className="text-xs font-mono text-text-muted/70 pl-1">Repos</p>
+            {empty ? (
+              <p className="text-xs font-mono text-text-muted/70 pl-1">
+                {isRestDay ? 'Repos prévu' : 'Repos'}
+              </p>
             ) : (
               <div className="space-y-2">
-                {sessions.map((s) => (
-                  <PlannedSessionCard key={s.id} session={s} done={isPlannedDone(s, actual)} />
+                {link.planned.map(({ session, realised, state }) => (
+                  <SessionCard
+                    key={session.id}
+                    planned={session}
+                    realised={realised}
+                    state={state}
+                    busy={busyId === session.id}
+                    onStatus={(status) => onStatus(session.id, status)}
+                    onDelete={state === 'done' ? undefined : () => onDelete(session)}
+                  />
                 ))}
-                {offPlan.map((a) => (
-                  <ActualSessionRow key={a.id} session={a} offPlan={sessions.length > 0 || date >= planStart} />
+                {link.offPlan.map((a) => (
+                  <OffPlanRow key={a.id} session={a} />
                 ))}
               </div>
             )}

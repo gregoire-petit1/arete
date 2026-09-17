@@ -1,5 +1,6 @@
 import { cn } from '@/lib/utils';
-import { SESSION_TYPE_LABEL } from '@/components/PlannedSessionCard';
+import { SESSION_TYPE_LABEL } from '@/components/SessionCard';
+import { linkDay } from '@/lib/sessionMatch';
 import { getSportColor, getSportIconComponent } from '@/lib/sport';
 import type { ActualSession, PlannedSession } from '@/types';
 import { toLocalISODate } from '@/lib/dates';
@@ -9,24 +10,35 @@ interface CalendarDayProps {
   planned: PlannedSession[];
   actual: ActualSession[];
   isToday: boolean;
+  today: string;
   onClick?: () => void;
 }
 
-function CalendarDay({ date, planned, actual, isToday, onClick }: CalendarDayProps) {
+function CalendarDay({ date, planned, actual, isToday, today, onClick }: CalendarDayProps) {
   const dayOfWeek = new Date(date).toLocaleDateString('fr-FR', { weekday: 'short' }).toUpperCase().slice(0, 3);
   const dayNum = new Date(date).getDate();
 
-  // Combine all sessions for the day
+  const link = linkDay(date, planned, actual, today);
   const allSessions = [
-    ...planned.map((p) => ({ type: 'planned' as const, sport: p.sport || p.session_type, data: p })),
-    ...actual
-      .filter((a) => !planned.some((p) => p.sport === a.sport || p.session_type === a.activity_type))
-      .map((a) => ({ type: 'actual' as const, sport: a.sport || a.activity_type, data: a })),
+    ...link.planned.map((row) => ({
+      key: `p${row.session.id}`,
+      sport: row.session.sport,
+      label: SESSION_TYPE_LABEL[row.session.session_type] ?? row.session.sport,
+      title: row.session.description ?? undefined,
+      state: row.state,
+    })),
+    ...link.offPlan.map((a) => ({
+      key: `a${a.id}`,
+      sport: a.sport,
+      label: a.name || a.sport,
+      title: a.name ?? undefined,
+      state: 'offPlan' as const,
+    })),
   ];
 
-  const hasCompleted = actual.length > 0;
-  const hasPending = planned.length > 0 && actual.length < planned.length;
-  const isRest = planned.length === 0 && actual.length === 0;
+  const hasCompleted = link.planned.some((r) => r.state === 'done') || link.offPlan.length > 0;
+  const hasPending = link.planned.some((r) => r.state === 'pending' || r.state === 'missed');
+  const isRest = allSessions.length === 0;
 
   return (
     <div
@@ -50,42 +62,38 @@ function CalendarDay({ date, planned, actual, isToday, onClick }: CalendarDayPro
 
       {allSessions.length > 0 ? (
         <div className="flex-1 flex flex-col gap-1">
-          {allSessions.slice(0, 3).map((session, idx) => {
+          {allSessions.slice(0, 3).map((session) => {
             const IconComponent = getSportIconComponent(session.sport);
-            const colorClass = getSportColor(session.sport);
-            const isComplete =
-              session.type === 'actual' ||
-              actual.some(
-                (a) =>
-                  a.sport === session.data.sport ||
-                  a.activity_type === (session.data as PlannedSession).session_type
-              );
-
+            const tone =
+              session.state === 'done'
+                ? 'bg-success-green/15 text-success-green'
+                : session.state === 'missed'
+                  ? 'bg-danger-red/10 text-danger-red'
+                  : session.state === 'offPlan'
+                    ? 'bg-warning-orange/10 text-warning-orange'
+                    : 'bg-abyss/80 text-text-secondary';
             return (
               <div
-                key={idx}
-                className={cn(
-                  'flex items-center gap-1.5 px-1.5 py-1 rounded text-[10px] font-mono',
-                  isComplete ? 'bg-success-green/15 text-success-green' : 'bg-abyss/80 text-text-secondary'
-                )}
+                key={session.key}
+                className={cn('flex items-center gap-1.5 px-1.5 py-1 rounded text-[11px] font-mono', tone)}
+                title={session.title}
               >
-                <IconComponent size="sm" className={cn(isComplete ? 'text-success-green' : colorClass)} />
-                <span className="truncate capitalize" title={(session.data as PlannedSession).description ?? undefined}>
-                  {session.type === 'planned'
-                    ? (SESSION_TYPE_LABEL[(session.data as PlannedSession).session_type] ?? session.sport)
-                    : session.sport?.toLowerCase()}
-                </span>
-                {isComplete && <span className="ml-auto">✓</span>}
+                <IconComponent
+                  size="sm"
+                  className={cn(session.state === 'done' ? 'text-success-green' : getSportColor(session.sport))}
+                />
+                <span className="truncate capitalize">{session.label}</span>
+                {session.state === 'done' && <span className="ml-auto">✓</span>}
               </div>
             );
           })}
           {allSessions.length > 3 && (
-            <div className="text-[10px] text-text-muted font-mono text-center">+{allSessions.length - 3} more</div>
+            <div className="text-[11px] text-text-muted font-mono text-center">+{allSessions.length - 3} autres</div>
           )}
         </div>
       ) : (
         <div className="flex-1 flex items-center justify-center">
-          <span className="text-[10px] font-mono text-text-muted tracking-wider">REST</span>
+          <span className="text-[11px] font-mono text-text-muted tracking-wider">REPOS</span>
         </div>
       )}
     </div>
@@ -131,6 +139,7 @@ export function CalendarWeek({ startDate, plannedSessions, actualSessions, onDay
           planned={plannedByDate.get(date) || []}
           actual={actualByDate.get(date) || []}
           isToday={date === today}
+          today={today}
           onClick={onDayClick ? () => onDayClick(date) : undefined}
         />
       ))}

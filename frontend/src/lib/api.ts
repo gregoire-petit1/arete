@@ -72,13 +72,23 @@ export const garminApi = {
       body: JSON.stringify(session),
     }),
 
-  getActual: (unmatchedOnly = false) => {
+  getActual: (startDate?: string, endDate?: string) => {
     const params = new URLSearchParams();
-    if (unmatchedOnly) params.set("unmatched_only", "true");
+    if (startDate) params.set("start_date", startDate);
+    if (endDate) params.set("end_date", endDate);
     return fetchAPI<import("@/types").ActualSession[]>(
       `/garmin/actual?${params}`
     );
   },
+
+  deletePlanned: (id: number) =>
+    fetchAPI<{ message: string }>(`/garmin/planned/${id}`, { method: "DELETE" }),
+
+  setPlannedStatus: (id: number, status: "pending" | "completed" | "skipped") =>
+    fetchAPI<import("@/types").PlannedSession>(`/garmin/planned/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
 
   getSummary: (startDate?: string, endDate?: string) => {
     const params = new URLSearchParams();

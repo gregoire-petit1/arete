@@ -141,6 +141,7 @@ class ActualSession:
     source: ActivitySource = ActivitySource.FIT_FILE
     source_file: str | None = None
     garmin_activity_id: str | None = None
+    strava_activity_id: str | None = None  # set when a Strava copy was merged in
 
     # Adherence (computed)
     adherence_score: float | None = None

@@ -5,6 +5,7 @@ import { FitDropzone } from '@/components';
 import { Panel } from '@/components/ui';
 import { garminApi, tipsApi } from '@/lib/api';
 import { RecentSessions } from './RecentSessions';
+import { invalidateAfterSession } from '@/lib/queryKeys';
 
 interface Upload {
   filename: string;
@@ -24,8 +25,7 @@ export function CardioTab() {
         { filename: result.filename || 'activity.fit', status: 'success', message: 'Uploaded' },
         ...prev,
       ]);
-      queryClient.invalidateQueries({ queryKey: ['actual'] });
-      queryClient.invalidateQueries({ queryKey: ['recentSessions'] });
+      invalidateAfterSession(queryClient);
       if (result.activity_id) {
         try {
           setFeedback(await tipsApi.getPostSession('cardio', result.activity_id));

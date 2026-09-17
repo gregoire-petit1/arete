@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { PlannedSessionCard, isPlannedDone } from '@/components/PlannedSessionCard';
 import { ArrowRight, Bot, Calendar, Dumbbell, Zap } from 'lucide-react';
-import { ErrorState, LoadingState, MetricCard } from '@/components';
+import { ErrorState, LoadingState, MetricCard, OffPlanRow, SessionCard, strengthAsActual } from '@/components';
 import { Panel } from '@/components/ui';
 import { garminApi, garminHealthApi, metricsApi, settingsApi, strengthApi, tipsApi } from '@/lib/api';
-import { strengthAsActual } from '@/components/ActualSessionRow';
 import { cn, getZoneColor } from '@/lib/utils';
 import { toLocalISODate } from '@/lib/dates';
+import { qk } from '@/lib/queryKeys';
+import { linkDay } from '@/lib/sessionMatch';
 
 /** Readiness / stress traffic lights as Tailwind classes (theme colors). */
 const readinessTone = (score: number) =>
@@ -39,20 +39,19 @@ export function DashboardPage() {
   const { data: userSettings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
 
   const { data: allPlanned, isLoading: plannedLoading } = useQuery({
-    queryKey: ['planned', today, today],
+    queryKey: qk.planned(today, today),
     queryFn: () => garminApi.getPlanned(today, today),
   });
   const { data: todayActual } = useQuery({
-    queryKey: ['actual'],
-    queryFn: () => garminApi.getActual(),
-    select: (data) => data.filter((s) => s.date.slice(0, 10) === today),
+    queryKey: qk.actual(today, today),
+    queryFn: () => garminApi.getActual(today, today),
   });
   const { data: todayStrength } = useQuery({
-    queryKey: ['strength-sessions', 20],
+    queryKey: qk.strengthSessions(20),
     queryFn: () => strengthApi.getSessions(20),
     select: (data) => data.filter((s) => s.date === today).map(strengthAsActual),
   });
-  const todayDone = [...(todayActual ?? []), ...(todayStrength ?? [])];
+  const todayLink = linkDay(today, allPlanned ?? [], [...(todayActual ?? []), ...(todayStrength ?? [])], today);
 
   const {
     data: playerStats,
@@ -115,30 +114,29 @@ export function DashboardPage() {
 
         {/* Block 1: Today's Plan */}
         <Panel className="p-4">
-          <SectionHeader icon={<Calendar className="w-4 h-4 text-neon-purple" />} title="TODAY'S PLAN" />
-          {allPlanned && allPlanned.length > 0 ? (
+          <SectionHeader icon={<Calendar className="w-4 h-4 text-neon-purple" />} title="SÉANCE DU JOUR" />
+          {todayLink.planned.length > 0 || todayLink.offPlan.length > 0 ? (
             <div className="space-y-2">
-              {allPlanned.map((session) => (
-                <PlannedSessionCard
-                  key={session.id}
-                  session={session}
-                  done={isPlannedDone(session, todayDone)}
-                />
+              {todayLink.planned.map(({ session, realised, state }) => (
+                <SessionCard key={session.id} planned={session} realised={realised} state={state} />
+              ))}
+              {todayLink.offPlan.map((a) => (
+                <OffPlanRow key={a.id} session={a} />
               ))}
               <div className="flex justify-end gap-4 pt-1 text-xs font-mono">
                 <Link to="/planning" className="text-neon-cyan hover:underline">
                   Semaine →
                 </Link>
                 <Link to="/log" className="text-neon-gold hover:text-neon-gold/80 transition-colors">
-                  Log this session →
+                  Saisir la séance →
                 </Link>
               </div>
             </div>
           ) : (
             <div className="text-center py-4">
-              <p className="text-sm font-mono text-text-muted mb-2">Rest day — no sessions planned</p>
+              <p className="text-sm font-mono text-text-muted mb-2">Repos — aucune séance prévue</p>
               <Link to="/planning" className="text-xs font-mono text-neon-cyan hover:underline">
-                + Add a session
+                + Ajouter une séance
               </Link>
             </div>
           )}

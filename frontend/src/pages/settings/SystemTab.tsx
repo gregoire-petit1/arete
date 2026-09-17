@@ -7,6 +7,7 @@ import { garminApi, garminHealthApi, healthApi } from '@/lib/api';
 import { StatusRow } from './StatusRow';
 import { SyncOptionsForm, type SyncOptions } from './SyncOptionsForm';
 import { toLocalISODate } from '@/lib/dates';
+import { invalidateAfterSession } from '@/lib/queryKeys';
 
 type Alert = { type: 'success' | 'error'; message: string };
 
@@ -47,7 +48,7 @@ export function SystemTab() {
     onSuccess: (result) => {
       setAlert({ type: 'success', message: `SYNCED ${result.synced} ACTIVITIES` });
       queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
-      queryClient.invalidateQueries({ queryKey: ['actual'] });
+      invalidateAfterSession(queryClient);
     },
     onError: (error) => setAlert({ type: 'error', message: `SYNC FAILED: ${error}` }),
   });
