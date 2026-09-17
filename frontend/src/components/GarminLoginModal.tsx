@@ -28,7 +28,7 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
         body: JSON.stringify(credentials),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Login failed');
+      if (!res.ok) throw new Error(data.detail || 'Connexion impossible');
       return data as { needs_mfa?: boolean };
     },
     onSuccess: (data) => {
@@ -71,14 +71,14 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
         }}
       >
       <h2 className="text-lg font-mono text-neon-cyan mb-4">
-        GARMIN CONNECT — {needsMfa ? 'MFA Verification' : 'Authentication'}
+        GARMIN CONNECT — {needsMfa ? 'Vérification en deux étapes' : 'Connexion'}
       </h2>
 
       {needsMfa ? (
         <>
-          <p className="text-sm font-mono text-text-muted mb-6">Enter the MFA code sent to your device.</p>
+          <p className="text-sm font-mono text-text-muted mb-6">Saisis le code envoyé sur ton appareil.</p>
           <div>
-            <label className={LABEL}>[MFA_CODE]</label>
+            <label className={LABEL}>[CODE]</label>
             <input
               type="text"
               value={mfaCode}
@@ -91,13 +91,13 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
           </div>
           <div className="mt-4 p-3 bg-neon-purple/10 border border-neon-purple/30 rounded">
             <p className="text-xs font-mono text-neon-purple">
-              &gt; Check Garmin Connect app or email for verification code.
+              &gt; Le code arrive dans l'application Garmin Connect ou par e-mail.
             </p>
           </div>
         </>
       ) : (
         <>
-          <p className="text-sm font-mono text-text-muted mb-6">Connect your Garmin account to sync activities.</p>
+          <p className="text-sm font-mono text-text-muted mb-6">Connecte ton compte Garmin pour synchroniser tes activités.</p>
           <div className="space-y-4">
             <div>
               <label className={LABEL}>[EMAIL]</label>
@@ -112,7 +112,7 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
               />
             </div>
             <div>
-              <label className={LABEL}>[PASSWORD]</label>
+              <label className={LABEL}>[MOT DE PASSE]</label>
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
@@ -128,13 +128,13 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
                   onChange={(e) => setShowPassword(e.target.checked)}
                   className="accent-neon-cyan"
                 />
-                Show password
+                Afficher le mot de passe
               </label>
             </div>
           </div>
           <div className="mt-4 p-3 bg-warning-orange/10 border border-warning-orange/30 rounded">
             <p className="text-xs font-mono text-warning-orange">
-              &gt; Credentials used once. Only session tokens stored.
+              &gt; Les identifiants ne servent qu'une fois : seuls les jetons de session sont conservés.
             </p>
           </div>
         </>

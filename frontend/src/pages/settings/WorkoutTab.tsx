@@ -5,12 +5,12 @@ import { Panel, inputClasses } from '@/components/ui';
 import type { SettingsTabProps } from './types';
 
 const QUICK_REFERENCE = [
-  ['2x8 @80 bench press', '2 sets of 8 reps at 80kg'],
-  ['3@100, 1@105 squat', 'descending sets'],
-  ['5x(10 pull ups, 15 dips) r2\'', 'circuit, 5 rounds, 2 min rest'],
-  ['(pull ups) 3x amrap', 'finisher, to failure'],
-  ['r1\'30', 'rest 1 min 30 sec'],
-  ['EMOM 20\' (odd: 10 pull ups, even: 10 chin ups)', 'every minute on the minute'],
+  ['2x8 @80 bench press', '2 séries de 8 répétitions à 80 kg'],
+  ['3@100, 1@105 squat', 'séries dégressives'],
+  ['5x(10 pull ups, 15 dips) r2\'', 'circuit, 5 tours, 2 min de repos'],
+  ['(pull ups) 3x amrap', 'finisher, jusqu\'à l\'échec'],
+  ['r1\'30', 'repos 1 min 30'],
+  ['EMOM 20\' (odd: 10 pull ups, even: 10 chin ups)', 'une série au départ de chaque minute'],
 ];
 
 export function WorkoutTab({ settings, updateSetting }: SettingsTabProps) {
@@ -44,16 +44,16 @@ export function WorkoutTab({ settings, updateSetting }: SettingsTabProps) {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-sans text-text-primary mb-4">WORKOUT NOTATION</h2>
+      <h2 className="text-lg font-sans text-text-primary mb-4">NOTATION DES SÉANCES</h2>
 
       <div>
         <label className="text-xs font-mono text-text-muted uppercase block mb-2">
-          Exercise Abbreviations
+          Abréviations d'exercices
         </label>
         <p className="text-xs text-text-muted font-mono mb-4">
-          Map your shorthand to full exercise names so the parser understands your notation.
+          Associe tes raccourcis aux noms complets pour que l'analyseur comprenne ta notation.
           <br />
-          Example: <span className="text-neon-cyan">bp</span> &rarr; <span className="text-neon-cyan">bench press</span>,{' '}
+          Exemple : <span className="text-neon-cyan">bp</span> &rarr; <span className="text-neon-cyan">bench press</span>,{' '}
           <span className="text-neon-cyan">ng</span> &rarr; <span className="text-neon-cyan">neutral grip</span>
         </p>
 
@@ -89,7 +89,7 @@ export function WorkoutTab({ settings, updateSetting }: SettingsTabProps) {
             value={newAbbrev}
             onChange={(e) => setNewAbbrev(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="abbrev"
+            placeholder="abréviation"
             className={inputClasses('cyan', 'w-24 px-3 text-sm text-neon-cyan')}
           />
           <span className="text-text-muted font-mono text-xs">&rarr;</span>
@@ -98,7 +98,7 @@ export function WorkoutTab({ settings, updateSetting }: SettingsTabProps) {
             value={newFull}
             onChange={(e) => setNewFull(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="full exercise name"
+            placeholder="nom complet de l'exercice"
             className={inputClasses('cyan', 'flex-1 px-3 text-sm')}
           />
           <button
@@ -117,7 +117,7 @@ export function WorkoutTab({ settings, updateSetting }: SettingsTabProps) {
         </div>
       </div>
 
-      <Panel variant="inset" title="Notation Quick Reference">
+      <Panel variant="inset" title="Mémo de notation">
         <div className="space-y-1.5 font-mono text-xs">
           {QUICK_REFERENCE.map(([notation, meaning]) => (
             <div key={notation} className="flex gap-3">

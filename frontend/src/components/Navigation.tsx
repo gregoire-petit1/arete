@@ -3,11 +3,11 @@ import { BarChart3, CalendarDays, Dumbbell, LayoutDashboard, Settings } from 'lu
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { path: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { path: '/', label: 'Tableau de bord', icon: LayoutDashboard },
   { path: '/planning', label: 'Planning', icon: CalendarDays },
-  { path: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { path: '/log', label: 'Log', icon: Dumbbell },
-  { path: '/settings', label: 'Settings', icon: Settings },
+  { path: '/analytics', label: 'Analyses', icon: BarChart3 },
+  { path: '/log', label: 'Journal', icon: Dumbbell },
+  { path: '/settings', label: 'Réglages', icon: Settings },
 ];
 
 /**
@@ -19,7 +19,7 @@ export function Navigation() {
     <>
       {/* Desktop top nav — hidden on mobile */}
       <nav
-        aria-label="Main navigation"
+        aria-label="Navigation principale"
         className="hidden md:block sticky top-0 z-50 bg-void/95 backdrop-blur-sm border-b border-text-muted/20"
       >
         <div className="max-w-7xl mx-auto px-4">
@@ -58,7 +58,7 @@ export function Navigation() {
 
       {/* Mobile bottom tab bar — hidden on desktop */}
       <nav
-        aria-label="Mobile navigation"
+        aria-label="Navigation mobile"
         className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-void/95 backdrop-blur-sm border-t border-text-muted/20"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >

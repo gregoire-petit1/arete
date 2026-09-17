@@ -37,7 +37,7 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
   return (
     <Modal open={open} onClose={onClose} className="max-w-2xl max-h-[80vh] overflow-y-auto">
       <ModalHeader
-        title={<span className="font-mono uppercase tracking-wider">SESSION DETAILS</span>}
+        title={<span className="font-mono uppercase tracking-wider">DÉTAIL DE LA SÉANCE</span>}
         tone="text-neon-gold"
         onClose={onClose}
       />
@@ -71,8 +71,8 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
           </div>
 
           <div className="grid grid-cols-3 gap-2 sm:gap-4">
-            <Stat value={session.exercises_count || session.exercises?.length || 0} label="Exercises" tone="text-neon-cyan" />
-            <Stat value={session.total_sets || 0} label="Sets" tone="text-neon-gold" />
+            <Stat value={session.exercises_count || session.exercises?.length || 0} label="Exercices" tone="text-neon-cyan" />
+            <Stat value={session.total_sets || 0} label="Séries" tone="text-neon-gold" />
             <Stat
               value={`${((session.total_volume || 0) / 1000).toFixed(1)}k`}
               label="Volume (kg)"
@@ -82,7 +82,7 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
 
           {session.exercises && session.exercises.length > 0 && (
             <div>
-              <h3 className="text-sm font-mono text-text-muted uppercase tracking-wider mb-3">Exercises</h3>
+              <h3 className="text-sm font-mono text-text-muted uppercase tracking-wider mb-3">Exercices</h3>
               <div className="space-y-3">
                 {session.exercises.map((ex, idx) => (
                   <div key={idx} className="p-3 bg-abyss rounded border border-text-muted/20">
@@ -141,7 +141,7 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
                   onClick={() => linkMutation.mutate(null)}
                   disabled={linkMutation.isPending}
                   className="p-2 hover:bg-danger-red/20 rounded text-danger-red transition-colors"
-                  title="Unlink"
+                  title="Délier"
                 >
                   <Unlink className="w-4 h-4" />
                 </button>
@@ -179,7 +179,7 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
           </div>
         </div>
       ) : (
-        <EmptyState message="Session not found" />
+        <EmptyState message="SÉANCE INTROUVABLE" />
       )}
     </Modal>
   );

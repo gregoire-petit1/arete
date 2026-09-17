@@ -63,7 +63,7 @@ export function RecentSessions() {
   }
 
   return (
-    <Panel title="RECENT SESSIONS" delay={0.1}>
+    <Panel title="SÉANCES RÉCENTES" delay={0.1}>
       <div className="space-y-2">
         {sessions.map((s) => {
           const Icon = getSportIconComponent(s.sport);
@@ -152,7 +152,7 @@ export function RecentSessions() {
                       value={editNotes}
                       onChange={(e) => setEditNotes(e.target.value)}
                       rows={2}
-                      placeholder="How did it feel?"
+                      placeholder="Sensations ?"
                       className="bg-void px-3"
                     />
                   </div>
@@ -161,7 +161,7 @@ export function RecentSessions() {
                       CANCEL
                     </Button>
                     <Button size="sm" strong onClick={saveEdit} loading={updateMutation.isPending}>
-                      {updateMutation.isPending ? 'SAVING...' : 'SAVE'}
+                      {updateMutation.isPending ? 'ENREGISTREMENT…' : 'ENREGISTRER'}
                     </Button>
                   </div>
                 </div>

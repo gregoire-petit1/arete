@@ -5,7 +5,7 @@ interface LoadingStateProps {
   message?: string;
 }
 
-export function LoadingState({ message = 'SYNCHRONIZING DATA...' }: LoadingStateProps) {
+export function LoadingState({ message = 'CHARGEMENT…' }: LoadingStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 animate-fade-in">
       <Loader2 className="w-8 h-8 text-neon-cyan animate-spin" />
@@ -19,7 +19,7 @@ interface ErrorStateProps {
   onRetry?: () => void;
 }
 
-export function ErrorState({ message = 'CONNECTION LOST', onRetry }: ErrorStateProps) {
+export function ErrorState({ message = 'CONNEXION PERDUE', onRetry }: ErrorStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 animate-scale-in">
       <div className="p-4 rounded-full bg-danger-red/20 mb-4">
@@ -37,7 +37,7 @@ export function ErrorState({ message = 'CONNECTION LOST', onRetry }: ErrorStateP
             'transition-all duration-200'
           )}
         >
-          [RETRY]
+          RÉESSAYER
         </button>
       )}
     </div>
@@ -49,7 +49,7 @@ interface EmptyStateProps {
   action?: string;
 }
 
-export function EmptyState({ message = 'NO DATA AVAILABLE', action }: EmptyStateProps) {
+export function EmptyState({ message = 'AUCUNE DONNÉE', action }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center animate-fade-in">
       <div className="p-4 rounded-full bg-shadow mb-4">
@@ -88,7 +88,7 @@ export function SystemAlert({ type, message, onDismiss }: SystemAlertProps) {
       <span className={cn('font-mono text-sm', styles.text)}>{message}</span>
       {onDismiss && (
         <button type="button" onClick={onDismiss} className={cn('ml-4 text-xs hover:underline', styles.text)}>
-          [DISMISS]
+          FERMER
         </button>
       )}
     </div>

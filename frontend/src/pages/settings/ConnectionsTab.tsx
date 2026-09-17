@@ -56,7 +56,7 @@ export function ConnectionsTab() {
       setSyncResult(null);
       queryClient.invalidateQueries({ queryKey: ['stravaStatus'] });
     },
-    onError: () => setSyncResult('Disconnect failed'),
+    onError: () => setSyncResult('Déconnexion impossible'),
   });
 
   const garminConnected = syncStatus?.garmin_authenticated;
@@ -64,7 +64,7 @@ export function ConnectionsTab() {
 
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-sans text-text-primary mb-4">CONNECTED SERVICES</h2>
+      <h2 className="text-lg font-sans text-text-primary mb-4">SERVICES CONNECTÉS</h2>
 
       <div className="space-y-3">
         {/* Garmin */}
@@ -84,10 +84,10 @@ export function ConnectionsTab() {
           {garminConnected ? (
             <div className="flex items-center gap-1 text-xs text-success-green">
               <Check className="w-4 h-4" />
-              Connected
+              Connecté
             </div>
           ) : (
-            <span className="text-xs font-mono text-text-muted">Not connected</span>
+            <span className="text-xs font-mono text-text-muted">Non connecté</span>
           )}
         </div>
 
@@ -105,7 +105,7 @@ export function ConnectionsTab() {
               <div className="text-xs text-strava">{stravaStatus.athlete_name}</div>
             )}
             {stravaError && (
-              <div className="text-xs text-danger-red mt-1 font-mono">Status unavailable</div>
+              <div className="text-xs text-danger-red mt-1 font-mono">État indisponible</div>
             )}
             {syncResult && (
               <div className="text-xs text-text-muted mt-1 font-mono">{syncResult}</div>
@@ -122,14 +122,14 @@ export function ConnectionsTab() {
                   syncMutation.mutate();
                 }}
               >
-                {syncMutation.isPending ? 'SYNCING...' : 'SYNC NOW'}
+                {syncMutation.isPending ? 'SYNCHRO…' : 'SYNCHRONISER'}
               </Button>
               <Button
                 variant="danger"
                 size="sm"
                 onClick={() => disconnectMutation.mutate()}
                 loading={disconnectMutation.isPending}
-                aria-label="Disconnect Strava"
+                aria-label="Déconnecter Strava"
               >
                 <LogOut className="w-3 h-3" />
               </Button>
@@ -141,7 +141,7 @@ export function ConnectionsTab() {
               onClick={() => connectMutation.mutate()}
               loading={connectMutation.isPending}
             >
-              CONNECT
+              CONNECTER
             </Button>
           )}
         </div>

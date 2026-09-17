@@ -4,21 +4,30 @@ import { Field } from '@/components/ui';
 import type { SettingsTabProps } from './types';
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const DAY_LABEL: Record<string, string> = {
+  monday: 'LUN',
+  tuesday: 'MAR',
+  wednesday: 'MER',
+  thursday: 'JEU',
+  friday: 'VEN',
+  saturday: 'SAM',
+  sunday: 'DIM',
+};
 const GOALS = [
-  { value: 'maintenance', label: 'MAINTENANCE', desc: 'Maintain current fitness' },
-  { value: 'build', label: 'BUILD', desc: 'Progressive overload' },
-  { value: 'peak', label: 'PEAK', desc: 'Peak for event' },
-  { value: 'recovery', label: 'RECOVERY', desc: 'Active recovery phase' },
+  { value: 'maintenance', label: 'MAINTIEN', desc: 'Garder le niveau actuel' },
+  { value: 'build', label: 'CONSTRUCTION', desc: 'Monter la charge progressivement' },
+  { value: 'peak', label: 'AFFÛTAGE', desc: 'Être au pic le jour J' },
+  { value: 'recovery', label: 'RÉCUPÉRATION', desc: 'Phase de récupération active' },
 ];
 
 export function GoalsTab({ settings, updateSetting }: SettingsTabProps) {
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-sans text-text-primary mb-4">TRAINING GOALS</h2>
+      <h2 className="text-lg font-sans text-text-primary mb-4">OBJECTIFS</h2>
 
       <div className="space-y-6">
         <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-3">Primary Goal</label>
+          <label className="text-xs font-mono text-text-muted uppercase block mb-3">Objectif principal</label>
           <div className="grid grid-cols-2 gap-3">
             {GOALS.map((goal) => (
               <button
@@ -39,7 +48,7 @@ export function GoalsTab({ settings, updateSetting }: SettingsTabProps) {
           </div>
         </div>
 
-        <Field label="Weekly Training Sessions Target">
+        <Field label="Séances par semaine visées">
           <div className="flex items-center gap-4">
             <input
               type="range"
@@ -56,7 +65,7 @@ export function GoalsTab({ settings, updateSetting }: SettingsTabProps) {
         </Field>
 
         <div>
-          <label className="text-xs font-mono text-text-muted uppercase block mb-3">Preferred Rest Days</label>
+          <label className="text-xs font-mono text-text-muted uppercase block mb-3">Jours de repos préférés</label>
           <div className="flex flex-wrap gap-2">
             {DAYS.map((day) => (
               <button
@@ -76,15 +85,15 @@ export function GoalsTab({ settings, updateSetting }: SettingsTabProps) {
                     : 'bg-abyss text-text-muted border border-text-muted/20 hover:border-text-muted/40'
                 )}
               >
-                {day.slice(0, 3)}
+                {DAY_LABEL[day]}
               </button>
             ))}
           </div>
         </div>
 
         <Field
-          label="Fatigue Alert Threshold (%)"
-          hint="System will warn when fatigue exceeds this level"
+          label="Seuil de préparation (%)"
+          hint="Au-dessus de ce score, le conseil du jour propose une séance dure"
         >
           <div className="flex items-center gap-4">
             <input

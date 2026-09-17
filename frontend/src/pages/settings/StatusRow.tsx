@@ -9,6 +9,12 @@ const DOT: Record<Status, string> = {
   loading: 'bg-warning-orange animate-pulse',
 };
 
+const STATUS_LABEL: Record<Status, string> = {
+  online: 'EN LIGNE',
+  offline: 'HORS LIGNE',
+  loading: 'VÉRIFICATION',
+};
+
 const TEXT: Record<Status, string> = {
   online: 'text-success-green',
   offline: 'text-danger-red',
@@ -23,7 +29,7 @@ export function StatusRow({ icon, label, status }: { icon: ReactNode; label: str
       <div className="flex items-center gap-2">
         <div className={cn('w-3 h-3 rounded-full', DOT[status])} />
         <span className={cn('text-xs font-mono uppercase', TEXT[status])}>
-          {status === 'loading' ? 'CHECKING' : status.toUpperCase()}
+          {STATUS_LABEL[status]}
         </span>
       </div>
     </div>

@@ -49,7 +49,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
   return (
     <Modal open={open} onClose={reset} className="max-w-lg max-h-[90vh] overflow-y-auto">
       <ModalHeader
-        title="LOG SESSION"
+        title="SAISIR UNE SÉANCE"
         tone="text-neon-gold"
         icon={<Sparkles className="w-5 h-5" />}
         onClose={reset}
@@ -70,7 +70,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
             />
           </Field>
 
-          <Field label="Workout Log">
+          <Field label="Séance en texte libre">
             <Textarea
               accent="gold"
               value={workoutText}
@@ -100,7 +100,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
             loading={parseMutation.isPending}
           >
             {parseMutation.isPending ? (
-              'PARSING...'
+              'ANALYSE…'
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
@@ -195,7 +195,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
             <Check className="w-8 h-8 text-success-green" />
           </div>
           <div>
-            <h4 className="font-sans text-lg text-success-green">SESSION SAVED</h4>
+            <h4 className="font-sans text-lg text-success-green">SÉANCE ENREGISTRÉE</h4>
             <p className="text-sm font-mono text-text-muted mt-1">
               {parseResult.message || `${parseResult.exercises.length} exercice(s) enregistré(s)`}
             </p>

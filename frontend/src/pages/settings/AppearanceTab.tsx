@@ -3,18 +3,18 @@ import type { LocalSettings, SettingsTabProps } from './types';
 
 // Swatches mirror THEME_COLORS.void in contexts/SettingsContext.tsx
 const THEMES: { value: LocalSettings['theme']; label: string; color: string }[] = [
-  { value: 'dark', label: 'DARK', color: 'bg-[#0A0A0F]' },
-  { value: 'darker', label: 'DARKER', color: 'bg-[#050508]' },
-  { value: 'abyss', label: 'ABYSS', color: 'bg-[#000000]' },
+  { value: 'dark', label: 'SOMBRE', color: 'bg-[#0A0A0F]' },
+  { value: 'darker', label: 'PLUS SOMBRE', color: 'bg-[#050508]' },
+  { value: 'abyss', label: 'ABYSSE', color: 'bg-[#000000]' },
 ];
 
 export function AppearanceTab({ settings, updateSetting }: SettingsTabProps) {
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-sans text-text-primary mb-4">APPEARANCE</h2>
+      <h2 className="text-lg font-sans text-text-primary mb-4">APPARENCE</h2>
 
       <div>
-        <label className="text-xs font-mono text-text-muted uppercase block mb-3">Theme</label>
+        <label className="text-xs font-mono text-text-muted uppercase block mb-3">Thème</label>
         <div className="flex gap-3">
           {THEMES.map((theme) => (
             <button

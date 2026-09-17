@@ -155,3 +155,44 @@ class TestPostSessionCardio:
         assert resp.status_code == 200
         data = resp.json()
         assert "Séance complétée" in data["highlights"][0]
+
+
+class TestTipUsesSettings:
+    """The threshold and the goal come from the athlete's settings, not constants."""
+
+    def test_readiness_is_read_against_the_athletes_threshold(self):
+        from arete.api.ai_tips import generate_daily_tip
+
+        tip, priority = generate_daily_tip(1.0, 0.0, 82.0, fatigue_threshold=75)
+        assert "82/100" in tip and "75" in tip
+        assert priority == "info"
+
+    def test_readiness_below_threshold_falls_through(self):
+        from arete.api.ai_tips import generate_daily_tip
+
+        tip, _ = generate_daily_tip(1.0, 0.0, 82.0, fatigue_threshold=90)
+        assert "ACWR 1.00" in tip
+
+    def test_goal_closes_the_balanced_load_tip(self):
+        from arete.api.ai_tips import GOAL_ADVICE, generate_daily_tip
+
+        for goal, advice in GOAL_ADVICE.items():
+            tip, _ = generate_daily_tip(1.0, 0.0, None, fitness_goal=goal)
+            assert advice in tip
+
+    def test_unknown_goal_falls_back_to_build(self):
+        from arete.api.ai_tips import GOAL_ADVICE, generate_daily_tip
+
+        tip, _ = generate_daily_tip(1.0, 0.0, None, fitness_goal="whatever")
+        assert GOAL_ADVICE["build"] in tip
+
+    def test_endpoint_passes_settings_through(self, client):
+        from unittest.mock import patch
+
+        with patch(
+            "arete.api.ai_tips.get_user_settings",
+            return_value={"fatigue_threshold": 60, "fitness_goal": "recovery"},
+        ), patch("arete.api.ai_tips._enrich_with_llm", return_value=None):
+            resp = client.get("/tips/daily")
+        assert resp.status_code == 200
+        assert resp.json()["source"] == "rules"

@@ -4,10 +4,10 @@ import type { SettingsTabProps } from './types';
 export function ProfileTab({ settings, updateSetting }: SettingsTabProps) {
   return (
     <div className="space-y-6">
-      <h2 className="text-lg font-sans text-text-primary mb-4">PROFILE SETTINGS</h2>
+      <h2 className="text-lg font-sans text-text-primary mb-4">PROFIL</h2>
 
       <div className="space-y-4">
-        <Field label="Display Name">
+        <Field label="Nom affiché">
           <Input
             type="text"
             value={settings.display_name}
@@ -15,7 +15,7 @@ export function ProfileTab({ settings, updateSetting }: SettingsTabProps) {
           />
         </Field>
 
-        <Field label="Email">
+        <Field label="Adresse e-mail">
           <Input
             type="email"
             value={settings.email ?? ''}
@@ -23,7 +23,7 @@ export function ProfileTab({ settings, updateSetting }: SettingsTabProps) {
           />
         </Field>
 
-        <Field label="Timezone">
+        <Field label="Fuseau horaire">
           <Select value={settings.timezone} onChange={(e) => updateSetting('timezone', e.target.value)}>
             <option value="Europe/Paris">Europe/Paris (CET)</option>
             <option value="Europe/London">Europe/London (GMT)</option>

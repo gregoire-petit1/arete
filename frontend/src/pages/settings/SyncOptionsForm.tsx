@@ -37,16 +37,16 @@ export function SyncOptionsForm({
     <div className="p-3 rounded border border-text-muted/20">
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
-          <label className="text-xs text-text-muted font-mono block mb-1">Date range</label>
+          <label className="text-xs text-text-muted font-mono block mb-1">Période</label>
           <select value={days} onChange={(e) => setDays(Number(e.target.value))} className={COMPACT_INPUT}>
-            <option value={7}>Last 7 days</option>
-            <option value={30}>Last 30 days</option>
-            <option value={90}>Last 90 days</option>
-            <option value={365}>Last year</option>
+            <option value={7}>7 derniers jours</option>
+            <option value={30}>30 derniers jours</option>
+            <option value={90}>90 derniers jours</option>
+            <option value={365}>12 derniers mois</option>
           </select>
         </div>
         <div>
-          <label className="text-xs text-text-muted font-mono block mb-1">Max activities</label>
+          <label className="text-xs text-text-muted font-mono block mb-1">Activités maximum</label>
           <input
             type="number"
             value={maxActivities}
@@ -63,12 +63,12 @@ export function SyncOptionsForm({
             className="accent-neon-cyan"
           />
           <label htmlFor="systemDownloadFit" className="text-xs text-text-muted font-mono">
-            Download FIT files
+            Télécharger les fichiers FIT
           </label>
         </div>
       </div>
       <Button fullWidth className="mt-3" onClick={handleSync} loading={isLoading}>
-        {isLoading ? 'SYNCING...' : '[START SYNC]'}
+        {isLoading ? 'SYNCHRO…' : 'LANCER LA SYNCHRO'}
       </Button>
     </div>
   );

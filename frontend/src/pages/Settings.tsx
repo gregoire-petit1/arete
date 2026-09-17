@@ -17,12 +17,12 @@ import {
 } from './settings/index';
 
 const TABS = [
-  { id: 'profile', label: 'PROFILE', icon: User },
-  { id: 'goals', label: 'GOALS', icon: Target },
-  { id: 'workout', label: 'WORKOUT', icon: Dumbbell },
-  { id: 'connections', label: 'CONNECTIONS', icon: Watch },
-  { id: 'appearance', label: 'APPEARANCE', icon: Palette },
-  { id: 'system', label: 'SYSTEM', icon: Terminal },
+  { id: 'profile', label: 'PROFIL', icon: User },
+  { id: 'goals', label: 'OBJECTIFS', icon: Target },
+  { id: 'workout', label: 'NOTATION', icon: Dumbbell },
+  { id: 'connections', label: 'CONNEXIONS', icon: Watch },
+  { id: 'appearance', label: 'APPARENCE', icon: Palette },
+  { id: 'system', label: 'SYSTÈME', icon: Terminal },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -76,13 +76,13 @@ export function SettingsPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-void p-6 flex items-center justify-center">
-        <LoadingState message="Loading settings..." />
+        <LoadingState message="CHARGEMENT DES RÉGLAGES…" />
       </div>
     );
   }
 
   if (isError) {
-    return <ErrorState message="FAILED TO LOAD SETTINGS" onRetry={() => refetch()} />;
+    return <ErrorState message="RÉGLAGES INDISPONIBLES" onRetry={() => refetch()} />;
   }
 
   const tabProps = { settings, updateSetting };
@@ -91,7 +91,7 @@ export function SettingsPage() {
     <div className="min-h-screen bg-void p-6">
       <div className="max-w-4xl mx-auto">
         <header className="flex justify-between items-center mb-8 animate-fade-down">
-          <h1 className="text-2xl font-sans font-bold text-text-primary tracking-wider">SETTINGS</h1>
+          <h1 className="text-2xl font-sans font-bold text-text-primary tracking-wider">RÉGLAGES</h1>
           {hasChanges && (
             <Button
               variant="green"
@@ -148,28 +148,28 @@ function SaveStatusContent({ status }: { status: SaveStatus }) {
       return (
         <>
           <Spinner />
-          SAVING...
+          ENREGISTREMENT…
         </>
       );
     case 'saved':
       return (
         <>
           <Check className="w-4 h-4" />
-          SAVED!
+          ENREGISTRÉ
         </>
       );
     case 'error':
       return (
         <>
           <X className="w-4 h-4 text-danger-red" />
-          ERROR
+          ÉCHEC
         </>
       );
     default:
       return (
         <>
           <Save className="w-4 h-4" />
-          SAVE CHANGES
+          ENREGISTRER
         </>
       );
   }

@@ -38,7 +38,7 @@ export function SystemTab() {
   const logoutMutation = useMutation({
     mutationFn: garminApi.logout,
     onSuccess: () => {
-      setAlert({ type: 'success', message: 'LOGGED OUT' });
+      setAlert({ type: 'success', message: 'DÉCONNECTÉ DE GARMIN' });
       queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
     },
   });
@@ -46,11 +46,11 @@ export function SystemTab() {
   const syncMutation = useMutation({
     mutationFn: (options: SyncOptions) => garminApi.syncActivities(options),
     onSuccess: (result) => {
-      setAlert({ type: 'success', message: `SYNCED ${result.synced} ACTIVITIES` });
+      setAlert({ type: 'success', message: `${result.synced} ACTIVITÉS SYNCHRONISÉES` });
       queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
       invalidateAfterSession(queryClient);
     },
-    onError: (error) => setAlert({ type: 'error', message: `SYNC FAILED: ${error}` }),
+    onError: (error) => setAlert({ type: 'error', message: `SYNCHRO IMPOSSIBLE : ${error}` }),
   });
 
   const healthSyncMutation = useMutation({
@@ -62,12 +62,12 @@ export function SystemTab() {
     onSuccess: (result) => {
       setAlert({
         type: result.days_failed ? 'error' : 'success',
-        message: `HEALTH: ${result.days_synced} DAYS SYNCED${result.days_failed ? `, ${result.days_failed} FAILED` : ''}`,
+        message: `SANTÉ : ${result.days_synced} JOURS SYNCHRONISÉS${result.days_failed ? `, ${result.days_failed} EN ÉCHEC` : ''}`,
       });
       queryClient.invalidateQueries({ queryKey: ['garminHealthStatus'] });
       queryClient.invalidateQueries({ queryKey: ['garmin-health'] });
     },
-    onError: (error) => setAlert({ type: 'error', message: `HEALTH SYNC FAILED: ${error}` }),
+    onError: (error) => setAlert({ type: 'error', message: `SYNCHRO SANTÉ IMPOSSIBLE : ${error}` }),
   });
 
   const handleRefresh = () => {
@@ -78,7 +78,7 @@ export function SystemTab() {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h2 className="text-lg font-sans text-text-primary">SYSTEM</h2>
+        <h2 className="text-lg font-sans text-text-primary">SYSTÈME</h2>
         <Button
           variant="outline"
           size="sm"
@@ -86,7 +86,7 @@ export function SystemTab() {
           className="text-text-secondary hover:border-neon-cyan/50 hover:text-neon-cyan"
         >
           <RefreshCw className="w-3 h-3" />
-          REFRESH
+          ACTUALISER
         </Button>
       </div>
 
@@ -96,11 +96,11 @@ export function SystemTab() {
         </div>
       )}
 
-      <Panel variant="inset" title="STATUS">
+      <Panel variant="inset" title="ÉTAT">
         <div className="space-y-2">
           <StatusRow
             icon={<Server className="w-4 h-4" />}
-            label="API Health"
+            label="API"
             status={health?.status === 'ok' ? 'online' : healthLoading ? 'loading' : 'offline'}
           />
           <StatusRow
@@ -116,7 +116,7 @@ export function SystemTab() {
         </div>
       </Panel>
 
-      <Panel variant="inset" title="GARMIN SYNC CENTER">
+      <Panel variant="inset" title="SYNCHRONISATION GARMIN">
         {syncStatus?.garmin_authenticated ? (
           <div className="space-y-4">
             <div className="p-3 rounded border border-success-green/30">
@@ -124,12 +124,12 @@ export function SystemTab() {
                 <div>
                   <div className="text-sm text-success-green font-mono flex items-center gap-2">
                     <CheckCircle className="w-4 h-4" />
-                    {syncStatus.user_email ? `Authenticated as ${syncStatus.user_email}` : 'Authenticated'}
+                    {syncStatus.user_email ? `Connecté en tant que ${syncStatus.user_email}` : 'Connecté'}
                   </div>
                   <div className="text-xs text-text-muted mt-1 font-mono">
-                    Last sync: {syncStatus.last_sync || 'Never'}
-                    {' | '}
-                    Activities: {syncStatus.activities_synced}
+                    Dernière sync : {syncStatus.last_sync || 'jamais'}
+                    {' · '}
+                    Activités : {syncStatus.activities_synced}
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -138,13 +138,13 @@ export function SystemTab() {
                     onClick={() => syncMutation.mutate({ max_activities: 50, download_fit: true })}
                     loading={syncMutation.isPending}
                   >
-                    {syncMutation.isPending ? 'SYNCING...' : 'SYNC NOW'}
+                    {syncMutation.isPending ? 'SYNCHRO…' : 'SYNCHRONISER'}
                   </Button>
                   <Button
                     variant="danger"
                     size="sm"
                     onClick={() => logoutMutation.mutate()}
-                    aria-label="Log out of Garmin"
+                    aria-label="Se déconnecter de Garmin"
                   >
                     <LogOut className="w-3 h-3" />
                   </Button>
@@ -156,11 +156,11 @@ export function SystemTab() {
 
             <div className="p-3 rounded border border-neon-purple/30 flex items-center justify-between">
               <div>
-                <div className="text-sm text-neon-purple font-mono">Health metrics (HRV, sleep, body battery)</div>
+                <div className="text-sm text-neon-purple font-mono">Données santé (VFC, sommeil, batterie corporelle)</div>
                 <div className="text-xs text-text-muted mt-1 font-mono">
                   {healthStatus?.days_stored
-                    ? `${healthStatus.days_stored} days stored, last ${healthStatus.last_date}`
-                    : 'No health data yet'}
+                    ? `${healthStatus.days_stored} jours stockés, dernier le ${healthStatus.last_date}`
+                    : 'Aucune donnée santé pour le moment'}
                 </div>
               </div>
               <Button
@@ -169,16 +169,16 @@ export function SystemTab() {
                 onClick={() => healthSyncMutation.mutate()}
                 loading={healthSyncMutation.isPending}
               >
-                {healthSyncMutation.isPending ? 'SYNCING...' : 'SYNC LAST 7 DAYS'}
+                {healthSyncMutation.isPending ? 'SYNCHRO…' : 'SYNCHRONISER 7 JOURS'}
               </Button>
             </div>
           </div>
         ) : (
           <div className="p-4 rounded border border-text-muted/30 text-center">
             <XCircle className="w-6 h-6 text-danger-red mx-auto mb-2" />
-            <div className="text-sm text-text-muted font-mono">NOT CONNECTED</div>
+            <div className="text-sm text-text-muted font-mono">NON CONNECTÉ</div>
             <Button className="mt-3" onClick={() => setShowLoginModal(true)}>
-              [CONNECT]
+              CONNECTER
             </Button>
           </div>
         )}
@@ -189,7 +189,7 @@ export function SystemTab() {
         onClose={() => setShowLoginModal(false)}
         onSuccess={() => {
           setShowLoginModal(false);
-          setAlert({ type: 'success', message: 'GARMIN CONNECT AUTHENTICATED' });
+          setAlert({ type: 'success', message: 'GARMIN CONNECT AUTHENTIFIÉ' });
           queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
         }}
       />

@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from arete.dataio.queries import training_loads, tss_history
+from arete.dataio.settings import get_user_settings
 from arete.features.fitness import compute_performance_model
 from arete.features.workload import compute_workload_metrics
 from arete.garmin.repository import GarminRepository
@@ -39,69 +40,80 @@ class DailyTipResponse(BaseModel):
 
 
 # ---------- Rule-based tip generation ----------
+GOAL_ADVICE: dict[str, str] = {
+    "build": "Tu peux monter de 5 à 10 % de charge cette semaine.",
+    "peak": "Garde du jus : qualité plutôt que volume d'ici l'objectif.",
+    "maintenance": "Tiens ce niveau, inutile d'en rajouter.",
+    "recovery": "Reste en dessous du seuil : la récupération est la priorité.",
+}
+DEFAULT_FATIGUE_THRESHOLD = 85
+
+
 def generate_daily_tip(
     acwr: float | None,
     tsb: float | None,
     readiness_score: float | None,
+    fatigue_threshold: int = DEFAULT_FATIGUE_THRESHOLD,
+    fitness_goal: str = "build",
 ) -> tuple[str, Literal["info", "warning", "alert"]]:
-    """Generate a rule-based daily tip from current metrics.
+    """Rule-based daily tip, read against the athlete's own settings.
 
     Priority rules (first match wins):
     1. ACWR > 1.5 -> alert (injury danger)
     2. TSB < -25 -> alert (exhaustion)
     3. ACWR > 1.3 -> warning (overload)
     4. TSB < -10 -> warning (fatigue accumulating)
-    5. readiness >= 80 -> info (good form)
-    6. ACWR and 0.8-1.3 -> info (optimal zone)
+    5. readiness >= the athlete's fatigue threshold -> info (good form)
+    6. ACWR and 0.8-1.3 -> info (optimal zone), closed by the goal advice
     7. fallback -> info (generic)
 
     Returns:
         (tip_text, priority)
     """
+    goal_advice = GOAL_ADVICE.get(fitness_goal, GOAL_ADVICE["build"])
     if acwr is not None and acwr > 1.5:
         return (
-            f"Votre ratio de charge aiguë/chronique ({acwr:.2f}) est dangereux. "
-            "Réduisez immédiatement le volume pour éviter une blessure.",
+            f"Ta charge aiguë dépasse largement la chronique (ACWR {acwr:.2f}). "
+            "Réduis le volume dès aujourd'hui pour éviter la blessure.",
             "alert",
         )
 
     if tsb is not None and tsb < -25:
         return (
-            f"Votre TSB ({tsb:.0f}) indique un état d'épuisement. "
-            "Prenez une semaine de décharge pour récupérer.",
+            f"Fraîcheur à {tsb:.0f} : tu es en épuisement. "
+            "Prends une semaine de décharge.",
             "alert",
         )
 
     if acwr is not None and acwr > 1.3:
         return (
-            f"Votre ACWR ({acwr:.2f}) est élevé. "
-            "Stabilisez votre charge cette semaine et alternez séances intenses et légères.",
+            f"Ta charge monte vite (ACWR {acwr:.2f}). "
+            "Stabilise cette semaine et alterne séances dures et légères.",
             "warning",
         )
 
     if tsb is not None and tsb < -10:
         return (
-            f"La fatigue s'accumule (TSB {tsb:.0f}). "
-            "Planifiez une semaine de récupération prochainement.",
+            f"La fatigue s'accumule (fraîcheur {tsb:.0f}). "
+            "Prévois une semaine de récupération bientôt.",
             "warning",
         )
 
-    if readiness_score is not None and readiness_score >= 80:
+    if readiness_score is not None and readiness_score >= fatigue_threshold:
         return (
-            "Vous êtes en excellente forme ! "
-            "C'est le moment idéal pour une séance intense ou un test de performance.",
+            f"Préparation à {readiness_score:.0f}/100, au-dessus de ton seuil de "
+            f"{fatigue_threshold}. C'est le jour pour une séance dure ou un test.",
             "info",
         )
 
     if acwr is not None and 0.8 <= acwr <= 1.3:
         return (
-            f"Votre charge d'entraînement est optimale (ACWR {acwr:.2f}). "
-            "Continuez sur cette lancée, vous pouvez progresser de 5-10% par semaine.",
+            f"Charge équilibrée (ACWR {acwr:.2f}). {goal_advice}",
             "info",
         )
 
     return (
-        "Enregistrez vos séances régulièrement pour obtenir des conseils personnalisés.",
+        "Enregistre tes séances régulièrement pour recevoir des conseils adaptés.",
         "info",
     )
 
@@ -176,8 +188,17 @@ def get_daily_tip() -> DailyTipResponse:
     except Exception:
         logger.warning("Failed to compute fitness metrics for tip", exc_info=True)
 
-    # Step 1: Rule-based tip
-    rule_tip, priority = generate_daily_tip(acwr, tsb, readiness_score)
+    # Step 1: Rule-based tip, read against the athlete's own settings
+    settings = get_user_settings(user_id=1) or {}
+    rule_tip, priority = generate_daily_tip(
+        acwr,
+        tsb,
+        readiness_score,
+        fatigue_threshold=int(
+            settings.get("fatigue_threshold") or DEFAULT_FATIGUE_THRESHOLD
+        ),
+        fitness_goal=str(settings.get("fitness_goal") or "build"),
+    )
 
     # Step 2: Try LLM enrichment
     source: Literal["llm", "rules"] = "rules"
