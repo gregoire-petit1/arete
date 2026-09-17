@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Sparkles } from 'lucide-react';
+import { Plus, Sparkles } from 'lucide-react';
 import { FitDropzone } from '@/components';
-import { Panel } from '@/components/ui';
+import { Button, Panel } from '@/components/ui';
+import { ManualCardioModal } from './ManualCardioModal';
 import { garminApi, tipsApi } from '@/lib/api';
 import { RecentSessions } from './RecentSessions';
 import { invalidateAfterSession } from '@/lib/queryKeys';
@@ -13,13 +14,37 @@ interface Upload {
   message?: string;
 }
 
+/** "API Error 400: {"detail":"..."}" -> "..." */
+function readableError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const match = raw.match(/\{.*\}/s);
+  if (match) {
+    try {
+      const body = JSON.parse(match[0]) as { detail?: string };
+      if (body.detail) return body.detail;
+    } catch {
+      // fall through to the raw message
+    }
+  }
+  return raw;
+}
+
 export function CardioTab() {
   const queryClient = useQueryClient();
   const [recentUploads, setRecentUploads] = useState<Upload[]>([]);
   const [feedback, setFeedback] = useState<{ feedback: string; highlights: string[] } | null>(null);
+  const [feedbackError, setFeedbackError] = useState(false);
+  const [showManual, setShowManual] = useState(false);
 
   const uploadMutation = useMutation({
-    mutationFn: (file: File) => garminApi.uploadFit(file),
+    mutationFn: async (file: File) => {
+      setRecentUploads((prev) => [{ filename: file.name, status: 'uploading' }, ...prev]);
+      try {
+        return await garminApi.uploadFit(file);
+      } finally {
+        setRecentUploads((prev) => prev.filter((u) => u.status !== 'uploading'));
+      }
+    },
     onSuccess: async (result) => {
       setRecentUploads((prev) => [
         { filename: result.filename || 'activity.fit', status: 'success', message: 'Uploaded' },
@@ -29,19 +54,34 @@ export function CardioTab() {
       if (result.activity_id) {
         try {
           setFeedback(await tipsApi.getPostSession('cardio', result.activity_id));
+          setFeedbackError(false);
         } catch {
-          // AI feedback is best-effort
+          setFeedbackError(true); // best-effort, but say so
         }
       }
     },
     onError: (error) => {
-      setRecentUploads((prev) => [{ filename: 'upload', status: 'error', message: String(error) }, ...prev]);
+      setRecentUploads((prev) => [
+        { filename: 'upload', status: 'error', message: readableError(error) },
+        ...prev,
+      ]);
     },
   });
 
   return (
     <div className="space-y-4 sm:space-y-8">
-      <Panel title="UPLOAD CARDIO SESSION" animate={false}>
+      <Panel
+        title={
+          <span className="flex items-center justify-between gap-2 w-full">
+            IMPORTER UNE SÉANCE CARDIO
+            <Button variant="ghost" onClick={() => setShowManual(true)}>
+              <Plus className="w-4 h-4" />
+              SANS MONTRE
+            </Button>
+          </span>
+        }
+        animate={false}
+      >
         <FitDropzone
           onUpload={async (file) => uploadMutation.mutate(file)}
           isUploading={uploadMutation.isPending}
@@ -54,7 +94,7 @@ export function CardioTab() {
           title={
             <span className="flex items-center gap-2">
               <Sparkles className="w-4 h-4" />
-              AI ANALYSIS
+              ANALYSE IA
             </span>
           }
           titleTone="text-neon-cyan"
@@ -73,7 +113,12 @@ export function CardioTab() {
         </Panel>
       )}
 
+      {feedbackError && (
+        <p className="text-xs font-mono text-text-muted">Analyse IA indisponible pour cette séance.</p>
+      )}
+
       <RecentSessions />
+      <ManualCardioModal open={showManual} onClose={() => setShowManual(false)} />
     </div>
   );
 }

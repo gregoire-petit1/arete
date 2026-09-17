@@ -11,6 +11,7 @@ from arete.garmin.models import (
     ActivitySource,
     ActualSession,
     PlannedSession,
+    SessionStatus,
     SessionType,
 )
 from arete.garmin.repository import GarminRepository
@@ -93,3 +94,44 @@ class TestActualSessionPayload:
             assert body["strava_activity_id"] is None
         finally:
             repo.delete_actual_session(sid)
+
+
+class TestManualCardioEntry:
+    def test_creates_and_matches_the_plan(self, client, repo):
+        pid = repo.create_planned_session(
+            PlannedSession(
+                date=date(2031, 8, 3),
+                sport="running",
+                session_type=SessionType.ENDURANCE,
+                target_duration_min=50,
+            )
+        )
+        try:
+            resp = client.post(
+                "/garmin/actual",
+                json={
+                    "date": "2031-08-03",
+                    "sport": "running",
+                    "name": "Footing sans montre",
+                    "duration_min": 50,
+                    "distance_km": 10.0,
+                    "avg_hr": 145,
+                    "rpe": 5,
+                },
+            )
+            assert resp.status_code == 201
+            body = resp.json()
+            assert body["source"] == "manual"
+            assert body["duration_sec"] == 3000
+            assert body["avg_pace_sec_km"] == 300  # 50 min for 10 km
+            assert body["planned_session_id"] == pid
+
+            planned = repo.get_planned_session(pid)
+            assert planned is not None and planned.status == SessionStatus.COMPLETED
+            repo.delete_actual_session(body["id"])
+        finally:
+            repo.delete_planned_session(pid)
+
+    def test_rejects_impossible_duration(self, client):
+        resp = client.post("/garmin/actual", json={"date": "2031-08-03", "duration_min": 0})
+        assert resp.status_code == 422

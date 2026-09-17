@@ -5,6 +5,7 @@ import { cn, formatDurationCompact } from '@/lib/utils';
 import { EmptyState, ErrorState, LoadingState } from '@/components';
 import { Button, Panel, RPE_TEXT, RpeBadge, Textarea, rpeTone } from '@/components/ui';
 import { analyticsApi } from '@/lib/api';
+import { qk } from '@/lib/queryKeys';
 import { getSportColor, getSportIconComponent } from '@/lib/sport';
 import type { CardioSession } from '@/types';
 
@@ -18,7 +19,7 @@ const SOURCE_BADGE: Record<string, string> = {
 export function RecentSessions() {
   const queryClient = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['recentSessions'],
+    queryKey: qk.cardioSessions,
     queryFn: () => analyticsApi.getSessions(20),
   });
 
@@ -30,7 +31,7 @@ export function RecentSessions() {
     mutationFn: ({ id, data }: { id: number; data: { rpe?: number; notes?: string } }) =>
       analyticsApi.updateSession(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['recentSessions'] });
+      queryClient.invalidateQueries({ queryKey: qk.cardioSessions });
       setEditingId(null);
     },
   });
@@ -45,18 +46,18 @@ export function RecentSessions() {
     if (editingId === null) return;
     updateMutation.mutate({
       id: editingId,
-      data: { ...(editRpe !== null ? { rpe: editRpe } : {}), notes: editNotes },
+      data: { rpe: editRpe ?? undefined, notes: editNotes },
     });
   };
 
-  if (isLoading) return <LoadingState message="LOADING SESSIONS..." />;
-  if (isError) return <ErrorState message="FAILED TO LOAD SESSIONS" onRetry={() => refetch()} />;
+  if (isLoading) return <LoadingState message="CHARGEMENT DES SÉANCES…" />;
+  if (isError) return <ErrorState message="ÉCHEC DU CHARGEMENT DES SÉANCES" onRetry={() => refetch()} />;
 
   const sessions = data?.sessions || [];
   if (sessions.length === 0) {
     return (
       <Panel animate={false}>
-        <EmptyState message="NO CARDIO SESSIONS YET" action="Upload a FIT file or sync from Strava" />
+        <EmptyState message="AUCUNE SÉANCE CARDIO" action="Importe un fichier FIT, saisis-la sans montre ou synchronise Strava" />
       </Panel>
     );
   }
@@ -107,7 +108,7 @@ export function RecentSessions() {
                     onClick={() => (editing ? saveEdit() : startEdit(s))}
                     disabled={updateMutation.isPending}
                     className="p-1 hover:bg-text-muted/20 rounded transition-colors text-text-muted hover:text-neon-cyan"
-                    title={editing ? 'Save' : 'Edit RPE & Notes'}
+                    title={editing ? 'Enregistrer' : 'Modifier RPE et notes'}
                   >
                     {editing ? <Save className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
                   </button>
@@ -117,7 +118,7 @@ export function RecentSessions() {
               {editing && (
                 <div className="mt-3 pt-3 border-t border-text-muted/10 space-y-3 animate-fade-in">
                   <div>
-                    <label className="text-[10px] font-mono text-text-muted uppercase block mb-1">RPE (1-10)</label>
+                    <label className="text-xs font-mono text-text-muted uppercase block mb-1">RPE (1-10)</label>
                     <input
                       type="range"
                       min={1}
@@ -126,14 +127,27 @@ export function RecentSessions() {
                       onChange={(e) => setEditRpe(Number(e.target.value))}
                       className="w-full accent-neon-cyan"
                     />
-                    <div className="flex justify-between text-[10px] font-mono text-text-muted">
+                    <div className="flex justify-between items-center text-xs font-mono text-text-muted">
                       <span>1</span>
-                      <span className={cn('text-sm font-bold', RPE_TEXT[rpeTone(editRpe ?? 5)])}>{editRpe ?? 5}</span>
-                      <span>10</span>
+                      <span className={cn('text-sm font-bold', editRpe === null ? 'text-text-muted' : RPE_TEXT[rpeTone(editRpe)])}>
+                        {editRpe ?? 'non renseigné'}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        10
+                        {editRpe !== null && (
+                          <button
+                            type="button"
+                            onClick={() => setEditRpe(null)}
+                            className="text-neon-cyan hover:underline"
+                          >
+                            effacer
+                          </button>
+                        )}
+                      </span>
                     </div>
                   </div>
                   <div>
-                    <label className="text-[10px] font-mono text-text-muted uppercase block mb-1">Notes</label>
+                    <label className="text-xs font-mono text-text-muted uppercase block mb-1">Notes</label>
                     <Textarea
                       value={editNotes}
                       onChange={(e) => setEditNotes(e.target.value)}

@@ -376,6 +376,51 @@ async def upload_fit_file(
     )
 
 
+class ActualSessionCreate(BaseModel):
+    """Manual cardio entry (no watch, no FIT file)."""
+
+    date: date
+    sport: str = "running"
+    session_type: str | None = None
+    name: str | None = None
+    duration_min: int = Field(gt=0, le=1440)
+    distance_km: float | None = Field(default=None, ge=0, le=1000)
+    avg_hr: int | None = Field(default=None, ge=30, le=250)
+    rpe: int | None = Field(default=None, ge=1, le=10)
+    notes: str | None = None
+
+
+@router.post("/actual", response_model=ActualSessionResponse, status_code=201)
+def create_actual_session(payload: ActualSessionCreate):
+    """Record a session done without a watch; matches the plan like a synced one."""
+    from arete.garmin.sync import auto_match
+
+    duration_sec = payload.duration_min * 60
+    distance_m = payload.distance_km * 1000 if payload.distance_km else None
+    session = ActualSession(
+        date=payload.date,
+        sport=payload.sport,
+        session_type=payload.session_type or payload.sport,
+        name=payload.name,
+        duration_sec=duration_sec,
+        moving_time_sec=duration_sec,
+        distance_m=distance_m,
+        avg_hr=payload.avg_hr,
+        avg_pace_sec_km=round(duration_sec / payload.distance_km)
+        if payload.distance_km
+        else None,
+        rpe=payload.rpe,
+        notes=payload.notes,
+        source=ActivitySource.MANUAL,
+    )
+    session_id = _repo.create_actual_session(session)
+    auto_match(_repo, session_id, session)
+    created = _repo.get_actual_session(session_id)
+    if created is None:  # pragma: no cover - just inserted
+        raise HTTPException(status_code=500, detail="Session could not be read back")
+    return _actual_to_response(created)
+
+
 @router.get("/actual", response_model=list[ActualSessionResponse])
 def list_actual_sessions(
     start_date: date | None = Query(None),

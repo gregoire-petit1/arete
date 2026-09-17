@@ -20,6 +20,7 @@ class UserSettingsUpdate(BaseModel):
     notifications_enabled: bool = True
     theme: Literal["dark", "darker", "abyss"] = "dark"
     exercise_abbreviations: dict[str, str] = {}
+    weekly_volume_target_kg: int = Field(ge=1000, le=200000, default=20000)
 
 
 class UserSettingsOut(BaseModel):
@@ -34,6 +35,7 @@ class UserSettingsOut(BaseModel):
     notifications_enabled: bool
     theme: str
     exercise_abbreviations: dict[str, str]
+    weekly_volume_target_kg: int
 
 
 @router.get("/settings", response_model=UserSettingsOut)
@@ -54,6 +56,7 @@ def get_settings():
             notifications_enabled=True,
             theme="dark",
             exercise_abbreviations={},
+            weekly_volume_target_kg=20000,
         )
     return UserSettingsOut(**settings)
 
@@ -73,5 +76,6 @@ def update_settings(payload: UserSettingsUpdate):
         notifications_enabled=payload.notifications_enabled,
         theme=payload.theme,
         exercise_abbreviations=payload.exercise_abbreviations,
+        weekly_volume_target_kg=payload.weekly_volume_target_kg,
     )
     return UserSettingsOut(**settings)

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Dumbbell, Heart, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AnatomicalHeatmap, EmptyState, ErrorState, LoadingState } from '@/components';
-import { Button, Panel } from '@/components/ui';
-import { strengthApi } from '@/lib/api';
+import { Button, Modal, ModalHeader, Panel } from '@/components/ui';
+import { settingsApi, strengthApi } from '@/lib/api';
 import { CardioTab, LogSessionModal, SessionDetailModal, SessionRow, WeeklyVolumeTracker } from './log/index';
-import { invalidateAfterSession } from '@/lib/queryKeys';
+import { invalidateAfterSession, qk } from '@/lib/queryKeys';
 
 type Tab = 'force' | 'cardio';
 
@@ -17,17 +18,22 @@ const TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
 
 export function LogPage() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<Tab>('force');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab: Tab = searchParams.get('tab') === 'cardio' ? 'cardio' : 'force';
+  const setActiveTab = (tab: Tab) => setSearchParams(tab === 'force' ? {} : { tab }, { replace: true });
+  const [toDelete, setToDelete] = useState<number | null>(null);
   const [showNewSession, setShowNewSession] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
 
+  const { data: settings } = useQuery({ queryKey: qk.settings, queryFn: settingsApi.get });
+
   const volumeQuery = useQuery({
-    queryKey: ['volumeByMuscle'],
+    queryKey: qk.volumeByMuscle(),
     queryFn: () => strengthApi.getVolumeByMuscle(),
   });
 
   const sessionsQuery = useQuery({
-    queryKey: ['strengthSessions'],
+    queryKey: qk.strengthSessions(),
     queryFn: () => strengthApi.getSessions(10),
   });
 
@@ -36,15 +42,16 @@ export function LogPage() {
     onSuccess: () => {
       invalidateAfterSession(queryClient);
       setSelectedSessionId(null);
+      setToDelete(null);
     },
   });
 
   if (volumeQuery.isLoading || sessionsQuery.isLoading) {
-    return <LoadingState message="INITIALIZING LOG..." />;
+    return <LoadingState message="CHARGEMENT DU JOURNAL…" />;
   }
 
   if (sessionsQuery.isError) {
-    return <ErrorState message="FAILED TO LOAD SESSIONS" onRetry={() => sessionsQuery.refetch()} />;
+    return <ErrorState message="ÉCHEC DU CHARGEMENT DES SÉANCES" onRetry={() => sessionsQuery.refetch()} />;
   }
 
   const sessions = sessionsQuery.data ?? [];
@@ -53,11 +60,11 @@ export function LogPage() {
     <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
       <div className="max-w-6xl mx-auto">
         <header className="flex justify-between items-center mb-4 sm:mb-8 animate-fade-down">
-          <h1 className="text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wider">LOG</h1>
+          <h1 className="text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wider">JOURNAL</h1>
           {activeTab === 'force' && (
             <Button variant="gold" onClick={() => setShowNewSession(true)}>
               <Sparkles className="w-4 h-4" />
-              LOG SESSION
+              SAISIR UNE SÉANCE
             </Button>
           )}
         </header>
@@ -86,27 +93,27 @@ export function LogPage() {
             <div className="space-y-4 sm:space-y-8">
               <Panel title="MUSCLE HEATMAP (7D VOLUME)">
                 {volumeQuery.isError ? (
-                  <ErrorState message="VOLUME UNAVAILABLE" onRetry={() => volumeQuery.refetch()} />
+                  <ErrorState message="VOLUME INDISPONIBLE" onRetry={() => volumeQuery.refetch()} />
                 ) : (
                   <AnatomicalHeatmap volumeByMuscle={volumeQuery.data || {}} />
                 )}
               </Panel>
-              <WeeklyVolumeTracker sessions={sessions} />
+              <WeeklyVolumeTracker sessions={sessions} targetKg={settings?.weekly_volume_target_kg ?? 20000} />
             </div>
 
             <div className="space-y-4 sm:space-y-8">
-              <Panel title="RECENT SESSIONS" delay={0.3}>
+              <Panel title="SÉANCES RÉCENTES" delay={0.3}>
                 <div className="space-y-3">
                   {sessions.slice(0, 5).map((session) => (
                     <SessionRow
                       key={session.id}
                       session={session}
                       onView={() => setSelectedSessionId(session.id)}
-                      onDelete={() => deleteSessionMutation.mutate(session.id)}
+                      onDelete={() => setToDelete(session.id)}
                     />
                   ))}
                   {sessions.length === 0 && (
-                    <EmptyState message="NO SESSIONS YET" action="Start logging your strength" />
+                    <EmptyState message="AUCUNE SÉANCE" action="Saisis ta première séance de muscu" />
                   )}
                 </div>
               </Panel>
@@ -118,6 +125,24 @@ export function LogPage() {
       </div>
 
       <LogSessionModal open={showNewSession} onClose={() => setShowNewSession(false)} />
+      <Modal open={toDelete !== null} onClose={() => setToDelete(null)} className="max-w-sm p-4 sm:p-6">
+        <ModalHeader title="SUPPRIMER LA SÉANCE" onClose={() => setToDelete(null)} className="mb-4" />
+        <p className="text-sm font-mono text-text-secondary mb-6">
+          Cette séance et ses séries seront définitivement supprimées.
+        </p>
+        <div className="flex gap-3 justify-end">
+          <Button variant="ghost" onClick={() => setToDelete(null)}>
+            Annuler
+          </Button>
+          <Button
+            variant="danger"
+            loading={deleteSessionMutation.isPending}
+            onClick={() => toDelete !== null && deleteSessionMutation.mutate(toDelete)}
+          >
+            Supprimer
+          </Button>
+        </div>
+      </Modal>
       <SessionDetailModal sessionId={selectedSessionId} onClose={() => setSelectedSessionId(null)} />
     </div>
   );

@@ -4,3 +4,4 @@ export { RecentSessions } from './RecentSessions';
 export { WeeklyVolumeTracker } from './WeeklyVolumeTracker';
 export { CardioTab } from './CardioTab';
 export { SessionRow } from './SessionRow';
+export { ManualCardioModal } from './ManualCardioModal';

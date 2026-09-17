@@ -76,6 +76,21 @@ export const garminApi = {
     );
   },
 
+  createActual: (session: {
+    date: string;
+    sport: string;
+    name: string | null;
+    duration_min: number;
+    distance_km: number | null;
+    avg_hr: number | null;
+    rpe: number | null;
+    notes: string | null;
+  }) =>
+    fetchAPI<import("@/types").ActualSession>("/garmin/actual", {
+      method: "POST",
+      body: JSON.stringify(session),
+    }),
+
   deletePlanned: (id: number) =>
     fetchAPI<{ message: string }>(`/garmin/planned/${id}`, { method: "DELETE" }),
 
@@ -210,6 +225,7 @@ export interface UserSettings {
   notifications_enabled: boolean;
   theme: "dark" | "darker" | "abyss";
   exercise_abbreviations: Record<string, string>;
+  weekly_volume_target_kg: number;
 }
 
 export const tipsApi = {

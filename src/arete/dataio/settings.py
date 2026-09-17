@@ -29,6 +29,7 @@ def _settings_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "notifications_enabled": row[8],
         "theme": row[9],
         "exercise_abbreviations": abbreviations,
+        "weekly_volume_target_kg": row[11] if len(row) > 11 else 20000,
     }
 
 
@@ -40,7 +41,8 @@ def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
             """
             SELECT user_id, display_name, email, timezone, weekly_training_goal,
                    rest_day_preference, fatigue_threshold, fitness_goal,
-                   notifications_enabled, theme, exercise_abbreviations
+                   notifications_enabled, theme, exercise_abbreviations,
+                   weekly_volume_target_kg
             FROM app.user_settings
             WHERE user_id = ?
             """,
@@ -64,6 +66,7 @@ def upsert_user_settings(
     notifications_enabled: bool,
     theme: str,
     exercise_abbreviations: dict[str, str] | None = None,
+    weekly_volume_target_kg: int = 20000,
 ) -> dict[str, Any]:
     """Create or update user settings."""
     import json as _json
@@ -79,11 +82,12 @@ def upsert_user_settings(
             SET display_name = ?, email = ?, timezone = ?, weekly_training_goal = ?,
                 rest_day_preference = ?, fatigue_threshold = ?, fitness_goal = ?,
                 notifications_enabled = ?, theme = ?, exercise_abbreviations = ?,
-                updated_at = CURRENT_TIMESTAMP
+                weekly_volume_target_kg = ?, updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
-                      notifications_enabled, theme, exercise_abbreviations
+                      notifications_enabled, theme, exercise_abbreviations,
+                      weekly_volume_target_kg
             """,
             [
                 display_name,
@@ -96,6 +100,7 @@ def upsert_user_settings(
                 notifications_enabled,
                 theme,
                 abbrev_json,
+                weekly_volume_target_kg,
                 user_id,
             ],
         ).fetchone()
@@ -109,12 +114,14 @@ def upsert_user_settings(
             INSERT INTO app.user_settings (
                 user_id, display_name, email, timezone, weekly_training_goal,
                 rest_day_preference, fatigue_threshold, fitness_goal,
-                notifications_enabled, theme, exercise_abbreviations
+                notifications_enabled, theme, exercise_abbreviations,
+                weekly_volume_target_kg
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
-                      notifications_enabled, theme, exercise_abbreviations
+                      notifications_enabled, theme, exercise_abbreviations,
+                      weekly_volume_target_kg
             """,
             [
                 user_id,
@@ -128,6 +135,7 @@ def upsert_user_settings(
                 notifications_enabled,
                 theme,
                 abbrev_json,
+                weekly_volume_target_kg,
             ],
         ).fetchone()
         if row is None:

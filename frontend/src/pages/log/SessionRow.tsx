@@ -1,3 +1,4 @@
+import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StrengthIcon } from '@/components';
 import { RpeBadge } from '@/components/ui';
@@ -28,36 +29,26 @@ export function SessionRow({
             {new Date(session.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
           </span>
           <span className="text-text-muted">—</span>
-          <span className="text-sm font-mono text-text-secondary">{session.name || 'Session'}</span>
+          <span className="text-sm font-mono text-text-secondary">{session.name || 'Séance'}</span>
         </div>
-        <div className="text-[10px] sm:text-xs font-mono text-text-muted mt-1">
-          {session.duration_min && `${session.duration_min}min`}
-          {' │ '}
-          Volume: {(session.total_volume / 1000).toFixed(1)}k kg
-          {' │ '}
-          {session.total_sets} sets
+        <div className="flex flex-wrap gap-x-3 text-xs font-mono text-text-muted mt-1">
+          {session.duration_min ? <span>{session.duration_min} min</span> : null}
+          <span>{(session.total_volume / 1000).toFixed(1)}k kg</span>
+          <span>{session.total_sets} séries</span>
         </div>
       </div>
       <RpeBadge rpe={session.overall_rpe} />
       <button
         type="button"
-        className="text-xs font-mono text-neon-cyan hover:underline"
+        title="Supprimer la séance"
+        aria-label="Supprimer la séance"
+        className="p-1 rounded text-text-muted hover:text-danger-red hover:bg-danger-red/10"
         onClick={(e) => {
           e.stopPropagation();
-          onView();
+          onDelete();
         }}
       >
-        [VIEW]
-      </button>
-      <button
-        type="button"
-        className="text-xs font-mono text-danger-red hover:underline"
-        onClick={(e) => {
-          e.stopPropagation();
-          if (confirm('Delete this session?')) onDelete();
-        }}
-      >
-        [DEL]
+        <Trash2 className="w-4 h-4" />
       </button>
     </div>
   );

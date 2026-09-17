@@ -8,7 +8,7 @@ export interface SettingsTabProps {
 }
 
 export const DEFAULT_SETTINGS: LocalSettings = {
-  display_name: 'HUNTER',
+  display_name: 'Athlète',
   email: null,
   timezone: 'Europe/Paris',
   weekly_training_goal: 6,
@@ -18,4 +18,5 @@ export const DEFAULT_SETTINGS: LocalSettings = {
   notifications_enabled: true,
   theme: 'dark',
   exercise_abbreviations: {},
+  weekly_volume_target_kg: 20000,
 };

@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS app.user_settings (
     notifications_enabled   BOOLEAN DEFAULT TRUE,
     theme                   VARCHAR DEFAULT 'dark',    -- 'dark', 'darker', 'abyss'
     exercise_abbreviations  VARCHAR DEFAULT '{}',      -- JSON: {"bp": "bench press", "ng": "neutral grip", ...}
+    weekly_volume_target_kg INTEGER DEFAULT 20000,     -- strength tonnage goal per week
     updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -310,11 +311,19 @@ def _m4_strava_activity_id(con) -> None:
         )
 
 
+def _m5_weekly_volume_target(con) -> None:
+    if "weekly_volume_target_kg" not in _columns(con, "user_settings"):
+        con.execute(
+            "ALTER TABLE app.user_settings ADD COLUMN weekly_volume_target_kg INTEGER DEFAULT 20000"
+        )
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
     (3, _m3_rename_strength_link),
     (4, _m4_strava_activity_id),
+    (5, _m5_weekly_volume_target),
 ]
 
 
