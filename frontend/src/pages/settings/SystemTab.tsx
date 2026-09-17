@@ -6,6 +6,7 @@ import { Button, Panel } from '@/components/ui';
 import { garminApi, garminHealthApi, healthApi } from '@/lib/api';
 import { StatusRow } from './StatusRow';
 import { SyncOptionsForm, type SyncOptions } from './SyncOptionsForm';
+import { toLocalISODate } from '@/lib/dates';
 
 type Alert = { type: 'success' | 'error'; message: string };
 
@@ -55,7 +56,7 @@ export function SystemTab() {
     mutationFn: () => {
       const end = new Date();
       const start = new Date(end.getTime() - 7 * 86400000);
-      return garminHealthApi.sync(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
+      return garminHealthApi.sync(toLocalISODate(start), toLocalISODate(end));
     },
     onSuccess: (result) => {
       setAlert({

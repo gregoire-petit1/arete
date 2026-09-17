@@ -5,8 +5,9 @@ import { cn } from '@/lib/utils';
 import { Button, Field, Input, Modal, ModalHeader, Textarea } from '@/components/ui';
 import { strengthApi } from '@/lib/api';
 import type { ParsedWorkout } from '@/types';
+import { toLocalISODate } from '@/lib/dates';
 
-const today = () => new Date().toISOString().split('T')[0];
+const today = () => toLocalISODate();
 
 interface LogSessionModalProps {
   open: boolean;

@@ -93,6 +93,7 @@ interface ChartCardProps {
   empty?: boolean;
   emptyMessage?: string;
   onRetry?: () => void;
+  actions?: ReactNode;
 }
 
 export function ChartCard({
@@ -103,10 +104,14 @@ export function ChartCard({
   empty,
   emptyMessage = 'No data for this period',
   onRetry,
+  actions,
 }: ChartCardProps) {
   return (
     <div className="bg-abyss rounded-lg border border-text-muted/20 p-4">
-      <h3 className="text-sm font-mono text-neon-cyan mb-3 uppercase tracking-wider">{title}</h3>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="text-sm font-mono text-neon-cyan uppercase tracking-wider">{title}</h3>
+        {actions}
+      </div>
       {loading ? (
         <div className="h-[300px] flex items-center justify-center text-text-muted animate-pulse">Loading...</div>
       ) : error ? (

@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils';
 import { SESSION_TYPE_LABEL } from '@/components/PlannedSessionCard';
 import { getSportColor, getSportIconComponent } from '@/lib/sport';
 import type { ActualSession, PlannedSession } from '@/types';
+import { toLocalISODate } from '@/lib/dates';
 
 interface CalendarDayProps {
   date: string;
@@ -99,12 +100,12 @@ interface CalendarWeekProps {
 }
 
 export function CalendarWeek({ startDate, plannedSessions, actualSessions, onDayClick }: CalendarWeekProps) {
-  const today = new Date().toISOString().split('T')[0];
+  const today = toLocalISODate();
 
   const days = Array.from({ length: 7 }, (_, i) => {
     const date = new Date(startDate);
     date.setDate(date.getDate() + i);
-    return date.toISOString().split('T')[0];
+    return toLocalISODate(date);
   });
 
   const plannedByDate = new Map<string, PlannedSession[]>();

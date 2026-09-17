@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui';
+import { toLocalISODate } from '@/lib/dates';
 
 export interface SyncOptions {
   start_date?: string;
@@ -26,7 +27,7 @@ export function SyncOptionsForm({
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
     onSync({
-      start_date: startDate.toISOString().split('T')[0],
+      start_date: toLocalISODate(startDate),
       download_fit: downloadFit,
       max_activities: maxActivities,
     });

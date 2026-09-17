@@ -6,10 +6,7 @@ import { ErrorState, LoadingState, MetricCard } from '@/components';
 import { Panel } from '@/components/ui';
 import { garminApi, garminHealthApi, metricsApi, settingsApi, tipsApi } from '@/lib/api';
 import { cn, getZoneColor } from '@/lib/utils';
-
-function getTodayISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+import { toLocalISODate } from '@/lib/dates';
 
 /** Readiness / stress traffic lights as Tailwind classes (theme colors). */
 const readinessTone = (score: number) =>
@@ -36,7 +33,7 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
 }
 
 export function DashboardPage() {
-  const today = getTodayISO();
+  const today = toLocalISODate();
 
   const { data: userSettings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
 

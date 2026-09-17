@@ -5,6 +5,7 @@ import { garminHealthApi } from '@/lib/api';
 import { CHART } from '@/lib/chartTheme';
 import { AXIS, ChartCard, ChartGrid, ChartTooltip } from './ChartCard';
 import type { ChartProps } from './types';
+import { toLocalISODate } from '@/lib/dates';
 
 const DAYS_FOR_PERIOD: Partial<Record<ChartProps['period'], number>> = { '7d': 7, '30d': 30, '90d': 90 };
 
@@ -13,8 +14,8 @@ export function ReadinessTrendChart({ period }: ChartProps) {
     const now = new Date();
     const days = DAYS_FOR_PERIOD[period] ?? 180;
     return {
-      end: now.toISOString().slice(0, 10),
-      start: new Date(now.getTime() - days * 86400000).toISOString().slice(0, 10),
+      end: toLocalISODate(now),
+      start: toLocalISODate(new Date(now.getTime() - days * 86400000)),
     };
   }, [period]);
 

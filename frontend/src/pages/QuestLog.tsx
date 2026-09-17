@@ -6,6 +6,7 @@ import { Button, Field, Input, Modal, ModalHeader, Panel, Textarea } from '@/com
 import { garminApi, type PlannedSessionCreate } from '@/lib/api';
 import { WeekPlanList } from './planning/WeekPlanList';
 import { cn } from '@/lib/utils';
+import { toLocalISODate } from '@/lib/dates';
 
 // Session types per sport category
 const CARDIO_SESSION_TYPES = [
@@ -52,7 +53,7 @@ const getSessionTypesForSport = (sport: string) => {
 const getDefaultSessionType = (sport: string) => getSessionTypesForSport(sport)[0]?.value || 'endurance';
 
 const emptyQuest = (): PlannedSessionCreate => ({
-  date: new Date().toISOString().split('T')[0],
+  date: toLocalISODate(),
   sport: 'running',
   session_type: 'endurance',
   target_duration_min: 45,
@@ -65,7 +66,7 @@ const getWeekStart = (offset: number) => {
   const today = new Date();
   const day = today.getDay();
   const diff = today.getDate() - day + (day === 0 ? -6 : 1) + offset * 7;
-  return new Date(today.setDate(diff)).toISOString().split('T')[0];
+  return toLocalISODate(new Date(today.setDate(diff)));
 };
 
 const CHIP = 'px-3 py-1.5 rounded text-xs font-mono transition-all border';
@@ -100,7 +101,7 @@ export function PlanningPage() {
   const weekEnd = (() => {
     const end = new Date(weekStart);
     end.setDate(end.getDate() + 6);
-    return end.toISOString().split('T')[0];
+    return toLocalISODate(end);
   })();
 
   const plannedQuery = useQuery({
@@ -217,12 +218,12 @@ export function PlanningPage() {
             days={Array.from({ length: 7 }, (_, i) => {
               const d = new Date(weekStart);
               d.setDate(d.getDate() + i);
-              return d.toISOString().split('T')[0];
+              return toLocalISODate(d);
             })}
             planned={plannedQuery.data || []}
             actual={weekActual}
             selectedDate={selectedDate}
-            today={new Date().toISOString().split('T')[0]}
+            today={toLocalISODate()}
             onSelect={setSelectedDate}
           />
         </Panel>
