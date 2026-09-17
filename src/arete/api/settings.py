@@ -21,6 +21,9 @@ class UserSettingsUpdate(BaseModel):
     theme: Literal["dark", "darker", "abyss"] = "dark"
     exercise_abbreviations: dict[str, str] = {}
     weekly_volume_target_kg: int = Field(ge=1000, le=200000, default=20000)
+    lthr: int | None = Field(ge=100, le=220, default=None)
+    max_hr: int | None = Field(ge=120, le=230, default=None)
+    threshold_pace_sec_km: int | None = Field(ge=120, le=900, default=None)
 
 
 class UserSettingsOut(BaseModel):
@@ -36,6 +39,9 @@ class UserSettingsOut(BaseModel):
     theme: str
     exercise_abbreviations: dict[str, str]
     weekly_volume_target_kg: int
+    lthr: int | None
+    max_hr: int | None
+    threshold_pace_sec_km: int | None
 
 
 @router.get("/settings", response_model=UserSettingsOut)
@@ -57,6 +63,9 @@ def get_settings():
             theme="dark",
             exercise_abbreviations={},
             weekly_volume_target_kg=20000,
+            lthr=None,
+            max_hr=None,
+            threshold_pace_sec_km=None,
         )
     return UserSettingsOut(**settings)
 
@@ -77,5 +86,8 @@ def update_settings(payload: UserSettingsUpdate):
         theme=payload.theme,
         exercise_abbreviations=payload.exercise_abbreviations,
         weekly_volume_target_kg=payload.weekly_volume_target_kg,
+        lthr=payload.lthr,
+        max_hr=payload.max_hr,
+        threshold_pace_sec_km=payload.threshold_pace_sec_km,
     )
     return UserSettingsOut(**settings)

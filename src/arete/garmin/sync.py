@@ -17,6 +17,8 @@ from typing import Any
 from garminconnect import GarminConnectTooManyRequestsError
 
 from arete.config import config
+from arete.dataio.settings import athlete_zone_model
+from arete.features.hr_zones import ZoneModel, samples_from_laps
 from arete.garmin.client import GarminAuthError, GarminClient
 from arete.garmin.fit_parser import FITParser
 from arete.garmin.matcher import SessionMatcher
@@ -186,6 +188,20 @@ def laps_to_json(parsed: Any) -> str | None:
     return json.dumps(laps)
 
 
+def zones_from_laps(laps_json: str | None, zones: ZoneModel) -> str | None:
+    """Time per zone from lap averages, for sessions without a FIT file."""
+    if not laps_json:
+        return None
+    try:
+        laps = json.loads(laps_json) if isinstance(laps_json, str) else laps_json
+    except (json.JSONDecodeError, TypeError):
+        return None
+    samples = samples_from_laps(laps)
+    if not samples:
+        return None
+    return json.dumps(zones.seconds_in_zones(samples))
+
+
 def auto_match(
     repo: GarminRepository, actual_id: int, session: ActualSession
 ) -> int | None:
@@ -244,10 +260,19 @@ class GarminSyncClient:
         self,
         client: GarminClient | None = None,
         repository: GarminRepository | None = None,
+        zones: ZoneModel | None = None,
     ):
         self.client = client or GarminClient()
         self._repository = repository
         self._last_request_time = 0.0
+        self._zones = zones
+
+    @property
+    def zones(self) -> ZoneModel:
+        """Zone model built from the athlete's settings, read once per sync."""
+        if self._zones is None:
+            self._zones = athlete_zone_model()
+        return self._zones
 
     @property
     def repository(self) -> GarminRepository:
@@ -459,7 +484,7 @@ class GarminSyncClient:
     def _enrich_from_fit(self, session: ActualSession, fit_path: Path) -> ActualSession:
         """Enrich session with detailed data from FIT file."""
         try:
-            parser = FITParser()
+            parser = FITParser(zones=self.zones)
             parsed = parser.parse_file(fit_path, detailed=True)
 
             # Update with more detailed data from FIT
@@ -533,18 +558,23 @@ class GarminSyncClient:
                 fields["name"] = names[session.garmin_activity_id or ""]
                 named += 1
             fit_path = fit_dir / f"{session.garmin_activity_id}.fit"
-            if fit_path.exists() and (
-                session.laps_json is None or session.hr_zones_json
-            ):
+            if fit_path.exists():
                 try:
-                    parsed = FITParser().parse_file(fit_path, detailed=True)
+                    parsed = FITParser(zones=self.zones).parse_file(
+                        fit_path, detailed=True
+                    )
                     laps = laps_to_json(parsed)
                     if laps:
                         fields["laps_json"] = laps
-                    if parsed.hr_zones:
+                    if parsed.hr_zones and parsed.hr_zones.total_sec:
                         fields["hr_zones_json"] = parsed.hr_zones.to_json()
                 except Exception as e:
                     logger.warning("FIT reparse failed for %s: %s", fit_path, e)
+            elif session.laps_json:
+                # No FIT on disk: per-lap average HR is the next best sample.
+                zones = zones_from_laps(session.laps_json, self.zones)
+                if zones:
+                    fields["hr_zones_json"] = zones
             if fields:
                 assert session.id is not None
                 self.repository.update_actual_session_fields(session.id, **fields)
@@ -561,6 +591,57 @@ class GarminSyncClient:
             "updated": updated,
             "named": named,
             "matched": matched,
+        }
+
+    def recompute_zones(self, fit_dir: Path | None = None) -> dict[str, Any]:
+        """Rewrite every session's HR zones with the athlete's current model.
+
+        Uses the FIT samples when the file is on disk, lap averages otherwise.
+        Needs no Garmin connection: run it after changing the threshold.
+        """
+        fit_dir = fit_dir or Path("data/fit_files")
+        zones = self.zones
+        sessions = [
+            s for s in self.repository.list_actual_sessions(limit=10000) if s.id
+        ]
+        from_fit = from_laps = unchanged = 0
+
+        for session in sessions:
+            payload: str | None = None
+            fit_path = fit_dir / f"{session.garmin_activity_id}.fit"
+            if session.garmin_activity_id and fit_path.exists():
+                try:
+                    parsed = FITParser(zones=zones).parse_file(fit_path)
+                    if parsed.hr_zones and parsed.hr_zones.total_sec:
+                        payload = parsed.hr_zones.to_json()
+                        from_fit += 1
+                except Exception as e:
+                    logger.warning("FIT reparse failed for %s: %s", fit_path, e)
+            if payload is None:
+                payload = zones_from_laps(session.laps_json, zones)
+                if payload:
+                    from_laps += 1
+            if payload is None or payload == session.hr_zones_json:
+                unchanged += 1
+                continue
+            assert session.id is not None
+            self.repository.update_actual_session_fields(
+                session.id, hr_zones_json=payload
+            )
+
+        logger.info(
+            "Recomputed HR zones on %s (%d from FIT, %d from laps, %d unchanged)",
+            zones.basis,
+            from_fit,
+            from_laps,
+            unchanged,
+        )
+        return {
+            "sessions": len(sessions),
+            "from_fit": from_fit,
+            "from_laps": from_laps,
+            "unchanged": unchanged,
+            "model": zones.as_dict(),
         }
 
     def get_user_summary(self) -> dict[str, Any]:

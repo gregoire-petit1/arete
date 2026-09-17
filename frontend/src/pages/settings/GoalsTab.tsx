@@ -1,7 +1,26 @@
 import { cn } from '@/lib/utils';
 import type { UserSettings } from '@/lib/api';
-import { Field } from '@/components/ui';
+import { Field, Input } from '@/components/ui';
 import type { SettingsTabProps } from './types';
+
+/** "4:17" from 257 seconds per kilometre. */
+function paceToText(seconds: number | null): string {
+  if (!seconds) return '';
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+/** 257 from "4:17"; null when the text is not a pace. */
+function textToPace(text: string): number | null {
+  const match = text.trim().match(/^(\d{1,2})[:'.](\d{1,2})$/);
+  if (!match) return null;
+  const seconds = Number(match[1]) * 60 + Number(match[2]);
+  return seconds >= 120 && seconds <= 900 ? seconds : null;
+}
+
+function numberOrNull(value: string, min: number, max: number): number | null {
+  const n = Number(value);
+  return value.trim() && n >= min && n <= max ? n : null;
+}
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const DAY_LABEL: Record<string, string> = {
@@ -89,6 +108,47 @@ export function GoalsTab({ settings, updateSetting }: SettingsTabProps) {
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="border-t border-text-muted/10 pt-6">
+          <label className="text-xs font-mono text-text-muted uppercase block mb-1">Repères physiologiques</label>
+          <p className="text-xs text-text-muted mb-3">
+            Les zones cardiaques sont calculées à partir de ton seuil. Sans seuil, elles retombent sur la FC max.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Field label="FC au seuil (bpm)" hint="Test de 30 min : FC moyenne des 20 dernières minutes">
+              <Input
+                type="number"
+                min={100}
+                max={220}
+                placeholder="176"
+                value={settings.lthr ?? ''}
+                onChange={(e) => updateSetting('lthr', numberOrNull(e.target.value, 100, 220))}
+              />
+            </Field>
+            <Field label="FC max (bpm)" hint="Utilisée seulement si le seuil est vide">
+              <Input
+                type="number"
+                min={120}
+                max={230}
+                placeholder="199"
+                value={settings.max_hr ?? ''}
+                onChange={(e) => updateSetting('max_hr', numberOrNull(e.target.value, 120, 230))}
+              />
+            </Field>
+            <Field label="Allure au seuil" hint="Format m:ss par kilomètre">
+              <Input
+                type="text"
+                inputMode="numeric"
+                placeholder="4:17"
+                defaultValue={paceToText(settings.threshold_pace_sec_km)}
+                onBlur={(e) => updateSetting('threshold_pace_sec_km', textToPace(e.target.value))}
+              />
+            </Field>
+          </div>
+          <p className="text-xs text-text-muted mt-2">
+            Après un changement de seuil, relance « Recalculer les zones » dans l'onglet Système.
+          </p>
         </div>
 
         <Field

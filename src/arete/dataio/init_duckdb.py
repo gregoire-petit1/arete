@@ -192,6 +192,9 @@ CREATE TABLE IF NOT EXISTS app.user_settings (
     theme                   VARCHAR DEFAULT 'dark',    -- 'dark', 'darker', 'abyss'
     exercise_abbreviations  VARCHAR DEFAULT '{}',      -- JSON: {"bp": "bench press", "ng": "neutral grip", ...}
     weekly_volume_target_kg INTEGER DEFAULT 20000,     -- strength tonnage goal per week
+    lthr                    INTEGER,                   -- threshold heart rate, drives HR zones
+    max_hr                  INTEGER,                   -- fallback reference when no threshold
+    threshold_pace_sec_km   INTEGER,                   -- pace held at threshold, seconds per km
     updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -318,12 +321,21 @@ def _m5_weekly_volume_target(con) -> None:
         )
 
 
+def _m6_hr_reference(con) -> None:
+    """The athlete's own thresholds: HR zones are computed from these."""
+    columns = _columns(con, "user_settings")
+    for name in ("lthr", "max_hr", "threshold_pace_sec_km"):
+        if name not in columns:
+            con.execute(f"ALTER TABLE app.user_settings ADD COLUMN {name} INTEGER")
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
     (3, _m3_rename_strength_link),
     (4, _m4_strava_activity_id),
     (5, _m5_weekly_volume_target),
+    (6, _m6_hr_reference),
 ]
 
 

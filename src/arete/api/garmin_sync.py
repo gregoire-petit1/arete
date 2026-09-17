@@ -191,6 +191,18 @@ def sync_activities(request: SyncRequest):
     )
 
 
+@router.post("/recompute-zones")
+def recompute_hr_zones():
+    """Rewrite HR zones on every session with the athlete's current model.
+
+    Run it after changing the threshold heart rate in the settings. Works
+    offline: it reads the FIT files on disk and the stored laps.
+    """
+    from arete.garmin.sync import GarminSyncClient
+
+    return GarminSyncClient(repository=_repo).recompute_zones()
+
+
 @router.post("/reprocess")
 def reprocess_synced_activities():
     """Backfill analytics columns (pace, laps, HR zones, names) on synced sessions.

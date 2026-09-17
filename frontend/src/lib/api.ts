@@ -52,6 +52,15 @@ export interface PlannedSessionCreate {
 }
 
 export const garminApi = {
+  recomputeZones: () =>
+    fetchAPI<{
+      sessions: number;
+      from_fit: number;
+      from_laps: number;
+      unchanged: number;
+      model: import("@/types").HrZoneModel;
+    }>("/garmin/sync/recompute-zones", { method: "POST" }),
+
   getPlanned: (startDate?: string, endDate?: string) => {
     const params = new URLSearchParams();
     if (startDate) params.set("start_date", startDate);
@@ -222,6 +231,10 @@ export interface UserSettings {
   theme: "dark" | "darker" | "abyss";
   exercise_abbreviations: Record<string, string>;
   weekly_volume_target_kg: number;
+  /** Threshold heart rate: the reference the HR zones are built on. */
+  lthr: number | null;
+  max_hr: number | null;
+  threshold_pace_sec_km: number | null;
 }
 
 export const tipsApi = {

@@ -278,7 +278,22 @@ export type CardKey =
   | 'sleep'
   | 'resting_hr';
 
+export interface HrZoneRange {
+  zone: string;
+  min: number;
+  max: number | null;
+}
+
+export interface HrZoneModel {
+  /** Which reference the zones are built on. */
+  basis: 'lthr' | 'max_hr';
+  reference: number;
+  boundaries: number[];
+  ranges: HrZoneRange[];
+}
+
 export interface OverviewResponse {
+  hr_zone_model: HrZoneModel;
   period: Period;
   bucket: Bucket;
   start: string;

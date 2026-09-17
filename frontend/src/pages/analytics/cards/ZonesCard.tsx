@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
-import type { Bucket, Card } from '@/types';
+import type { Bucket, Card, HrZoneModel } from '@/types';
 import { CHART, HR_ZONE_COLORS } from '@/lib/chartTheme';
 import { cn } from '@/lib/utils';
 import { StatCard } from '../StatCard';
@@ -22,16 +22,25 @@ function minutesLabel(min: number): string {
 }
 
 /** Time in heart-rate zones per bucket, as minutes or as a share. */
+/** "150-157 bpm" for one zone of the athlete's model. */
+function rangeLabel(model: HrZoneModel | undefined, zone: string): string {
+  const range = model?.ranges.find((r) => r.zone === zone);
+  if (!range) return '';
+  return range.max === null ? `${range.min}+ bpm` : `${range.min}-${range.max} bpm`;
+}
+
 export function ZonesCard({
   card,
   bucket,
   previousLabel,
+  model,
   loading,
   error,
 }: {
   card?: Card;
   bucket: Bucket;
   previousLabel: string;
+  model?: HrZoneModel;
   loading?: boolean;
   error?: boolean;
 }) {
@@ -49,7 +58,13 @@ export function ZonesCard({
       loading={loading}
       error={error}
     >
-      <div className="flex justify-end gap-1">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <p className="text-xs text-text-muted">
+          {model
+            ? `Zones calculées sur ${model.basis === 'lthr' ? 'ton seuil' : 'ta FC max'} de ${model.reference} bpm`
+            : ''}
+        </p>
+        <div className="flex gap-1">
         {(['min', 'pct'] as const).map((m) => (
           <button
             key={m}
@@ -66,6 +81,7 @@ export function ZonesCard({
             {m === 'min' ? 'MINUTES' : '%'}
           </button>
         ))}
+        </div>
       </div>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -8 }}>
@@ -86,7 +102,8 @@ export function ZonesCard({
                 <TooltipBox title={formatBucketLong(String(label), bucket)}>
                   {ZONES.map((z, i) => (
                     <div key={z} style={{ color: HR_ZONE_COLORS[i] }}>
-                      {ZONE_NAME[z]} : {minutesLabel(Number(point[z] ?? 0))} ({Number(point[`${z}_pct`] ?? 0).toFixed(0)} %)
+                      {ZONE_NAME[z]} {rangeLabel(model, z)} : {minutesLabel(Number(point[z] ?? 0))} (
+                      {Number(point[`${z}_pct`] ?? 0).toFixed(0)} %)
                     </div>
                   ))}
                 </TooltipBox>

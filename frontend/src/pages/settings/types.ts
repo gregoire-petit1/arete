@@ -19,4 +19,7 @@ export const DEFAULT_SETTINGS: LocalSettings = {
   theme: 'dark',
   exercise_abbreviations: {},
   weekly_volume_target_kg: 20000,
+  lthr: null,
+  max_hr: null,
+  threshold_pace_sec_km: null,
 };

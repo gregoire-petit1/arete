@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO
 
+from arete.features.hr_zones import ZoneModel
+
 if TYPE_CHECKING:
     from arete.garmin.time_series import TimeSeriesData, WorkoutStructure
 
@@ -23,11 +25,13 @@ logger = logging.getLogger(__name__)
 class HRZoneData:
     """Heart rate zone distribution."""
 
-    zone1_sec: int = 0  # Recovery (<60% HRmax)
-    zone2_sec: int = 0  # Endurance (60-70%)
-    zone3_sec: int = 0  # Tempo (70-80%)
-    zone4_sec: int = 0  # Threshold (80-90%)
-    zone5_sec: int = 0  # VO2max (>90%)
+    # Boundaries come from ``arete.features.hr_zones``: threshold HR when the
+    # athlete has one, max HR otherwise.
+    zone1_sec: int = 0  # Recovery
+    zone2_sec: int = 0  # Endurance
+    zone3_sec: int = 0  # Tempo
+    zone4_sec: int = 0  # Threshold
+    zone5_sec: int = 0  # VO2max
 
     def to_json(self) -> str:
         """Convert to JSON string."""
@@ -191,40 +195,24 @@ class FITParser:
     Extracts activity data from .FIT files using fitparse library.
     """
 
-    def __init__(self, hr_max: int = 190):
+    def __init__(self, zones: ZoneModel | None = None, hr_max: int | None = None):
         """Initialize parser.
 
         Args:
-            hr_max: Maximum heart rate for zone calculations.
+            zones: Zone model to bucket heart rates with. Defaults to the model
+                built from ``hr_max`` (or the generic default when neither is given).
+            hr_max: Maximum heart rate, when no zone model is supplied.
         """
-        self.hr_max = hr_max
-        self._hr_zone_boundaries = self._calculate_zone_boundaries()
+        self.zones = zones or ZoneModel.from_reference(max_hr=hr_max)
 
-    def _calculate_zone_boundaries(self) -> list[int]:
-        """Calculate HR zone boundaries based on max HR.
-
-        Returns list of [Z1_max, Z2_max, Z3_max, Z4_max].
-        Z5 is anything above Z4_max.
-        """
-        return [
-            int(self.hr_max * 0.60),  # Z1 max
-            int(self.hr_max * 0.70),  # Z2 max
-            int(self.hr_max * 0.80),  # Z3 max
-            int(self.hr_max * 0.90),  # Z4 max
-        ]
+    @property
+    def hr_max(self) -> int:
+        """Reference heart rate the zones are built on."""
+        return self.zones.reference
 
     def _get_hr_zone(self, hr: int) -> int:
         """Get zone number (1-5) for a heart rate value."""
-        if hr < self._hr_zone_boundaries[0]:
-            return 1
-        elif hr < self._hr_zone_boundaries[1]:
-            return 2
-        elif hr < self._hr_zone_boundaries[2]:
-            return 3
-        elif hr < self._hr_zone_boundaries[3]:
-            return 4
-        else:
-            return 5
+        return self.zones.zone_of(hr)
 
     def parse_file(
         self, file_path: str | Path, detailed: bool = False
@@ -491,22 +479,14 @@ class FITParser:
         Returns:
             HRZoneData with time per zone.
         """
-        zones = HRZoneData()
-
-        for hr, duration in hr_samples:
-            zone = self._get_hr_zone(hr)
-            if zone == 1:
-                zones.zone1_sec += duration
-            elif zone == 2:
-                zones.zone2_sec += duration
-            elif zone == 3:
-                zones.zone3_sec += duration
-            elif zone == 4:
-                zones.zone4_sec += duration
-            else:
-                zones.zone5_sec += duration
-
-        return zones
+        seconds = self.zones.seconds_in_zones(hr_samples)
+        return HRZoneData(
+            zone1_sec=seconds["z1"],
+            zone2_sec=seconds["z2"],
+            zone3_sec=seconds["z3"],
+            zone4_sec=seconds["z4"],
+            zone5_sec=seconds["z5"],
+        )
 
     def _semicircles_to_degrees(self, semicircles: int) -> float:
         """Convert FIT semicircles to degrees."""

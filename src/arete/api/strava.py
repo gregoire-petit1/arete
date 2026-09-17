@@ -198,12 +198,14 @@ def sync(body: SyncRequest | None = None):
     activities = client.fetch_activities(access_token, after=after)
     activities.sort(key=lambda a: a.get("start_date", ""))
 
+    from arete.dataio.settings import athlete_zone_model
     from arete.garmin.repository import GarminRepository
-    from arete.garmin.sync import auto_match
+    from arete.garmin.sync import auto_match, zones_from_laps
     from arete.strava.merge import strava_extras
     from arete.strava.models import strava_activity_to_actual_session
 
     repo = GarminRepository()
+    zone_model = athlete_zone_model()
     existing_ids = repo.known_strava_ids()
     imported = 0
     merged = 0
@@ -230,6 +232,11 @@ def sync(body: SyncRequest | None = None):
             session = strava_activity_to_actual_session(
                 activity_data, hr_zones=hr_zones
             )
+            # Strava's buckets follow Strava's own zone settings: recompute from
+            # the splits so every session is read against the athlete's threshold.
+            own_zones = zones_from_laps(session.laps_json, zone_model)
+            if own_zones:
+                session.hr_zones_json = own_zones
             twin = repo.find_overlapping_session(
                 session.start_time, session.duration_sec
             )

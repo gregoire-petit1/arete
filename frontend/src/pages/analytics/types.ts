@@ -20,14 +20,14 @@ export const PERIOD_SHORT: Record<Period, string> = {
   all: 'TOUT',
 };
 
-/** How the previous window is named in a delta tooltip. */
+/** Names the previous window, article already contracted for "à". */
 export const PREVIOUS_LABEL: Record<Period, string> = {
-  '7d': 'les 7 jours précédents',
-  '30d': 'les 30 jours précédents',
-  '90d': 'les 90 jours précédents',
-  '6m': 'les 6 mois précédents',
-  '1y': "l'année précédente",
-  all: 'la période précédente',
+  '7d': 'aux 7 jours précédents',
+  '30d': 'aux 30 jours précédents',
+  '90d': 'aux 90 jours précédents',
+  '6m': 'aux 6 mois précédents',
+  '1y': "à l'année précédente",
+  all: 'à la période précédente',
 };
 
 /** Axis label for a bucket start, adapted to the bucket width. */

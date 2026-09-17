@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from arete.dataio.db import connect
+from arete.features.hr_zones import ZoneModel
 
 
 # ---------- User Settings ----------
@@ -30,6 +31,9 @@ def _settings_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "theme": row[9],
         "exercise_abbreviations": abbreviations,
         "weekly_volume_target_kg": row[11] if len(row) > 11 else 20000,
+        "lthr": row[12] if len(row) > 12 else None,
+        "max_hr": row[13] if len(row) > 13 else None,
+        "threshold_pace_sec_km": row[14] if len(row) > 14 else None,
     }
 
 
@@ -42,7 +46,7 @@ def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
             SELECT user_id, display_name, email, timezone, weekly_training_goal,
                    rest_day_preference, fatigue_threshold, fitness_goal,
                    notifications_enabled, theme, exercise_abbreviations,
-                   weekly_volume_target_kg
+                   weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km
             FROM app.user_settings
             WHERE user_id = ?
             """,
@@ -67,6 +71,9 @@ def upsert_user_settings(
     theme: str,
     exercise_abbreviations: dict[str, str] | None = None,
     weekly_volume_target_kg: int = 20000,
+    lthr: int | None = None,
+    max_hr: int | None = None,
+    threshold_pace_sec_km: int | None = None,
 ) -> dict[str, Any]:
     """Create or update user settings."""
     import json as _json
@@ -82,12 +89,13 @@ def upsert_user_settings(
             SET display_name = ?, email = ?, timezone = ?, weekly_training_goal = ?,
                 rest_day_preference = ?, fatigue_threshold = ?, fitness_goal = ?,
                 notifications_enabled = ?, theme = ?, exercise_abbreviations = ?,
-                weekly_volume_target_kg = ?, updated_at = CURRENT_TIMESTAMP
+                weekly_volume_target_kg = ?, lthr = ?, max_hr = ?,
+                threshold_pace_sec_km = ?, updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
                       notifications_enabled, theme, exercise_abbreviations,
-                      weekly_volume_target_kg
+                      weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km
             """,
             [
                 display_name,
@@ -101,6 +109,9 @@ def upsert_user_settings(
                 theme,
                 abbrev_json,
                 weekly_volume_target_kg,
+                lthr,
+                max_hr,
+                threshold_pace_sec_km,
                 user_id,
             ],
         ).fetchone()
@@ -115,13 +126,13 @@ def upsert_user_settings(
                 user_id, display_name, email, timezone, weekly_training_goal,
                 rest_day_preference, fatigue_threshold, fitness_goal,
                 notifications_enabled, theme, exercise_abbreviations,
-                weekly_volume_target_kg
+                weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
                       notifications_enabled, theme, exercise_abbreviations,
-                      weekly_volume_target_kg
+                      weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km
             """,
             [
                 user_id,
@@ -136,6 +147,9 @@ def upsert_user_settings(
                 theme,
                 abbrev_json,
                 weekly_volume_target_kg,
+                lthr,
+                max_hr,
+                threshold_pace_sec_km,
             ],
         ).fetchone()
         if row is None:
@@ -143,3 +157,11 @@ def upsert_user_settings(
         return _settings_from_row(row)
     finally:
         con.close()
+
+
+def athlete_zone_model(user_id: int = 1) -> ZoneModel:
+    """Zone model from the stored threshold, or max HR, or the generic default."""
+    settings = get_user_settings(user_id) or {}
+    return ZoneModel.from_reference(
+        lthr=settings.get("lthr"), max_hr=settings.get("max_hr")
+    )

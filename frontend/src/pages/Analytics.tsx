@@ -71,7 +71,7 @@ export function AnalyticsPage() {
             <p className="text-xs text-text-muted font-mono mt-1">
               Du {new Date(`${data.start}T00:00:00`).toLocaleDateString('fr-FR')} au{' '}
               {new Date(`${data.end}T00:00:00`).toLocaleDateString('fr-FR')}
-              {data.prev_start && ` · comparé à ${previousLabel}`}
+              {data.prev_start && ` · comparé ${previousLabel}`}
             </p>
           )}
         </div>
@@ -86,7 +86,7 @@ export function AnalyticsPage() {
       </Section>
 
       <Section def={SECTIONS[1]}>
-        <ZonesCard card={cards?.zones} {...state} />
+        <ZonesCard card={cards?.zones} model={data?.hr_zone_model} {...state} />
         <SportsCard card={cards?.sports} previousLabel={previousLabel} loading={isLoading} error={isError} />
       </Section>
 

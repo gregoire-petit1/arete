@@ -43,6 +43,22 @@ export function SystemTab() {
     },
   });
 
+  const zonesMutation = useMutation({
+    mutationFn: garminApi.recomputeZones,
+    onSuccess: (result) => {
+      const basis =
+        result.model.basis === 'lthr'
+          ? `seuil ${result.model.reference} bpm`
+          : `FC max ${result.model.reference} bpm`;
+      setAlert({
+        type: 'success',
+        message: `ZONES RECALCULÉES SUR ${basis.toUpperCase()} · ${result.from_fit} SÉANCES FIT, ${result.from_laps} PAR TOURS`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['analytics'] });
+    },
+    onError: (error) => setAlert({ type: 'error', message: `RECALCUL IMPOSSIBLE : ${error}` }),
+  });
+
   const syncMutation = useMutation({
     mutationFn: (options: SyncOptions) => garminApi.syncActivities(options),
     onSuccess: (result) => {
@@ -182,6 +198,21 @@ export function SystemTab() {
             </Button>
           </div>
         )}
+      </Panel>
+
+      <Panel variant="inset" title="ZONES CARDIAQUES">
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-xs text-text-muted font-mono">
+            Recalcule le temps passé par zone sur toutes les séances, à partir du seuil enregistré dans Objectifs.
+          </p>
+          <Button
+            size="sm"
+            onClick={() => zonesMutation.mutate()}
+            loading={zonesMutation.isPending}
+          >
+            {zonesMutation.isPending ? 'CALCUL…' : 'RECALCULER'}
+          </Button>
+        </div>
       </Panel>
 
       <GarminLoginModal

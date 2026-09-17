@@ -34,7 +34,7 @@ function DeltaBadge({ headline, previousLabel }: { headline: Headline; previousL
 
   return (
     <span
-      title={`Contre ${previousLabel} : ${headline.previous}${headline.unit ? ` ${headline.unit}` : ''}`}
+      title={`Par rapport ${previousLabel} : ${headline.previous}${headline.unit ? ` ${headline.unit}` : ''}`}
       className={cn(
         'inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono',
         tone === 'good' && 'bg-success-green/10 text-success-green',

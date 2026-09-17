@@ -30,6 +30,7 @@ from arete.dataio.queries import (
     volume_rows,
     zone_rows,
 )
+from arete.dataio.settings import athlete_zone_model
 from arete.features import overview as ov
 from arete.features.fitness import ctl_atl_series
 from arete.features.periods import PeriodWindow, resolve_period
@@ -110,6 +111,7 @@ def get_overview(period: str = Query("30d")):
 
     recovery = ov.build_recovery_cards(health, window)
     return {
+        "hr_zone_model": athlete_zone_model().as_dict(),
         "period": window.period,
         "bucket": window.bucket,
         "start": window.start.isoformat(),
