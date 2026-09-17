@@ -134,3 +134,176 @@ def training_loads(days: int, end: date | None = None) -> list[DailyLoad]:
     end = end or date.today()
     with db_connection() as con:
         return daily_loads(con, end - timedelta(days=days), end)
+
+
+HEALTH_COLUMNS = (
+    "date",
+    "hrv_last_night",
+    "hrv_weekly_avg",
+    "sleep_score",
+    "sleep_duration_sec",
+    "body_battery_high",
+    "body_battery_low",
+    "stress_avg",
+    "resting_hr",
+    "readiness_score",
+    "steps",
+)
+
+
+def daily_metrics_range(
+    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
+) -> list[dict]:
+    """Stored Garmin health metrics between two dates, oldest first."""
+    rows = con.execute(
+        f"""
+        SELECT {", ".join(HEALTH_COLUMNS)}
+        FROM app.daily_metrics
+        WHERE user_id = ? AND date >= ? AND date <= ?
+        ORDER BY date ASC
+        """,
+        [user_id, start, end],
+    ).fetchall()
+    return [
+        {
+            col: (str(value) if col == "date" else value)
+            for col, value in zip(HEALTH_COLUMNS, row, strict=True)
+        }
+        for row in rows
+    ]
+
+
+def earliest_session_date(
+    con: duckdb.DuckDBPyConnection, user_id: int = 1
+) -> date | None:
+    """Date of the first recorded session, used by the "all" period."""
+    row = con.execute(
+        "SELECT MIN(date) FROM app.actual_sessions WHERE user_id = ?", [user_id]
+    ).fetchone()
+    return row[0] if row and row[0] else None
+
+
+# --------------------------------------------------------------------------- #
+# Analytics overview: one SELECT per card, all over the same [start, end]
+# --------------------------------------------------------------------------- #
+def volume_rows(
+    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
+) -> list[tuple[date, str, int, float | None]]:
+    """(date, sport, duration_sec, distance_m) for every session in the range."""
+    return con.execute(
+        """
+        SELECT date, sport, COALESCE(duration_sec, 0), distance_m
+        FROM app.actual_sessions
+        WHERE date >= ? AND date <= ? AND user_id = ?
+        ORDER BY date ASC
+        """,
+        [start, end, user_id],
+    ).fetchall()
+
+
+def zone_rows(
+    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
+) -> list[tuple[date, str]]:
+    """(date, hr_zones_json) for sessions that recorded heart-rate zones."""
+    return con.execute(
+        """
+        SELECT date, hr_zones_json
+        FROM app.actual_sessions
+        WHERE date >= ? AND date <= ? AND user_id = ?
+          AND hr_zones_json IS NOT NULL
+        ORDER BY date ASC
+        """,
+        [start, end, user_id],
+    ).fetchall()
+
+
+def sport_totals(
+    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
+) -> list[tuple[str, float, int]]:
+    """(sport, hours, sessions) aggregated over the range."""
+    return con.execute(
+        """
+        SELECT sport, SUM(COALESCE(duration_sec, 0)) / 3600.0, COUNT(*)
+        FROM app.actual_sessions
+        WHERE date >= ? AND date <= ? AND user_id = ?
+        GROUP BY sport
+        ORDER BY 2 DESC
+        """,
+        [start, end, user_id],
+    ).fetchall()
+
+
+def pace_rows(
+    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
+) -> list[tuple[date, int, float | None, int]]:
+    """(date, avg_pace_sec_km, distance_m, duration_sec) for runs with a pace."""
+    return con.execute(
+        f"""
+        SELECT date, avg_pace_sec_km, distance_m, COALESCE(duration_sec, 0)
+        FROM app.actual_sessions
+        WHERE date >= ? AND date <= ? AND user_id = ?
+          AND sport IN ({sql_in(RUNNING_SPORTS)})
+          AND avg_pace_sec_km IS NOT NULL
+        ORDER BY date ASC
+        """,
+        [start, end, user_id],
+    ).fetchall()
+
+
+def drift_rows(
+    con: duckdb.DuckDBPyConnection,
+    start: date,
+    end: date,
+    min_duration_sec: int = 2400,
+    user_id: int = 1,
+) -> list[tuple]:
+    """Long runs with laps, in the column order ``hr_drift.analyze_runs`` expects."""
+    return con.execute(
+        f"""
+        SELECT id, date, name, distance_m, ascent_m,
+               moving_time_sec, avg_hr, avg_pace_sec_km, laps_json
+        FROM app.actual_sessions
+        WHERE date >= ? AND date <= ? AND user_id = ?
+          AND sport IN ({sql_in(RUNNING_SPORTS)})
+          AND moving_time_sec >= ?
+          AND laps_json IS NOT NULL
+        ORDER BY date ASC
+        """,
+        [start, end, user_id, min_duration_sec],
+    ).fetchall()
+
+
+def efficiency_rows(
+    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
+) -> list[tuple[date, float, float, int]]:
+    """(date, avg_hr, avg_pace_sec_km, duration_sec) for runs with HR and pace."""
+    return con.execute(
+        f"""
+        SELECT date, avg_hr, avg_pace_sec_km, COALESCE(duration_sec, 0)
+        FROM app.actual_sessions
+        WHERE date >= ? AND date <= ? AND user_id = ?
+          AND sport IN ({sql_in(RUNNING_SPORTS)})
+          AND avg_hr IS NOT NULL
+          AND avg_pace_sec_km IS NOT NULL
+          AND avg_pace_sec_km > 0
+        ORDER BY date ASC
+        """,
+        [start, end, user_id],
+    ).fetchall()
+
+
+def best_effort_rows(
+    con: duckdb.DuckDBPyConnection, sports: Sequence[str], user_id: int = 1
+) -> list[tuple]:
+    """(best_efforts_json, date, name) for every session carrying best efforts."""
+    return con.execute(
+        f"""
+        SELECT best_efforts_json, date, name
+        FROM app.actual_sessions
+        WHERE user_id = ?
+          AND best_efforts_json IS NOT NULL
+          AND sport IN ({sql_in(sports)})
+        ORDER BY date DESC
+        """,
+        [user_id],
+    ).fetchall()

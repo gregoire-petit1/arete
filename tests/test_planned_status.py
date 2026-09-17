@@ -133,5 +133,7 @@ class TestManualCardioEntry:
             repo.delete_planned_session(pid)
 
     def test_rejects_impossible_duration(self, client):
-        resp = client.post("/garmin/actual", json={"date": "2031-08-03", "duration_min": 0})
+        resp = client.post(
+            "/garmin/actual", json={"date": "2031-08-03", "duration_min": 0}
+        )
         assert resp.status_code == 422

@@ -15,7 +15,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from arete.dataio.db import connect
+from arete.dataio.db import connect, db_connection
+from arete.dataio.queries import daily_metrics_range
 from arete.garmin.health_sync import sync_range
 from arete.garmin.readiness import update_readiness_range
 
@@ -161,38 +162,9 @@ def get_metrics_range(
     end: date = Query(default_factory=date.today),
 ) -> dict:
     """Get metrics for a range (e.g. for chart visualization)."""
-    con = connect()
-    try:
-        rows = con.execute(
-            """
-            SELECT date, hrv_last_night, hrv_weekly_avg, sleep_score, sleep_duration_sec,
-                   body_battery_high, body_battery_low, stress_avg, resting_hr,
-                   readiness_score, steps
-            FROM app.daily_metrics
-            WHERE user_id = 1 AND date >= ? AND date <= ?
-            ORDER BY date ASC
-            """,
-            [start, end],
-        ).fetchall()
-    finally:
-        con.close()
+    with db_connection() as con:
+        days = daily_metrics_range(con, start, end)
 
-    days = [
-        {
-            "date": str(r[0]),
-            "hrv_last_night": r[1],
-            "hrv_weekly_avg": r[2],
-            "sleep_score": r[3],
-            "sleep_duration_sec": r[4],
-            "body_battery_high": r[5],
-            "body_battery_low": r[6],
-            "stress_avg": r[7],
-            "resting_hr": r[8],
-            "readiness_score": r[9],
-            "steps": r[10],
-        }
-        for r in rows
-    ]
     return {"start": start.isoformat(), "end": end.isoformat(), "days": days}
 
 

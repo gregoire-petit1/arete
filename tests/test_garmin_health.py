@@ -200,7 +200,7 @@ class TestGarminHealthApi:
         assert data["body_battery_high"] == 95
         assert data["readiness_score"] == 82
 
-    @patch("arete.api.garmin_health.connect")
+    @patch("arete.dataio.db.connect")
     def test_range_endpoint(self, mock_connect, client):
         mock_conn = mock_connect.return_value
         mock_conn.execute.return_value.fetchall.return_value = [

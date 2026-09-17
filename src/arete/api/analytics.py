@@ -1,291 +1,140 @@
-"""Analytics API endpoints.
+"""Analytics API: one overview per period, plus personal records.
 
-Provides historical training analytics: volume, training load, pace trends,
-HR zones, sport distribution, and best efforts.
+``/analytics/overview`` answers four questions in one round-trip — how much did
+I train, how hard, how efficiently, how well did I recover — so the page can
+render every card without fanning out to a dozen endpoints.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from arete.dataio.db import connect
+from arete.dataio.db import connect, db_connection
 from arete.dataio.queries import (
-    FOOT_SPORTS,
     RUNNING_SPORTS,
     SPORT_GROUPS,
-    sql_in,
+    best_effort_rows,
+    daily_metrics_range,
+    drift_rows,
+    earliest_session_date,
+    efficiency_rows,
+    pace_rows,
+    sport_totals,
+    training_loads,
     tss_history,
+    volume_rows,
+    zone_rows,
 )
+from arete.features import overview as ov
 from arete.features.fitness import ctl_atl_series
-from arete.features.hr_drift import analyze_runs
+from arete.features.periods import PeriodWindow, resolve_period
+from arete.features.workload import (
+    calculate_acute_load,
+    calculate_acwr,
+    calculate_chronic_load,
+    get_acwr_zone,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
-
-# ---------- Helpers ----------
-
-PERIOD_MAP: dict[str, int] = {
-    "7d": 7,
-    "30d": 30,
-    "90d": 90,
-    "6m": 180,
-    "1y": 365,
-    "all": 3650,
-}
 
 EFFORT_NAMES = ("400m", "1k", "1 mile", "5k", "10k", "Half-Marathon")
 
 # Two CTL time constants of history feed the EWMA before the first displayed day
 CTL_WARMUP_DAYS = 84
 
+ACWR_ZONE_FR = {
+    "undertrained": "charge basse",
+    "optimal": "zone optimale",
+    "caution": "prudence",
+    "danger": "zone à risque",
+}
 
-def _parse_period(period: str) -> int:
-    """Convert a period string to a number of days."""
-    return PERIOD_MAP.get(period, 30)
-
-
-def _format_pace(sec_per_km: int) -> str:
-    """Format seconds per km as 'M:SS'."""
-    minutes = sec_per_km // 60
-    seconds = sec_per_km % 60
-    return f"{minutes}:{seconds:02d}"
+MIN_DRIFT_DURATION_SEC = 40 * 60
 
 
-# ---------- Endpoints ----------
+def _window(period: str) -> PeriodWindow:
+    with db_connection() as con:
+        earliest = earliest_session_date(con)
+    return resolve_period(period, date.today(), earliest)
 
 
-@router.get("/volume")
-def get_volume(
-    period: str = Query("30d"),
-    sport: str = Query("all"),
-):
-    """Weekly volume aggregated by sport."""
-    days = _parse_period(period)
-    start_date = date.today() - timedelta(days=days)
-
-    con = connect(read_only=True)
-    try:
-        sport_filter = ""
-        params: list = [start_date]
-        if sport != "all":
-            sport_filter = "AND sport = ?"
-            params.append(sport)
-
-        rows = con.execute(
-            f"""
-            SELECT DATE_TRUNC('week', date) as week,
-                   sport,
-                   SUM(duration_sec) / 3600.0 as hours,
-                   SUM(COALESCE(distance_m, 0)) / 1000.0 as km
-            FROM app.actual_sessions
-            WHERE date >= ? AND user_id = 1
-              {sport_filter}
-            GROUP BY week, sport
-            ORDER BY week ASC, sport ASC
-            """,
-            params,
-        ).fetchall()
-    finally:
-        con.close()
-
-    weeks_map: dict[str, dict] = {}
-    for week_ts, row_sport, hours, km in rows:
-        week_str = str(week_ts.date()) if hasattr(week_ts, "date") else str(week_ts)
-        if week_str not in weeks_map:
-            weeks_map[week_str] = {
-                "week": week_str,
-                "sports": {},
-                "total_hours": 0.0,
-                "total_km": 0.0,
-            }
-        entry = weeks_map[week_str]
-        h = round(hours, 1)
-        k = round(km, 1)
-        entry["sports"][row_sport] = {"hours": h, "km": k}
-        entry["total_hours"] = round(entry["total_hours"] + h, 1)
-        entry["total_km"] = round(entry["total_km"] + k, 1)
-
-    return {"weeks": list(weeks_map.values())}
+def _fetch_start(window: PeriodWindow) -> date:
+    """First day to query: the previous window when there is one."""
+    return window.prev_start or window.start
 
 
-@router.get("/training-load")
-def get_training_load(
-    period: str = Query("90d"),
-):
-    """Daily CTL / ATL / TSB time series.
-
-    The EWMA is warmed up on CTL_WARMUP_DAYS of history before the displayed
-    window so the first days of the chart do not start from zero.
-    """
-    days = _parse_period(period)
-    series = ctl_atl_series(tss_history(days=days + CTL_WARMUP_DAYS))
-    data = [
-        {
-            "date": str(day.date),
-            "ctl": round(ctl, 1),
-            "atl": round(atl, 1),
-            "tsb": round(ctl - atl, 1),
-            "tss": round(day.tss, 1),
-        }
-        for day, ctl, atl in series[-(days + 1) :]
-    ]
-    return {"data": data}
+ACWR_HISTORY_DAYS = 28
 
 
-@router.get("/pace")
-def get_pace(
-    period: str = Query("90d"),
-    sport: str = Query("running"),
-):
-    """Pace trend for running or cycling activities."""
-    days = _parse_period(period)
-    start_date = date.today() - timedelta(days=days)
-    sports = SPORT_GROUPS.get(sport, RUNNING_SPORTS)
-    placeholders = ", ".join("?" for _ in sports)
+def _acwr(target: date) -> tuple[float | None, str | None]:
+    """Acute:chronic ratio on the last day of the window, with a French label."""
+    loads = training_loads(days=ACWR_HISTORY_DAYS, end=target)
+    value = calculate_acwr(
+        calculate_acute_load(loads, target), calculate_chronic_load(loads, target)
+    )
+    if value is None:
+        return None, None
+    return round(value, 2), ACWR_ZONE_FR.get(get_acwr_zone(value).value)
 
-    con = connect(read_only=True)
-    try:
-        rows = con.execute(
-            f"""
-            SELECT date, avg_pace_sec_km, distance_m, duration_sec, name
-            FROM app.actual_sessions
-            WHERE date >= ? AND user_id = 1
-              AND sport IN ({placeholders})
-              AND avg_pace_sec_km IS NOT NULL
-            ORDER BY date ASC
-            """,
-            [start_date, *sports],
-        ).fetchall()
-    finally:
-        con.close()
 
-    activities = []
-    for row_date, pace, distance_m, _duration, name in rows:
-        pace_int = int(pace)
-        activities.append(
-            {
-                "date": str(row_date),
-                "pace_sec_km": pace_int,
-                "pace_display": _format_pace(pace_int),
-                "distance_km": round(distance_m / 1000.0, 1) if distance_m else 0.0,
-                "name": name or "",
-            }
+@router.get("/overview")
+def get_overview(period: str = Query("30d")):
+    """Every analytics card for one period, with the previous one as reference."""
+    window = _window(period)
+    start = _fetch_start(window)
+
+    with db_connection() as con:
+        sessions = volume_rows(con, start, window.end)
+        zones = zone_rows(con, start, window.end)
+        sports_cur = sport_totals(con, window.start, window.end)
+        sports_prev = (
+            sport_totals(con, window.prev_start, window.prev_end)
+            if window.prev_start and window.prev_end
+            else []
         )
+        paces = pace_rows(con, start, window.end)
+        drifts = drift_rows(con, start, window.end, MIN_DRIFT_DURATION_SEC)
+        efficiency = efficiency_rows(con, start, window.end)
+        health = daily_metrics_range(con, start, window.end)
 
-    return {"activities": activities}
+    tss_days = (window.end - start).days + 1
+    pmc_series = ctl_atl_series(tss_history(days=tss_days + CTL_WARMUP_DAYS))
+    acwr, acwr_zone = _acwr(window.end)
 
-
-@router.get("/hr-zones")
-def get_hr_zones(
-    period: str = Query("30d"),
-):
-    """Weekly HR zone distribution."""
-    days = _parse_period(period)
-    start_date = date.today() - timedelta(days=days)
-
-    con = connect(read_only=True)
-    try:
-        rows = con.execute(
-            """
-            SELECT DATE_TRUNC('week', date) as week,
-                   hr_zones_json
-            FROM app.actual_sessions
-            WHERE date >= ? AND user_id = 1
-              AND hr_zones_json IS NOT NULL
-            ORDER BY week ASC
-            """,
-            [start_date],
-        ).fetchall()
-    finally:
-        con.close()
-
-    if not rows:
-        return {"weeks": []}
-
-    weeks_map: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    for week_ts, hr_json in rows:
-        week_str = str(week_ts.date()) if hasattr(week_ts, "date") else str(week_ts)
-        zones = json.loads(hr_json) if isinstance(hr_json, str) else hr_json
-        for zone_name, seconds in zones.items():
-            weeks_map[week_str][str(zone_name).lower()] += int(seconds)
-
-    result = [{"week": w, "zones": dict(z)} for w, z in sorted(weeks_map.items())]
-    return {"weeks": result}
+    recovery = ov.build_recovery_cards(health, window)
+    return {
+        "period": window.period,
+        "bucket": window.bucket,
+        "start": window.start.isoformat(),
+        "end": window.end.isoformat(),
+        "prev_start": window.prev_start.isoformat() if window.prev_start else None,
+        "prev_end": window.prev_end.isoformat() if window.prev_end else None,
+        "cards": {
+            "volume": ov.build_volume_card(sessions, window, RUNNING_SPORTS),
+            "pmc": ov.build_pmc_card(pmc_series, window, acwr, acwr_zone),
+            "zones": ov.build_zones_card(zones, window),
+            "sports": ov.build_sports_card(sports_cur, sports_prev),
+            "decoupling": ov.build_decoupling_card(drifts, efficiency, window),
+            "pace": ov.build_pace_card(paces, window),
+            **recovery,
+        },
+    }
 
 
-@router.get("/sport-distribution")
-def get_sport_distribution(
-    period: str = Query("90d"),
-):
-    """Sport distribution by hours and count."""
-    days = _parse_period(period)
-    start_date = date.today() - timedelta(days=days)
-
-    con = connect(read_only=True)
-    try:
-        rows = con.execute(
-            """
-            SELECT sport,
-                   SUM(duration_sec) / 3600.0 as hours,
-                   COUNT(*) as count
-            FROM app.actual_sessions
-            WHERE date >= ? AND user_id = 1
-            GROUP BY sport
-            ORDER BY hours DESC
-            """,
-            [start_date],
-        ).fetchall()
-    finally:
-        con.close()
-
-    total_hours = sum(row[1] for row in rows) if rows else 0.0
-    sports = []
-    for row_sport, hours, count in rows:
-        pct = round(hours / total_hours * 100, 1) if total_hours > 0 else 0.0
-        sports.append(
-            {
-                "sport": row_sport,
-                "hours": round(hours, 1),
-                "count": int(count),
-                "percentage": pct,
-            }
-        )
-
-    return {"sports": sports, "total_hours": round(total_hours, 1)}
-
-
-@router.get("/best-efforts")
-def get_best_efforts(
-    sport: str = Query("running"),
-):
-    """All-time best efforts (PRs) for common distances."""
+@router.get("/records")
+def get_records(sport: str = Query("running")):
+    """All-time best efforts for the usual distances."""
     sports = SPORT_GROUPS.get(sport, RUNNING_SPORTS)
-    placeholders = ", ".join("?" for _ in sports)
+    with db_connection() as con:
+        rows = best_effort_rows(con, sports)
 
-    con = connect(read_only=True)
-    try:
-        rows = con.execute(
-            f"""
-            SELECT best_efforts_json, date, name
-            FROM app.actual_sessions
-            WHERE user_id = 1
-              AND best_efforts_json IS NOT NULL
-              AND sport IN ({placeholders})
-            ORDER BY date DESC
-            """,
-            list(sports),
-        ).fetchall()
-    finally:
-        con.close()
-
-    # Track best per effort name
     bests: dict[str, dict] = {}
     for efforts_json, row_date, activity_name in rows:
         efforts = (
@@ -295,23 +144,19 @@ def get_best_efforts(
             continue
         for effort in efforts:
             name = effort.get("name", "")
-            if name not in EFFORT_NAMES:
-                continue
             elapsed = effort.get("elapsed_time", 0)
-            if elapsed <= 0:
+            if name not in EFFORT_NAMES or elapsed <= 0:
                 continue
-            if name not in bests or elapsed < bests[name]["best_time_sec"]:
+            if name not in bests or elapsed < bests[name]["time_sec"]:
                 bests[name] = {
                     "name": name,
-                    "best_time_sec": elapsed,
-                    "best_time_display": _format_pace(elapsed),
+                    "time_sec": elapsed,
+                    "time_display": ov.format_hms(elapsed),
                     "date": str(row_date),
                     "activity_name": activity_name or "",
                 }
 
-    # Return in canonical order
-    ordered = [bests[n] for n in EFFORT_NAMES if n in bests]
-    return {"efforts": ordered}
+    return {"records": [bests[n] for n in EFFORT_NAMES if n in bests]}
 
 
 # ---------- Session CRUD ----------
@@ -351,8 +196,7 @@ def update_session(session_id: int, body: SessionUpdate):
 @router.get("/sessions")
 def list_sessions(limit: int = 20, offset: int = 0):
     """List recent actual sessions (for Log page)."""
-    con = connect(read_only=True)
-    try:
+    with db_connection() as con:
         rows = con.execute(
             """
             SELECT id, date, sport, name, duration_sec, distance_m,
@@ -365,182 +209,23 @@ def list_sessions(limit: int = 20, offset: int = 0):
             [limit, offset],
         ).fetchall()
 
-        sessions = []
-        for r in rows:
-            pace_display = None
-            if r[7]:
-                pace_display = f"{r[7] // 60}:{r[7] % 60:02d}"
-            sessions.append(
-                {
-                    "id": r[0],
-                    "date": str(r[1]),
-                    "sport": r[2],
-                    "name": r[3],
-                    "duration_sec": r[4],
-                    "distance_m": r[5],
-                    "avg_hr": r[6],
-                    "avg_pace_sec_km": r[7],
-                    "pace_display": pace_display,
-                    "rpe": r[8],
-                    "notes": r[9],
-                    "source": r[10],
-                    "calories": r[11],
-                }
-            )
-    finally:
-        con.close()
-
-    return {"sessions": sessions}
-
-
-@router.get("/hr-drift")
-def get_hr_drift(
-    period: str = Query("1y"),
-    min_duration_min: int = Query(40, ge=20, le=240),
-):
-    """HR drift / aerobic decoupling per run, with athlete baseline.
-
-    Only runs >= min_duration_min with >= 4 full 1-km laps. See
-    ``arete.features.hr_drift`` for the method.
-    """
-    start_date = date.today() - timedelta(days=_parse_period(period))
-    con = connect(read_only=True)
-    try:
-        rows = con.execute(
-            f"""
-            SELECT id, date, name, distance_m, ascent_m,
-                   moving_time_sec, avg_hr, avg_pace_sec_km, laps_json
-            FROM app.actual_sessions
-            WHERE date >= ? AND user_id = 1
-              AND sport IN ({sql_in(RUNNING_SPORTS)})
-              AND moving_time_sec >= ?
-              AND laps_json IS NOT NULL
-            ORDER BY date ASC
-            """,
-            [start_date, min_duration_min * 60],
-        ).fetchall()
-    finally:
-        con.close()
-    return analyze_runs(rows)
-
-
-@router.get("/cardiac-efficiency")
-def get_cardiac_efficiency(
-    period: str = Query("90d"),
-):
-    """Weekly cardiac efficiency trend for runs.
-
-    Efficiency = avg_hr / speed_kmh.  Lower = more efficient heart.
-    """
-    days = _parse_period(period)
-    start_date = date.today() - timedelta(days=days)
-
-    con = connect(read_only=True)
-    try:
-        rows = con.execute(
-            f"""
-            SELECT DATE_TRUNC('week', date) as week,
-                   avg_hr,
-                   avg_pace_sec_km,
-                   duration_sec
-            FROM app.actual_sessions
-            WHERE date >= ? AND user_id = 1
-              AND sport IN ({sql_in(RUNNING_SPORTS)})
-              AND avg_hr IS NOT NULL
-              AND avg_pace_sec_km IS NOT NULL
-              AND avg_pace_sec_km > 0
-            ORDER BY week ASC
-            """,
-            [start_date],
-        ).fetchall()
-    finally:
-        con.close()
-
-    if not rows:
-        return {"data": []}
-
-    # Group by week — weighted average by duration
-    weeks: dict[str, dict] = defaultdict(
-        lambda: {"hr_sum": 0.0, "speed_sum": 0.0, "dur_sum": 0, "n": 0}
-    )
-    for week_ts, hr, pace, dur in rows:
-        week_str = str(week_ts.date()) if hasattr(week_ts, "date") else str(week_ts)
-        w = weeks[week_str]
-        weight = dur or 1
-        speed_kmh = 3600.0 / pace  # convert sec/km to km/h
-        w["hr_sum"] += hr * weight
-        w["speed_sum"] += speed_kmh * weight
-        w["dur_sum"] += weight
-        w["n"] += 1
-
-    result = []
-    for week_str in sorted(weeks.keys()):
-        w = weeks[week_str]
-        avg_hr = w["hr_sum"] / w["dur_sum"]
-        avg_speed = w["speed_sum"] / w["dur_sum"]
-        efficiency = round(avg_hr / avg_speed, 1) if avg_speed > 0 else None
-        avg_pace_sec = int(3600.0 / avg_speed) if avg_speed > 0 else None
-        result.append(
-            {
-                "week": week_str,
-                "efficiency": efficiency,
-                "avg_hr": round(avg_hr, 1),
-                "avg_pace": _format_pace(avg_pace_sec) if avg_pace_sec else None,
-                "avg_pace_sec_km": avg_pace_sec,
-                "n_runs": w["n"],
-            }
-        )
-
-    return {"data": result}
-
-
-@router.get("/hr-pace-scatter")
-def get_hr_pace_scatter(
-    period: str = Query("90d"),
-):
-    """Per-session HR, pace, elevation data for scatter plots."""
-    days = _parse_period(period)
-    start_date = date.today() - timedelta(days=days)
-
-    con = connect(read_only=True)
-    try:
-        rows = con.execute(
-            f"""
-            SELECT date, sport, name,
-                   avg_hr, max_hr,
-                   avg_pace_sec_km,
-                   ascent_m,
-                   CASE WHEN distance_m IS NOT NULL THEN ROUND(distance_m / 1000.0, 1) ELSE NULL END as distance_km,
-                   duration_sec
-            FROM app.actual_sessions
-            WHERE date >= ? AND user_id = 1
-              AND avg_hr IS NOT NULL
-              AND sport IN ({sql_in(FOOT_SPORTS)})
-            ORDER BY date ASC
-            """,
-            [start_date],
-        ).fetchall()
-    finally:
-        con.close()
-
     sessions = []
     for r in rows:
-        pace_display = None
-        if r[5]:
-            pace_display = f"{r[5] // 60}:{r[5] % 60:02d}"
         sessions.append(
             {
-                "date": str(r[0]),
-                "sport": r[1],
-                "name": r[2],
-                "avg_hr": r[3],
-                "max_hr": r[4],
-                "pace_sec_km": r[5],
-                "pace_display": pace_display,
-                "elevation_gain": r[6],
-                "distance_km": float(r[7]) if r[7] is not None else None,
-                "duration_sec": r[8],
+                "id": r[0],
+                "date": str(r[1]),
+                "sport": r[2],
+                "name": r[3],
+                "duration_sec": r[4],
+                "distance_m": r[5],
+                "avg_hr": r[6],
+                "avg_pace_sec_km": r[7],
+                "pace_display": ov.format_pace(r[7]),
+                "rpe": r[8],
+                "notes": r[9],
+                "source": r[10],
+                "calories": r[11],
             }
         )
-
     return {"sessions": sessions}
