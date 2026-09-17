@@ -47,17 +47,17 @@
   --color-info-blue: #3B82F6;
   --color-text-primary: #E8E8E8;
   --color-text-secondary: #A0A0A0;
-  --color-text-muted: #606060;
+  --color-text-muted: #8A8A93;
 
   /* Brands */
   --color-strava: #FC4C02;
 
   /* Chart palette (recharts) */
   --color-chart-surface: #1A1A2E;
-  --color-chart-grid: #333333;
-  --color-chart-axis: #888888;
-  --color-chart-label: #666666;
-  --color-chart-text: #CCCCCC;
+  --color-chart-grid: #3A3A46;
+  --color-chart-axis: #9A9AA5;
+  --color-chart-label: #8A8A93;
+  --color-chart-text: #E0E0E6;
   --color-chart-blue: #3B82F6;
   --color-chart-green: #22C55E;
   --color-chart-yellow: #EAB308;

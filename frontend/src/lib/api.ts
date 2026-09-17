@@ -286,41 +286,13 @@ export const stravaApi = {
 // ========================= //
 
 export const analyticsApi = {
-  getVolume: (period = "30d", sport = "all") =>
-    fetchAPI<import("@/types").VolumeResponse>(
-      `/analytics/volume?period=${period}&sport=${sport}`
+  getOverview: (period = "30d") =>
+    fetchAPI<import("@/types").OverviewResponse>(
+      `/analytics/overview?period=${period}`
     ),
-  getTrainingLoad: (period = "90d") =>
-    fetchAPI<import("@/types").TrainingLoadResponse>(
-      `/analytics/training-load?period=${period}`
-    ),
-  getPace: (period = "90d", sport = "running") =>
-    fetchAPI<import("@/types").PaceResponse>(
-      `/analytics/pace?period=${period}&sport=${sport}`
-    ),
-  getHrZones: (period = "30d") =>
-    fetchAPI<import("@/types").HrZonesResponse>(
-      `/analytics/hr-zones?period=${period}`
-    ),
-  getSportDistribution: (period = "90d") =>
-    fetchAPI<import("@/types").SportDistributionResponse>(
-      `/analytics/sport-distribution?period=${period}`
-    ),
-  getBestEfforts: (sport = "running") =>
-    fetchAPI<import("@/types").BestEffortsResponse>(
-      `/analytics/best-efforts?sport=${sport}`
-    ),
-  getCardiacEfficiency: (period = "90d") =>
-    fetchAPI<import("@/types").CardiacEfficiencyResponse>(
-      `/analytics/cardiac-efficiency?period=${period}`
-    ),
-  getHrPaceScatter: (period = "90d") =>
-    fetchAPI<import("@/types").HrPaceScatterResponse>(
-      `/analytics/hr-pace-scatter?period=${period}`
-    ),
-  getHrDrift: (period = "1y", minDurationMin = 40) =>
-    fetchAPI<import("@/types").HrDriftResponse>(
-      `/analytics/hr-drift?period=${period}&min_duration_min=${minDurationMin}`
+  getRecords: (sport = "running") =>
+    fetchAPI<import("@/types").RecordsResponse>(
+      `/analytics/records?sport=${sport}`
     ),
   getSessions: (limit = 20, offset = 0) =>
     fetchAPI<import("@/types").CardioSessionsResponse>(

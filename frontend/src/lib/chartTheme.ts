@@ -17,16 +17,16 @@ export const COLORS = {
   infoBlue: '#3B82F6',
   textPrimary: '#E8E8E8',
   textSecondary: '#A0A0A0',
-  textMuted: '#606060',
+  textMuted: '#8A8A93',
   strava: '#FC4C02',
 } as const;
 
 export const CHART = {
   surface: '#1A1A2E',
-  grid: '#333333',
-  axis: '#888888',
-  label: '#666666',
-  text: '#CCCCCC',
+  grid: '#3A3A46',
+  axis: '#9A9AA5',
+  label: '#8A8A93',
+  text: '#E0E0E6',
   blue: '#3B82F6',
   green: '#22C55E',
   yellow: '#EAB308',

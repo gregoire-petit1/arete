@@ -300,6 +300,42 @@ def build_zones_card(rows: Sequence[tuple[date, str]], window: PeriodWindow) -> 
     }
 
 
+# Garmin and Strava spell the same sport differently; the cards read in French.
+SPORT_LABEL_FR: dict[str, str] = {
+    "run": "course",
+    "running": "course",
+    "trail_run": "trail",
+    "trail_running": "trail",
+    "treadmill_running": "tapis",
+    "virtual_run": "course virtuelle",
+    "virtualrun": "course virtuelle",
+    "ride": "vélo",
+    "cycling": "vélo",
+    "virtual_ride": "home-trainer",
+    "indoor_cycling": "vélo intérieur",
+    "mountain_biking": "VTT",
+    "swim": "natation",
+    "swimming": "natation",
+    "lap_swimming": "natation",
+    "strength": "musculation",
+    "strength_training": "musculation",
+    "weight_training": "musculation",
+    "walk": "marche",
+    "walking": "marche",
+    "hike": "randonnée",
+    "hiking": "randonnée",
+    "rowing": "rameur",
+    "indoor_rowing": "rameur",
+    "yoga": "yoga",
+    "mobility": "mobilité",
+    "cardio": "cardio",
+}
+
+
+def sport_label(sport: str) -> str:
+    return SPORT_LABEL_FR.get(sport.lower(), sport.replace("_", " "))
+
+
 def build_sports_card(
     cur: Sequence[tuple[str, float, int]], prev: Sequence[tuple[str, float, int]]
 ) -> Card:
@@ -316,7 +352,7 @@ def build_sports_card(
         for sport, hours, count in rows
     ]
     prev_hours = sum(r[1] for r in prev) if prev else None
-    top_sport: str | None = rows[0][0] if rows else None
+    top_sport: str | None = sport_label(rows[0][0]) if rows else None
     top_pct: float | None = (
         round(rows[0][1] / total_hours * 100, 1) if rows and total_hours else None
     )
@@ -613,6 +649,7 @@ __all__ = [
     "build_sports_card",
     "build_volume_card",
     "build_zones_card",
+    "sport_label",
     "empty_card",
     "format_hms",
     "format_pace",

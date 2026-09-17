@@ -220,133 +220,76 @@ export interface ParsedWorkout {
 // ANALYTICS                 //
 // ========================= //
 
-export interface VolumeWeek {
-  week: string;
-  sports: Record<string, { hours: number; km: number }>;
-  total_hours: number;
-  total_km: number;
-}
-export interface VolumeResponse {
-  weeks: VolumeWeek[];
+export type Period = '7d' | '30d' | '90d' | '6m' | '1y' | 'all';
+export type Bucket = 'day' | 'week' | 'month';
+export type Tone = 'good' | 'neutral' | 'warn' | 'bad';
+/** Which direction of change is an improvement for this number. */
+export type Better = 'up' | 'down' | 'neutral';
+
+export interface Headline {
+  value: number | null;
+  unit: string;
+  display: string;
+  previous: number | null;
+  delta: number | null;
+  delta_pct: number | null;
+  better: Better;
 }
 
-export interface TrainingLoadPoint {
-  date: string;
-  ctl: number;
-  atl: number;
-  tsb: number;
-  tss: number;
-}
-export interface TrainingLoadResponse {
-  data: TrainingLoadPoint[];
+export interface Insight {
+  text: string;
+  tone: Tone;
 }
 
-export interface PaceActivity {
-  date: string;
-  pace_sec_km: number;
-  pace_display: string;
-  distance_km: number;
-  name: string;
-}
-export interface PaceResponse {
-  activities: PaceActivity[];
+/** A point of a card series: always a bucket, plus that card's own fields. */
+export type SeriesPoint = { bucket: string } & Record<string, number | string | null>;
+
+export interface Card {
+  headline: Headline;
+  secondary: Headline[];
+  insight: Insight;
+  series: SeriesPoint[];
 }
 
-export interface HrZonesWeek {
-  week: string;
-  zones: Record<string, number>; // seconds per zone
-}
-export interface HrZonesResponse {
-  weeks: HrZonesWeek[];
+export type CardKey =
+  | 'volume'
+  | 'pmc'
+  | 'zones'
+  | 'sports'
+  | 'decoupling'
+  | 'pace'
+  | 'readiness'
+  | 'hrv'
+  | 'sleep'
+  | 'resting_hr';
+
+export interface OverviewResponse {
+  period: Period;
+  bucket: Bucket;
+  start: string;
+  end: string;
+  prev_start: string | null;
+  prev_end: string | null;
+  cards: Record<CardKey, Card>;
 }
 
-export interface SportShare {
-  [key: string]: string | number;
+/** The sports card series is per sport, not per bucket. */
+export interface SportSlice {
   sport: string;
   hours: number;
   count: number;
-  percentage: number;
-}
-export interface SportDistributionResponse {
-  sports: SportShare[];
-  total_hours: number;
+  pct: number;
 }
 
-export interface BestEffort {
+export interface PersonalRecord {
   name: string;
-  best_time_sec: number;
-  best_time_display: string;
+  time_sec: number;
+  time_display: string;
   date: string;
   activity_name: string;
 }
-export interface BestEffortsResponse {
-  efforts: BestEffort[];
-}
-
-export interface CardiacEfficiencyWeek {
-  week: string;
-  efficiency: number | null;
-  avg_hr: number;
-  avg_pace: string | null;
-  avg_pace_sec_km: number | null;
-  n_runs: number;
-}
-export interface CardiacEfficiencyResponse {
-  data: CardiacEfficiencyWeek[];
-}
-
-export interface HrPaceSession {
-  date: string;
-  sport: string;
-  name: string | null;
-  avg_hr: number;
-  max_hr: number | null;
-  pace_sec_km: number | null;
-  pace_display: string | null;
-  elevation_gain: number | null;
-  distance_km: number | null;
-  duration_sec: number | null;
-}
-export interface HrPaceScatterResponse {
-  sessions: HrPaceSession[];
-}
-
-export interface HrDriftRun {
-  id: number;
-  date: string;
-  name: string | null;
-  distance_km: number | null;
-  elevation_m: number | null;
-  duration_min: number | null;
-  avg_hr: number | null;
-  avg_pace_sec_km: number | null;
-  hr_drift_pct: number;
-  pace_drift_pct: number;
-  decoupling_pct: number;
-  splits: unknown;
-  run_type: string;
-  drift_score: string;
-  expected_decoupling_pct: number | null;
-  drift_residual_pct: number | null;
-  tags: string[];
-}
-export interface HrDriftBaseline {
-  formula: string;
-  coefficients: Record<string, number>;
-  r_squared: number;
-  n_samples: number;
-}
-export interface EffortBucket {
-  n: number;
-  avg_decoupling_pct: number | null;
-  best_decoupling_pct: number | null;
-  worst_decoupling_pct: number | null;
-}
-export interface HrDriftResponse {
-  runs: HrDriftRun[];
-  count: number;
-  baseline: HrDriftBaseline | null;
-  effort_buckets: Record<string, EffortBucket>;
+export interface RecordsResponse {
+  records: PersonalRecord[];
 }
 
 export interface CardioSession {
