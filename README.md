@@ -38,10 +38,10 @@ The Vite dev server proxies `/api/*` to the backend on port 8000. The schema is 
 ```bash
 cp .env.example .env    # required: docker-compose reads env_file .env
 docker compose up --build
-# frontend: http://localhost:3080   backend: http://localhost:8000
+# frontend: http://localhost:3080   backend: http://localhost:8001 (8000 is often taken)
 ```
 
-Data (DuckDB file, Garmin tokens, FIT files) lives in the `arete-data` volume mounted at `/app/data`. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
+Data (DuckDB file, Garmin tokens, FIT files) is the repo's `./data` directory, bind-mounted at `/app/data`, so Docker and `uv run uvicorn` share the same database (never run both backends at once: DuckDB allows a single writer). The compose file enables the nightly sync (`ARETE_AUTO_SYNC_HOUR=3`) and sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
 
 ## Configuration
 

@@ -8,17 +8,22 @@ services:
     environment:
       - ARETE_DB=/app/data/arete.duckdb
       - ARETE_GARMIN_TOKENS_DIR=/app/data/garmin_tokens
+      # The frontend container is published on 3080 (overrides .env for Docker)
+      - FRONTEND_URL=http://localhost:3080
+      # Nightly Garmin + Strava sync at 03:00 (container local time)
+      - ARETE_AUTO_SYNC_HOUR=3
       # Ollama running on the Docker host (default). Switch to
       # http://ollama:11434/v1 when enabling the ollama service below.
       - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - arete-data:/app/data
+      # Same data directory as the dev setup: DuckDB file, Garmin tokens, FIT files
+      - ./data:/app/data
     ports:
-      - "8000:8000"
+      - "8001:8000"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -47,8 +52,6 @@ services:
   #     - ollama-data:/root/.ollama
   #   restart: unless-stopped
 
-volumes:
-  arete-data:
-    driver: local
-  # ollama-data:
-  #   driver: local
+# volumes:
+#   ollama-data:
+#     driver: local
