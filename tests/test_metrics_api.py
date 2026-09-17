@@ -1,5 +1,8 @@
 """Tests for the metrics API endpoints."""
 
+from datetime import date, timedelta
+from unittest.mock import patch
+
 from fastapi.testclient import TestClient
 
 from arete.api.main import app
@@ -311,3 +314,49 @@ class TestPlayerStatsEndpoint:
         assert data["xp"]["current"] >= 0
         assert data["xp"]["max"] > 0
         assert data["level"] >= 0
+
+
+class TestPlayerStatsSemantics:
+    """The bars must reflect settings and real recovery, not hard-coded targets."""
+
+    def test_weekly_goal_comes_from_settings(self):
+        from arete.api.metrics import TSS_PER_SESSION, _weekly_goal_tss
+
+        assert _weekly_goal_tss({"weekly_training_goal": 6}) == 6 * TSS_PER_SESSION
+        assert _weekly_goal_tss({}) == 6 * TSS_PER_SESSION  # default
+        assert (
+            _weekly_goal_tss({"weekly_training_goal": 0}) == 6 * TSS_PER_SESSION
+        )  # never zero
+
+    def test_hp_uses_garmin_readiness_when_available(self, client):
+        with patch("arete.api.metrics.compute_readiness", return_value=73):
+            body = client.get("/metrics/player-stats").json()
+        assert body["hp"]["current"] == 73.0
+        assert body["hp"]["source"] == "garmin"
+        assert body["hp"]["label"] == "Récupération"
+
+    def test_hp_falls_back_to_the_model(self, client):
+        with patch("arete.api.metrics.compute_readiness", return_value=None):
+            body = client.get("/metrics/player-stats").json()
+        assert body["hp"]["source"] == "model"
+
+    def test_mp_maps_tsb_and_reports_it(self, client):
+        with patch("arete.api.metrics.compute_readiness", return_value=None):
+            body = client.get("/metrics/player-stats").json()
+        assert 0 <= body["mp"]["current"] <= 100
+        assert body["mp"]["detail"].startswith("TSB ")
+
+    def test_level_is_a_streak_of_finished_weeks(self):
+        from arete.api import metrics
+
+        # oldest -> newest finished weeks: ok, missed, ok, ok
+        with (
+            patch("arete.api.metrics.connect") as mock_connect,
+            patch("arete.api.metrics.weekly_tss", side_effect=[400, 100, 400, 400]),
+        ):
+            mock_connect.return_value.execute.return_value.fetchone.return_value = (
+                date.today() - timedelta(days=28),
+            )
+            streak, total = metrics._week_history(300.0)
+        assert streak == 2  # only the two most recent count
+        assert total == 3

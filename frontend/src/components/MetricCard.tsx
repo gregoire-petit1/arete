@@ -1,4 +1,5 @@
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
+import { zoneLabel } from '@/lib/fr';
 import { cn } from '@/lib/utils';
 
 interface MetricCardProps {
@@ -65,7 +66,7 @@ export function MetricCard({ title, value, zone, zoneColor, subtitle, trend }: M
       <div
         className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono uppercase', colors.badge)}
       >
-        {zone.replace('_', ' ')}
+        {zoneLabel(zone)}
         {zoneColor === 'green' && ' ✓'}
         {zoneColor === 'red' && ' ⚠'}
       </div>

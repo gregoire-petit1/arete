@@ -2,6 +2,23 @@
 // FITNESS & WORKLOAD TYPES //
 // ========================= //
 
+export interface StatBar {
+  current: number;
+  max: number;
+  label: string;
+  detail: string | null;
+  source: string | null;
+}
+
+export interface PlayerStats {
+  hp: StatBar;
+  mp: StatBar;
+  xp: StatBar;
+  level: number;
+  weeks_at_goal: number;
+  weekly_goal_tss: number;
+}
+
 export interface FitnessMetrics {
   ctl: number;
   atl: number;

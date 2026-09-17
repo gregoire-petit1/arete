@@ -32,12 +32,7 @@ export const metricsApi = {
     fetchAPI<import("@/types").WorkloadMetrics>("/metrics/workload"),
 
   getPlayerStats: () =>
-    fetchAPI<{
-      hp: { current: number; max: number; label: string };
-      mp: { current: number; max: number; label: string };
-      xp: { current: number; max: number; label: string };
-      level: number;
-    }>("/metrics/player-stats"),
+    fetchAPI<import("@/types").PlayerStats>("/metrics/player-stats"),
 };
 
 // ========================= //

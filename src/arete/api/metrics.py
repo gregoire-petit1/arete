@@ -41,6 +41,7 @@ from arete.features.workload import (
     ACWRZone,
     compute_workload_metrics,
 )
+from arete.garmin.readiness import compute_readiness
 
 logger = logging.getLogger(__name__)
 
@@ -136,16 +137,22 @@ class StatBar(BaseModel):
 
     current: float = Field(description="Current value")
     max: float = Field(description="Maximum value")
-    label: str = Field(description="Human-readable label")
+    label: str = Field(description="Human-readable label (French)")
+    detail: str | None = Field(default=None, description="Raw value behind the bar")
+    source: str | None = Field(default=None, description="Where the value comes from")
 
 
 class PlayerStats(BaseModel):
-    """Player stats response (RPG-style HP/MP/XP/Level)."""
+    """RPG-style bars over real training data."""
 
-    hp: StatBar = Field(description="Health Points (Recovery/Readiness)")
-    mp: StatBar = Field(description="Mana Points (Fitness/CTL)")
-    xp: StatBar = Field(description="Experience Points (Weekly Volume/TSS)")
-    level: int = Field(description="Player level (completed weeks at goal)")
+    hp: StatBar = Field(
+        description="Récupération: Garmin readiness, else the CTL/ATL model"
+    )
+    mp: StatBar = Field(description="Forme: TSB mapped to 0-100")
+    xp: StatBar = Field(description="Charge de la semaine: TSS vs the weekly goal")
+    level: int = Field(description="Consecutive finished weeks at or above the goal")
+    weeks_at_goal: int = Field(default=0, description="All-time count of weeks at goal")
+    weekly_goal_tss: float = Field(default=0.0, description="Weekly TSS goal in use")
 
 
 class RecommendationOut(BaseModel):
@@ -174,85 +181,119 @@ class RecommendationsResponse(BaseModel):
 # ---------- Endpoints ----------
 
 
-def _compute_level(weekly_tss_goal: float) -> int:
-    """Count completed past weeks where weekly TSS >= goal."""
+# A planned session is worth roughly this much TSS; the user sets a number of
+# sessions per week in Settings, which we turn into a weekly TSS goal.
+TSS_PER_SESSION = 50.0
+
+
+def _weekly_goal_tss(settings: dict) -> float:
+    """Weekly TSS goal derived from the user's weekly session goal."""
+    sessions = int(settings.get("weekly_training_goal") or 6)  # 0/None -> default
+    return sessions * TSS_PER_SESSION
+
+
+def _week_history(goal_tss: float) -> tuple[int, int]:
+    """(consecutive finished weeks at goal, all-time count of such weeks)."""
     con = connect(read_only=True)
     try:
         today = date.today()
-        # Get the Monday of the current week
         current_monday = today - timedelta(days=today.weekday())
-
-        # Get earliest training date
         row = con.execute(
             "SELECT MIN(date) FROM app.actual_sessions WHERE user_id = 1"
         ).fetchone()
         if not row or not row[0]:
-            return 0
+            return 0, 0
 
         earliest = row[0]
-        # Align to Monday
-        start_monday = earliest - timedelta(days=earliest.weekday())
-
-        level = 0
-        week_start = start_monday
+        week_start = earliest - timedelta(days=earliest.weekday())
+        reached: list[bool] = []
         while week_start < current_monday:
-            week_end = week_start + timedelta(days=6)
-            week_tss = weekly_tss(con, week_start, week_end)
-            if week_tss >= weekly_tss_goal:
-                level += 1
+            reached.append(
+                weekly_tss(con, week_start, week_start + timedelta(days=6)) >= goal_tss
+            )
             week_start += timedelta(days=7)
-
-        return level
     finally:
         con.close()
+
+    streak = 0
+    for ok in reversed(reached):  # most recent finished week first
+        if not ok:
+            break
+        streak += 1
+    return streak, sum(reached)
 
 
 @router.get("/player-stats", response_model=PlayerStats)
 def get_player_stats():
-    """Get RPG-style player stats (HP/MP/XP/Level).
+    """RPG bars over real data.
 
-    - HP = Readiness score (0-100) from fitness-fatigue model
-    - MP = CTL progress toward target (0-100)
-    - XP = Weekly TSS accumulated this week
-    - Level = Count of past weeks where weekly TSS >= goal
+    - HP = today's Garmin readiness (HRV, sleep, body battery), model-based if absent
+    - MP = form: TSB mapped from -30..+30 onto 0..100
+    - XP = this week's TSS against the goal derived from Settings
+    - Level = consecutive finished weeks at or above that goal
     """
     today = date.today()
-
-    # --- Settings ---
     settings = get_user_settings(user_id=1) or {}
-    target_ctl = float(settings.get("desired_training_load", 0) or 0) or 50.0
-    weekly_tss_goal = 300.0  # Default; not in user_settings schema
+    goal_tss = _weekly_goal_tss(settings)
 
-    # --- HP: Readiness ---
-    history = tss_history(days=42)
-    has_data = any(tss.tss > 0 for tss in history)
-    if has_data:
-        model = compute_performance_model(history, today)
-        hp_current = round(model.readiness_score, 1)
-        ctl_value = model.ctl
+    # --- HP: recovery ---
+    readiness = compute_readiness(today)
+    if readiness is not None:
+        hp = StatBar(
+            current=float(readiness),
+            max=100,
+            label="Récupération",
+            detail="Garmin (VFC, sommeil, body battery)",
+            source="garmin",
+        )
     else:
-        hp_current = 50.0
-        ctl_value = 0.0
+        history = tss_history(days=42)
+        model = compute_performance_model(history, today)
+        hp = StatBar(
+            current=round(model.readiness_score, 1),
+            max=100,
+            label="Récupération",
+            detail="Estimée (pas de données Garmin du jour)",
+            source="model",
+        )
 
-    # --- MP: Fitness (CTL / target) ---
-    mp_current = round(min(100.0, ctl_value / target_ctl * 100), 1)
+    # --- MP: form (TSB) ---
+    history = tss_history(days=42)
+    model = compute_performance_model(history, today)
+    tsb = model.tsb
+    mp_current = round(max(0.0, min(100.0, (tsb + 30) * (100 / 60))), 1)
+    mp = StatBar(
+        current=mp_current,
+        max=100,
+        label="Forme",
+        detail=f"TSB {tsb:+.1f}",
+        source="model",
+    )
 
-    # --- XP: Weekly TSS ---
+    # --- XP: this week's load ---
     monday = today - timedelta(days=today.weekday())
     con = connect(read_only=True)
     try:
         xp_current = round(weekly_tss(con, monday, today), 1)
     finally:
         con.close()
+    goal_sessions = int(settings.get("weekly_training_goal") or 6)
+    xp = StatBar(
+        current=xp_current,
+        max=goal_tss,
+        label="Charge de la semaine",
+        detail=f"Objectif {goal_sessions} séances",
+        source="model",
+    )
 
-    # --- Level ---
-    level = _compute_level(weekly_tss_goal)
-
+    streak, total_weeks = _week_history(goal_tss)
     return PlayerStats(
-        hp=StatBar(current=hp_current, max=100, label="Recovery"),
-        mp=StatBar(current=mp_current, max=100, label="Fitness"),
-        xp=StatBar(current=xp_current, max=weekly_tss_goal, label="Weekly Volume"),
-        level=level,
+        hp=hp,
+        mp=mp,
+        xp=xp,
+        level=streak,
+        weeks_at_goal=total_weeks,
+        weekly_goal_tss=goal_tss,
     )
 
 
