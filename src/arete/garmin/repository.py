@@ -540,32 +540,70 @@ class GarminRepository:
         end = actual_session.date + timedelta(days=date_tolerance_days)
         return self.list_planned_sessions(start_date=start, end_date=end)
 
-    def get_matches_summary(self) -> dict:
-        """Get summary statistics of matches."""
+    def get_matches_summary(
+        self, start: date | None = None, end: date | None = None
+    ) -> dict:
+        """Adherence statistics.
+
+        ``adherence_rate`` only counts planned sessions that were *due*: dated
+        within [start, end] and not after today. Without a window, everything
+        planned up to today counts. Skipped = due, still pending, date before today.
+        """
+        today = date.today()
+        end_due = min(end, today) if end else today
         conn = self._get_connection()
+        try:
 
-        # Count totals
-        planned_row = conn.execute("SELECT COUNT(*) FROM planned_sessions").fetchone()
-        total_planned = int(planned_row[0]) if planned_row else 0
-        actual_row = conn.execute("SELECT COUNT(*) FROM actual_sessions").fetchone()
-        total_actual = int(actual_row[0]) if actual_row else 0
-        matched_row = conn.execute(
-            "SELECT COUNT(*) FROM actual_sessions WHERE planned_session_id IS NOT NULL"
-        ).fetchone()
-        total_matched = int(matched_row[0]) if matched_row else 0
+            def count(sql: str, params: list) -> int:
+                row = conn.execute(sql, params).fetchone()
+                return int(row[0]) if row else 0
 
-        conn.close()
+            due_where = "date <= ?" + (" AND date >= ?" if start else "")
+            due_params: list = [end_due] + ([start] if start else [])
+            planned_due = count(
+                f"SELECT COUNT(*) FROM planned_sessions WHERE {due_where}", due_params
+            )
+            completed = count(
+                f"SELECT COUNT(*) FROM planned_sessions WHERE {due_where} AND status = 'completed'",
+                due_params,
+            )
+            skipped = count(
+                f"SELECT COUNT(*) FROM planned_sessions WHERE {due_where} AND status = 'pending' AND date < ?",
+                [*due_params, today],
+            )
+            total_planned = count("SELECT COUNT(*) FROM planned_sessions", [])
+            total_actual = count("SELECT COUNT(*) FROM actual_sessions", [])
+            total_matched = count(
+                "SELECT COUNT(*) FROM actual_sessions WHERE planned_session_id IS NOT NULL",
+                [],
+            )
+            unmatched_where = "planned_session_id IS NULL AND date <= ?" + (
+                " AND date >= ?" if start else ""
+            )
+            total_unmatched = count(
+                f"SELECT COUNT(*) FROM actual_sessions WHERE {unmatched_where}",
+                due_params,
+            )
+        finally:
+            conn.close()
 
+        if planned_due > 0:
+            adherence = round(completed / planned_due * 100, 1)
+        elif total_planned > 0:
+            adherence = round(total_matched / total_planned * 100, 1)
+        else:
+            adherence = 0.0
         return {
             "total_planned": total_planned,
             "total_actual": total_actual,
             "total_matched": total_matched,
-            "total_unmatched": total_actual - total_matched,
-            "adherence_rate": (
-                round(total_matched / total_planned * 100, 1)
-                if total_planned > 0
-                else 0
-            ),
+            "total_unmatched": total_unmatched,
+            "adherence_rate": adherence,
+            "planned_due": planned_due,
+            "completed": completed,
+            "skipped": skipped,
+            "window_start": start.isoformat() if start else None,
+            "window_end": end_due.isoformat(),
         }
 
     # ==================== Session Analysis ====================

@@ -114,8 +114,8 @@ export function PlanningPage() {
   });
 
   const { data: summary } = useQuery({
-    queryKey: ['matchSummary'],
-    queryFn: garminApi.getSummary,
+    queryKey: ['matchSummary', weekStart, weekEnd],
+    queryFn: () => garminApi.getSummary(weekStart, weekEnd),
   });
 
   const createQuestMutation = useMutation({
@@ -150,7 +150,8 @@ export function PlanningPage() {
     );
   }
 
-  const matched = summary?.matched || 0;
+  const completed = summary?.completed || 0;
+  const due = summary?.planned_due || 0;
 
   return (
     <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
@@ -232,22 +233,22 @@ export function PlanningPage() {
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-text-muted font-mono">Completion Rate</span>
                 <span className="text-base sm:text-lg font-mono text-text-primary">
-                  {Math.round((summary?.completion_rate || 0) * 100)}%
+                  {Math.round(summary?.adherence_rate || 0)}%
                 </span>
               </div>
-              <AdherenceBar score={(summary?.completion_rate || 0) * 100} size="lg" showLabel={false} />
+              <AdherenceBar score={summary?.adherence_rate || 0} size="lg" showLabel={false} />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-text-muted font-mono">This Week</span>
+                <span className="text-xs text-text-muted font-mono">Dues à ce jour</span>
                 <span className="text-sm font-mono text-text-secondary">
-                  {matched} / {summary?.total_planned || 0}
+                  {completed} / {due}
                 </span>
               </div>
-              <div className="flex gap-1">
-                {Array.from({ length: summary?.total_planned || 0 }).map((_, i) => (
-                  <div key={i} className={cn('w-4 h-4 rounded-sm', i < matched ? 'bg-success-green' : 'bg-text-muted/20')} />
+              <div className="flex gap-1 flex-wrap">
+                {Array.from({ length: due }).map((_, i) => (
+                  <div key={i} className={cn('w-4 h-4 rounded-sm', i < completed ? 'bg-success-green' : 'bg-text-muted/20')} />
                 ))}
               </div>
             </div>
@@ -257,18 +258,18 @@ export function PlanningPage() {
                 <FlameIcon className="w-6 h-6 text-warning-orange" />
               </div>
               <div>
-                <div className="text-xl sm:text-2xl font-mono font-bold text-warning-orange">{matched}</div>
-                <div className="text-xs text-text-muted font-mono">sessions matched</div>
+                <div className="text-xl sm:text-2xl font-mono font-bold text-warning-orange">{completed}</div>
+                <div className="text-xs text-text-muted font-mono">séances faites</div>
               </div>
             </div>
           </div>
 
           <div className="mt-4 pt-4 border-t border-text-muted/10 flex gap-4 sm:gap-6 text-xs font-mono">
             <span className="text-text-muted">
-              Unmatched: <span className="text-warning-orange">{summary?.unmatched_actual || 0}</span>
+              Hors plan: <span className="text-warning-orange">{summary?.total_unmatched || 0}</span>
             </span>
             <span className="text-text-muted">
-              Skipped: <span className="text-danger-red">{summary?.unmatched_planned || 0}</span>
+              Manquées: <span className="text-danger-red">{summary?.skipped || 0}</span>
             </span>
           </div>
         </Panel>

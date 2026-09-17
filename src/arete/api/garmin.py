@@ -97,13 +97,18 @@ class FITUploadResponse(BaseModel):
 
 
 class MatchSummaryResponse(BaseModel):
-    """Summary of matching statistics."""
+    """Adherence statistics (see GarminRepository.get_matches_summary)."""
 
     total_planned: int
     total_actual: int
     total_matched: int
     total_unmatched: int
     adherence_rate: float
+    planned_due: int = 0
+    completed: int = 0
+    skipped: int = 0
+    window_start: str | None = None
+    window_end: str | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -355,10 +360,12 @@ def list_actual_sessions(
 
 
 @router.get("/summary", response_model=MatchSummaryResponse)
-def get_summary():
-    """Get summary statistics of planned vs actual sessions.
-
-    Returns adherence rate and counts.
-    """
-    summary = _repo.get_matches_summary()
+def get_summary(
+    start_date: date | None = Query(None, description="Window start (inclusive)"),
+    end_date: date | None = Query(
+        None, description="Window end (inclusive, capped at today)"
+    ),
+):
+    """Adherence: planned sessions due in the window vs completed / skipped."""
+    summary = _repo.get_matches_summary(start=start_date, end=end_date)
     return MatchSummaryResponse(**summary)

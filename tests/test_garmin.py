@@ -341,6 +341,48 @@ class TestGarminRepository:
         assert "total_matched" in summary
         assert "total_unmatched" in summary
         assert "adherence_rate" in summary
+        assert {"planned_due", "completed", "skipped"} <= set(summary)
+
+    def test_summary_counts_only_due_sessions(self, repo):
+        """Future planned sessions do not lower the adherence rate; past pending ones are skipped."""
+        from datetime import date as _date
+        from datetime import timedelta
+
+        today = _date.today()
+        ids = [
+            repo.create_planned_session(
+                PlannedSession(
+                    date=today - timedelta(days=2),
+                    sport="running",
+                    session_type=SessionType.ENDURANCE,
+                )
+            ),
+            repo.create_planned_session(
+                PlannedSession(
+                    date=today - timedelta(days=1),
+                    sport="running",
+                    session_type=SessionType.TEMPO,
+                )
+            ),
+            repo.create_planned_session(
+                PlannedSession(
+                    date=today + timedelta(days=30),
+                    sport="running",
+                    session_type=SessionType.LONG_RUN,
+                )
+            ),
+        ]
+        repo.update_planned_session_status(ids[0], SessionStatus.COMPLETED)
+        try:
+            s = repo.get_matches_summary(
+                start=today - timedelta(days=3), end=today + timedelta(days=60)
+            )
+            assert s["planned_due"] == 2  # the future one is not due
+            assert s["completed"] == 1 and s["skipped"] == 1
+            assert s["adherence_rate"] == 50.0
+        finally:
+            for i in ids:
+                repo.delete_planned_session(i)
 
     def test_get_potential_matches(self, repo):
         """Test getting potential matches for an actual session."""

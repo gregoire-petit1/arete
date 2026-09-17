@@ -80,7 +80,12 @@ export const garminApi = {
     );
   },
 
-  getSummary: () => fetchAPI<import("@/types").MatchSummary>("/garmin/summary"),
+  getSummary: (startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.set("start_date", startDate);
+    if (endDate) params.set("end_date", endDate);
+    return fetchAPI<import("@/types").MatchSummary>(`/garmin/summary?${params}`);
+  },
 
   uploadFit: async (file: File, autoMatch = true) => {
     const formData = new FormData();

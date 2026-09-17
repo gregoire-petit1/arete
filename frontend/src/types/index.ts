@@ -71,10 +71,14 @@ export interface ActualSession {
 export interface MatchSummary {
   total_planned: number;
   total_actual: number;
-  matched: number;
-  unmatched_planned: number;
-  unmatched_actual: number;
-  completion_rate: number;
+  total_matched: number;
+  total_unmatched: number;
+  adherence_rate: number; // 0-100, over sessions due in the window
+  planned_due: number;
+  completed: number;
+  skipped: number;
+  window_start: string | null;
+  window_end: string | null;
 }
 
 // ========================= //
