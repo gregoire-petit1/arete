@@ -196,3 +196,20 @@ class TestTipUsesSettings:
             resp = client.get("/tips/daily")
         assert resp.status_code == 200
         assert resp.json()["source"] == "rules"
+
+
+class TestLowLoadIsNotSilence:
+    """An athlete training under their chronic load still gets a reading."""
+
+    def test_undertrained_acwr_has_its_own_tip(self):
+        from arete.api.ai_tips import generate_daily_tip
+
+        tip, priority = generate_daily_tip(0.41, -8.2, 65.5)
+        assert "ACWR 0.41" in tip
+        assert priority == "info"
+
+    def test_generic_tip_only_without_any_metric(self):
+        from arete.api.ai_tips import generate_daily_tip
+
+        tip, _ = generate_daily_tip(None, None, None)
+        assert "Enregistre tes séances" in tip

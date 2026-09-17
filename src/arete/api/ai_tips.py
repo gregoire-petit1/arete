@@ -64,8 +64,9 @@ def generate_daily_tip(
     3. ACWR > 1.3 -> warning (overload)
     4. TSB < -10 -> warning (fatigue accumulating)
     5. readiness >= the athlete's fatigue threshold -> info (good form)
-    6. ACWR and 0.8-1.3 -> info (optimal zone), closed by the goal advice
-    7. fallback -> info (generic)
+    6. ACWR 0.8-1.3 -> info (optimal zone), closed by the goal advice
+    7. ACWR < 0.8 -> info (room to build), closed by the goal advice
+    8. no metric at all -> info (log your sessions)
 
     Returns:
         (tip_text, priority)
@@ -109,6 +110,13 @@ def generate_daily_tip(
     if acwr is not None and 0.8 <= acwr <= 1.3:
         return (
             f"Charge équilibrée (ACWR {acwr:.2f}). {goal_advice}",
+            "info",
+        )
+
+    if acwr is not None and acwr < 0.8:
+        return (
+            f"Charge basse par rapport à tes 4 dernières semaines (ACWR {acwr:.2f}). "
+            f"{goal_advice}",
             "info",
         )
 
