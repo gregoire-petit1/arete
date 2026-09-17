@@ -39,7 +39,10 @@ class TestMuscleStats:
         repo.get_muscle_activity.return_value = activity(
             {"back": 1000.0}, {"back": 10.0}, {"back": TODAY}
         )
-        muscles = {m["muscle"]: m for m in client.get("/strength/stats/muscles").json()["muscles"]}
+        muscles = {
+            m["muscle"]: m
+            for m in client.get("/strength/stats/muscles").json()["muscles"]
+        }
         assert muscles["lats"]["volume"] == 500.0
         assert muscles["traps"]["volume"] == 250.0
         assert muscles["lats"]["level"] == 4
@@ -51,7 +54,10 @@ class TestMuscleStats:
     def test_cardio_adds_volume_and_freshness(self, repo, cardio, client):
         repo.get_muscle_activity.return_value = activity({"lats": 100.0})
         cardio.return_value = ({"quads": 900.0}, {"quads": TODAY})
-        muscles = {m["muscle"]: m for m in client.get("/strength/stats/muscles").json()["muscles"]}
+        muscles = {
+            m["muscle"]: m
+            for m in client.get("/strength/stats/muscles").json()["muscles"]
+        }
         assert muscles["quads"]["volume"] == 900.0
         assert muscles["quads"]["last_trained"] == TODAY.isoformat()
         assert muscles["quads"]["level"] == 4
@@ -70,7 +76,10 @@ class TestMuscleStats:
             activity({"lats": 100.0}),
             activity({"lats": 400.0}),
         ]
-        muscles = {m["muscle"]: m for m in client.get("/strength/stats/muscles?days=7").json()["muscles"]}
+        muscles = {
+            m["muscle"]: m
+            for m in client.get("/strength/stats/muscles?days=7").json()["muscles"]
+        }
         assert muscles["lats"]["volume"] == 100.0
         assert muscles["lats"]["previous_volume"] == 400.0
         prev_call = repo.get_muscle_activity.call_args_list[1][0]

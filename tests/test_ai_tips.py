@@ -189,10 +189,13 @@ class TestTipUsesSettings:
     def test_endpoint_passes_settings_through(self, client):
         from unittest.mock import patch
 
-        with patch(
-            "arete.api.ai_tips.get_user_settings",
-            return_value={"fatigue_threshold": 60, "fitness_goal": "recovery"},
-        ), patch("arete.api.ai_tips._enrich_with_llm", return_value=None):
+        with (
+            patch(
+                "arete.api.ai_tips.get_user_settings",
+                return_value={"fatigue_threshold": 60, "fitness_goal": "recovery"},
+            ),
+            patch("arete.api.ai_tips._enrich_with_llm", return_value=None),
+        ):
             resp = client.get("/tips/daily")
         assert resp.status_code == 200
         assert resp.json()["source"] == "rules"
