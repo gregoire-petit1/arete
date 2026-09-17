@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { PlannedSessionCard, isPlannedDone } from '@/components/PlannedSessionCard';
 import { ArrowRight, Bot, Calendar, Dumbbell, Zap } from 'lucide-react';
 import { ErrorState, LoadingState, MetricCard } from '@/components';
 import { Panel } from '@/components/ui';
-import { getSportIconComponent } from '@/lib/sport';
 import { garminApi, garminHealthApi, metricsApi, settingsApi, tipsApi } from '@/lib/api';
 import { cn, getZoneColor } from '@/lib/utils';
 
@@ -41,9 +41,13 @@ export function DashboardPage() {
   const { data: userSettings } = useQuery({ queryKey: ['settings'], queryFn: settingsApi.get });
 
   const { data: allPlanned, isLoading: plannedLoading } = useQuery({
-    queryKey: ['planned', 'today'],
-    queryFn: () => garminApi.getPlanned(),
-    select: (data) => data.filter((s) => s.date === today),
+    queryKey: ['planned', today, today],
+    queryFn: () => garminApi.getPlanned(today, today),
+  });
+  const { data: todayActual } = useQuery({
+    queryKey: ['actual'],
+    queryFn: () => garminApi.getActual(),
+    select: (data) => data.filter((s) => s.date.slice(0, 10) === today),
   });
 
   const {
@@ -109,28 +113,22 @@ export function DashboardPage() {
         <Panel className="p-4">
           <SectionHeader icon={<Calendar className="w-4 h-4 text-neon-purple" />} title="TODAY'S PLAN" />
           {allPlanned && allPlanned.length > 0 ? (
-            <div className="space-y-3">
-              {allPlanned.map((session) => {
-                const IconComp = getSportIconComponent(session.sport);
-                return (
-                  <div key={session.id} className="flex items-center justify-between bg-shadow/50 rounded-lg px-3 py-2">
-                    <div className="flex items-center gap-3">
-                      <IconComp className="w-5 h-5 text-neon-cyan" />
-                      <div>
-                        <span className="text-sm font-mono text-text-primary">
-                          {session.description || session.session_type}
-                        </span>
-                        {session.duration_minutes && (
-                          <span className="text-xs font-mono text-text-muted ml-2">{session.duration_minutes} min</span>
-                        )}
-                      </div>
-                    </div>
-                    <Link to="/log" className="text-xs font-mono text-neon-gold hover:text-neon-gold/80 transition-colors">
-                      Log this session →
-                    </Link>
-                  </div>
-                );
-              })}
+            <div className="space-y-2">
+              {allPlanned.map((session) => (
+                <PlannedSessionCard
+                  key={session.id}
+                  session={session}
+                  done={isPlannedDone(session, todayActual ?? [])}
+                />
+              ))}
+              <div className="flex justify-end gap-4 pt-1 text-xs font-mono">
+                <Link to="/planning" className="text-neon-cyan hover:underline">
+                  Semaine →
+                </Link>
+                <Link to="/log" className="text-neon-gold hover:text-neon-gold/80 transition-colors">
+                  Log this session →
+                </Link>
+              </div>
             </div>
           ) : (
             <div className="text-center py-4">

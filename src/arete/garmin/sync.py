@@ -19,7 +19,8 @@ from garminconnect import GarminConnectTooManyRequestsError
 from arete.config import config
 from arete.garmin.client import GarminAuthError, GarminClient
 from arete.garmin.fit_parser import FITParser
-from arete.garmin.models import ActivitySource, ActualSession
+from arete.garmin.matcher import SessionMatcher
+from arete.garmin.models import ActivitySource, ActualSession, SessionStatus
 from arete.garmin.repository import GarminRepository
 from arete.strava.merge import garmin_takeover
 
@@ -43,6 +44,7 @@ class SyncResult:
     success: bool
     activities_synced: int = 0
     activities_merged: int = 0
+    activities_matched: int = 0
     activities_skipped: int = 0
     errors: list[str] = field(default_factory=list)
     last_activity_date: date | None = None
@@ -182,6 +184,41 @@ def laps_to_json(parsed: Any) -> str | None:
         for lap in structure.laps
     ]
     return json.dumps(laps)
+
+
+def auto_match(
+    repo: GarminRepository, actual_id: int, session: ActualSession
+) -> int | None:
+    """Link an actual session to the best pending planned session of the same day(s).
+
+    Returns the planned session id when a match is recorded, else None.
+    """
+    candidates = [
+        p
+        for p in repo.get_potential_matches(session)
+        if p.status == SessionStatus.PENDING
+        and p.id is not None
+        and p.sport == session.sport
+    ]
+    if not candidates:
+        return None
+    match = SessionMatcher().find_match(session, candidates)
+    if (
+        not match.is_matched
+        or match.planned_session is None
+        or match.planned_session.id is None
+    ):
+        return None
+    planned_id = match.planned_session.id
+    repo.update_actual_session_match(actual_id, planned_id, match.adherence_score)
+    repo.update_planned_session_status(planned_id, SessionStatus.COMPLETED)
+    logger.info(
+        "Matched actual %s to planned %s (%.0f%%)",
+        actual_id,
+        planned_id,
+        match.adherence_score,
+    )
+    return planned_id
 
 
 class GarminSyncClient:
@@ -455,8 +492,14 @@ class GarminSyncClient:
         except Exception as e:
             logger.warning("Could not fetch activity names: %s", e)
 
-        updated = named = 0
+        updated = named = matched = 0
         for session in sessions:
+            if (
+                session.planned_session_id is None
+                and session.id is not None
+                and auto_match(self.repository, session.id, session)
+            ):
+                matched += 1
             fields: dict[str, Any] = {}
             if session.avg_pace_sec_km is None:
                 pace = pace_from_speed(session.avg_speed_mps, session.sport)
@@ -485,12 +528,18 @@ class GarminSyncClient:
                 self.repository.update_actual_session_fields(session.id, **fields)
                 updated += 1
         logger.info(
-            "Reprocessed %d Garmin sessions (%d updated, %d named)",
+            "Reprocessed %d Garmin sessions (%d updated, %d named, %d matched)",
             len(sessions),
             updated,
             named,
+            matched,
         )
-        return {"sessions": len(sessions), "updated": updated, "named": named}
+        return {
+            "sessions": len(sessions),
+            "updated": updated,
+            "named": named,
+            "matched": matched,
+        }
 
     def get_user_summary(self) -> dict[str, Any]:
         """Garmin profile of the authenticated user."""

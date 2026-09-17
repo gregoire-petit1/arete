@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { SESSION_TYPE_LABEL } from '@/components/PlannedSessionCard';
 import { getSportColor, getSportIconComponent } from '@/lib/sport';
 import type { ActualSession, PlannedSession } from '@/types';
 
@@ -68,7 +69,11 @@ function CalendarDay({ date, planned, actual, isToday, onClick }: CalendarDayPro
                 )}
               >
                 <IconComponent size="sm" className={cn(isComplete ? 'text-success-green' : colorClass)} />
-                <span className="truncate capitalize">{session.sport?.toLowerCase()}</span>
+                <span className="truncate capitalize" title={(session.data as PlannedSession).description ?? undefined}>
+                  {session.type === 'planned'
+                    ? (SESSION_TYPE_LABEL[(session.data as PlannedSession).session_type] ?? session.sport)
+                    : session.sport?.toLowerCase()}
+                </span>
                 {isComplete && <span className="ml-auto">✓</span>}
               </div>
             );

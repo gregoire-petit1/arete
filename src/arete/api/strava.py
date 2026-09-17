@@ -199,6 +199,7 @@ def sync(body: SyncRequest | None = None):
     activities.sort(key=lambda a: a.get("start_date", ""))
 
     from arete.garmin.repository import GarminRepository
+    from arete.garmin.sync import auto_match
     from arete.strava.merge import strava_extras
     from arete.strava.models import strava_activity_to_actual_session
 
@@ -239,7 +240,8 @@ def sync(body: SyncRequest | None = None):
                 )
                 merged += 1
             else:
-                repo.create_actual_session(session)
+                actual_id = repo.create_actual_session(session)
+                auto_match(repo, actual_id, session)
                 imported += 1
 
             # Rate limiting: pause briefly between detail calls

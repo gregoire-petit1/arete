@@ -29,14 +29,13 @@ export interface PlannedSession {
   date: string;
   sport: string;
   session_type: string;
-  duration_minutes: number | null;
+  target_duration_min: number | null;
+  target_distance_km: number | null;
+  target_hr_zone: string | null;
+  target_intensity: "easy" | "moderate" | "hard" | null;
   description: string | null;
-  target_tss: number | null;
   source: string;
-  status: "pending" | "completed" | "skipped";
-  matched_actual_id: number | null;
-  adherence_score: number | null;
-  created_at: string;
+  status: "pending" | "completed" | "skipped" | "modified";
 }
 
 export interface ActualSession {

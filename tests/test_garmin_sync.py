@@ -284,6 +284,55 @@ class TestAnalyticsColumns:
         assert laps_to_json(SimpleNamespace(workout_structure=None)) is None
 
 
+class TestAutoMatch:
+    def _planned(self, **kw):
+        from arete.garmin.models import PlannedSession, SessionStatus, SessionType
+
+        return PlannedSession(
+            id=kw.get("id", 10),
+            date=date(2026, 9, 18),
+            sport=kw.get("sport", "running"),
+            session_type=kw.get("session_type", SessionType.TEMPO),
+            target_duration_min=55,
+            status=kw.get("status", SessionStatus.PENDING),
+        )
+
+    def _actual(self):
+        from arete.garmin.models import ActualSession
+
+        return ActualSession(
+            date=date(2026, 9, 18),
+            sport="running",
+            session_type="running",
+            duration_sec=3300,
+        )
+
+    def test_links_pending_planned_session_of_the_day(self):
+        from arete.garmin.models import SessionStatus
+        from arete.garmin.sync import auto_match
+
+        repo = MagicMock()
+        repo.get_potential_matches.return_value = [self._planned()]
+        assert auto_match(repo, 42, self._actual()) == 10
+        repo.update_actual_session_match.assert_called_once()
+        assert repo.update_actual_session_match.call_args.args[:2] == (42, 10)
+        repo.update_planned_session_status.assert_called_once_with(
+            10, SessionStatus.COMPLETED
+        )
+
+    def test_ignores_already_completed_and_other_sports(self):
+        from arete.garmin.models import SessionStatus
+        from arete.garmin.sync import auto_match
+
+        repo = MagicMock()
+        repo.get_potential_matches.return_value = [
+            self._planned(status=SessionStatus.COMPLETED),
+            self._planned(id=11, sport="strength"),
+        ]
+        assert auto_match(repo, 42, self._actual()) is None
+        repo.update_actual_session_match.assert_not_called()
+
+
 class TestSyncResult:
     """Tests for SyncResult dataclass."""
 

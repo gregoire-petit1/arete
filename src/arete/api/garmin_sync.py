@@ -41,6 +41,7 @@ class SyncResponse(BaseModel):
     success: bool
     activities_synced: int
     activities_merged: int = 0
+    activities_matched: int = 0
     activities_skipped: int
     errors: list[str]
     last_activity_date: str | None = None
@@ -181,6 +182,7 @@ def sync_activities(request: SyncRequest):
         success=result.success,
         activities_synced=result.activities_synced,
         activities_merged=result.activities_merged,
+        activities_matched=result.activities_matched,
         activities_skipped=result.activities_skipped,
         errors=result.errors,
         last_activity_date=str(result.last_activity_date)

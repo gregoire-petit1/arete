@@ -4,6 +4,7 @@ import { Check, ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react'
 import { AdherenceBar, CalendarWeek, ErrorState, FlameIcon, LoadingState } from '@/components';
 import { Button, Field, Input, Modal, ModalHeader, Panel, Textarea } from '@/components/ui';
 import { garminApi, type PlannedSessionCreate } from '@/lib/api';
+import { WeekPlanList } from './planning/WeekPlanList';
 import { cn } from '@/lib/utils';
 
 // Session types per sport category
@@ -74,6 +75,7 @@ export function PlanningPage() {
   const queryClient = useQueryClient();
   const [weekOffset, setWeekOffset] = useState(0);
   const [showNewQuest, setShowNewQuest] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [newQuest, setNewQuest] = useState<PlannedSessionCreate>(emptyQuest);
 
   const availableSessionTypes = useMemo(
@@ -201,7 +203,27 @@ export function PlanningPage() {
         </div>
 
         <Panel className="mb-4 sm:mb-8 overflow-x-auto">
-          <CalendarWeek startDate={weekStart} plannedSessions={plannedQuery.data || []} actualSessions={weekActual} />
+          <CalendarWeek
+            startDate={weekStart}
+            plannedSessions={plannedQuery.data || []}
+            actualSessions={weekActual}
+            onDayClick={(d) => setSelectedDate((prev) => (prev === d ? null : d))}
+          />
+        </Panel>
+
+        <Panel title="SÉANCES DE LA SEMAINE" className="mb-4 sm:mb-8" delay={0.05}>
+          <WeekPlanList
+            days={Array.from({ length: 7 }, (_, i) => {
+              const d = new Date(weekStart);
+              d.setDate(d.getDate() + i);
+              return d.toISOString().split('T')[0];
+            })}
+            planned={plannedQuery.data || []}
+            actual={weekActual}
+            selectedDate={selectedDate}
+            today={new Date().toISOString().split('T')[0]}
+            onSelect={setSelectedDate}
+          />
         </Panel>
 
         <Panel title="ADHERENCE DASHBOARD" className="mb-4 sm:mb-8" delay={0.1}>
