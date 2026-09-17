@@ -3,13 +3,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Dumbbell, Heart, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { AnatomicalHeatmap, EmptyState, ErrorState, LoadingState } from '@/components';
+import { EmptyState, ErrorState, LoadingState, MuscleMap } from '@/components';
 import { Button, Modal, ModalHeader, Panel } from '@/components/ui';
 import { settingsApi, strengthApi } from '@/lib/api';
 import { CardioTab, LogSessionModal, SessionDetailModal, SessionRow, WeeklyVolumeTracker } from './log/index';
 import { invalidateAfterSession, qk } from '@/lib/queryKeys';
 
 type Tab = 'force' | 'cardio';
+
+/** The heat map reads the last week of work. */
+const MUSCLE_WINDOW_DAYS = 7;
 
 const TABS: { id: Tab; label: string; icon: typeof Dumbbell }[] = [
   { id: 'force', label: 'FORCE', icon: Dumbbell },
@@ -27,9 +30,9 @@ export function LogPage() {
 
   const { data: settings } = useQuery({ queryKey: qk.settings, queryFn: settingsApi.get });
 
-  const volumeQuery = useQuery({
-    queryKey: qk.volumeByMuscle(),
-    queryFn: () => strengthApi.getVolumeByMuscle(),
+  const muscleQuery = useQuery({
+    queryKey: qk.muscleStats(MUSCLE_WINDOW_DAYS),
+    queryFn: () => strengthApi.getMuscleStats(MUSCLE_WINDOW_DAYS),
   });
 
   const sessionsQuery = useQuery({
@@ -46,7 +49,7 @@ export function LogPage() {
     },
   });
 
-  if (volumeQuery.isLoading || sessionsQuery.isLoading) {
+  if (muscleQuery.isLoading || sessionsQuery.isLoading) {
     return <LoadingState message="CHARGEMENT DU JOURNAL…" />;
   }
 
@@ -91,11 +94,11 @@ export function LogPage() {
         {activeTab === 'force' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
             <div className="space-y-4 sm:space-y-8">
-              <Panel title="MUSCLE HEATMAP (7D VOLUME)">
-                {volumeQuery.isError ? (
-                  <ErrorState message="VOLUME INDISPONIBLE" onRetry={() => volumeQuery.refetch()} />
+              <Panel title={`ZONES TRAVAILLÉES (${MUSCLE_WINDOW_DAYS} DERNIERS JOURS)`}>
+                {muscleQuery.isError ? (
+                  <ErrorState message="VOLUME INDISPONIBLE" onRetry={() => muscleQuery.refetch()} />
                 ) : (
-                  <AnatomicalHeatmap volumeByMuscle={volumeQuery.data || {}} />
+                  <MuscleMap muscles={muscleQuery.data?.muscles ?? []} />
                 )}
               </Panel>
               <WeeklyVolumeTracker sessions={sessions} targetKg={settings?.weekly_volume_target_kg ?? 20000} />

@@ -20,8 +20,8 @@ export const qk = {
   strengthSessions: (limit?: number) =>
     limit ? (['strengthSessions', limit] as const) : (['strengthSessions'] as const),
   strengthSession: (id: number) => ['strengthSession', id] as const,
-  volumeByMuscle: (windowDays?: number) =>
-    windowDays ? (['volumeByMuscle', windowDays] as const) : (['volumeByMuscle'] as const),
+  muscleStats: (days?: number) =>
+    days ? (['muscleStats', days] as const) : (['muscleStats'] as const),
   garminCandidates: (sessionId: number) => ['garminCandidates', sessionId] as const,
 
   cardioSessions: ['cardioSessions'] as const,
@@ -45,7 +45,7 @@ export function invalidateAfterSession(queryClient: QueryClient): void {
     qk.actual(),
     qk.matchSummary(),
     qk.strengthSessions(),
-    qk.volumeByMuscle(),
+    qk.muscleStats(),
     qk.cardioSessions,
     qk.analytics,
     qk.playerStats,

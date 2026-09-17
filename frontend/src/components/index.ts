@@ -7,6 +7,6 @@ export { SessionCard, OffPlanRow, SessionFacts, strengthAsActual, SESSION_TYPE_L
 export { AdherenceBar } from "./AdherenceBar";
 export { FitDropzone } from "./FitDropzone";
 export * from "./SportIcons";
-export { AnatomicalHeatmap } from "./AnatomicalHeatmap";
+export { MuscleMap } from "./muscle-map";
 export { GarminLoginModal } from "./GarminLoginModal";
 export * from "./ui";

@@ -248,39 +248,26 @@ class StrengthRepository:
         }
         category = category_map.get(movement, ExerciseCategory.OTHER)
 
-        # Map primary muscle (take first one)
-        muscle_map = {
-            "chest": MuscleGroup.CHEST,
-            "front_delts": MuscleGroup.SHOULDERS,
-            "side_delts": MuscleGroup.SHOULDERS,
-            "rear_delts": MuscleGroup.SHOULDERS,
-            "triceps": MuscleGroup.TRICEPS,
-            "biceps": MuscleGroup.BICEPS,
-            "lats": MuscleGroup.BACK,
-            "traps": MuscleGroup.BACK,
-            "rhomboids": MuscleGroup.BACK,
-            "lower_back": MuscleGroup.LOWER_BACK,
-            "quads": MuscleGroup.QUADS,
-            "hamstrings": MuscleGroup.HAMSTRINGS,
-            "glutes": MuscleGroup.GLUTES,
-            "calves": MuscleGroup.CALVES,
-            "abs": MuscleGroup.ABS,
-            "obliques": MuscleGroup.OBLIQUES,
-            "forearms": MuscleGroup.FOREARMS,
-            "adductors": MuscleGroup.ADDUCTORS,
-        }
+        # Catalog muscles are already the fine regions; keep them as they are.
+        def to_group(name: str) -> MuscleGroup | None:
+            try:
+                return MuscleGroup(name)
+            except ValueError:
+                return None
 
         primary_muscles = catalog_entry.get("primary_muscles", [])
         primary_muscle = (
-            muscle_map.get(primary_muscles[0], MuscleGroup.FULL_BODY)
+            to_group(primary_muscles[0]) or MuscleGroup.FULL_BODY
             if primary_muscles
             else MuscleGroup.FULL_BODY
         )
 
         secondary_muscles = [
-            muscle_map.get(m, MuscleGroup.FULL_BODY)
-            for m in catalog_entry.get("secondary_muscles", [])
-            if m in muscle_map
+            group
+            for group in (
+                to_group(m) for m in catalog_entry.get("secondary_muscles", [])
+            )
+            if group is not None
         ]
 
         equipment = catalog_entry.get("equipment", [])
@@ -664,6 +651,64 @@ class StrengthRepository:
             for row in results
         ]
 
+    def get_muscle_activity(
+        self,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        secondary_weight: float = 0.5,
+    ) -> tuple[dict[str, float], dict[str, float], dict[str, date]]:
+        """Volume, working sets and last training day per stored muscle id.
+
+        Secondary muscles count for half the volume and half a set, the way the
+        heat map has always weighted them.
+        """
+        conn = self._get_connection()
+        query = """
+            SELECT ss.date, e.primary_muscle, e.secondary_muscles_json,
+                   es.reps, COALESCE(es.weight_kg, 0) AS weight
+            FROM app.exercise_sets es
+            JOIN app.session_exercises se ON es.session_exercise_id = se.id
+            JOIN app.exercises e ON se.exercise_id = e.id
+            JOIN app.strength_sessions ss ON se.session_id = ss.id
+            WHERE NOT es.is_warmup
+        """
+        params: list = []
+        if start_date:
+            query += " AND ss.date >= ?"
+            params.append(start_date)
+        if end_date:
+            query += " AND ss.date <= ?"
+            params.append(end_date)
+
+        rows = conn.execute(query, params).fetchall()
+        conn.close()
+
+        volume: dict[str, float] = {}
+        sets: dict[str, float] = {}
+        last: dict[str, date] = {}
+
+        def credit(muscle: str, day: date, kg: float, weight: float) -> None:
+            if not muscle:
+                return
+            volume[muscle] = volume.get(muscle, 0.0) + kg * weight
+            sets[muscle] = sets.get(muscle, 0.0) + weight
+            seen = last.get(muscle)
+            if seen is None or day > seen:
+                last[muscle] = day
+
+        for session_date, primary, secondary_json, reps, weight_kg in rows:
+            day = (
+                session_date
+                if isinstance(session_date, date)
+                else date.fromisoformat(str(session_date)[:10])
+            )
+            set_volume = (reps or 0) * (weight_kg or 0)
+            credit(primary, day, set_volume, 1.0)
+            for muscle in _parse_secondary(secondary_json):
+                credit(muscle, day, set_volume, secondary_weight)
+
+        return volume, sets, last
+
     def get_volume_by_muscle(
         self,
         start_date: date | None = None,
@@ -831,3 +876,14 @@ class StrengthRepository:
         )
         conn.close()
         return True
+
+
+def _parse_secondary(raw) -> list[str]:
+    """Secondary muscles stored as a JSON array, tolerant of nulls and junk."""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError):
+        return []
+    return [str(m) for m in parsed] if isinstance(parsed, list) else []

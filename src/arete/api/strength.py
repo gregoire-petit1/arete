@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import logging
 from datetime import date as date_type
+from datetime import timedelta
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from arete.data.cardio_muscle_impact import CARDIO_MUSCLE_IMPACT
+from arete.features import muscles as muscle_map
 from arete.strength.models import (
     Exercise,
     ExerciseCategory,
@@ -441,84 +443,79 @@ def get_garmin_candidates(session_id: int):
 # ─────────────────────────────────────────────────────────────────────────
 
 
-def _get_cardio_volume_by_muscle(
-    start_date: date_type | None = None,
-    end_date: date_type | None = None,
-) -> dict[str, float]:
-    """Calculate pseudo-volume from cardio activities based on muscle recruitment."""
-    from datetime import date, timedelta
-
+def _cardio_muscle_activity(
+    start_date: date_type,
+    end_date: date_type,
+) -> tuple[dict[str, float], dict[str, date_type]]:
+    """Pseudo-volume credited to muscles by cardio sessions, and when they ran."""
     from arete.garmin.repository import GarminRepository
 
-    # Default to last 7 days if not specified
-    if not end_date:
-        end_date = date.today()
-    if not start_date:
-        start_date = end_date - timedelta(days=7)
-
-    actual_sessions = GarminRepository().list_actual_sessions(
+    sessions = GarminRepository().list_actual_sessions(
         start_date=start_date, end_date=end_date, limit=1000
     )
 
-    muscle_volume: dict[str, float] = {}
+    volume: dict[str, float] = {}
+    last: dict[str, date_type] = {}
 
-    for session in actual_sessions:
+    for session in sessions:
         sport = session.sport.lower().replace(" ", "_") if session.sport else ""
-        duration_min = session.duration_sec / 60 if session.duration_sec else 0
-
-        if sport not in CARDIO_MUSCLE_IMPACT:
+        impact = CARDIO_MUSCLE_IMPACT.get(sport)
+        if not impact:
             continue
+        minutes = session.duration_sec / 60 if session.duration_sec else 0
+        day = session.date
+        for group in ("primary", "secondary"):
+            for muscle, per_minute in impact.get(group, {}).items():
+                volume[muscle] = volume.get(muscle, 0.0) + per_minute * minutes
+                seen = last.get(muscle)
+                if seen is None or day > seen:
+                    last[muscle] = day
 
-        impact = CARDIO_MUSCLE_IMPACT[sport]
-
-        # Add primary muscle volume
-        for muscle, volume_per_min in impact["primary"].items():
-            muscle_volume[muscle] = muscle_volume.get(muscle, 0) + (
-                volume_per_min * duration_min
-            )
-
-        # Add secondary muscle volume (already weighted in the mapping)
-        for muscle, volume_per_min in impact["secondary"].items():
-            muscle_volume[muscle] = muscle_volume.get(muscle, 0) + (
-                volume_per_min * duration_min
-            )
-
-    return {k: round(v, 1) for k, v in muscle_volume.items()}
+    return volume, last
 
 
-@router.get("/stats/volume-by-muscle")
-def get_volume_by_muscle(
-    start_date: date_type | None = None,
-    end_date: date_type | None = None,
+@router.get("/stats/muscles")
+def get_muscle_stats(
+    days: int = Query(7, ge=1, le=365),
     include_cardio: bool = True,
 ):
-    """Get total volume grouped by muscle group.
+    """Per-muscle volume, sets and freshness over the last ``days`` days.
 
-    Args:
-        start_date: Filter from this date
-        end_date: Filter until this date
-        include_cardio: Whether to include cardio activities (running, rowing, etc.)
+    Every stored muscle id — precise or coarse — is spread over the twenty
+    regions the silhouette paints, and the heat level is relative to the busiest
+    region of the window.
     """
-    # Get strength training volume
-    strength_volume = _repo.get_volume_by_muscle(
-        start_date=start_date, end_date=end_date
-    )
+    end = date_type.today()
+    start = end - timedelta(days=days - 1)
+    prev_end = start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=days - 1)
 
-    if not include_cardio:
-        return strength_volume
+    strength_volume, sets, strength_last = _repo.get_muscle_activity(start, end)
+    prev_strength, _, _ = _repo.get_muscle_activity(prev_start, prev_end)
 
-    # Get cardio volume
-    cardio_volume = _get_cardio_volume_by_muscle(
-        start_date=start_date, end_date=end_date
-    )
+    volume = dict(strength_volume)
+    last = dict(strength_last)
+    previous = dict(prev_strength)
 
-    # Merge volumes
-    merged = dict(strength_volume)
-    for muscle, volume in cardio_volume.items():
-        merged[muscle] = merged.get(muscle, 0) + volume
+    if include_cardio:
+        cardio_volume, cardio_last = _cardio_muscle_activity(start, end)
+        for muscle, value in cardio_volume.items():
+            volume[muscle] = volume.get(muscle, 0.0) + value
+        for muscle, day in cardio_last.items():
+            seen = last.get(muscle)
+            if seen is None or day > seen:
+                last[muscle] = day
+        prev_cardio, _ = _cardio_muscle_activity(prev_start, prev_end)
+        for muscle, value in prev_cardio.items():
+            previous[muscle] = previous.get(muscle, 0.0) + value
 
-    # Sort by volume descending and round
-    return {k: round(v, 1) for k, v in sorted(merged.items(), key=lambda x: -x[1])}
+    stats = muscle_map.build_stats(volume, sets, last, previous)
+    return {
+        "days": days,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "muscles": [s.as_dict() for s in stats],
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────

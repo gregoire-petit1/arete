@@ -13,15 +13,25 @@ from typing import Any
 
 
 class MuscleGroup(str, Enum):
-    """Primary muscle groups."""
+    """Muscle regions, as precise as the catalog knows them.
+
+    The fine members match ``arete.features.muscles.CANONICAL`` — the regions
+    the silhouette paints. SHOULDERS, BACK and FULL_BODY are kept for rows
+    written before the catalog got specific; they are spread over the fine
+    regions when read.
+    """
 
     # Upper body - Push
     CHEST = "chest"
-    SHOULDERS = "shoulders"
+    FRONT_DELTS = "front_delts"
+    SIDE_DELTS = "side_delts"
     TRICEPS = "triceps"
 
     # Upper body - Pull
-    BACK = "back"
+    REAR_DELTS = "rear_delts"
+    LATS = "lats"
+    TRAPS = "traps"
+    RHOMBOIDS = "rhomboids"
     BICEPS = "biceps"
     FOREARMS = "forearms"
 
@@ -36,8 +46,12 @@ class MuscleGroup(str, Enum):
     GLUTES = "glutes"
     CALVES = "calves"
     ADDUCTORS = "adductors"
+    HIP_FLEXORS = "hip_flexors"
+    TIBIALIS = "tibialis"
 
-    # Full body
+    # Coarse, kept for rows written before the fine regions existed
+    SHOULDERS = "shoulders"
+    BACK = "back"
     FULL_BODY = "full_body"
 
 

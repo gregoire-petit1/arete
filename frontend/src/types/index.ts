@@ -159,8 +159,23 @@ export interface StrengthSession {
   garmin_activity_id?: number | null;
 }
 
-export interface VolumeByMuscle {
-  [muscle: string]: number;
+export interface MuscleStat {
+  muscle: string;
+  /** French label, e.g. "Grands dorsaux". */
+  label: string;
+  volume: number;
+  sets: number;
+  /** 0 (untouched) to 4 (busiest region of the window). */
+  level: number;
+  previous_volume: number | null;
+  last_trained: string | null;
+}
+
+export interface MuscleStatsResponse {
+  days: number;
+  start: string;
+  end: string;
+  muscles: MuscleStat[];
 }
 
 // ========================= //

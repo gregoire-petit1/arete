@@ -66,10 +66,11 @@
   --color-chart-grey: #6B7280;
 
   /* Muscle heatmap */
-  --color-heat-none: #334155;
-  --color-heat-low: #F59E0B;
-  --color-heat-mid: #F97316;
-  --color-heat-high: #EF4444;
+  --color-heat-0: #2A2F3B;
+  --color-heat-1: #1F6F63;
+  --color-heat-2: #C99213;
+  --color-heat-3: #F97316;
+  --color-heat-4: #EF4444;
   --color-outline-dim: #475569;
   --color-outline: #64748B;
 

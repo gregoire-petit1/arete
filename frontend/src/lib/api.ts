@@ -167,14 +167,10 @@ export const strengthApi = {
       body: JSON.stringify({ text, date, save }),
     }),
 
-  getVolumeByMuscle: (startDate?: string, endDate?: string) => {
-    const params = new URLSearchParams();
-    if (startDate) params.set("start_date", startDate);
-    if (endDate) params.set("end_date", endDate);
-    return fetchAPI<import("@/types").VolumeByMuscle>(
-      `/strength/stats/volume-by-muscle?${params}`
-    );
-  },
+  getMuscleStats: (days = 7) =>
+    fetchAPI<import("@/types").MuscleStatsResponse>(
+      `/strength/stats/muscles?days=${days}`
+    ),
 
   // Garmin linking
   getGarminCandidates: (sessionId: number) =>
