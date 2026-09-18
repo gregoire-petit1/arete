@@ -195,6 +195,7 @@ CREATE TABLE IF NOT EXISTS app.user_settings (
     lthr                    INTEGER,                   -- threshold heart rate, drives HR zones
     max_hr                  INTEGER,                   -- fallback reference when no threshold
     threshold_pace_sec_km   INTEGER,                   -- pace held at threshold, seconds per km
+    lthr_measured_on        DATE,                      -- when Garmin measured that threshold
     updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -329,6 +330,12 @@ def _m6_hr_reference(con) -> None:
             con.execute(f"ALTER TABLE app.user_settings ADD COLUMN {name} INTEGER")
 
 
+def _m7_threshold_measured_on(con) -> None:
+    """Date of the threshold Garmin reported, so a newer test wins."""
+    if "lthr_measured_on" not in _columns(con, "user_settings"):
+        con.execute("ALTER TABLE app.user_settings ADD COLUMN lthr_measured_on DATE")
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -336,6 +343,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (4, _m4_strava_activity_id),
     (5, _m5_weekly_volume_target),
     (6, _m6_hr_reference),
+    (7, _m7_threshold_measured_on),
 ]
 
 

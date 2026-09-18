@@ -24,6 +24,7 @@ from arete.garmin.fit_parser import FITParser
 from arete.garmin.matcher import SessionMatcher
 from arete.garmin.models import ActivitySource, ActualSession, SessionStatus
 from arete.garmin.repository import GarminRepository
+from arete.garmin.threshold import refresh_threshold
 from arete.strava.merge import garmin_takeover
 
 logger = logging.getLogger(__name__)
@@ -385,6 +386,9 @@ class GarminSyncClient:
             SyncResult with sync statistics.
         """
         result = SyncResult(success=False)
+        # Garmin retests the threshold on its own: pick it up before parsing, so
+        # the sessions arriving now are read against the current zones.
+        self.refresh_threshold()
         effective_max: int = (
             max_activities
             if max_activities
@@ -592,6 +596,13 @@ class GarminSyncClient:
             "named": named,
             "matched": matched,
         }
+
+    def refresh_threshold(self) -> dict[str, Any]:
+        """Adopt Garmin's latest threshold, and rebuild the zone model with it."""
+        outcome = refresh_threshold(self.client)
+        if outcome.get("updated"):
+            self._zones = None  # next session is bucketed on the new threshold
+        return outcome
 
     def recompute_zones(self, fit_dir: Path | None = None) -> dict[str, Any]:
         """Rewrite every session's HR zones with the athlete's current model.

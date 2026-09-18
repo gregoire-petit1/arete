@@ -52,6 +52,16 @@ export interface PlannedSessionCreate {
 }
 
 export const garminApi = {
+  refreshThreshold: () =>
+    fetchAPI<{
+      updated: boolean;
+      reason: string;
+      lthr?: number | null;
+      previous_lthr?: number | null;
+      threshold_pace_sec_km?: number | null;
+      measured_on?: string | null;
+    }>("/garmin/sync/threshold", { method: "POST" }),
+
   recomputeZones: () =>
     fetchAPI<{
       sessions: number;
@@ -235,6 +245,8 @@ export interface UserSettings {
   lthr: number | null;
   max_hr: number | null;
   threshold_pace_sec_km: number | null;
+  /** Date of the Garmin test the threshold comes from; null when typed by hand. */
+  lthr_measured_on: string | null;
 }
 
 export const tipsApi = {

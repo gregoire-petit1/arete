@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from arete.dataio.db import connect
@@ -34,6 +35,7 @@ def _settings_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "lthr": row[12] if len(row) > 12 else None,
         "max_hr": row[13] if len(row) > 13 else None,
         "threshold_pace_sec_km": row[14] if len(row) > 14 else None,
+        "lthr_measured_on": row[15] if len(row) > 15 else None,
     }
 
 
@@ -46,7 +48,8 @@ def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
             SELECT user_id, display_name, email, timezone, weekly_training_goal,
                    rest_day_preference, fatigue_threshold, fitness_goal,
                    notifications_enabled, theme, exercise_abbreviations,
-                   weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km
+                   weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
+                   lthr_measured_on
             FROM app.user_settings
             WHERE user_id = ?
             """,
@@ -74,6 +77,7 @@ def upsert_user_settings(
     lthr: int | None = None,
     max_hr: int | None = None,
     threshold_pace_sec_km: int | None = None,
+    lthr_measured_on: date | None = None,
 ) -> dict[str, Any]:
     """Create or update user settings."""
     import json as _json
@@ -90,12 +94,14 @@ def upsert_user_settings(
                 rest_day_preference = ?, fatigue_threshold = ?, fitness_goal = ?,
                 notifications_enabled = ?, theme = ?, exercise_abbreviations = ?,
                 weekly_volume_target_kg = ?, lthr = ?, max_hr = ?,
-                threshold_pace_sec_km = ?, updated_at = CURRENT_TIMESTAMP
+                threshold_pace_sec_km = ?, lthr_measured_on = ?,
+                updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
                       notifications_enabled, theme, exercise_abbreviations,
-                      weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km
+                      weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
+                      lthr_measured_on
             """,
             [
                 display_name,
@@ -112,6 +118,7 @@ def upsert_user_settings(
                 lthr,
                 max_hr,
                 threshold_pace_sec_km,
+                lthr_measured_on,
                 user_id,
             ],
         ).fetchone()
@@ -126,13 +133,15 @@ def upsert_user_settings(
                 user_id, display_name, email, timezone, weekly_training_goal,
                 rest_day_preference, fatigue_threshold, fitness_goal,
                 notifications_enabled, theme, exercise_abbreviations,
-                weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km
+                weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
+                lthr_measured_on
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
                       notifications_enabled, theme, exercise_abbreviations,
-                      weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km
+                      weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
+                      lthr_measured_on
             """,
             [
                 user_id,
@@ -150,6 +159,7 @@ def upsert_user_settings(
                 lthr,
                 max_hr,
                 threshold_pace_sec_km,
+                lthr_measured_on,
             ],
         ).fetchone()
         if row is None:

@@ -191,6 +191,22 @@ def sync_activities(request: SyncRequest):
     )
 
 
+@router.post("/threshold")
+def refresh_threshold_from_garmin():
+    """Read the threshold Garmin last measured and store it when it is newer.
+
+    Runs on every sync; this endpoint is the manual trigger.
+    """
+    from arete.garmin.sync import GarminSyncClient
+
+    client = GarminSyncClient(repository=_repo)
+    if not client.is_authenticated():
+        raise HTTPException(
+            status_code=401, detail="Not authenticated with Garmin Connect"
+        )
+    return client.refresh_threshold()
+
+
 @router.post("/recompute-zones")
 def recompute_hr_zones():
     """Rewrite HR zones on every session with the athlete's current model.

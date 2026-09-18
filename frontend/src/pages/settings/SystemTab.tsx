@@ -9,7 +9,7 @@ import { SyncOptionsForm, type SyncOptions } from './SyncOptionsForm';
 import { toLocalISODate } from '@/lib/dates';
 import { invalidateAfterSession } from '@/lib/queryKeys';
 
-type Alert = { type: 'success' | 'error'; message: string };
+type Alert = { type: 'success' | 'error' | 'info'; message: string };
 
 export function SystemTab() {
   const queryClient = useQueryClient();
@@ -41,6 +41,22 @@ export function SystemTab() {
       setAlert({ type: 'success', message: 'DÉCONNECTÉ DE GARMIN' });
       queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
     },
+  });
+
+  const thresholdMutation = useMutation({
+    mutationFn: garminApi.refreshThreshold,
+    onSuccess: (result) => {
+      setAlert(
+        result.updated
+          ? {
+              type: 'success',
+              message: `SEUIL GARMIN : ${result.lthr} BPM (TEST DU ${result.measured_on})`,
+            }
+          : { type: 'info', message: 'AUCUN TEST GARMIN PLUS RÉCENT' }
+      );
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+    },
+    onError: (error) => setAlert({ type: 'error', message: `LECTURE DU SEUIL IMPOSSIBLE : ${error}` }),
   });
 
   const zonesMutation = useMutation({
@@ -200,18 +216,29 @@ export function SystemTab() {
         )}
       </Panel>
 
-      <Panel variant="inset" title="ZONES CARDIAQUES">
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-xs text-text-muted font-mono">
-            Recalcule le temps passé par zone sur toutes les séances, à partir du seuil enregistré dans Objectifs.
-          </p>
-          <Button
-            size="sm"
-            onClick={() => zonesMutation.mutate()}
-            loading={zonesMutation.isPending}
-          >
-            {zonesMutation.isPending ? 'CALCUL…' : 'RECALCULER'}
-          </Button>
+      <Panel variant="inset" title="SEUIL ET ZONES">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-xs text-text-muted font-mono">
+              Chaque synchro reprend le seuil mesuré par Garmin et l'applique aux séances suivantes.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => thresholdMutation.mutate()}
+              loading={thresholdMutation.isPending}
+            >
+              {thresholdMutation.isPending ? 'LECTURE…' : 'LIRE LE SEUIL'}
+            </Button>
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-xs text-text-muted font-mono">
+              Recalcule le temps par zone sur toutes les séances déjà enregistrées, seuil actuel compris.
+            </p>
+            <Button size="sm" onClick={() => zonesMutation.mutate()} loading={zonesMutation.isPending}>
+              {zonesMutation.isPending ? 'CALCUL…' : 'RECALCULER'}
+            </Button>
+          </div>
         </div>
       </Panel>
 

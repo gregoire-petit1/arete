@@ -112,8 +112,13 @@ export function GoalsTab({ settings, updateSetting }: SettingsTabProps) {
 
         <div className="border-t border-text-muted/10 pt-6">
           <label className="text-xs font-mono text-text-muted uppercase block mb-1">Repères physiologiques</label>
-          <p className="text-xs text-text-muted mb-3">
+          <p className="text-xs text-text-muted mb-1">
             Les zones cardiaques sont calculées à partir de ton seuil. Sans seuil, elles retombent sur la FC max.
+          </p>
+          <p className="text-xs text-text-muted mb-3">
+            {settings.lthr_measured_on
+              ? `Seuil mesuré par Garmin le ${new Date(`${settings.lthr_measured_on}T00:00:00`).toLocaleDateString('fr-FR')} : chaque synchro adopte un test plus récent.`
+              : 'Aucun test Garmin repris pour le moment : la prochaine synchro ira le chercher.'}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Field label="FC au seuil (bpm)" hint="Test de 30 min : FC moyenne des 20 dernières minutes">
@@ -147,7 +152,8 @@ export function GoalsTab({ settings, updateSetting }: SettingsTabProps) {
             </Field>
           </div>
           <p className="text-xs text-text-muted mt-2">
-            Après un changement de seuil, relance « Recalculer les zones » dans l'onglet Système.
+            Un nouveau seuil s'applique aux séances qui arrivent. Pour réécrire aussi les anciennes, lance
+            « Recalculer » dans l'onglet Système.
           </p>
         </div>
 

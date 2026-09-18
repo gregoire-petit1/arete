@@ -169,5 +169,12 @@ class GarminClient:
         d = day.isoformat()
         return cast(list[dict[str, Any]], self.connect().get_daily_steps(d, d) or [])
 
+    def lactate_threshold(self) -> dict[str, Any] | None:
+        """Latest running threshold Garmin measured: heart rate, speed, date."""
+        raw = self.connect().get_lactate_threshold(latest=True)
+        if not isinstance(raw, dict):
+            return None
+        return cast(dict[str, Any] | None, raw.get("speed_and_heart_rate") or None)
+
     def resting_hr(self, day: date) -> dict[str, Any] | None:
         return cast(dict[str, Any] | None, self.connect().get_rhr_day(day.isoformat()))

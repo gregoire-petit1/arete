@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter
@@ -24,6 +25,8 @@ class UserSettingsUpdate(BaseModel):
     lthr: int | None = Field(ge=100, le=220, default=None)
     max_hr: int | None = Field(ge=120, le=230, default=None)
     threshold_pace_sec_km: int | None = Field(ge=120, le=900, default=None)
+    # Set by the Garmin sync; sent back untouched by the settings form.
+    lthr_measured_on: date | None = None
 
 
 class UserSettingsOut(BaseModel):
@@ -42,6 +45,7 @@ class UserSettingsOut(BaseModel):
     lthr: int | None
     max_hr: int | None
     threshold_pace_sec_km: int | None
+    lthr_measured_on: date | None
 
 
 @router.get("/settings", response_model=UserSettingsOut)
@@ -66,6 +70,7 @@ def get_settings():
             lthr=None,
             max_hr=None,
             threshold_pace_sec_km=None,
+            lthr_measured_on=None,
         )
     return UserSettingsOut(**settings)
 
@@ -89,5 +94,6 @@ def update_settings(payload: UserSettingsUpdate):
         lthr=payload.lthr,
         max_hr=payload.max_hr,
         threshold_pace_sec_km=payload.threshold_pace_sec_km,
+        lthr_measured_on=payload.lthr_measured_on,
     )
     return UserSettingsOut(**settings)

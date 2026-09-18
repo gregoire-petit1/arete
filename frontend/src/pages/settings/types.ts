@@ -22,4 +22,5 @@ export const DEFAULT_SETTINGS: LocalSettings = {
   lthr: null,
   max_hr: null,
   threshold_pace_sec_km: null,
+  lthr_measured_on: null,
 };
