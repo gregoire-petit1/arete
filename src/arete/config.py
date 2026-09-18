@@ -81,7 +81,11 @@ class Config:
     # --- background jobs / logging -----------------------------------------
     @property
     def auto_sync_hour(self) -> int | None:
-        """Local hour (0-23) of the nightly Garmin/Strava sync; None disables it."""
+        """Local hour (0-23) of the daily Garmin/Strava sync; None disables it.
+
+        Garmin publishes the night's HRV and sleep score at wake-up, so an hour
+        before the athlete is up leaves the day without recovery data.
+        """
         raw = _env("ARETE_AUTO_SYNC_HOUR")
         if raw is None:
             return None

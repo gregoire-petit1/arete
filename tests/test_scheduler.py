@@ -1,4 +1,4 @@
-"""Tests for the nightly sync scheduler helpers."""
+"""Tests for the daily sync scheduler helpers."""
 
 from __future__ import annotations
 
@@ -28,5 +28,5 @@ class TestNightlySync:
     def test_reports_missing_connectors(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ARETE_GARMIN_TOKENS_DIR", str(tmp_path / "none"))
         with patch("arete.api.strava._get_strava_tokens", return_value=None):
-            status = scheduler.nightly_sync()
+            status = scheduler.daily_sync()
         assert status == {"garmin": "no tokens", "strava": "not connected"}

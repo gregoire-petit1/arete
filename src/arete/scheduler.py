@@ -1,4 +1,4 @@
-"""Nightly background sync (Garmin activities + health, Strava) inside the API.
+"""Daily background sync (Garmin activities + health, Strava) inside the API.
 
 Enabled by ``ARETE_AUTO_SYNC_HOUR`` (local hour). No extra dependency: an
 asyncio task sleeps until the next occurrence and runs the blocking syncs in a
@@ -26,7 +26,7 @@ def seconds_until(hour: int, now: datetime) -> float:
     return (target - now).total_seconds()
 
 
-def nightly_sync() -> dict[str, str]:
+def daily_sync() -> dict[str, str]:
     """Run every configured sync once. Returns a short status per source."""
     status: dict[str, str] = {}
 
@@ -67,7 +67,7 @@ def nightly_sync() -> dict[str, str]:
     else:
         status["strava"] = "not connected"
 
-    logger.info("Nightly sync: %s", status)
+    logger.info("Daily sync: %s", status)
     return status
 
 
@@ -76,7 +76,7 @@ async def run_forever(hour: int) -> None:
         delay = seconds_until(hour, datetime.now())
         logger.info("Next automatic sync in %.0f min", delay / 60)
         await asyncio.sleep(delay)
-        await asyncio.to_thread(nightly_sync)
+        await asyncio.to_thread(daily_sync)
 
 
 def start() -> asyncio.Task[None] | None:
@@ -85,4 +85,4 @@ def start() -> asyncio.Task[None] | None:
     if hour is None:
         logger.info("Automatic sync disabled (ARETE_AUTO_SYNC_HOUR unset)")
         return None
-    return asyncio.create_task(run_forever(hour), name="arete-nightly-sync")
+    return asyncio.create_task(run_forever(hour), name="arete-daily-sync")

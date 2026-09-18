@@ -11,7 +11,7 @@ services:
       # The frontend container is published on 3080 (overrides .env for Docker)
       - FRONTEND_URL=http://localhost:3080
       # Nightly Garmin + Strava sync at 03:00 (container local time)
-      - ARETE_AUTO_SYNC_HOUR=3
+      - ARETE_AUTO_SYNC_HOUR=9
       # Ollama running on the Docker host (default). Switch to
       # http://ollama:11434/v1 when enabling the ollama service below.
       - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1

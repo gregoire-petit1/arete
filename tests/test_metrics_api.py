@@ -335,10 +335,31 @@ class TestPlayerStatsSemantics:
         assert body["hp"]["source"] == "garmin"
         assert body["hp"]["label"] == "Récupération"
 
-    def test_hp_falls_back_to_the_model(self, client):
+    def test_hp_uses_yesterday_before_the_model(self, client):
+        # Garmin publishes the night's HRV at wake-up: early in the day only
+        # yesterday is complete.
+        with patch(
+            "arete.api.metrics.compute_readiness", side_effect=[None, 47]
+        ) as readiness:
+            body = client.get("/metrics/player-stats").json()
+        assert body["hp"]["current"] == 47.0
+        assert body["hp"]["source"] == "garmin_previous"
+        assert "Garmin" in body["hp"]["detail"]
+        asked = [call.args[0] for call in readiness.call_args_list]
+        assert asked[1] == asked[0] - timedelta(days=1)
+
+    def test_hp_falls_back_to_the_model_without_any_measurement(self, client):
         with patch("arete.api.metrics.compute_readiness", return_value=None):
             body = client.get("/metrics/player-stats").json()
         assert body["hp"]["source"] == "model"
+        assert "charge" in body["hp"]["detail"]
+
+    def test_hp_looks_back_one_day_only(self, client):
+        with patch(
+            "arete.api.metrics.compute_readiness", return_value=None
+        ) as readiness:
+            client.get("/metrics/player-stats").json()
+        assert readiness.call_count == 2
 
     def test_mp_maps_tsb_and_reports_it(self, client):
         with patch("arete.api.metrics.compute_readiness", return_value=None):

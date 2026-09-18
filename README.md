@@ -41,7 +41,7 @@ docker compose up --build
 # frontend: http://localhost:3080   backend: http://localhost:8001 (8000 is often taken)
 ```
 
-Data (DuckDB file, Garmin tokens, FIT files) is the repo's `./data` directory, bind-mounted at `/app/data`, so Docker and `uv run uvicorn` share the same database (never run both backends at once: DuckDB allows a single writer). The compose file enables the nightly sync (`ARETE_AUTO_SYNC_HOUR=3`) and sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
+Data (DuckDB file, Garmin tokens, FIT files) is the repo's `./data` directory, bind-mounted at `/app/data`, so Docker and `uv run uvicorn` share the same database (never run both backends at once: DuckDB allows a single writer). The compose file enables the daily sync (`ARETE_AUTO_SYNC_HOUR=9`, after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up) and sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
 
 ## Configuration
 
@@ -51,7 +51,7 @@ All settings come from environment variables (see `.env.example`):
 | --- | --- |
 | `ARETE_DB` | DuckDB file path (default `data/arete.duckdb`) |
 | `ARETE_LOG_LEVEL` | Backend log level (default `INFO`) |
-| `ARETE_AUTO_SYNC_HOUR` | Local hour of the nightly Garmin activities + health and Strava sync; unset = manual only |
+| `ARETE_AUTO_SYNC_HOUR` | Local hour of the daily Garmin activities + health and Strava sync, best set after wake-up; unset = manual only |
 | `LLM_PROVIDER`, `LLM_MODEL` | `ollama` \| `openrouter` \| `github`, and the model name |
 | `OLLAMA_BASE_URL` / `OPENROUTER_API_KEY` / `GITHUB_TOKEN` | Credentials for the chosen provider |
 | `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REDIRECT_URI` | Strava OAuth app |
@@ -63,7 +63,7 @@ All settings come from environment variables (see `.env.example`):
 
 ```
 src/arete/
-├── config.py   All environment variables in one place; scheduler.py: optional nightly sync
+├── config.py   All environment variables in one place; scheduler.py: optional daily sync
 ├── api/        FastAPI routers: analytics, garmin (sessions/FIT), garmin_sync, garmin_health, strength, strava, ai_tips, metrics, settings; main.py wires them
 ├── dataio/     DuckDB connection (db.py), schema + versioned migrations (init_duckdb.py), shared queries, user settings
 ├── features/   Training science: workload (ACWR), cardio (TRIMP, zones), fitness (CTL/ATL/TSB), strength (1RM, INOL), banister fit, hr_drift, recommendations

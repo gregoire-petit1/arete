@@ -146,7 +146,7 @@ class PlayerStats(BaseModel):
     """RPG-style bars over real training data."""
 
     hp: StatBar = Field(
-        description="Récupération: Garmin readiness, else the CTL/ATL model"
+        description="Récupération: Garmin readiness (today or yesterday), else the CTL/ATL model"
     )
     mp: StatBar = Field(description="Forme: TSB mapped to 0-100")
     xp: StatBar = Field(description="Charge de la semaine: TSS vs the weekly goal")
@@ -223,11 +223,48 @@ def _week_history(goal_tss: float) -> tuple[int, int]:
     return streak, sum(reached)
 
 
+# Garmin publishes last night's HRV and sleep score when the athlete wakes up,
+# so early in the day the only complete measurement is yesterday's.
+READINESS_LOOKBACK_DAYS = 1
+
+
+def _recovery_bar(today: date) -> StatBar:
+    """HP: Garmin's readiness for today, yesterday's if the night is not in yet,
+    and the CTL/ATL model only when Garmin has nothing recent."""
+    for offset in range(READINESS_LOOKBACK_DAYS + 1):
+        day = today - timedelta(days=offset)
+        score = compute_readiness(day)
+        if score is None:
+            continue
+        detail = (
+            "Garmin (VFC, sommeil, body battery)"
+            if offset == 0
+            else f"Garmin, mesure du {day.strftime('%d/%m')}"
+        )
+        return StatBar(
+            current=float(score),
+            max=100,
+            label="Récupération",
+            detail=detail,
+            source="garmin" if offset == 0 else "garmin_previous",
+        )
+
+    model = compute_performance_model(tss_history(days=42), today)
+    return StatBar(
+        current=round(model.readiness_score, 1),
+        max=100,
+        label="Récupération",
+        detail="Estimée depuis la charge (aucune mesure Garmin récente)",
+        source="model",
+    )
+
+
 @router.get("/player-stats", response_model=PlayerStats)
 def get_player_stats():
     """RPG bars over real data.
 
-    - HP = today's Garmin readiness (HRV, sleep, body battery), model-based if absent
+    - HP = Garmin readiness (HRV, sleep, body battery), yesterday's when the
+      night is not published yet, model-based only as a last resort
     - MP = form: TSB mapped from -30..+30 onto 0..100
     - XP = this week's TSS against the goal derived from Settings
     - Level = consecutive finished weeks at or above that goal
@@ -237,25 +274,7 @@ def get_player_stats():
     goal_tss = _weekly_goal_tss(settings)
 
     # --- HP: recovery ---
-    readiness = compute_readiness(today)
-    if readiness is not None:
-        hp = StatBar(
-            current=float(readiness),
-            max=100,
-            label="Récupération",
-            detail="Garmin (VFC, sommeil, body battery)",
-            source="garmin",
-        )
-    else:
-        history = tss_history(days=42)
-        model = compute_performance_model(history, today)
-        hp = StatBar(
-            current=round(model.readiness_score, 1),
-            max=100,
-            label="Récupération",
-            detail="Estimée (pas de données Garmin du jour)",
-            source="model",
-        )
+    hp = _recovery_bar(today)
 
     # --- MP: form (TSB) ---
     history = tss_history(days=42)
