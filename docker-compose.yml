@@ -10,7 +10,9 @@ services:
       - ARETE_GARMIN_TOKENS_DIR=/app/data/garmin_tokens
       # The frontend container is published on 3080 (overrides .env for Docker)
       - FRONTEND_URL=http://localhost:3080
-      # Nightly Garmin + Strava sync at 03:00 (container local time)
+      # Daily Garmin + Strava sync at 09:00 Paris time. The image is UTC, so
+      # without TZ the hour below would mean 09:00 UTC (11:00 in Paris).
+      - TZ=Europe/Paris
       - ARETE_AUTO_SYNC_HOUR=9
       # Ollama running on the Docker host (default). Switch to
       # http://ollama:11434/v1 when enabling the ollama service below.

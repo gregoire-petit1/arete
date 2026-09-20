@@ -1,29 +1,66 @@
 """Daily background sync (Garmin activities + health, Strava) inside the API.
 
 Enabled by ``ARETE_AUTO_SYNC_HOUR`` (local hour). No extra dependency: an
-asyncio task sleeps until the next occurrence and runs the blocking syncs in a
-worker thread. Failures are logged and never stop the loop.
+asyncio task wakes up every few minutes, compares the wall clock to the
+scheduled hour and runs the blocking syncs in a worker thread when the day's
+run is still owed. Short ticks on purpose: a laptop that sleeps freezes the
+container's monotonic clock, and a single long sleep would silently skip a day.
+The last run is written next to the database, so a restart does not re-run a
+sync that already happened — and does run the one that was missed.
+Failures are logged and never stop the loop.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from arete.config import config
 
 logger = logging.getLogger(__name__)
 
 HEALTH_LOOKBACK_DAYS = 3
+TICK_SECONDS = 300
+STATE_FILENAME = "last_daily_sync.json"
 
 
-def seconds_until(hour: int, now: datetime) -> float:
-    """Seconds from ``now`` to the next ``hour``:00 (today if still ahead)."""
-    target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
-    if target <= now:
-        target += timedelta(days=1)
-    return (target - now).total_seconds()
+def state_path() -> Path:
+    """Where the last run is recorded (beside the DuckDB file)."""
+    from arete.dataio.db import get_db_path
+
+    return get_db_path().parent / STATE_FILENAME
+
+
+def last_run_date() -> date | None:
+    """Day of the last completed run, None when it never ran."""
+    path = state_path()
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text())
+        return datetime.fromisoformat(payload["ran_at"]).date()
+    except (ValueError, KeyError, OSError):
+        logger.warning("Unreadable sync state at %s, treating as never run", path)
+        return None
+
+
+def record_run(when: datetime) -> None:
+    path = state_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"ran_at": when.isoformat()}))
+    except OSError as e:  # the sync itself succeeded; only the marker failed
+        logger.warning("Could not record the sync state: %s", e)
+
+
+def is_due(hour: int, now: datetime, last_run: date | None) -> bool:
+    """True when the scheduled hour has passed and today's run is still owed."""
+    if now.hour < hour:
+        return False
+    return last_run is None or last_run < now.date()
 
 
 def daily_sync() -> dict[str, str]:
@@ -71,12 +108,19 @@ def daily_sync() -> dict[str, str]:
     return status
 
 
-async def run_forever(hour: int) -> None:
+async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
+    logger.info(
+        "Automatic sync armed for %02d:00 local, checked every %d min (last run: %s)",
+        hour,
+        tick_seconds // 60,
+        last_run_date() or "never",
+    )
     while True:
-        delay = seconds_until(hour, datetime.now())
-        logger.info("Next automatic sync in %.0f min", delay / 60)
-        await asyncio.sleep(delay)
-        await asyncio.to_thread(daily_sync)
+        now = datetime.now()
+        if is_due(hour, now, last_run_date()):
+            await asyncio.to_thread(daily_sync)
+            record_run(datetime.now())
+        await asyncio.sleep(tick_seconds)
 
 
 def start() -> asyncio.Task[None] | None:

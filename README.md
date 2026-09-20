@@ -41,7 +41,7 @@ docker compose up --build
 # frontend: http://localhost:3080   backend: http://localhost:8001 (8000 is often taken)
 ```
 
-Data (DuckDB file, Garmin tokens, FIT files) is the repo's `./data` directory, bind-mounted at `/app/data`, so Docker and `uv run uvicorn` share the same database (never run both backends at once: DuckDB allows a single writer). The compose file enables the daily sync (`ARETE_AUTO_SYNC_HOUR=9`, after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up) and sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
+Data (DuckDB file, Garmin tokens, FIT files) is the repo's `./data` directory, bind-mounted at `/app/data`, so Docker and `uv run uvicorn` share the same database (never run both backends at once: DuckDB allows a single writer). The compose file enables the daily sync (`TZ=Europe/Paris` + `ARETE_AUTO_SYNC_HOUR=9`, after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up; the scheduler checks the wall clock every five minutes and catches up a run missed while the machine slept) and sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
 
 ## Configuration
 
