@@ -180,6 +180,24 @@ export const strengthApi = {
       method: "DELETE",
     }),
 
+  transcribeWorkout: async (
+    clip: { blob: Blob; extension: string },
+    signal?: AbortSignal
+  ) => {
+    const formData = new FormData();
+    // The browser sets the multipart boundary; forcing a Content-Type breaks it.
+    formData.append("file", clip.blob, `dictation.${clip.extension}`);
+    const response = await fetch(`${API_BASE}/strength/sessions/transcribe`, {
+      method: "POST",
+      body: formData,
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error(`API Error ${response.status}: ${await response.text()}`);
+    }
+    return response.json() as Promise<import("@/types").WorkoutTranscription>;
+  },
+
   parseWorkout: (text: string, date?: string, save = false) =>
     fetchAPI<import("@/types").ParsedWorkout>("/strength/sessions/parse", {
       method: "POST",

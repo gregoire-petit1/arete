@@ -217,6 +217,18 @@ export interface ParsedExercise {
   notes: string | null;
 }
 
+/** What POST /strength/sessions/transcribe answers for a dictated session. */
+export interface WorkoutTranscription {
+  /** French text, exactly as dictated. */
+  transcript: string;
+  /** Compact notation rebuilt from what the grammar read. */
+  notation: string;
+  /** Sentences left verbatim rather than guessed. */
+  unparsed: string[];
+  exercises: number;
+  cost_usd: number | null;
+}
+
 export interface ParsedWorkout {
   success: boolean;
   date: string;

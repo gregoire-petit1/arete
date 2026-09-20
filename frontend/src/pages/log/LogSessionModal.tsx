@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, AlertTriangle, Check, Sparkles } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, readableError } from '@/lib/utils';
 import { Button, Field, Input, Modal, ModalHeader, Textarea } from '@/components/ui';
 import { strengthApi } from '@/lib/api';
-import type { ParsedWorkout } from '@/types';
+import type { ParsedWorkout, WorkoutTranscription } from '@/types';
 import { toLocalISODate } from '@/lib/dates';
 import { invalidateAfterSession } from '@/lib/queryKeys';
+import { VoiceDictation, type VoiceDictationHandle } from './VoiceDictation';
 
 const today = () => toLocalISODate();
 
@@ -22,6 +23,26 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
   const [workoutDate, setWorkoutDate] = useState(today);
   const [parseResult, setParseResult] = useState<ParsedWorkout | null>(null);
   const [step, setStep] = useState<'input' | 'preview' | 'saved'>('input');
+  const [heard, setHeard] = useState<WorkoutTranscription | null>(null);
+  const [textBeforeDictation, setTextBeforeDictation] = useState<string | null>(null);
+  const dictationRef = useRef<VoiceDictationHandle>(null);
+
+  /** Dictation is incremental: one exercise, then the next. Append, never overwrite. */
+  const insertDictation = (result: WorkoutTranscription) => {
+    setHeard(result);
+    if (!result.notation.trim()) return;
+    setWorkoutText((current) => {
+      setTextBeforeDictation(current);
+      const existing = current.replace(/\s+$/, '');
+      return existing ? `${existing}\n${result.notation}` : result.notation;
+    });
+  };
+
+  const undoDictation = () => {
+    if (textBeforeDictation === null) return;
+    setWorkoutText(textBeforeDictation);
+    setTextBeforeDictation(null);
+  };
 
   const parseMutation = useMutation({
     mutationFn: ({ save }: { save: boolean }) => strengthApi.parseWorkout(workoutText, workoutDate, save),
@@ -37,6 +58,9 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
   });
 
   const reset = () => {
+    dictationRef.current?.cancel();
+    setHeard(null);
+    setTextBeforeDictation(null);
     setWorkoutText('');
     setWorkoutDate(today());
     setParseResult(null);
@@ -58,8 +82,15 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
       {step === 'input' && (
         <div className="space-y-4">
           <p className="text-sm text-text-muted font-mono">
-            Colle ta séance ci-dessous. Les exercices, séries et charges sont extraits automatiquement.
+            Dicte ta séance ou colle-la ci-dessous. Les exercices, séries et charges sont
+            extraits automatiquement.
           </p>
+
+          <VoiceDictation
+            ref={dictationRef}
+            onTranscribed={insertDictation}
+            disabled={parseMutation.isPending}
+          />
 
           <Field label="Date">
             <Input
@@ -90,6 +121,33 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
             />
           </Field>
 
+          {heard && (
+            <div className="p-3 rounded border border-neon-cyan/30 bg-neon-cyan/5 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-mono text-neon-cyan uppercase tracking-wider">
+                  Ce qui a été entendu
+                </span>
+                {textBeforeDictation !== null && (
+                  <button
+                    type="button"
+                    onClick={undoDictation}
+                    className="text-[10px] font-mono text-text-muted hover:text-text-primary"
+                  >
+                    ANNULER L'INSERTION
+                  </button>
+                )}
+              </div>
+              <p className="text-xs font-mono text-text-secondary italic max-h-24 overflow-y-auto">
+                {heard.transcript}
+              </p>
+              {heard.unparsed.length > 0 && (
+                <p className="text-[10px] font-mono text-warning-orange">
+                  Non compris, à écrire à la main : {heard.unparsed.join(' · ')}
+                </p>
+              )}
+            </div>
+          )}
+
           <Button
             variant="gold"
             strong
@@ -104,7 +162,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
             ) : (
               <>
                 <Sparkles className="w-4 h-4" />
-                PARSE WORKOUT
+                ANALYSER
               </>
             )}
           </Button>
@@ -112,7 +170,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
           {parseMutation.isError && (
             <div className="flex items-center gap-2 text-danger-red text-sm font-mono">
               <AlertCircle className="w-4 h-4" />
-              {parseMutation.error?.message || 'Parsing failed'}
+              {readableError(parseMutation.error) || 'Analyse impossible'}
             </div>
           )}
         </div>
@@ -137,15 +195,15 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-mono text-sm text-text-primary">{ex.name}</span>
                   {ex.exercise_matched ? (
-                    <span className="text-[10px] font-mono text-success-green">✓ MATCHED</span>
+                    <span className="text-[10px] font-mono text-success-green">✓ RECONNU</span>
                   ) : (
-                    <span className="text-[10px] font-mono text-warning-orange">⚠ UNMATCHED</span>
+                    <span className="text-[10px] font-mono text-warning-orange">⚠ INCONNU</span>
                   )}
                 </div>
                 <div className="text-xs font-mono text-text-muted">
-                  {ex.sets.length} sets •
-                  {ex.sets[0]?.weight_kg && ` ${ex.sets[0].weight_kg}kg`}
-                  {ex.sets[0]?.is_failure ? ' × failure' : ex.sets[0]?.reps && ` × ${ex.sets[0].reps} reps`}
+                  {ex.sets.length} série(s) •
+                  {ex.sets[0]?.weight_kg && ` ${ex.sets[0].weight_kg} kg`}
+                  {ex.sets[0]?.is_failure ? " × jusqu'à l'échec" : ex.sets[0]?.reps && ` × ${ex.sets[0].reps} rép.`}
                   {ex.sets[0]?.rpe && ` @ RPE ${ex.sets[0].rpe}`}
                 </div>
               </div>
@@ -173,7 +231,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
 
           <div className="flex gap-3">
             <Button variant="outline" className="flex-1" onClick={() => setStep('input')}>
-              ← EDIT
+              ← MODIFIER
             </Button>
             <Button
               variant="gold"
@@ -183,7 +241,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
               loading={parseMutation.isPending}
             >
               {!parseMutation.isPending && <Check className="w-4 h-4" />}
-              SAVE
+              ENREGISTRER
             </Button>
           </div>
         </div>
@@ -201,7 +259,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
             </p>
           </div>
           <Button variant="outline" strong size="lg" fullWidth onClick={reset}>
-            CLOSE
+            FERMER
           </Button>
         </div>
       )}

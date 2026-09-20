@@ -56,3 +56,18 @@ export function formatPace(secondsPerKm: number): string {
   const secs = Math.round(secondsPerKm % 60);
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
+
+/** 'API Error 422: {"detail":"Enregistrement vide"}' -> 'Enregistrement vide' */
+export function readableError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const match = raw.match(/\{.*\}/s);
+  if (match) {
+    try {
+      const body = JSON.parse(match[0]) as { detail?: string };
+      if (body.detail) return body.detail;
+    } catch {
+      // fall through to the raw message
+    }
+  }
+  return raw;
+}
