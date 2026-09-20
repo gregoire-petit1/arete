@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from arete.data.exercise_matcher import Suggestion, match_exercise
+from arete.llm.speech_grammar import parse_dictation
 from arete.llm.workout_grammar import parse_workout_grammar, unparsed_lines
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,22 @@ def _expand_abbreviations(text: str, abbreviations: dict[str, str]) -> str:
     return result
 
 
+def _read_lines(text: str) -> list[dict]:
+    """Notation first, plain French second.
+
+    A line the notation grammar rejects gets a second reading by the speech
+    grammar, so "squat 5 séries de 5 à 100 kilos" works typed as well as
+    dictated. Order matters: notation is what most lines are.
+    """
+    read = parse_workout_grammar(text) or []
+    spoken = [
+        exercise
+        for line in unparsed_lines(text)
+        for exercise in parse_dictation(line) or []
+    ]
+    return read + spoken
+
+
 def parse_workout_text(
     text: str,
     workout_date: date | None = None,
@@ -177,7 +194,7 @@ def parse_workout_text(
     text = _expand_abbreviations(_normalize_workout_text(text), abbreviations or {})
 
     exercises: list[ParsedExercise] = []
-    for ex in parse_workout_grammar(text) or []:
+    for ex in _read_lines(text):
         match = match_exercise(ex["name"])
         exercises.append(
             ParsedExercise(
@@ -190,7 +207,7 @@ def parse_workout_text(
                 suggestions=match.suggestions,
             )
         )
-    leftovers = unparsed_lines(text)
+    leftovers = [line for line in unparsed_lines(text) if not parse_dictation(line)]
     logger.info(
         "Grammar parsed %d exercises, %d unparsed line(s)",
         len(exercises),
