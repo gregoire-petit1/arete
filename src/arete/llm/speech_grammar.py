@@ -41,14 +41,21 @@ _FAILURE_PHRASES = (
     r"\bau\s+max(?:imum)?\b",
     r"\bjusqu'?\s*[àa]\s*l'?\s*[ée]puisement\b",
     r"\ben\s+amrap\b",
+    r"\bto\s+failure\b",
+    r"\bamrap\b",
+    r"\bas\s+many\s+as\s+possible\b",
 )
 _BODYWEIGHT_PHRASES = (
     r"\b(?:au|en|du)\s+poids\s+d[eu]\s+corps\b",
     r"\bpoids\s+d[eu]\s+corps\b",
+    r"\bbody\s?weight\b",
+    r"\bat\s+bw\b",
 )
 _EACH_SIDE_PHRASES = (
     r"\b(?:de\s+)?chaque\s+(?:c[ôo]t[ée]|bras|jambe|main|pied|[ée]paule)\b",
     r"\bpar\s+c[ôo]t[ée]\b",
+    r"\beach\s+(?:side|arm|leg|hand)\b",
+    r"\bper\s+side\b",
 )
 # Spoken padding: stripped from exercise names, kept in whatever is handed
 # back to the athlete — a sentence we did not understand is returned as said.
@@ -57,9 +64,12 @@ _FILLERS = (
     r"\b(?:aujourd'hui|ce matin|ce soir|cet apr[èe]s-midi|hier|tout [àa] l'heure)\b",
     r"\b(?:j'ai fait|j'ai commenc[ée] par|je commence par|je fais)\b",
     r"\b(?:je finis par|je termine par|pour finir|j'ai termin[ée] par)\b",
+    r"\b(?:i did|i started with|then i did|finished with)\b",
 )
 # Sentence separators, including the spoken ones.
-_SEPARATORS = r"[.;\n]+|\bpuis\b|\bensuite\b|\bapr[èe]s\b|\bet\s+apr[èe]s\b|\bet\b"
+_SEPARATORS = (
+    r"[.;\n]+|\bpuis\b|\bensuite\b|\bapr[èe]s\b|\bet\s+apr[èe]s\b|\bet\b|\bthen\b"
+)
 
 # Where the name stops and the numbers begin.
 _QUANTITY_START = re.compile(
@@ -110,20 +120,20 @@ rpe_spec: RPE (OF)? NUMBER
 
 SETS_X_REPS.9: /\d+\s*x\s*\d+/i
 NUMBER: /\d+(?:[.,]\d+)?/
-SERIES.9: /\b(?:s[ée]ries?|fois|sets?|tours?)\b/i
-REPS_WORD.9: /\b(?:r[ée]p[ée]titions?|r[ée]ps?|reps|rep|mouvements?)\b/i
-WEIGHT_UNIT.9: /\b(?:kilos?|kgs?)\b/i
-REST_WORD.9: /\b(?:repos|r[ée]cup(?:[ée]ration)?|pause)\b/i
-MINUTES.9: /\b(?:minutes?|min|mn)\b/i
-SECONDS.9: /\b(?:secondes?|sec)\b/i
+SERIES.9: /\b(?:s[ée]ries?|fois|sets?|tours?|rounds?)\b/i
+REPS_WORD.9: /\b(?:r[ée]p[ée]titions?|r[ée]ps?|reps|rep|mouvements?|times?)\b/i
+WEIGHT_UNIT.9: /\b(?:kilos?|kgs?|lbs?|pounds?)\b/i
+REST_WORD.9: /\b(?:repos|r[ée]cup(?:[ée]ration)?|pause|rest)\b/i
+MINUTES.9: /\b(?:minutes?|min|mn|mins)\b/i
+SECONDS.9: /\b(?:secondes?|sec|secs|seconds?)\b/i
 RPE.9: /\brpe\b/i
-OUT_OF.9: /\bsur\b/i
+OUT_OF.9: /\b(?:sur|out\s+of)\b/i
 FAILURE.9: /\bFAILURETOKEN\b/
 BODYWEIGHT.9: /\bBODYWEIGHTTOKEN\b/
 EACH_SIDE.9: /\bEACHSIDETOKEN\b/
-TO.8: /\b[àa]\b/i
-WITH.8: /\bavec\b/i
-OF.8: /\bde\b|\bd'/i
+TO.8: /\b(?:[àa]|at)\b/i
+WITH.8: /\b(?:avec|with)\b/i
+OF.8: /\bde\b|\bd'|\bof\b/i
 
 %import common.WS
 %ignore WS
@@ -170,14 +180,48 @@ def _has_name(chunk: str) -> bool:
     return bool(name)
 
 
+# Words that belong to the quantities rather than to an exercise name.
+_QUANTITY_WORD = re.compile(
+    r"^(?:\d+(?:[.,]\d+)?|s[ée]ries?|fois|sets?|tours?|rounds?|r[ée]p[ée]titions?"
+    r"|r[ée]ps?|reps?|times?|kilos?|kgs?|lbs?|pounds?|de|d'|of|[àa]|at|avec|with"
+    r"|sur|out|rpe|x|FAILURETOKEN|BODYWEIGHTTOKEN|EACHSIDETOKEN)$",
+    re.I,
+)
+
+
 def _split_name(chunk: str) -> tuple[str, str]:
-    """ "développé couché 4 séries de 8" -> ("développé couché", "4 séries de 8")."""
+    """ "développé couché 4 séries de 8" -> ("développé couché", "4 séries de 8").
+
+    Also handles the other order — "3 séries de 10 tractions", "4 sets of 8
+    bench press" — by consuming the quantity words first and taking what is
+    left as the name.
+    """
     match = _QUANTITY_START.search(chunk)
     if match is None:
         return chunk.strip(" ,"), ""
-    name = chunk[: match.start()].strip(" ,")
-    quantities = chunk[match.start() :].strip(" ,")
-    return _clean_name(name), quantities
+
+    name = _clean_name(chunk[: match.start()].strip(" ,"))
+    rest = chunk[match.start() :].strip(" ,")
+    if name:
+        return name, rest
+
+    # Quantities came first: read them until a word that names an exercise.
+    tokens = rest.split()
+    cut = len(tokens)
+    for index, token in enumerate(tokens):
+        if not _QUANTITY_WORD.match(token.strip(",")):
+            cut = index
+            break
+    # The name may itself be followed by more quantities: "5 séries de 5 squat
+    # à 100 kilos". Take the words up to the next quantity as the name.
+    after = tokens[cut:]
+    name_end = len(after)
+    for index, token in enumerate(after):
+        if _QUANTITY_WORD.match(token.strip(",")):
+            name_end = index
+            break
+    quantities = " ".join(tokens[:cut] + after[name_end:])
+    return _clean_name(" ".join(after[:name_end])), quantities
 
 
 _NAME_TAIL = re.compile(r"\b(?:sur|pour|en|avec|de|d')\s*$", re.I)

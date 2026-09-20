@@ -211,3 +211,60 @@ class TestSplitSentences:
     def test_each_named_chunk_stands_alone(self):
         chunks = split_sentences("squat 3 séries de 5. tractions 4 séries de 6")
         assert len(chunks) == 2
+
+
+class TestFranglais:
+    """A gym session is spoken in both languages, often in the same sentence."""
+
+    def test_english_name_french_quantities(self):
+        exercise = one("bench press 4 séries de 8 à 80 kilos")
+        assert exercise["name"] == "bench press"
+        assert exercise["sets"][0]["weight_kg"] == 80.0
+
+    def test_english_keywords(self):
+        exercise = one("bench press 4 sets of 8 at 80 kg")
+        assert len(exercise["sets"]) == 4
+        assert exercise["sets"][0]["reps"] == 8
+        assert exercise["sets"][0]["weight_kg"] == 80.0
+
+    def test_english_rest(self):
+        assert (
+            one("bench press 4 séries de 8, rest 2 minutes")["sets"][0]["rest_sec"]
+            == 120
+        )
+
+    def test_english_failure(self):
+        assert one("dips 3 séries to failure")["sets"][0]["is_failure"] is True
+        assert one("pull ups 3 sets amrap")["sets"][0]["is_failure"] is True
+
+    def test_english_each_side(self):
+        assert one("lunges 3 séries de 12 each side")["notes"] == "each side"
+
+    def test_english_bodyweight(self):
+        assert one("dips bodyweight 4 sets of 12")["sets"][0]["weight_kg"] is None
+
+    def test_then_separates_exercises(self):
+        parsed = parse_dictation(
+            "squat 5 séries de 5 à 100 kilos then bench press 4 sets of 8"
+        )
+        assert [e["name"] for e in parsed] == ["squat", "bench press"]
+
+
+class TestQuantitiesFirst:
+    """ "3 séries de 10 tractions" is as natural out loud as the other order."""
+
+    def test_french(self):
+        exercise = one("3 séries de 10 tractions")
+        assert exercise["name"] == "tractions"
+        assert len(exercise["sets"]) == 3
+        assert exercise["sets"][0]["reps"] == 10
+
+    def test_english(self):
+        exercise = one("4 sets of 8 bench press")
+        assert exercise["name"] == "bench press"
+        assert len(exercise["sets"]) == 4
+
+    def test_name_between_quantities(self):
+        exercise = one("5 séries de 5 squat à 100 kilos")
+        assert exercise["name"] == "squat"
+        assert exercise["sets"][0]["weight_kg"] == 100.0

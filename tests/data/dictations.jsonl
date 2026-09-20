@@ -15,3 +15,9 @@
 {"transcript": "mollets debout 5 séries de 20 au poids de corps", "exercises": 1, "notation": "mollets debout 5x20"}
 {"transcript": "alors aujourd'hui j'ai fait du squat, cinq séries de cinq à cent kilos avec trois minutes de repos, RPE huit. Ensuite développé couché quatre séries de huit à quatre-vingts kilos. Je finis par des dips trois séries jusqu'à l'échec", "exercises": 3, "notation": "squat 5x5 @100 r3' RPE 8\ndéveloppé couché 4x8 @80\ndips 3xamrap"}
 {"transcript": "squat 5 séries de 5 à 100 kilos puis développé couché 5 séries de 5 à 80 kilos puis rowing 5 séries de 5 à 60 kilos", "exercises": 3, "notation": "squat 5x5 @100\ndéveloppé couché 5x5 @80\nrowing 5x5 @60"}
+{"transcript": "bench press 4 séries de 8 à 80 kilos", "exercises": 1, "notation": "bench press 4x8 @80"}
+{"transcript": "squat 5 séries de 5 à 100 kilos then bench press 4 sets of 8 at 80 kg", "exercises": 2, "notation": "squat 5x5 @100\nbench press 4x8 @80"}
+{"transcript": "3 séries de 10 tractions", "exercises": 1, "notation": "tractions 3x10"}
+{"transcript": "dips 3 séries to failure", "exercises": 1, "notation": "dips 3xamrap"}
+{"transcript": "lunges 3 séries de 12 each side", "exercises": 1, "notation": "lunges 3x12e"}
+{"transcript": "hip thrust 4 séries de 12 à 80 kilos, rest 90 secondes", "exercises": 1, "notation": "hip thrust 4x12 @80 r1'30"}
