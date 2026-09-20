@@ -123,7 +123,7 @@ NUMBER: /\d+(?:[.,]\d+)?/
 SERIES.9: /\b(?:s[ée]ries?|fois|sets?|tours?|rounds?)\b/i
 REPS_WORD.9: /\b(?:r[ée]p[ée]titions?|r[ée]ps?|reps|rep|mouvements?|times?)\b/i
 WEIGHT_UNIT.9: /\b(?:kilos?|kgs?|lbs?|pounds?)\b/i
-REST_WORD.9: /\b(?:repos|r[ée]cup(?:[ée]ration)?|pause|rest)\b/i
+REST_WORD.9: /\b(?:repos|r[ée]cup(?:[ée]ration)?|pause|rest|reste)\b/i
 MINUTES.9: /\b(?:minutes?|min|mn|mins)\b/i
 SECONDS.9: /\b(?:secondes?|sec|secs|seconds?)\b/i
 RPE.9: /\brpe\b/i
@@ -155,6 +155,8 @@ def normalize_speech(text: str) -> str:
         out = re.sub(pattern, f" {BODYWEIGHT_TOKEN} ", out)
     for pattern in _EACH_SIDE_PHRASES:
         out = re.sub(pattern, f" {EACH_SIDE_TOKEN} ", out)
+    # Whisper hears "RPE 8" and writes "RP-E8", "RPE-8" or "rpe8".
+    out = re.sub(r"\brp\s*-?\s*e\s*-?\s*(\d)", r"rpe \1", out, flags=re.I)
     # threshold=0 so "deux minutes" becomes "2 minutes"; none of this is prose.
     out = alpha2digit(out, "fr", threshold=0.0)
     return re.sub(r"\s+", " ", out).strip()
@@ -184,9 +186,17 @@ def _has_name(chunk: str) -> bool:
 _QUANTITY_WORD = re.compile(
     r"^(?:\d+(?:[.,]\d+)?|s[ée]ries?|fois|sets?|tours?|rounds?|r[ée]p[ée]titions?"
     r"|r[ée]ps?|reps?|times?|kilos?|kgs?|lbs?|pounds?|de|d'|of|[àa]|at|avec|with"
-    r"|sur|out|rpe|x|FAILURETOKEN|BODYWEIGHTTOKEN|EACHSIDETOKEN)$",
+    r"|sur|out|rpe|x|minutes?|min|mn|mins|secondes?|seconds?|secs?|repos|rest"
+    r"|r[ée]cup(?:[ée]ration)?|pause|reste"
+    r"|FAILURETOKEN|BODYWEIGHTTOKEN|EACHSIDETOKEN)$",
     re.I,
 )
+
+
+def _all_quantity_words(text: str) -> bool:
+    """True when nothing in there could name an exercise."""
+    tokens = [token.strip(",") for token in text.split() if token.strip(",")]
+    return bool(tokens) and all(_QUANTITY_WORD.match(token) for token in tokens)
 
 
 def _split_name(chunk: str) -> tuple[str, str]:
@@ -202,8 +212,10 @@ def _split_name(chunk: str) -> tuple[str, str]:
 
     name = _clean_name(chunk[: match.start()].strip(" ,"))
     rest = chunk[match.start() :].strip(" ,")
-    if name:
+    if name and not _all_quantity_words(name):
         return name, rest
+    if name:  # "reste 2 minutes": a keyword, not an exercise
+        rest = f"{name} {rest}".strip()
 
     # Quantities came first: read them until a word that names an exercise.
     tokens = rest.split()

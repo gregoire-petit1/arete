@@ -268,3 +268,40 @@ class TestQuantitiesFirst:
         exercise = one("5 séries de 5 squat à 100 kilos")
         assert exercise["name"] == "squat"
         assert exercise["sets"][0]["weight_kg"] == 100.0
+
+
+class TestWhatWhisperActuallyWrites:
+    """Transcriptions from real audio, not from imagination."""
+
+    def test_sentences_broken_by_punctuation_are_rejoined(self):
+        # Whisper ends a sentence after the exercise name
+        heard = "Développer coucher.  4 séries de 8 à 80 kg, 2 minutes de repos."
+        exercise = one(heard)
+        assert exercise["name"] == "développer coucher"
+        assert len(exercise["sets"]) == 4
+        assert exercise["sets"][0]["weight_kg"] == 80.0
+        assert exercise["sets"][0]["rest_sec"] == 120
+
+    def test_rest_written_as_the_french_reste(self):
+        parsed = parse_dictation("bench press 4 séries de 8 à 80 kg. Reste 2 minutes.")
+        assert len(parsed) == 1
+        assert parsed[0]["sets"][0]["rest_sec"] == 120
+
+    def test_a_lone_rest_sentence_joins_the_exercise_before_it(self):
+        parsed = parse_dictation("squat 3 séries de 5. repos 3 minutes")
+        assert len(parsed) == 1
+        assert parsed[0]["sets"][0]["rest_sec"] == 180
+
+    def test_mangled_rpe(self):
+        for spelling in ("RP-E8", "RPE-8", "rpe8", "RPE 8"):
+            parsed = parse_dictation(f"squat 5 séries de 5 à 110 kg, {spelling}")
+            assert parsed, spelling
+            assert parsed[0]["sets"][0]["rpe"] == 8.0, spelling
+
+    def test_misheard_name_still_reaches_the_catalog(self):
+        from arete.data.exercise_matcher import match_exercise
+
+        # "développé couché" comes back as "développer coucher"
+        assert match_exercise("développer coucher").exercise_id == "bench_press"
+        # and the plural is often dropped
+        assert match_exercise("traction").exercise_id == "pull_ups"
