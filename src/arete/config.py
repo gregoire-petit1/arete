@@ -50,6 +50,39 @@ class Config:
     def github_token(self) -> str:
         return _env("GITHUB_TOKEN", "") or ""
 
+    @property
+    def llm_timeout_s(self) -> int:
+        """Cap on a single LLM call; the SDK would otherwise wait 600 seconds."""
+        return int(_env("LLM_TIMEOUT_S", "30") or 30)
+
+    # --- Speech to text (dictated sessions) --------------------------------
+    @property
+    def stt_provider(self) -> str:
+        """``openrouter`` or ``none``; ``none`` disables dictation entirely."""
+        return (_env("STT_PROVIDER", "openrouter") or "none").lower().strip()
+
+    @property
+    def stt_model(self) -> str:
+        return _env("STT_MODEL", "openai/whisper-large-v3-turbo") or ""
+
+    @property
+    def stt_base_url(self) -> str:
+        """OpenAI-compatible base URL; point it at a local server to go offline."""
+        return (_env("STT_BASE_URL", "https://openrouter.ai/api/v1") or "").rstrip("/")
+
+    @property
+    def stt_api_key(self) -> str:
+        """Dedicated key, falling back to the OpenRouter one used for tips."""
+        return _env("STT_API_KEY") or self.openrouter_api_key
+
+    @property
+    def stt_timeout_s(self) -> int:
+        return int(_env("STT_TIMEOUT_S", "60") or 60)
+
+    @property
+    def stt_max_audio_mb(self) -> int:
+        return int(_env("STT_MAX_AUDIO_MB", "10") or 10)
+
     # --- Garmin ------------------------------------------------------------
     @property
     def garmin_email(self) -> str | None:

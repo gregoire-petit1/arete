@@ -12,7 +12,7 @@ import logging
 from datetime import date as date_type
 from datetime import timedelta
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from arete.data.cardio_muscle_impact import CARDIO_MUSCLE_IMPACT
@@ -691,6 +691,108 @@ def _complete_planned_strength(day: date_type) -> None:
         complete_planned(GarminRepository(), day, "strength")
     except Exception as e:  # noqa: BLE001 - never block the save
         logger.warning("Could not update planned session for %s: %s", day, e)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Voice dictation
+# ─────────────────────────────────────────────────────────────────────────
+
+CHUNK_SIZE = 8192
+
+
+class VoiceTranscriptionResponse(BaseModel):
+    """What the browser needs to fill the session box and let the athlete check."""
+
+    transcript: str = Field(description="French text, exactly as dictated")
+    notation: str = Field(description="Compact notation rebuilt from the structure")
+    unparsed: list[str] = Field(
+        default_factory=list, description="Sentences left verbatim, nothing invented"
+    )
+    exercises: int = Field(description="How many exercises were read")
+    cost_usd: float | None = Field(default=None, description="What the call cost")
+
+
+async def _read_upload(file: UploadFile, max_bytes: int) -> bytes:
+    """Read an upload in chunks, refusing anything oversized."""
+    content = b""
+    while chunk := await file.read(CHUNK_SIZE):
+        content += chunk
+        if len(content) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Enregistrement trop volumineux (max {max_bytes // 1024 // 1024} Mo)",
+            )
+    return content
+
+
+_TRANSCRIPTION_STATUS: dict[str, int] = {
+    "unconfigured": 503,
+    "unsupported_format": 400,
+    "timeout": 504,
+    "upstream": 502,
+    "empty": 422,
+}
+
+
+@router.post("/sessions/transcribe", response_model=VoiceTranscriptionResponse)
+async def transcribe_workout_audio(
+    file: UploadFile = File(..., description="Audio recorded in the browser"),
+):
+    """Dictated session -> French transcript and the notation read from it.
+
+    Nothing is saved: the athlete proof-reads the notation in the session box
+    and sends it through ``/sessions/parse`` as usual. What the grammar cannot
+    read comes back verbatim rather than guessed.
+    """
+    from arete.config import config
+    from arete.llm.notation import to_notation
+    from arete.llm.speech_grammar import parse_dictation, unparsed_dictation
+    from arete.llm.transcription import TranscriptionError, transcribe
+
+    audio = await _read_upload(file, config.stt_max_audio_mb * 1024 * 1024)
+    if not audio:
+        raise HTTPException(status_code=400, detail="Enregistrement vide")
+
+    try:
+        result = transcribe(audio, filename=file.filename or "dictation.webm")
+    except TranscriptionError as exc:
+        raise HTTPException(
+            status_code=_TRANSCRIPTION_STATUS.get(exc.reason, 502), detail=str(exc)
+        ) from exc
+
+    exercises = parse_dictation(result.text) or []
+    missed = unparsed_dictation(result.text)
+    if missed:
+        _record_dictation_misses(missed)
+    return VoiceTranscriptionResponse(
+        transcript=result.text,
+        notation=to_notation(exercises),
+        unparsed=missed,
+        exercises=len(exercises),
+        cost_usd=result.cost_usd,
+    )
+
+
+def _record_dictation_misses(missed: list[str]) -> None:
+    """Log what the grammar could not read, so it can learn the turn of phrase."""
+    import json
+    from datetime import datetime
+
+    from arete.dataio.db import get_db_path
+
+    path = get_db_path().parent / "dictation_misses.jsonl"
+    try:
+        with path.open("a", encoding="utf-8") as handle:
+            for sentence in missed:
+                handle.write(
+                    json.dumps(
+                        {"at": datetime.now().isoformat(), "sentence": sentence},
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+    except OSError as exc:  # never fail a dictation over a log line
+        logger.warning("Could not record dictation misses: %s", exc)
 
 
 @router.post("/sessions/parse", response_model=WorkoutParseResponse)

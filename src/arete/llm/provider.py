@@ -137,6 +137,9 @@ def get_llm_client() -> OpenAI | None:
     _client = OpenAI(
         api_key=cfg.api_key,
         base_url=cfg.base_url,
+        # Without this the SDK waits 600 s: a hung Ollama would hold a request.
+        timeout=config.llm_timeout_s,
+        max_retries=1,
     )
     logger.info(
         "LLM client initialized: provider=%s, model=%s", cfg.name, cfg.default_model
