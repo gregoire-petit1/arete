@@ -197,3 +197,29 @@ class TestTranscribe:
             with caplog.at_level("DEBUG"):
                 transcribe(AUDIO, filename="d.webm")
         assert "squat" not in caplog.text
+
+
+class TestUpstreamStatuses:
+    """Each refusal has its own fix, so each one gets its own message."""
+
+    def _fails_with(self, status: int):
+        with patch("arete.llm.transcription.httpx.Client") as client:
+            client.return_value = client_returning(response({}, status=status))
+            with pytest.raises(TranscriptionError) as err:
+                transcribe(AUDIO, filename="d.webm")
+        return err.value
+
+    def test_no_credit_says_so(self):
+        error = self._fails_with(402)
+        assert error.reason == "no_credit"
+        assert "solde" in str(error)
+
+    def test_rejected_key(self):
+        assert self._fails_with(401).reason == "rejected_key"
+        assert self._fails_with(403).reason == "rejected_key"
+
+    def test_rate_limited(self):
+        assert self._fails_with(429).reason == "rate_limited"
+
+    def test_anything_else_stays_generic(self):
+        assert self._fails_with(500).reason == "upstream"

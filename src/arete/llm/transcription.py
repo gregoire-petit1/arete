@@ -25,7 +25,16 @@ from arete.config import config
 
 logger = logging.getLogger(__name__)
 
-Reason = Literal["unconfigured", "unsupported_format", "timeout", "upstream", "empty"]
+Reason = Literal[
+    "unconfigured",
+    "unsupported_format",
+    "timeout",
+    "upstream",
+    "empty",
+    "no_credit",
+    "rejected_key",
+    "rate_limited",
+]
 
 # Extension -> the format name the API expects.
 SUPPORTED_FORMATS: dict[str, str] = {
@@ -145,6 +154,19 @@ def transcribe(
     )
 
 
+# Upstream statuses worth telling apart: each one has its own fix.
+_UPSTREAM_STATUS: dict[int, tuple[Reason, str]] = {
+    401: ("rejected_key", "Clé de transcription refusée"),
+    403: ("rejected_key", "Clé de transcription refusée"),
+    402: (
+        "no_credit",
+        "Crédit insuffisant chez le fournisseur : l'audio demande au moins "
+        "0,50 $ de solde sur openrouter.ai/settings/credits",
+    ),
+    429: ("rate_limited", "Trop de requêtes, réessaie dans un instant"),
+}
+
+
 def _post(payload: dict[str, Any]) -> dict[str, Any]:
     """One request, one client, explicit timeouts per phase."""
     timeout = httpx.Timeout(
@@ -164,12 +186,13 @@ def _post(payload: dict[str, Any]) -> dict[str, Any]:
             "timeout", "Le service de transcription n'a pas répondu à temps"
         ) from exc
     except httpx.HTTPStatusError as exc:
-        logger.warning(
-            "Transcription upstream returned %s", exc.response.status_code
-        )  # body may quote the audio, keep it out of the logs
-        raise TranscriptionError(
-            "upstream", "Le service de transcription a échoué"
-        ) from exc
+        status = exc.response.status_code
+        # The body may quote the audio back: log the status, never the body.
+        logger.warning("Transcription upstream returned %s", status)
+        reason, message = _UPSTREAM_STATUS.get(
+            status, ("upstream", "Le service de transcription a échoué")
+        )
+        raise TranscriptionError(reason, message) from exc
     except (httpx.HTTPError, ValueError) as exc:
         logger.warning("Transcription request failed: %s", type(exc).__name__)
         raise TranscriptionError(

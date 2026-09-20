@@ -727,6 +727,9 @@ async def _read_upload(file: UploadFile, max_bytes: int) -> bytes:
 
 _TRANSCRIPTION_STATUS: dict[str, int] = {
     "unconfigured": 503,
+    "rejected_key": 503,
+    "no_credit": 402,
+    "rate_limited": 429,
     "unsupported_format": 400,
     "timeout": 504,
     "upstream": 502,
