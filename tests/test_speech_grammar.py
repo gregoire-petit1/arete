@@ -33,8 +33,9 @@ class TestNormalization:
         assert "80" in normalize_speech("quatre-vingts kilos")
         assert "90" in normalize_speech("quatre-vingt-dix kilos")
 
-    def test_fillers_are_dropped(self):
-        assert "euh" not in normalize_speech("euh alors squat 3 séries")
+    def test_fillers_are_dropped_from_the_name_only(self):
+        # what the athlete said is handed back untouched; only the name is cleaned
+        assert one("euh alors j'ai fait du squat 3 séries de 5")["name"] == "squat"
 
     def test_failure_phrases_collapse_to_one_token(self):
         for phrase in ("jusqu'à l'échec", "au max", "jusqu'à l'epuisement"):

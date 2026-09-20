@@ -50,9 +50,11 @@ _EACH_SIDE_PHRASES = (
     r"\b(?:de\s+)?chaque\s+(?:c[ôo]t[ée]|bras|jambe|main|pied|[ée]paule)\b",
     r"\bpar\s+c[ôo]t[ée]\b",
 )
-# Spoken padding that carries nothing.
+# Spoken padding: stripped from exercise names, kept in whatever is handed
+# back to the athlete — a sentence we did not understand is returned as said.
 _FILLERS = (
     r"\b(?:euh+|heu+|hum+|bah|ben|bon|alors|voil[àa]|donc)\b",
+    r"\b(?:aujourd'hui|ce matin|ce soir|cet apr[èe]s-midi|hier|tout [àa] l'heure)\b",
     r"\b(?:j'ai fait|j'ai commenc[ée] par|je commence par|je fais)\b",
     r"\b(?:je finis par|je termine par|pour finir|j'ai termin[ée] par)\b",
 )
@@ -97,10 +99,10 @@ weight_spec: (TO | WITH | OF) NUMBER WEIGHT_UNIT
            | (TO | WITH) NUMBER
 
 // "2 minutes de repos", "1 minute 30 de récup", "90 secondes", "repos 2 minutes"
-rest_spec: REST_WORD (OF)? NUMBER MINUTES (NUMBER (SECONDS)?)?
-         | REST_WORD (OF)? NUMBER SECONDS
-         | NUMBER MINUTES (NUMBER (SECONDS)?)? (OF)? (REST_WORD)?
-         | NUMBER SECONDS (OF)? REST_WORD
+rest_spec.2: (WITH | TO)? REST_WORD (OF)? NUMBER MINUTES (NUMBER (SECONDS)?)?
+           | (WITH | TO)? REST_WORD (OF)? NUMBER SECONDS
+           | (WITH | TO)? NUMBER MINUTES (NUMBER (SECONDS)?)? (OF)? (REST_WORD)?
+           | (WITH | TO)? NUMBER SECONDS (OF)? REST_WORD
 
 // "RPE 8", "à 8 sur 10"
 rpe_spec: RPE (OF)? NUMBER
@@ -145,10 +147,7 @@ def normalize_speech(text: str) -> str:
         out = re.sub(pattern, f" {EACH_SIDE_TOKEN} ", out)
     # threshold=0 so "deux minutes" becomes "2 minutes"; none of this is prose.
     out = alpha2digit(out, "fr", threshold=0.0)
-    for pattern in _FILLERS:
-        out = re.sub(pattern, " ", out)
-    out = re.sub(r"\s+", " ", out).strip()
-    return out
+    return re.sub(r"\s+", " ", out).strip()
 
 
 def split_sentences(text: str) -> list[str]:
@@ -186,8 +185,12 @@ _NAME_HEAD = re.compile(r"^(?:du|de\s+la|des|le|la|les|un|une|au|aux)\s+", re.I)
 
 
 def _clean_name(name: str) -> str:
-    """ "du développé couché sur" -> "développé couché"."""
-    cleaned = _NAME_HEAD.sub("", name.strip())
+    """ "alors j'ai fait du développé couché" -> "développé couché"."""
+    cleaned = name
+    for pattern in _FILLERS:
+        cleaned = re.sub(pattern, " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,")
+    cleaned = _NAME_HEAD.sub("", cleaned)
     cleaned = _NAME_TAIL.sub("", cleaned).strip(" ,-")
     return re.sub(r"\s+", " ", cleaned)
 
