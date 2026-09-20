@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from arete.data.exercise_matcher import ACCEPT_SCORE, match_exercise, normalize_name
+from arete.data.exercise_matcher import (
+    ACCEPT_SCORE,
+    match_exercise,
+    normalize_name,
+    strip_accents,
+)
 
 
 class TestNormalize:
@@ -40,3 +45,33 @@ class TestMatchExercise:
     def test_empty(self):
         m = match_exercise("   ")
         assert m.exercise_id is None and m.suggestions == []
+
+
+class TestFrenchSpelling:
+    """A session written or dictated in French must reach the catalog."""
+
+    def test_accented_name_matches(self):
+        assert match_exercise("développé couché").exercise_id == "bench_press"
+
+    def test_unaccented_name_matches_the_same_entry(self):
+        assert match_exercise("developpe couche").exercise_id == "bench_press"
+
+    def test_case_and_accents_together(self):
+        assert match_exercise("Développé Couché").exercise_id == "bench_press"
+
+    def test_strip_accents_leaves_ascii_untouched(self):
+        assert strip_accents("bench press") == "bench press"
+
+    def test_strip_accents_handles_every_french_diacritic(self):
+        assert strip_accents("Élévations à côté où ça") == "Elevations a cote ou ca"
+
+    def test_spoken_shapes_reach_the_catalog(self):
+        for spoken, expected in [
+            ("soulevé de terre", "deadlift"),
+            ("tirage vertical", "lat_pulldown"),
+            ("écartés", "pec_fly"),
+            ("curl biceps", "ez_bar_curl"),
+            ("tractions lestées", "weighted_pull_ups"),
+            ("mollets debout", "calf_raises"),
+        ]:
+            assert match_exercise(spoken).exercise_id == expected, spoken

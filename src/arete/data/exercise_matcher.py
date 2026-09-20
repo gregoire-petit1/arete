@@ -9,6 +9,7 @@ the rest to the user.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
 
 from rapidfuzz import fuzz, process
@@ -59,8 +60,14 @@ class ExerciseMatch:
         return self.exercise_id is not None
 
 
+def strip_accents(text: str) -> str:
+    """ "développé" -> "developpe": dictated and typed French must match the same entry."""
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
 def normalize_name(raw: str) -> str:
-    text = raw.lower().strip()
+    text = strip_accents(raw.lower().strip())
     text = re.sub(r"[_\-]+", " ", text)
     for pattern, replacement in _SHORTHAND:
         text = re.sub(pattern, replacement, text)
@@ -70,12 +77,18 @@ def normalize_name(raw: str) -> str:
 def _candidates() -> dict[str, str]:
     """Searchable label -> exercise id (names, French names, aliases)."""
     labels: dict[str, str] = {}
+
+    def add(label: str, ex_id: str, *, override: bool = True) -> None:
+        for key in {label.lower(), normalize_name(label)}:
+            if key and (override or key not in labels):
+                labels[key] = ex_id
+
     for ex in EXERCISES_CATALOG:
-        labels[ex["name"].lower()] = ex["id"]
-        labels[ex["name_fr"].lower()] = ex["id"]
-        labels[ex["id"].replace("_", " ")] = ex["id"]
+        add(ex["name"], ex["id"])
+        add(ex["name_fr"], ex["id"])
+        add(ex["id"].replace("_", " "), ex["id"])
     for alias, ex_id in EXERCISE_ALIASES.items():
-        labels.setdefault(alias.lower(), ex_id)
+        add(alias, ex_id, override=False)
     return labels
 
 
