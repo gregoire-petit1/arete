@@ -43,3 +43,6 @@ frontend/.vite/
 
 # Claude Code local state (agent worktrees, settings)
 .claude/
+
+# orca workspaces cloned inside this one
+wip-deepagent-sidepanel/

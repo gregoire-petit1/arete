@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +17,10 @@ interface ModalProps {
  * Stays mounted for EXIT_MS after `open` turns false so the exit animation plays.
  */
 export function Modal({ open, onClose, children, className }: ModalProps) {
+  // Selecting text inside the panel and releasing outside it used to close the
+  // modal: the click lands on the overlay. Only a press that *starts* on the
+  // overlay counts.
+  const pressedOnOverlay = useRef(false);
   // "Adjust state when a prop changes" pattern: detect the open -> closed edge during render.
   const [prevOpen, setPrevOpen] = useState(open);
   const [exiting, setExiting] = useState(false);
@@ -49,7 +53,13 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
         'fixed inset-0 bg-void/80 backdrop-blur-sm z-50 flex items-center justify-center p-4',
         closing ? 'animate-fade-out' : 'animate-fade-in'
       )}
-      onClick={onClose}
+      onMouseDown={(e) => {
+        pressedOnOverlay.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (pressedOnOverlay.current && e.target === e.currentTarget) onClose();
+        pressedOnOverlay.current = false;
+      }}
     >
       <div
         role="dialog"
@@ -59,7 +69,6 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
           closing ? 'animate-scale-out' : 'animate-scale-in',
           className
         )}
-        onClick={(e) => e.stopPropagation()}
       >
         {children}
       </div>
@@ -87,7 +96,7 @@ export function ModalHeader({ title, icon, tone = 'text-neon-cyan', onClose, cla
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close"
+          aria-label="Fermer"
           className="p-1 hover:bg-text-muted/20 rounded transition-colors"
         >
           <X className="w-5 h-5 text-text-muted" />

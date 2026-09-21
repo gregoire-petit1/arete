@@ -305,3 +305,40 @@ class TestWhatWhisperActuallyWrites:
         assert match_exercise("développer coucher").exercise_id == "bench_press"
         # and the plural is often dropped
         assert match_exercise("traction").exercise_id == "pull_ups"
+
+
+class TestSetsBeforeTheName:
+    """ "4 séries de bench press à 80 kg pour 8 répétitions" — how it comes out."""
+
+    def test_name_after_series_de(self):
+        exercise = one("4 séries de bench press à 80 kg pour 8 répétitions")
+        assert exercise["name"] == "bench press"
+        assert len(exercise["sets"]) == 4
+        assert exercise["sets"][0]["reps"] == 8
+        assert exercise["sets"][0]["weight_kg"] == 80.0
+
+    def test_pour_introduces_the_reps(self):
+        assert one("3 séries de dips pour 10 répétitions")["sets"][0]["reps"] == 10
+
+    def test_english_for(self):
+        assert one("3 sets of dips for 10 reps")["sets"][0]["reps"] == 10
+
+    def test_the_whole_dictation(self):
+        parsed = parse_dictation(
+            "J'ai fait 4 séries de bench press à 80 kg pour 8 répétitions. "
+            "3 séries de traction lestée à 20 kg. pour 6 répétitions, "
+            "et 4 séries de dips à 20 kilos pour 10 répétitions."
+        )
+        assert [e["name"] for e in parsed] == [
+            "bench press",
+            "traction lestée",
+            "dips",
+        ]
+        assert [len(e["sets"]) for e in parsed] == [4, 3, 4]
+        assert [e["sets"][0]["reps"] for e in parsed] == [8, 6, 10]
+        assert [e["sets"][0]["weight_kg"] for e in parsed] == [80.0, 20.0, 20.0]
+
+    def test_weighted_pull_ups_singular_reaches_the_catalog(self):
+        from arete.data.exercise_matcher import match_exercise
+
+        assert match_exercise("traction lestée").exercise_id == "weighted_pull_ups"

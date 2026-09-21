@@ -666,6 +666,8 @@ EXERCISE_ALIASES = {
     "tirage menton": "upright_rows",
     "tractions lestées": "weighted_pull_ups",
     "traction": "pull_ups",
+    "traction lestée": "weighted_pull_ups",
+    "dips lesté": "weighted_dips",
     "dip": "dips",
     "pompe": "push_ups",
     "fente": "bulgarian_split_squat",

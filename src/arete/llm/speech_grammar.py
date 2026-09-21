@@ -98,11 +98,11 @@ spec: sets_spec
 sets_spec: NUMBER SERIES (OF)? NUMBER TO NUMBER REPS_WORD
          | NUMBER SERIES (OF)? NUMBER (REPS_WORD)?
          | NUMBER SERIES (OF)? FAILURE
-         | NUMBER SERIES
+         | NUMBER SERIES (OF)?
          | SETS_X_REPS
 
 // "10 répétitions", "8 à 10 répétitions"
-reps_spec: NUMBER (TO NUMBER)? REPS_WORD
+reps_spec: (FOR)? NUMBER (TO NUMBER)? REPS_WORD
 
 // "à 80 kilos", "avec 80", "de 80 kilos"
 weight_spec: (TO | WITH | OF) NUMBER WEIGHT_UNIT
@@ -133,6 +133,7 @@ BODYWEIGHT.9: /\bBODYWEIGHTTOKEN\b/
 EACH_SIDE.9: /\bEACHSIDETOKEN\b/
 TO.8: /\b(?:[àa]|at)\b/i
 WITH.8: /\b(?:avec|with)\b/i
+FOR.8: /\b(?:pour|for)\b/i
 OF.8: /\bde\b|\bd'|\bof\b/i
 
 %import common.WS
@@ -186,7 +187,7 @@ def _has_name(chunk: str) -> bool:
 _QUANTITY_WORD = re.compile(
     r"^(?:\d+(?:[.,]\d+)?|s[ée]ries?|fois|sets?|tours?|rounds?|r[ée]p[ée]titions?"
     r"|r[ée]ps?|reps?|times?|kilos?|kgs?|lbs?|pounds?|de|d'|of|[àa]|at|avec|with"
-    r"|sur|out|rpe|x|minutes?|min|mn|mins|secondes?|seconds?|secs?|repos|rest"
+    r"|sur|out|rpe|x|pour|for|minutes?|min|mn|mins|secondes?|seconds?|secs?|repos|rest"
     r"|r[ée]cup(?:[ée]ration)?|pause|reste"
     r"|FAILURETOKEN|BODYWEIGHTTOKEN|EACHSIDETOKEN)$",
     re.I,
