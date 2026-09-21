@@ -119,7 +119,10 @@ def test_toolkit_tools_not_in_primary_request_until_loaded():
         return "ok"
 
     middleware.wrap_model_call(_Request([]), handler_a)
-    middleware.wrap_model_call(_Request([]), lambda r: seen.append([getattr(t, "name", "") for t in r.tools]) or "ok")
+    middleware.wrap_model_call(
+        _Request([]),
+        lambda r: seen.append([getattr(t, "name", "") for t in r.tools]) or "ok",
+    )
 
     assert "create_planned_session" not in seen[0]
     assert "create_planned_session" in seen[1]
@@ -229,7 +232,9 @@ def test_create_planned_rejects_bad_type():
     from arete.agent.planning_tools import create_planned_session
 
     out = json.loads(
-        create_planned_session.invoke({"date_str": "2026-09-25", "session_type": "yoga_hot"})
+        create_planned_session.invoke(
+            {"date_str": "2026-09-25", "session_type": "yoga_hot"}
+        )
     )
     assert "error" in out
 
@@ -242,11 +247,15 @@ def test_update_and_delete_planned():
     )
 
     created = json.loads(
-        create_planned_session.invoke({"date_str": "2026-09-26", "session_type": "recovery"})
+        create_planned_session.invoke(
+            {"date_str": "2026-09-26", "session_type": "recovery"}
+        )
     )
     sid = created["session"]["id"]
 
-    updated = json.loads(update_planned_status.invoke({"session_id": sid, "status": "skipped"}))
+    updated = json.loads(
+        update_planned_status.invoke({"session_id": sid, "status": "skipped"})
+    )
     assert updated["updated"] is True
     assert updated["session"]["status"] == "skipped"
 

@@ -113,7 +113,9 @@ def _load_toolkit(toolkit_id: str, state: _ToolkitRuntimeState) -> str:
     tk = _TOOLKIT_REGISTRY.get(toolkit_id)
     if tk is None:
         return json.dumps(
-            {"error": f"Unknown toolkit '{toolkit_id}'. Available: {list(_TOOLKIT_REGISTRY)}"}
+            {
+                "error": f"Unknown toolkit '{toolkit_id}'. Available: {list(_TOOLKIT_REGISTRY)}"
+            }
         )
     state.loaded.add(toolkit_id)
     if tk.instructions not in state.pinned_instructions:

@@ -55,7 +55,9 @@ def test_middleware_injects_page_message():
 def test_middleware_skips_oversized_payload(caplog):
     # Skip, never truncate: over budget → no injection at all.
     oversized = "x" * (MAX_PANEL_CONTEXT_CHARS + 1)
-    ctx = AgentContext(source={PANEL_CONTEXT_KEY: json.dumps({"page": "log", "d": oversized})})
+    ctx = AgentContext(
+        source={PANEL_CONTEXT_KEY: json.dumps({"page": "log", "d": oversized})}
+    )
     assert _panel_context_message(_Request(ctx)) is None
 
 
@@ -80,7 +82,9 @@ def test_middleware_noop_without_context():
 
 def test_source_writer_rejects_unknown_page():
     with pytest.raises(Exception, match="Unknown page"):
-        _panel_context_source(ChatRequest(messages=[{"role": "user", "content": "hi"}], page="nope"))
+        _panel_context_source(
+            ChatRequest(messages=[{"role": "user", "content": "hi"}], page="nope")
+        )
 
 
 def test_source_writer_rejects_oversized_payload():
@@ -94,7 +98,11 @@ def test_source_writer_rejects_oversized_payload():
 
 def test_source_writer_merges_page_and_freeform():
     source = _panel_context_source(
-        ChatRequest(messages=[{"role": "user", "content": "hi"}], page="log", panel_context={"x": 1})
+        ChatRequest(
+            messages=[{"role": "user", "content": "hi"}],
+            page="log",
+            panel_context={"x": 1},
+        )
     )
     payload = json.loads(source[PANEL_CONTEXT_KEY])
     assert payload["page"] == "log"
@@ -111,7 +119,9 @@ def test_get_page_context_unknown_page():
     assert "error" in out
 
 
-@pytest.mark.parametrize("page", ["dashboard", "analytics", "planning", "log", "settings"])
+@pytest.mark.parametrize(
+    "page", ["dashboard", "analytics", "planning", "log", "settings"]
+)
 def test_get_page_context_all_pages_parse(page):
     out = json.loads(get_page_context.invoke({"page": page}))
     assert "error" not in out, out
@@ -222,10 +232,20 @@ def test_chat_stream_endpoint_sse(client):
 
     def _fake_astream(self, _input, **_kwargs):
         async def _gen():
-            yield {"type": "custom", "data": {"type": "tool_start", "name": "get_page_context", "args": "log"}}
+            yield {
+                "type": "custom",
+                "data": {
+                    "type": "tool_start",
+                    "name": "get_page_context",
+                    "args": "log",
+                },
+            }
             from langchain_core.messages import AIMessageChunk
 
-            yield {"type": "messages", "data": (AIMessageChunk(content="Salut"), {"langgraph_node": "model"})}
+            yield {
+                "type": "messages",
+                "data": (AIMessageChunk(content="Salut"), {"langgraph_node": "model"}),
+            }
 
         return _gen()
 

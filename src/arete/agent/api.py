@@ -134,7 +134,10 @@ def chat(body: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=502, detail="Agent returned no messages")
     final = messages[-1]
     return ChatResponse(
-        message=ChatMessageOut(role="assistant", content=final.text() if hasattr(final, "text") else str(final.content))
+        message=ChatMessageOut(
+            role="assistant",
+            content=final.text() if hasattr(final, "text") else str(final.content),
+        )
     )
 
 
@@ -236,6 +239,8 @@ def get_memory() -> LedgerResponse:
         assert path.parent == root, f"ledger path escaped memory root: {name}"
         content = path.read_text(encoding="utf-8") if path.exists() else ""
         if len(content) > MAX_PANEL_CONTEXT_CHARS:
-            content = content[:MAX_PANEL_CONTEXT_CHARS] + "\n\n… (tronqué à l'affichage)"
+            content = (
+                content[:MAX_PANEL_CONTEXT_CHARS] + "\n\n… (tronqué à l'affichage)"
+            )
         files.append(LedgerFile(name=name, content=content))
     return LedgerResponse(files=files)

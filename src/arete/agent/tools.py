@@ -37,7 +37,9 @@ def _planning() -> dict[str, Any]:
     return {
         "planned_sessions": [
             s.model_dump(mode="json")
-            for s in list_planned_sessions(start_date=None, end_date=None, status=None, limit=200)
+            for s in list_planned_sessions(
+                start_date=None, end_date=None, status=None, limit=200
+            )
         ]
     }
 

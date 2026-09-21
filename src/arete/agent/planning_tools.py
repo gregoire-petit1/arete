@@ -51,8 +51,16 @@ def list_planned(
         start_date: Optional ISO date (YYYY-MM-DD) filter start, empty = today - 7.
         end_date: Optional ISO date (YYYY-MM-DD) filter end, empty = today + 120.
     """
-    start = date.fromisoformat(start_date) if start_date else date.today() - timedelta(days=7)
-    end = date.fromisoformat(end_date) if end_date else date.today() + timedelta(days=_HORIZON_DAYS)
+    start = (
+        date.fromisoformat(start_date)
+        if start_date
+        else date.today() - timedelta(days=7)
+    )
+    end = (
+        date.fromisoformat(end_date)
+        if end_date
+        else date.today() + timedelta(days=_HORIZON_DAYS)
+    )
     sessions = _repo().list_planned_sessions(
         start_date=start, end_date=end, status=None, limit=_MAX_LIST
     )
@@ -88,7 +96,9 @@ def create_planned_session(
         st = SessionType(session_type)
     except ValueError:
         return json.dumps(
-            {"error": f"Unknown session_type '{session_type}'. Valid: {[t.value for t in SessionType]}"}
+            {
+                "error": f"Unknown session_type '{session_type}'. Valid: {[t.value for t in SessionType]}"
+            }
         )
     intensity = target_intensity.strip().lower() or None
     if intensity is not None and intensity not in ("easy", "moderate", "hard"):
@@ -107,7 +117,10 @@ def create_planned_session(
     session_id = _repo().create_planned_session(planned)
     created = _repo().get_planned_session(session_id)
     return json.dumps(
-        {"created": True, "session": _session_to_dict(created) if created else {"id": session_id}},
+        {
+            "created": True,
+            "session": _session_to_dict(created) if created else {"id": session_id},
+        },
         ensure_ascii=False,
     )
 
@@ -123,7 +136,9 @@ def update_planned_status(session_id: int, status: str) -> str:
     try:
         st = SessionStatus(status)
     except ValueError:
-        return json.dumps({"error": "status must be pending|completed|skipped|modified"})
+        return json.dumps(
+            {"error": "status must be pending|completed|skipped|modified"}
+        )
     if not _repo().update_planned_session_status(session_id, st):
         return json.dumps({"error": f"Planned session {session_id} not found"})
     updated = _repo().get_planned_session(session_id)

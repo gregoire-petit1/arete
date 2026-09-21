@@ -72,5 +72,7 @@ def get_agent():
         context_schema=AgentContext,
         name="arete_coach",
     )
-    logger.info("Coaching agent initialized: model=%s", getattr(model, "model_name", "?"))
+    logger.info(
+        "Coaching agent initialized: model=%s", getattr(model, "model_name", "?")
+    )
     return graph

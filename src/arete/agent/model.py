@@ -56,7 +56,9 @@ def build_chat_model() -> ChatOpenAI:
         return ChatOpenAI(
             model=config.llm_model or "llama3.1:8b",
             base_url=config.ollama_base_url,
-            api_key=SecretStr("ollama"),  # local servers ignore the key; SDK requires one
+            api_key=SecretStr(
+                "ollama"
+            ),  # local servers ignore the key; SDK requires one
             temperature=AGENT_TEMPERATURE,
             timeout=AGENT_TIMEOUT_SEC,
             max_retries=AGENT_MAX_RETRIES,
@@ -66,7 +68,9 @@ def build_chat_model() -> ChatOpenAI:
     if provider == "openrouter":
         api_key = config.openrouter_api_key
         if not api_key:
-            raise ValueError("OPENROUTER_API_KEY env var required for openrouter provider")
+            raise ValueError(
+                "OPENROUTER_API_KEY env var required for openrouter provider"
+            )
         model = config.llm_model or DEFAULT_OPENROUTER_MODEL
         # OpenRouter fallback chain: `models` must list the primary FIRST —
         # the array replaces the `model` routing entirely (verified: a 429'd

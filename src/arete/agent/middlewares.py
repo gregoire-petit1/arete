@@ -85,7 +85,11 @@ def _panel_context_message(request: ModelRequest) -> HumanMessage | None:
         return None
 
     page = payload.get("page")
-    label = _PAGE_LABELS.get(page, _FALLBACK_LABEL) if isinstance(page, str) else _FALLBACK_LABEL
+    label = (
+        _PAGE_LABELS.get(page, _FALLBACK_LABEL)
+        if isinstance(page, str)
+        else _FALLBACK_LABEL
+    )
     return HumanMessage(content=f"{_PANEL_CONTEXT_PREFIX.format(label=label)}\n\n{raw}")
 
 
