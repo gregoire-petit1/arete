@@ -29,7 +29,7 @@ class Config:
     def garmin_tokens_dir(self) -> Path:
         return Path(_env("ARETE_GARMIN_TOKENS_DIR", "data/garmin_tokens") or "")
 
-    # --- LLM (tips only) ---------------------------------------------------
+    # --- LLM (tips + coaching agent) ----------------------------------------
     @property
     def llm_provider(self) -> str:
         return (_env("LLM_PROVIDER", "ollama") or "ollama").lower().strip()

@@ -24,6 +24,9 @@ AGENT_STREAM_CHUNK_TIMEOUT_SEC = 300
 #: LLM_MODEL (any OpenRouter model id).
 DEFAULT_OPENROUTER_MODEL = "qwen/qwen3.8-27b:free"
 
+#: Default GitHub Models model, mirroring ``llm/provider.py``'s default.
+DEFAULT_GITHUB_MODEL = "Meta-Llama-3.1-8B-Instruct"
+
 #: Free-pool fallback chain, tried in order when the primary model 429s or
 #: times out upstream (OpenRouter `models` param — verified working). Free
 #: pools are shared and saturate; a single model is a single point of failure.
@@ -92,6 +95,22 @@ def build_chat_model() -> ChatOpenAI:
             default_headers={"User-Agent": AGENTIC_UA},
         )
 
+    if provider == "github":
+        api_key = config.github_token
+        if not api_key:
+            raise ValueError("GITHUB_TOKEN env var required for github provider")
+        # GitHub Models is OpenAI-compatible; same base URL as llm/provider.py.
+        return ChatOpenAI(
+            model=config.llm_model or DEFAULT_GITHUB_MODEL,
+            base_url="https://models.inference.ai.azure.com",
+            api_key=SecretStr(api_key),
+            temperature=AGENT_TEMPERATURE,
+            timeout=AGENT_TIMEOUT_SEC,
+            max_retries=AGENT_MAX_RETRIES,
+            stream_chunk_timeout=AGENT_STREAM_CHUNK_TIMEOUT_SEC,
+        )
+
     raise ValueError(
-        f"Unknown LLM_PROVIDER '{provider}' for the agent. Supported: ollama, openrouter"
+        f"Unknown LLM_PROVIDER '{provider}' for the agent. "
+        "Supported: ollama, openrouter, github"
     )

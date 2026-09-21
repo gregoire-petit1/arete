@@ -290,3 +290,61 @@ def test_chat_stream_endpoint_error_event(client):
     ]
     assert events[-1]["type"] == "error"
     assert "boom" in events[-1]["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Provider mapping
+# ---------------------------------------------------------------------------
+
+
+class TestBuildChatModel:
+    """Every provider `.env.example` documents must build, or the agent 500s."""
+
+    def test_ollama_is_the_default(self, monkeypatch):
+        from arete.agent.model import build_chat_model
+
+        monkeypatch.delenv("LLM_PROVIDER", raising=False)
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        assert build_chat_model().openai_api_base.startswith("http")
+
+    def test_openrouter_carries_the_fallback_chain(self, monkeypatch):
+        from arete.agent.model import OPENROUTER_FALLBACK_MODELS, build_chat_model
+
+        monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        chain = build_chat_model().extra_body["models"]
+        # Primary first, capped at 3 (OpenRouter rejects longer chains).
+        assert len(chain) == 3
+        assert chain[1] in OPENROUTER_FALLBACK_MODELS
+
+    def test_github_provider_builds(self, monkeypatch):
+        # Documented in .env.example; it used to raise ValueError here while
+        # working fine for the tips path.
+        from arete.agent.model import DEFAULT_GITHUB_MODEL, build_chat_model
+
+        monkeypatch.setenv("LLM_PROVIDER", "github")
+        monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
+        monkeypatch.delenv("LLM_MODEL", raising=False)
+        model = build_chat_model()
+        assert model.model_name == DEFAULT_GITHUB_MODEL
+        assert "models.inference.ai.azure.com" in model.openai_api_base
+
+    def test_github_without_a_token_is_actionable(self, monkeypatch):
+        import pytest
+
+        from arete.agent.model import build_chat_model
+
+        monkeypatch.setenv("LLM_PROVIDER", "github")
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+        with pytest.raises(ValueError, match="GITHUB_TOKEN"):
+            build_chat_model()
+
+    def test_unknown_provider_lists_the_supported_ones(self, monkeypatch):
+        import pytest
+
+        from arete.agent.model import build_chat_model
+
+        monkeypatch.setenv("LLM_PROVIDER", "bedrock")
+        with pytest.raises(ValueError, match="ollama, openrouter, github"):
+            build_chat_model()
