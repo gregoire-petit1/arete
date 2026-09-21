@@ -135,7 +135,7 @@ export function SettingsPage() {
             {activeTab === 'goals' && <GoalsTab {...tabProps} />}
             {activeTab === 'workout' && <WorkoutTab {...tabProps} />}
             {activeTab === 'connections' && <ConnectionsTab />}
-            {activeTab === 'coach' && <CoachTab />}
+            {activeTab === 'coach' && <CoachTab {...tabProps} />}
             {activeTab === 'appearance' && <AppearanceTab {...tabProps} />}
             {activeTab === 'system' && <SystemTab />}
           </div>

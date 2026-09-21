@@ -186,19 +186,97 @@ class TestTipUsesSettings:
         tip, _ = generate_daily_tip(1.0, 0.0, None, fitness_goal="whatever")
         assert GOAL_ADVICE["build"] in tip
 
-    def test_endpoint_passes_settings_through(self, client):
+    def test_the_rule_floor_passes_settings_through(self):
         from unittest.mock import patch
 
-        with (
-            patch(
-                "arete.api.ai_tips.get_user_settings",
-                return_value={"fatigue_threshold": 60, "fitness_goal": "recovery"},
-            ),
-            patch("arete.api.ai_tips._enrich_with_llm", return_value=None),
+        from arete.api.ai_tips import daily_rule_tip
+
+        with patch(
+            "arete.api.ai_tips.get_user_settings",
+            return_value={"fatigue_threshold": 60, "fitness_goal": "recovery"},
         ):
-            resp = client.get("/tips/daily")
+            tip, _ = daily_rule_tip()
+        assert isinstance(tip, str) and tip
+
+
+class TestDailyEndpoint:
+    """GET /tips/daily now reads the day's briefing, producing it once."""
+
+    def test_serves_the_stored_briefing_without_producing_another(self, client):
+        from datetime import date
+        from unittest.mock import patch
+
+        from arete.coach.repository import BriefingRepository
+
+        repo = BriefingRepository()
+        repo.delete_for_day(date.today())
+        repo.create(
+            text="Ta charge monte vite.",
+            priority="warning",
+            source="agent",
+            briefing_date=date.today(),
+        )
+        try:
+            with patch("arete.coach.briefing.generate_briefing") as produce:
+                body = client.get("/tips/daily").json()
+            produce.assert_not_called()
+        finally:
+            repo.delete_for_day(date.today())
+
+        assert body["tip"] == "Ta charge monte vite."
+        assert body["priority"] == "warning"
+        assert body["source"] == "agent"
+        assert body["generated_at"]
+
+    def test_produces_one_when_the_day_has_none(self, client):
+        from datetime import date
+        from unittest.mock import patch
+
+        from arete.coach.repository import BriefingRepository
+
+        repo = BriefingRepository()
+        repo.delete_for_day(date.today())
+        try:
+            with (
+                patch("arete.coach.briefing.briefing_enabled", return_value=True),
+                patch(
+                    "arete.coach.briefing._run_agent", return_value="Écrit ce matin."
+                ),
+                patch(
+                    "arete.coach.briefing._rule_floor", return_value=("floor", "info")
+                ),
+            ):
+                body = client.get("/tips/daily").json()
+        finally:
+            repo.delete_for_day(date.today())
+
+        assert body["tip"] == "Écrit ce matin."
+        assert body["source"] == "agent"
+
+    def test_a_dead_model_still_answers_with_the_rule_text(self, client):
+        from datetime import date
+        from unittest.mock import patch
+
+        from arete.coach.repository import BriefingRepository
+
+        repo = BriefingRepository()
+        repo.delete_for_day(date.today())
+        try:
+            with (
+                patch("arete.coach.briefing.briefing_enabled", return_value=True),
+                patch(
+                    "arete.coach.briefing._run_agent",
+                    side_effect=RuntimeError("model is away"),
+                ),
+            ):
+                resp = client.get("/tips/daily")
+        finally:
+            repo.delete_for_day(date.today())
+
         assert resp.status_code == 200
-        assert resp.json()["source"] == "rules"
+        body = resp.json()
+        assert body["source"] == "rules"
+        assert body["tip"]
 
 
 class TestLowLoadIsNotSilence:
