@@ -15,7 +15,9 @@ from langchain.tools import tool
 
 from arete.agent.context import PANEL_PAGES
 
-_MAX_TOOL_OUTPUT_CHARS = 32_000
+#: Bound on one tool result. Shared with the analytics toolkit so the two
+#: read surfaces degrade at the same size.
+MAX_TOOL_OUTPUT_CHARS = 32_000
 
 
 def _dashboard() -> dict[str, Any]:
@@ -85,7 +87,7 @@ def get_page_context(page: str) -> str:
         return json.dumps({"error": f"{type(exc).__name__}: {exc}"})
 
     rendered = json.dumps(payload, ensure_ascii=False, default=str)
-    if len(rendered) > _MAX_TOOL_OUTPUT_CHARS:
+    if len(rendered) > MAX_TOOL_OUTPUT_CHARS:
         # Bound the tool output (doctrine: bound everything). Degrade to the
         # page summary key rather than truncating mid-JSON.
         return json.dumps(

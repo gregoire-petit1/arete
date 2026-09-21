@@ -36,6 +36,7 @@ from langchain_core.tools import BaseTool, StructuredTool
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from arete.agent.analytics_tools import ANALYTICS_INSTRUCTIONS, ANALYTICS_TOOLS
 from arete.agent.planning_tools import PLANNING_INSTRUCTIONS, PLANNING_TOOLS
 from arete.agent.toolkits import Toolkit, ToolkitState
 
@@ -51,6 +52,16 @@ _TOOLKIT_REGISTRY: dict[str, Toolkit] = {
         ),
         tools=PLANNING_TOOLS,
         instructions=PLANNING_INSTRUCTIONS,
+    ),
+    "analytics": Toolkit(
+        id="analytics",
+        description=(
+            "Analyser l'entraînement : charge (ACWR, monotonie), forme "
+            "(CTL/ATL/TSB), records, séances récentes, conseils chiffrés sur "
+            "une fenêtre de jours au choix."
+        ),
+        tools=ANALYTICS_TOOLS,
+        instructions=ANALYTICS_INSTRUCTIONS,
     ),
 }
 
