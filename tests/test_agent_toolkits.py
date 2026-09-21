@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+from langchain_core.messages import SystemMessage
+
 from arete.agent.planning_tools import PLANNING_INSTRUCTIONS, PLANNING_TOOLS
 from arete.agent.toolkit_middleware import (
     _TOOLKIT_REGISTRY,
@@ -100,14 +102,25 @@ def test_middleware_before_agent_resets_state_in_place():
     assert middleware._state.loaded == set()
 
 
+class _Request:
+    """Minimal ModelRequest stand-in: the fields the middleware touches plus
+    the immutable ``override`` contract it goes through."""
+
+    def __init__(self, tools=None, system_message=None):
+        self.tools = tools if tools is not None else []
+        self.system_message = system_message
+
+    def override(self, **overrides):
+        return _Request(
+            tools=overrides.get("tools", self.tools),
+            system_message=overrides.get("system_message", self.system_message),
+        )
+
+
 def test_toolkit_tools_not_in_primary_request_until_loaded():
     # Simulate two model calls in one run: before load, planning tools absent;
     # after load_toolkit, they are bound.
     middleware = ToolkitMiddleware()
-
-    class _Request:
-        def __init__(self, tools):
-            self.tools = tools
 
     seen: list[list[str]] = []
 
@@ -118,9 +131,9 @@ def test_toolkit_tools_not_in_primary_request_until_loaded():
         _load_toolkit("planning", middleware._state)
         return "ok"
 
-    middleware.wrap_model_call(_Request([]), handler_a)
+    middleware.wrap_model_call(_Request(), handler_a)
     middleware.wrap_model_call(
-        _Request([]),
+        _Request(),
         lambda r: seen.append([getattr(t, "name", "") for t in r.tools]) or "ok",
     )
 
@@ -128,6 +141,53 @@ def test_toolkit_tools_not_in_primary_request_until_loaded():
     assert "create_planned_session" in seen[1]
     # Meta-tools ride every request.
     assert "search_toolkits" in seen[0] and "load_toolkit" in seen[0]
+
+
+def test_wrap_model_call_leaves_caller_request_untouched():
+    # override() is the contract: the request the caller holds must not be
+    # mutated (direct attribute assignment is deprecated in LangChain 1.x).
+    middleware = ToolkitMiddleware()
+    request = _Request()
+    middleware.wrap_model_call(request, lambda r: "ok")
+    assert request.tools == []
+
+
+def test_pinned_instructions_reach_the_system_message_after_load():
+    """The point of a toolkit: loading it must teach the model how to use it.
+
+    Regression guard — pinning the instructions in state is not enough, they
+    have to be appended to the system message of every later model call.
+    """
+    middleware = ToolkitMiddleware()
+    seen: list[str | None] = []
+
+    def capture(request):
+        seen.append(request.system_message.text if request.system_message else None)
+        return "ok"
+
+    base = SystemMessage(content="Tu es le coach.")
+    middleware.wrap_model_call(_Request(system_message=base), capture)
+    _load_toolkit("planning", middleware._state)
+    middleware.wrap_model_call(_Request(system_message=base), capture)
+
+    # Before the load: untouched system message, no planning instructions.
+    assert seen[0] == "Tu es le coach."
+    # After: the base prompt is kept and the instructions appended, not replaced.
+    assert seen[1].startswith("Tu es le coach.")
+    assert PLANNING_INSTRUCTIONS in seen[1]
+
+
+def test_before_agent_unpins_instructions_for_the_next_request():
+    middleware = ToolkitMiddleware()
+    _load_toolkit("planning", middleware._state)
+    middleware.before_agent({})
+
+    seen: list[str | None] = []
+    middleware.wrap_model_call(
+        _Request(system_message=SystemMessage(content="Tu es le coach.")),
+        lambda r: seen.append(r.system_message.text) or "ok",
+    )
+    assert seen[0] == "Tu es le coach."
 
 
 def test_full_graph_load_then_execute_planning():

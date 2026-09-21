@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, BotMessageSquare, Send, Loader2, Wrench, X, Check, Trash2 } from 'lucide-react';
+import { Bot, BotMessageSquare, Send, Loader2, Wrench, X, Check, Trash2, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { usePanelContext, type PanelPageContext } from '@/lib/pageContext';
 
@@ -61,6 +61,7 @@ async function runAgentStream(
   panelContext: PanelPageContext,
   onTool: (event: ToolEvent) => void,
   onToken: (text: string) => void,
+  signal: AbortSignal,
 ): Promise<string> {
   const response = await fetch('/api/agent/chat/stream', {
     method: 'POST',
@@ -69,6 +70,7 @@ async function runAgentStream(
       messages: history.map(({ role, content }) => ({ role, content })),
       panel_context: panelContextToPayload(panelContext),
     }),
+    signal,
   });
   if (!response.ok || !response.body) {
     const detail = await response.text().catch(() => '');
@@ -114,27 +116,28 @@ async function runAgentStream(
  * right drawer, streamed answers over SSE, current page sent as
  * `panel_context` on every message. Tool calls render as a persistent
  * per-message timeline. History is client state only — persistence lands later.
+ *
+ * The conversation survives navigation: the page travels in `panel_context`
+ * on every turn, so the agent always knows where the athlete is now, and
+ * asking about the dashboard then walking to Planning keeps one thread.
  */
 export function AgentSidePanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const panelContext = usePanelContext();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
-  const [seenPage, setSeenPage] = useState(panelContext.page);
   const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Reset history when the page changes: context switches, so an old
-  // conversation would be grounded in stale data. Render-phase state
-  // adjustment (React's "adjust state when a prop changes" pattern — same as
-  // Modal.tsx) instead of a setState-in-effect, which the lint rules ban.
-  if (panelContext.page !== seenPage) {
-    setSeenPage(panelContext.page);
-    setMessages([]);
-  }
+  // Live run, so the user can stop a model that stalls (free-tier pools hang
+  // up to the 300s backend timeout). Closing the drawer does NOT abort: the
+  // answer keeps landing and is there on reopen.
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
+
+  // Drop the in-flight run when the panel leaves the tree for good.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     if (!open) return;
@@ -147,6 +150,8 @@ export function AgentSidePanel({ open, onClose }: { open: boolean; onClose: () =
 
   const busy = streaming;
 
+  const stop = () => abortRef.current?.abort();
+
   const send = () => {
     const content = input.trim();
     if (!content || busy) return;
@@ -154,6 +159,8 @@ export function AgentSidePanel({ open, onClose }: { open: boolean; onClose: () =
     setMessages([...history, { role: 'assistant', content: '', steps: [] }]);
     setInput('');
     setStreaming(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     const patchLast = (patch: (m: ChatMessage) => ChatMessage) => {
       setMessages((prev) => {
@@ -191,19 +198,33 @@ export function AgentSidePanel({ open, onClose }: { open: boolean; onClose: () =
       (text) => {
         patchLast((m) => ({ ...m, content: m.content + text }));
       },
+      controller.signal,
     )
       .then((finalText) => {
         patchLast((m) => ({ ...m, content: finalText }));
       })
       .catch((error: unknown) => {
+        // A stop is a user decision, not a failure: keep the partial answer
+        // and mark it, rather than replacing it with an error.
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          patchLast((m) => ({
+            ...m,
+            content: m.content ? `${m.content}\n\n_(interrompu)_` : '_(interrompu)_',
+            steps: (m.steps ?? []).map((s) => (s.status === 'running' ? { ...s, status: 'done' as const } : s)),
+          }));
+          return;
+        }
         const detail = error instanceof Error ? error.message : 'Erreur inconnue';
         patchLast((m) => ({ ...m, content: `Erreur — ${detail}` }));
       })
-      .finally(() => setStreaming(false));
+      .finally(() => {
+        abortRef.current = null;
+        setStreaming(false);
+      });
   };
 
   if (!open) return null;
-  const page = seenPage;
+  const page = panelContext.page;
 
   return (
     <aside
@@ -296,14 +317,25 @@ export function AgentSidePanel({ open, onClose }: { open: boolean; onClose: () =
             className="flex-1 bg-abyss/50 border border-text-muted/20 rounded px-3 py-2 text-sm focus:outline-none focus:border-neon-cyan/50"
             disabled={busy}
           />
-          <button
-            onClick={send}
-            disabled={busy || !input.trim()}
-            className="p-2 rounded bg-neon-purple/20 hover:bg-neon-purple/30 disabled:opacity-40"
-            aria-label="Envoyer"
-          >
-            <Send className="size-4" />
-          </button>
+          {busy ? (
+            <button
+              onClick={stop}
+              className="p-2 rounded bg-danger-red/20 hover:bg-danger-red/30"
+              aria-label="Arrêter la réponse"
+              title="Arrêter"
+            >
+              <Square className="size-4" />
+            </button>
+          ) : (
+            <button
+              onClick={send}
+              disabled={!input.trim()}
+              className="p-2 rounded bg-neon-purple/20 hover:bg-neon-purple/30 disabled:opacity-40"
+              aria-label="Envoyer"
+            >
+              <Send className="size-4" />
+            </button>
+          )}
         </div>
       </footer>
     </aside>

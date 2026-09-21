@@ -13,6 +13,10 @@ loaded toolkit and runs the tool directly (``request.override(tool=...)``
 pattern from the factory docs). Meta-tools are declared on ``self.tools`` so
 the ToolNode knows them statically.
 
+Loading also pins the toolkit's instructions to the system message for the
+rest of the run (``_append_system_text``, same append-don't-replace contract
+as deepagents' filesystem middleware, so the two compose).
+
 Loaded toolkits stay bound for the rest of the run. The stateless API resets
 the set per request (``before_agent``): each chat call starts from primary
 tools + meta-tools only, and loading is always an explicit, visible act.
@@ -26,7 +30,7 @@ import logging
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, Field
 
@@ -184,6 +188,39 @@ def _augment_tools(
     return out
 
 
+def tool_instructions_suffix(state: _ToolkitRuntimeState) -> str:
+    """Pinned instructions of loaded toolkits, for the system prompt tail."""
+    return "\n\n".join(state.pinned_instructions)
+
+
+def _append_system_text(
+    system_message: SystemMessage | None, text: str
+) -> SystemMessage:
+    """System message with ``text`` appended. Append, never replace: the
+    filesystem middleware downstream appends its own block the same way."""
+    existing = system_message.text if system_message is not None else ""
+    return SystemMessage(content=f"{existing}\n\n{text}" if existing else text)
+
+
+def _apply(
+    request: ModelRequest, state: _ToolkitRuntimeState, meta_tools: list[BaseTool]
+):
+    """Request carrying the augmented tool list + the pinned instructions.
+
+    ``override`` (not attribute assignment, deprecated in LangChain 1.x)
+    returns a new request, leaving the caller's untouched.
+    """
+    overrides: dict[str, Any] = {
+        "tools": _augment_tools(request.tools, meta_tools, state)
+    }
+    suffix = tool_instructions_suffix(state)
+    if suffix:
+        overrides["system_message"] = _append_system_text(
+            request.system_message, suffix
+        )
+    return request.override(**overrides)
+
+
 class ToolkitMiddleware(AgentMiddleware):
     """Progressive toolkit loading over a per-run ``_ToolkitRuntimeState``."""
 
@@ -196,12 +233,10 @@ class ToolkitMiddleware(AgentMiddleware):
         self.tools: list[BaseTool] = _make_meta_tools(self._state)
 
     def wrap_model_call(self, request: ModelRequest, handler):
-        request.tools = _augment_tools(request.tools, self.tools, self._state)
-        return handler(request)
+        return handler(_apply(request, self._state, self.tools))
 
     async def awrap_model_call(self, request: ModelRequest, handler):
-        request.tools = _augment_tools(request.tools, self.tools, self._state)
-        return await handler(request)
+        return await handler(_apply(request, self._state, self.tools))
 
     def _tool_for(self, name: str) -> BaseTool | None:
         """Find a loaded toolkit tool by name (also matches meta-tools)."""
@@ -259,11 +294,6 @@ class ToolkitMiddleware(AgentMiddleware):
         self._state.loaded.clear()
         self._state.pinned_instructions.clear()
         return None
-
-
-def tool_instructions_suffix(state: _ToolkitRuntimeState) -> str:
-    """Pinned instructions of loaded toolkits, for the system prompt tail."""
-    return "\n\n".join(state.pinned_instructions)
 
 
 def reset_registry_for_tests() -> None:  # pragma: no cover - test helper
