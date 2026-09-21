@@ -95,3 +95,34 @@ class TestDailySync:
         with patch("arete.api.strava._get_strava_tokens", return_value=None):
             status = scheduler.daily_sync()
         assert status == {"garmin": "no tokens", "strava": "not connected"}
+
+    def test_status_is_kept_not_discarded(self, tmp_path, monkeypatch):
+        # run_forever ignores the return value; the coach needs to know what
+        # the last sync actually did before briefing on the day's data.
+        monkeypatch.setenv("ARETE_GARMIN_TOKENS_DIR", str(tmp_path / "none"))
+        with patch("arete.api.strava._get_strava_tokens", return_value=None):
+            status = scheduler.daily_sync()
+        assert scheduler.last_status() == status
+
+    def test_last_status_is_a_copy(self):
+        # Callers must not be able to edit the scheduler's record.
+        snapshot = scheduler.last_status()
+        snapshot["garmin"] = "tampered"
+        assert scheduler.last_status().get("garmin") != "tampered"
+
+
+class TestSyncStatusEndpoint:
+    def test_reports_schedule_and_last_run(self, client, monkeypatch):
+        monkeypatch.setenv("ARETE_AUTO_SYNC_HOUR", "9")
+        with patch.object(scheduler, "last_run_date", return_value=date(2026, 9, 20)):
+            body = client.get("/sync/status").json()
+        assert body["scheduled_hour"] == 9
+        assert body["last_run"] == "2026-09-20"
+        assert isinstance(body["sources"], dict)
+
+    def test_never_run_reports_null(self, client, monkeypatch):
+        monkeypatch.delenv("ARETE_AUTO_SYNC_HOUR", raising=False)
+        with patch.object(scheduler, "last_run_date", return_value=None):
+            body = client.get("/sync/status").json()
+        assert body["scheduled_hour"] is None
+        assert body["last_run"] is None

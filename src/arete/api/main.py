@@ -64,6 +64,24 @@ def health():
     return {"status": "ok", "database": db_status}
 
 
+@app.get("/sync/status")
+def sync_status():
+    """State of the daily background sync.
+
+    ``last_run`` is the durable marker beside the database (so it survives a
+    restart); ``sources`` is the per-source outcome of the last run THIS
+    process did, empty when it has not run one yet. The coaching agent reads
+    this before briefing on the day: a briefing written on data that never
+    landed is worse than no briefing.
+    """
+    last_run = scheduler.last_run_date()
+    return {
+        "scheduled_hour": config.auto_sync_hour,
+        "last_run": last_run.isoformat() if last_run else None,
+        "sources": scheduler.last_status(),
+    }
+
+
 for router in (
     settings_router,
     metrics_router,

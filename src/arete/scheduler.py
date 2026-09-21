@@ -27,6 +27,18 @@ TICK_SECONDS = 300
 STATE_FILENAME = "last_daily_sync.json"
 
 
+#: Status of the most recent run, for ``GET /sync/status`` and the agent's
+#: ``get_sync_status`` tool. Process-local and deliberately not persisted: it
+#: answers "what happened on the run this process did", while the durable
+#: "did today's run happen at all" lives in the JSON marker below.
+_last_status: dict[str, str] = {}
+
+
+def last_status() -> dict[str, str]:
+    """Per-source status of the last sync this process ran ({} if none yet)."""
+    return dict(_last_status)
+
+
 def state_path() -> Path:
     """Where the last run is recorded (beside the DuckDB file)."""
     from arete.dataio.db import get_db_path
@@ -105,6 +117,8 @@ def daily_sync() -> dict[str, str]:
         status["strava"] = "not connected"
 
     logger.info("Daily sync: %s", status)
+    _last_status.clear()
+    _last_status.update(status)
     return status
 
 
