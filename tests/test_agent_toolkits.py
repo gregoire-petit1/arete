@@ -11,10 +11,27 @@ from arete.agent.toolkit_middleware import (
     _TOOLKIT_REGISTRY,
     ToolkitMiddleware,
     _augment_tools,
-    _load_toolkit,
+    _load,
     _search_toolkits,
+    loaded_toolkits,
+    tool_instructions_suffix,
 )
-from arete.agent.toolkits import _ToolkitRuntimeState
+from arete.agent.toolkits import merge_loaded
+
+
+class _Runtime:
+    """The two ToolRuntime fields load_toolkit reads. The real injection is
+    covered by the full-graph tests at the bottom of this file."""
+
+    def __init__(self, state=None):
+        self.state = state if state is not None else {}
+        self.tool_call_id = "call-1"
+
+
+def load_toolkit(toolkit_id: str, state=None) -> dict:
+    """Run the load_toolkit tool body, returning its Command state update."""
+    return _load(_Runtime(state), toolkit_id).update
+
 
 # ---------------------------------------------------------------------------
 # Registry + search/load state machine
@@ -34,107 +51,102 @@ def test_planning_toolkit_registered():
 
 
 def test_search_finds_planning_by_capability():
-    state = _ToolkitRuntimeState()
-    out = json.loads(_search_toolkits("planifier", state))
+    out = json.loads(_search_toolkits("planifier", []))
     assert out["results"][0]["toolkit_id"] == "planning"
     assert out["results"][0]["loaded"] is False
 
 
 def test_search_unknown_returns_available_list():
-    state = _ToolkitRuntimeState()
-    out = json.loads(_search_toolkits("cuisine italienne moleculaire", state))
+    out = json.loads(_search_toolkits("cuisine italienne moleculaire", []))
     assert out["results"] == []
     assert any(a["toolkit_id"] == "planning" for a in out["available"])
 
 
 def test_search_empty_query_returns_catalog():
-    state = _ToolkitRuntimeState()
-    out = json.loads(_search_toolkits("", state))
+    out = json.loads(_search_toolkits("", []))
     assert out["results"] == []
     assert any(a["toolkit_id"] == "planning" for a in out["available"])
 
 
 def test_search_french_capability_finds_planning():
     # Token matching must bridge "planifier une séance" ↔ "créer… des séances"
-    state = _ToolkitRuntimeState()
-    out = json.loads(_search_toolkits("planifier une séance", state))
+    out = json.loads(_search_toolkits("planifier une séance", []))
     assert out["results"][0]["toolkit_id"] == "planning"
 
 
-def test_load_marks_loaded_and_pins_instructions():
-    state = _ToolkitRuntimeState()
-    out = json.loads(_load_toolkit("planning", state))
-    assert out["loaded"] is True
-    assert "planning" in state.loaded
-    assert state.pinned_instructions == [PLANNING_INSTRUCTIONS]
+def test_load_returns_a_state_update_not_a_mutation():
+    update = load_toolkit("planning")
+    assert update["loaded_toolkits"] == ["planning"]
+    assert json.loads(update["messages"][0].content)["loaded"] is True
 
 
-def test_load_unknown_toolkit_errors():
-    state = _ToolkitRuntimeState()
-    out = json.loads(_load_toolkit("nope", state))
-    assert "error" in out
+def test_instructions_are_a_function_of_the_loaded_list():
+    assert tool_instructions_suffix([]) == ""
+    assert tool_instructions_suffix(["planning"]) == PLANNING_INSTRUCTIONS
+    # An id no longer in the registry must not blow up the prompt.
+    assert tool_instructions_suffix(["planning", "ghost"]) == PLANNING_INSTRUCTIONS
+
+
+def test_load_unknown_toolkit_errors_without_touching_state():
+    update = load_toolkit("nope")
+    assert "loaded_toolkits" not in update
+    assert "error" in json.loads(update["messages"][0].content)
+
+
+def test_merge_loaded_dedups_parallel_loads():
+    # Two load_toolkit calls in one turn must not pin the instructions twice.
+    assert merge_loaded(["planning"], ["planning"]) == ["planning"]
+    assert merge_loaded(["planning"], ["strength"]) == ["planning", "strength"]
+    assert merge_loaded(None, None) == []
+
+
+def test_loaded_toolkits_tolerates_a_state_without_the_key():
+    assert loaded_toolkits({}) == []
+    assert loaded_toolkits({"loaded_toolkits": None}) == []
+    assert loaded_toolkits({"loaded_toolkits": ["planning"]}) == ["planning"]
 
 
 def test_augment_tools_meta_always_present_and_deduped():
-    middleware = ToolkitMiddleware()
-    out = _augment_tools([], middleware.tools, middleware._state)
+    out = _augment_tools([], [])
     names = [getattr(t, "name", "") for t in out]
     assert names.count("search_toolkits") == 1
     assert names.count("load_toolkit") == 1
 
 
 def test_augment_tools_includes_loaded_toolkit_tools():
-    middleware = ToolkitMiddleware()
-    _load_toolkit("planning", middleware._state)
-    out = _augment_tools([], middleware.tools, middleware._state)
+    out = _augment_tools([], ["planning"])
     names = {getattr(t, "name", "") for t in out}
     assert {"list_planned", "create_planned_session"} <= names
-
-
-def test_middleware_before_agent_resets_state_in_place():
-    middleware = ToolkitMiddleware()
-    middleware._state.loaded.add("planning")
-    state_before = middleware._state
-    middleware.before_agent({})
-    # In-place reset: the meta-tools close over this exact object, so the
-    # identity must survive the reset.
-    assert middleware._state is state_before
-    assert middleware._state.loaded == set()
 
 
 class _Request:
     """Minimal ModelRequest stand-in: the fields the middleware touches plus
     the immutable ``override`` contract it goes through."""
 
-    def __init__(self, tools=None, system_message=None):
+    def __init__(self, tools=None, system_message=None, state=None):
         self.tools = tools if tools is not None else []
         self.system_message = system_message
+        self.state = state if state is not None else {}
 
     def override(self, **overrides):
         return _Request(
             tools=overrides.get("tools", self.tools),
             system_message=overrides.get("system_message", self.system_message),
+            state=self.state,
         )
 
 
 def test_toolkit_tools_not_in_primary_request_until_loaded():
-    # Simulate two model calls in one run: before load, planning tools absent;
-    # after load_toolkit, they are bound.
     middleware = ToolkitMiddleware()
-
     seen: list[list[str]] = []
 
-    def handler_a(request):
+    def capture(request):
         seen.append([getattr(t, "name", "") for t in request.tools])
-        # The agent calls load_toolkit during this turn: mutate state, then
-        # the next model call (same handler chain) sees the toolkit.
-        _load_toolkit("planning", middleware._state)
         return "ok"
 
-    middleware.wrap_model_call(_Request(), handler_a)
+    middleware.wrap_model_call(_Request(), capture)
     middleware.wrap_model_call(
-        _Request(),
-        lambda r: seen.append([getattr(t, "name", "") for t in r.tools]) or "ok",
+        _Request(state={"loaded_toolkits": ["planning"]}), capture
     )
 
     assert "create_planned_session" not in seen[0]
@@ -152,11 +164,67 @@ def test_wrap_model_call_leaves_caller_request_untouched():
     assert request.tools == []
 
 
+def test_two_interleaved_runs_keep_their_own_toolkits():
+    """The reason the loaded set lives in graph state and not on the middleware.
+
+    The compiled graph is process-wide (``get_agent`` is lru_cached) and two
+    runs overlap easily — two tabs, or a /tips/daily refetch landing while the
+    panel is mid-turn. With the set held on the middleware instance, one run's
+    entry node wiped the other's toolkits between turns: the tool list and the
+    pinned instructions silently shrank, and an already-emitted toolkit call
+    fell through to the ToolNode ("not a valid tool") and burnt the turn
+    budget on retries.
+
+    One middleware instance, two states, interleaved: each must see only its
+    own.
+    """
+    middleware = ToolkitMiddleware()
+    run_a = {"loaded_toolkits": ["planning"]}
+    run_b: dict = {}
+    seen: list[set[str]] = []
+
+    def capture(request):
+        seen.append({getattr(t, "name", "") for t in request.tools})
+        return "ok"
+
+    # A has planning, B starts bare, A takes another turn, B takes one.
+    middleware.wrap_model_call(_Request(state=run_a), capture)
+    middleware.wrap_model_call(_Request(state=run_b), capture)
+    middleware.wrap_model_call(_Request(state=run_a), capture)
+    middleware.wrap_model_call(_Request(state=run_b), capture)
+
+    assert "create_planned_session" in seen[0]
+    assert "create_planned_session" not in seen[1]
+    # A kept its toolkit across B's turn — this is the assertion that fails
+    # when the loaded set is instance state.
+    assert "create_planned_session" in seen[2]
+    assert "create_planned_session" not in seen[3]
+
+
+def test_interleaved_runs_keep_their_own_instructions():
+    middleware = ToolkitMiddleware()
+    seen: list[str] = []
+
+    def capture(request):
+        seen.append(request.system_message.text if request.system_message else "")
+        return "ok"
+
+    base = SystemMessage(content="Tu es le coach.")
+    middleware.wrap_model_call(
+        _Request(system_message=base, state={"loaded_toolkits": ["planning"]}), capture
+    )
+    middleware.wrap_model_call(_Request(system_message=base, state={}), capture)
+
+    assert PLANNING_INSTRUCTIONS in seen[0]
+    assert PLANNING_INSTRUCTIONS not in seen[1]
+
+
 def test_pinned_instructions_reach_the_system_message_after_load():
     """The point of a toolkit: loading it must teach the model how to use it.
 
-    Regression guard — pinning the instructions in state is not enough, they
-    have to be appended to the system message of every later model call.
+    Regression guard — carrying the loaded ids is not enough, the toolkit's
+    instructions have to be appended to the system message of every later
+    model call, without dropping the base prompt.
     """
     middleware = ToolkitMiddleware()
     seen: list[str | None] = []
@@ -167,27 +235,15 @@ def test_pinned_instructions_reach_the_system_message_after_load():
 
     base = SystemMessage(content="Tu es le coach.")
     middleware.wrap_model_call(_Request(system_message=base), capture)
-    _load_toolkit("planning", middleware._state)
-    middleware.wrap_model_call(_Request(system_message=base), capture)
+    middleware.wrap_model_call(
+        _Request(system_message=base, state={"loaded_toolkits": ["planning"]}), capture
+    )
 
     # Before the load: untouched system message, no planning instructions.
     assert seen[0] == "Tu es le coach."
     # After: the base prompt is kept and the instructions appended, not replaced.
     assert seen[1].startswith("Tu es le coach.")
     assert PLANNING_INSTRUCTIONS in seen[1]
-
-
-def test_before_agent_unpins_instructions_for_the_next_request():
-    middleware = ToolkitMiddleware()
-    _load_toolkit("planning", middleware._state)
-    middleware.before_agent({})
-
-    seen: list[str | None] = []
-    middleware.wrap_model_call(
-        _Request(system_message=SystemMessage(content="Tu es le coach.")),
-        lambda r: seen.append(r.system_message.text) or "ok",
-    )
-    assert seen[0] == "Tu es le coach."
 
 
 def test_full_graph_load_then_execute_planning():
