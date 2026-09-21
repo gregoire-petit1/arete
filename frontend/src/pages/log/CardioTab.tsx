@@ -1,7 +1,7 @@
 import { readableError } from '@/lib/utils';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Sparkles } from 'lucide-react';
+import { Loader2, Plus, Sparkles } from 'lucide-react';
 import { FitDropzone } from '@/components';
 import { Button, Panel } from '@/components/ui';
 import { ManualCardioModal } from './ManualCardioModal';
@@ -21,6 +21,9 @@ export function CardioTab() {
   const [recentUploads, setRecentUploads] = useState<Upload[]>([]);
   const [feedback, setFeedback] = useState<{ feedback: string; highlights: string[] } | null>(null);
   const [feedbackError, setFeedbackError] = useState(false);
+  // The coach reads the session before answering, which takes seconds, not
+  // milliseconds. Say so rather than leaving the page looking finished.
+  const [feedbackPending, setFeedbackPending] = useState(false);
   const [showManual, setShowManual] = useState(false);
 
   const uploadMutation = useMutation({
@@ -39,11 +42,15 @@ export function CardioTab() {
       ]);
       invalidateAfterSession(queryClient);
       if (result.activity_id) {
+        setFeedback(null);
+        setFeedbackError(false);
+        setFeedbackPending(true);
         try {
           setFeedback(await tipsApi.getPostSession('cardio', result.activity_id));
-          setFeedbackError(false);
         } catch {
           setFeedbackError(true); // best-effort, but say so
+        } finally {
+          setFeedbackPending(false);
         }
       }
     },
@@ -76,12 +83,19 @@ export function CardioTab() {
         />
       </Panel>
 
+      {feedbackPending && (
+        <p className="text-sm font-mono text-text-muted flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-neon-cyan" />
+          Le coach regarde ta séance…
+        </p>
+      )}
+
       {feedback && (
         <Panel
           title={
             <span className="flex items-center gap-2">
               <Sparkles className="w-4 h-4" />
-              ANALYSE IA
+              LE COACH
             </span>
           }
           titleTone="text-neon-cyan"
@@ -101,7 +115,7 @@ export function CardioTab() {
       )}
 
       {feedbackError && (
-        <p className="text-xs font-mono text-text-muted">Analyse IA indisponible pour cette séance.</p>
+        <p className="text-xs font-mono text-text-muted">Le coach n'a pas pu commenter cette séance.</p>
       )}
 
       <RecentSessions />

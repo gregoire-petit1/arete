@@ -229,3 +229,71 @@ class TestLedgerRotation:
         from arete.agent.filesystem import rotate_sessions_ledger
 
         assert rotate_sessions_ledger() is None
+
+
+# ---------------------------------------------------------------------------
+# Post-session feedback: same floor contract, plus a journal entry
+# ---------------------------------------------------------------------------
+
+
+class TestSessionFeedback:
+    def test_the_agent_text_wins_when_the_run_succeeds(self):
+        from arete.coach.session_feedback import enrich_session_feedback
+
+        with patch(
+            "arete.coach.session_feedback._run_agent", return_value="Belle séance."
+        ):
+            text, source = enrich_session_feedback("Séance terminée.", ["10 km"])
+        assert (text, source) == ("Belle séance.", "agent")
+
+    def test_a_failed_run_returns_the_rule_text(self):
+        from arete.coach.session_feedback import enrich_session_feedback
+
+        with patch(
+            "arete.coach.session_feedback._run_agent",
+            side_effect=RuntimeError("model is away"),
+        ):
+            text, source = enrich_session_feedback("Séance terminée.", ["10 km"])
+        # An athlete who just uploaded a session gets an answer either way.
+        assert (text, source) == ("Séance terminée.", "rules")
+
+    def test_the_highlights_reach_the_agent_as_facts(self):
+        from arete.coach.session_feedback import enrich_session_feedback
+
+        with patch("arete.coach.session_feedback._run_agent", return_value="ok") as run:
+            enrich_session_feedback("Séance terminée.", ["10 km", "FC 150"])
+        facts = run.call_args[0][0]
+        assert "Séance terminée." in facts
+        assert "- 10 km" in facts and "- FC 150" in facts
+
+    def test_no_highlights_is_not_an_empty_bullet_list(self):
+        from arete.coach.session_feedback import enrich_session_feedback
+
+        with patch("arete.coach.session_feedback._run_agent", return_value="ok") as run:
+            enrich_session_feedback("Séance terminée.", [])
+        assert run.call_args[0][0] == "Séance terminée."
+
+    def test_an_overlong_answer_is_refused(self):
+        from arete.coach.session_feedback import MAX_FEEDBACK_CHARS, _run_agent
+
+        class _Msg:
+            text = "x" * (MAX_FEEDBACK_CHARS + 1)
+
+        with patch("arete.agent.agent.build_unattended_agent") as build:
+            build.return_value.invoke.return_value = {"messages": [_Msg()]}
+            with pytest.raises(RuntimeError, match="too long"):
+                _run_agent("facts")
+
+    def test_the_briefing_and_the_feedback_do_not_share_a_graph(self):
+        # Different prompts, so the cached factory must hand back two graphs.
+        from arete.agent.agent import build_unattended_agent
+
+        with (
+            patch(
+                "arete.agent.agent.create_agent", side_effect=lambda *a, **k: k["name"]
+            ),
+            patch("arete.agent.agent.build_chat_model", return_value=object()),
+        ):
+            first = build_unattended_agent("prompt A", "agent_a")
+            second = build_unattended_agent("prompt B", "agent_b")
+        assert first != second

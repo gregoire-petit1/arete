@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
+from typing import Any
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 
 from arete.agent.context import AgentContext
 from arete.agent.filesystem import (
@@ -82,27 +84,40 @@ def get_agent():
     return graph
 
 
-@lru_cache(maxsize=1)
-def build_briefing_agent():
-    """The unattended graph behind the daily briefing.
+@lru_cache(maxsize=4)
+def build_unattended_agent(system_prompt: str, name: str):
+    """A graph for work nobody is watching: the briefing, session feedback.
 
-    Same tools and memory as the chat agent, three differences on purpose:
-    no RuntimeContextMiddleware (nobody is looking at a page), no
-    ToolEventMiddleware (nobody is watching a timeline), and the briefing's
-    own system prompt. Cached like ``get_agent``: one athlete, one process.
+    Same tools and memory as the chat agent, two middlewares dropped on
+    purpose: no RuntimeContextMiddleware (there is no open page) and no
+    ToolEventMiddleware (there is no timeline to draw). Cached per prompt:
+    one athlete, one process, a handful of unattended jobs.
     """
-    from arete.coach.briefing import BRIEFING_PROMPT
-
     model = build_chat_model()
+    # Annotated: the list's inferred element type is the first entry's,
+    # which is narrower than what create_agent accepts.
+    middleware: list[AgentMiddleware[Any, Any, Any]] = [
+        ToolkitMiddleware(),
+        build_memory_filesystem(),
+    ]
     graph = create_agent(
         model,
         tools=[get_page_context],
-        middleware=[ToolkitMiddleware(), build_memory_filesystem()],
-        system_prompt=BRIEFING_PROMPT,
+        middleware=middleware,
+        system_prompt=system_prompt,
         context_schema=AgentContext,
-        name="arete_briefing",
+        name=name,
     )
     logger.info(
-        "Briefing agent initialized: model=%s", getattr(model, "model_name", "?")
+        "Unattended agent %s initialized: model=%s",
+        name,
+        getattr(model, "model_name", "?"),
     )
     return graph
+
+
+def build_briefing_agent():
+    """The graph behind the daily briefing."""
+    from arete.coach.briefing import BRIEFING_PROMPT
+
+    return build_unattended_agent(BRIEFING_PROMPT, "arete_briefing")

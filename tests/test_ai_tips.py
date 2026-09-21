@@ -48,8 +48,26 @@ def _make_exercise(muscle_value: str, sets_data: list[tuple[int, float]]):
     return ex
 
 
+@pytest.fixture
+def rules_only():
+    """Keep the agent out of tests about the rule-based facts.
+
+    The feedback path runs the coaching agent now; these tests are about the
+    numbers underneath it, so they assert on the floor.
+    """
+    with patch(
+        "arete.api.ai_tips.enrich_session_feedback",
+        side_effect=lambda text, highlights: (text, "rules"),
+    ):
+        yield
+
+
 class TestPostSessionStrength:
     """POST /tips/post-session with session_type=strength."""
+
+    @pytest.fixture(autouse=True)
+    def _floor(self, rules_only):
+        pass
 
     @patch("arete.api.ai_tips.StrengthRepository")
     def test_strength_feedback_with_volume(self, mock_repo_cls, client):
@@ -108,11 +126,14 @@ def _make_actual_session(
 
 
 class TestPostSessionCardio:
+    @pytest.fixture(autouse=True)
+    def _floor(self, rules_only):
+        pass
+
     """POST /tips/post-session with session_type=cardio."""
 
-    @patch("arete.api.ai_tips._enrich_with_llm", return_value=None)
     @patch("arete.api.ai_tips.GarminRepository")
-    def test_cardio_feedback_with_hr_and_pace(self, mock_repo_cls, _mock_llm, client):
+    def test_cardio_feedback_with_hr_and_pace(self, mock_repo_cls, client):
         repo = mock_repo_cls.return_value
         repo.get_actual_session.return_value = _make_actual_session()
 
