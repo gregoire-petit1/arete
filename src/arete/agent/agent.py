@@ -80,3 +80,29 @@ def get_agent():
         "Coaching agent initialized: model=%s", getattr(model, "model_name", "?")
     )
     return graph
+
+
+@lru_cache(maxsize=1)
+def build_briefing_agent():
+    """The unattended graph behind the daily briefing.
+
+    Same tools and memory as the chat agent, three differences on purpose:
+    no RuntimeContextMiddleware (nobody is looking at a page), no
+    ToolEventMiddleware (nobody is watching a timeline), and the briefing's
+    own system prompt. Cached like ``get_agent``: one athlete, one process.
+    """
+    from arete.coach.briefing import BRIEFING_PROMPT
+
+    model = build_chat_model()
+    graph = create_agent(
+        model,
+        tools=[get_page_context],
+        middleware=[ToolkitMiddleware(), build_memory_filesystem()],
+        system_prompt=BRIEFING_PROMPT,
+        context_schema=AgentContext,
+        name="arete_briefing",
+    )
+    logger.info(
+        "Briefing agent initialized: model=%s", getattr(model, "model_name", "?")
+    )
+    return graph

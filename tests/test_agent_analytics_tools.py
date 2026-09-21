@@ -56,7 +56,24 @@ def test_every_tool_documents_itself():
 
 def test_workload_reads_the_default_window():
     out = json.loads(get_workload.invoke({}))
-    assert "acwr" in out and "days_analyzed" in out
+    assert "acwr" in out and "window_days" in out
+
+
+def test_the_window_is_told_apart_from_the_data_coverage():
+    """`days_analyzed` next to a `days` argument read as the window.
+
+    Models duly wrote "ACWR sur 5 jours" for a 28-day request. The tool
+    boundary now names both explicitly rather than asking them to be careful.
+    """
+    out = json.loads(get_workload.invoke({"days": 28}))
+    assert out["window_days"] == 28
+    assert "days_with_data" in out
+    assert "days_analyzed" not in out
+
+    out = json.loads(get_fitness.invoke({"days": 60}))
+    assert out["window_days"] == 60
+    assert "days_with_data" in out
+    assert "days_analyzed" not in out
 
 
 def test_fitness_reads_the_default_window():

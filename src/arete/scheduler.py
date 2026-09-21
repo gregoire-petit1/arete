@@ -122,6 +122,26 @@ def daily_sync() -> dict[str, str]:
     return status
 
 
+def write_daily_briefing() -> str:
+    """Have the coach write the day's briefing, after the sync that feeds it.
+
+    Kept out of ``daily_sync`` so the sync's status dict stays about sources.
+    Log-and-continue: the briefing must never be able to break the loop, and
+    it has its own rule floor, so a failure here is already handled downstream.
+    """
+    from arete.coach.briefing import briefing_enabled, generate_briefing
+
+    if not briefing_enabled():
+        return "disabled"
+    try:
+        briefing = generate_briefing(trigger="scheduler")
+    except Exception as e:  # noqa: BLE001 - background job must not die
+        logger.warning("Daily briefing failed: %s", e)
+        return f"failed: {e}"
+    logger.info("Daily briefing: %s", briefing.source)
+    return briefing.source
+
+
 async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
     logger.info(
         "Automatic sync armed for %02d:00 local, checked every %d min (last run: %s)",
@@ -134,6 +154,9 @@ async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
         if is_due(hour, now, last_run_date()):
             await asyncio.to_thread(daily_sync)
             record_run(datetime.now())
+            # After the sync, never before: the briefing reads the data the
+            # sync just landed.
+            await asyncio.to_thread(write_daily_briefing)
         await asyncio.sleep(tick_seconds)
 
 

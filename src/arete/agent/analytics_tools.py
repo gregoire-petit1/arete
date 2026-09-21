@@ -42,6 +42,21 @@ def _out(payload: Any) -> str:
     return rendered
 
 
+def _disambiguate_window(payload: dict[str, Any], days: int) -> dict[str, Any]:
+    """Say which number is the window and which is the coverage.
+
+    ``days_analyzed`` means "days that had data in them", but sitting next to
+    a ``days`` argument it reads as the window — and models duly wrote "ACWR
+    sur 5 jours" for a 28-day request. Renaming it at the tool boundary is
+    cheaper and more reliable than asking the model to be careful.
+    """
+    out = dict(payload)
+    out["window_days"] = days
+    if "days_analyzed" in out:
+        out["days_with_data"] = out.pop("days_analyzed")
+    return out
+
+
 def _error(message: str) -> str:
     return json.dumps({"error": message}, ensure_ascii=False)
 
@@ -67,7 +82,8 @@ def get_workload(days: int = 28) -> str:
     try:
         from arete.api.metrics import get_workload_metrics
 
-        return _out(get_workload_metrics(days=days).model_dump(mode="json"))
+        payload = get_workload_metrics(days=days).model_dump(mode="json")
+        return _out(_disambiguate_window(payload, days))
     except Exception as exc:
         return _error(f"{type(exc).__name__}: {exc}")
 
@@ -86,7 +102,8 @@ def get_fitness(days: int = 42) -> str:
     try:
         from arete.api.metrics import get_fitness_metrics
 
-        return _out(get_fitness_metrics(days=days).model_dump(mode="json"))
+        payload = get_fitness_metrics(days=days).model_dump(mode="json")
+        return _out(_disambiguate_window(payload, days))
     except Exception as exc:
         return _error(f"{type(exc).__name__}: {exc}")
 
@@ -161,6 +178,7 @@ ANALYTICS_TOOLS: list[BaseTool] = [
 
 ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé — lecture ciblée des données d'entraînement:
 - `get_workload(days?)`: ACWR, monotonie, strain sur une fenêtre (7-90 jours, défaut 28).
+  La fenêtre demandée est `window_days`; `days_with_data` est le nombre de jours qui contenaient des données.
 - `get_fitness(days?)`: CTL/ATL/TSB, forme, readiness, ramp rate (14-120 jours, défaut 42).
 - `get_training_advice(sport_type?)`: recommandations déterministes (cardio|strength|mixed).
 - `get_personal_records(sport?)`: records du 400m au 50K (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, semi, 30K, marathon, 50K).
