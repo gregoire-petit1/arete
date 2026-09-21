@@ -183,6 +183,7 @@ ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé — lecture ciblée des 
 - `get_training_advice(sport_type?)`: recommandations déterministes (cardio|strength|mixed).
 - `get_personal_records(sport?)`: records du 400m au 50K (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, semi, 30K, marathon, 50K).
 - `list_recent_sessions(limit?, offset?)`: séances récentes, `offset` pour remonter dans le temps.
+  Le champ `name` est le titre lancé sur la montre, pas ce qui a été fait; `notes` et `rpe` viennent de l'athlète.
 Préfère ces outils à `get_page_context('analytics')` dès que tu veux une fenêtre \
 précise ou comparer deux périodes: appelle-les deux fois avec des `days` différents \
 plutôt que de raisonner sur un seul bloc de 30 jours.

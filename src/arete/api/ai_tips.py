@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from arete.coach.session_feedback import enrich_session_feedback
 from arete.dataio.queries import training_loads, tss_history
-from arete.dataio.settings import get_user_settings
+from arete.dataio.settings import athlete_zone_model, get_user_settings
 from arete.features.fitness import compute_performance_model
 from arete.features.workload import compute_workload_metrics
 from arete.garmin.repository import GarminRepository
@@ -251,16 +251,14 @@ def _muscle_label(key: str) -> str:
 
 
 def _hr_zone_label(avg_hr: int) -> tuple[int, str]:
-    """Return (zone_number, zone_description) for a given avg HR."""
-    if avg_hr < 120:
-        return 1, "récupération active"
-    if avg_hr < 140:
-        return 2, "endurance fondamentale"
-    if avg_hr < 155:
-        return 3, "aérobie"
-    if avg_hr < 170:
-        return 4, "seuil"
-    return 5, "VO2max"
+    """Zone number and French name for an average heart rate.
+
+    Read against the athlete's own threshold, like every other zone in the
+    app. The absolute bpm table this replaced was two zones off: at a
+    threshold of 176, 155 bpm is endurance, and it was being reported as
+    "zone 4 seuil".
+    """
+    return athlete_zone_model().labelled_zone_of(avg_hr)
 
 
 def _pace_str(sec_per_km: float) -> str:
@@ -380,7 +378,7 @@ def _generate_cardio_feedback(session_id: int) -> PostSessionResponse:
         if zone_num <= 2:
             feedback_parts.append("Bon travail de fond, intensité bien maîtrisée.")
         elif zone_num == 3:
-            feedback_parts.append("Bon travail de fond en zone aérobie.")
+            feedback_parts.append("Bon travail en tempo, au-dessus de l'endurance.")
         elif zone_num >= 4:
             feedback_parts.append("Séance intense — prévoyez une récupération adaptée.")
 
