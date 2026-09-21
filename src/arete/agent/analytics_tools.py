@@ -113,8 +113,9 @@ def get_training_advice(sport_type: str = "mixed") -> str:
 
 @tool
 def get_personal_records(sport: str = "running") -> str:
-    """All-time best efforts for the usual distances (400m, 1k, 1 mile, 5k,
-    10k, half-marathon), with the date and session of each.
+    """All-time best efforts, from 400m to 50K (400m, 1/2 mile, 1K, 1 mile,
+    2 mile, 5K, 10K, 15K, 10 mile, 20K, half-marathon, 30K, marathon, 50K),
+    ordered by distance, with the date and session of each.
 
     Args:
         sport: Sport group, e.g. running or cycling (default running).
@@ -162,7 +163,7 @@ ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé — lecture ciblée des 
 - `get_workload(days?)`: ACWR, monotonie, strain sur une fenêtre (7-90 jours, défaut 28).
 - `get_fitness(days?)`: CTL/ATL/TSB, forme, readiness, ramp rate (14-120 jours, défaut 42).
 - `get_training_advice(sport_type?)`: recommandations déterministes (cardio|strength|mixed).
-- `get_personal_records(sport?)`: records sur 400m, 1k, 1 mile, 5k, 10k, semi.
+- `get_personal_records(sport?)`: records du 400m au 50K (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, semi, 30K, marathon, 50K).
 - `list_recent_sessions(limit?, offset?)`: séances récentes, `offset` pour remonter dans le temps.
 Préfère ces outils à `get_page_context('analytics')` dès que tu veux une fenêtre \
 précise ou comparer deux périodes: appelle-les deux fois avec des `days` différents \

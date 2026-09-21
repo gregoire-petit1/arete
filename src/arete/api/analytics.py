@@ -45,7 +45,30 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
-EFFORT_NAMES = ("400m", "1k", "1 mile", "5k", "10k", "Half-Marathon")
+#: Best-effort buckets, ascending by distance. These are the names the source
+#: (Garmin/Strava) writes into ``best_efforts_json`` — matching is
+#: case-insensitive because it is not consistent about it ("1K" and "5K" but
+#: "1 mile", "50k"), and comparing spellings dropped every K distance from the
+#: Records card.
+EFFORT_NAMES = (
+    "400m",
+    "1/2 mile",
+    "1K",
+    "1 mile",
+    "2 mile",
+    "5K",
+    "10K",
+    "15K",
+    "10 mile",
+    "20K",
+    "Half-Marathon",
+    "30K",
+    "Marathon",
+    "50K",
+)
+
+#: Lookup from whatever spelling the data carries to the canonical name above.
+_EFFORT_BY_KEY = {name.casefold(): name for name in EFFORT_NAMES}
 
 # Two CTL time constants of history feed the EWMA before the first displayed day
 CTL_WARMUP_DAYS = 84
@@ -145,9 +168,9 @@ def get_records(sport: str = Query("running")):
         if not isinstance(efforts, list):
             continue
         for effort in efforts:
-            name = effort.get("name", "")
+            name = _EFFORT_BY_KEY.get(str(effort.get("name", "")).casefold())
             elapsed = effort.get("elapsed_time", 0)
-            if name not in EFFORT_NAMES or elapsed <= 0:
+            if name is None or elapsed <= 0:
                 continue
             if name not in bests or elapsed < bests[name]["time_sec"]:
                 bests[name] = {
