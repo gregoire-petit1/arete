@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from arete import scheduler
+from arete.agent.api import router as agent_router
 from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
 from arete.api.garmin import router as garmin_router
@@ -73,5 +74,6 @@ for router in (
     ai_tips_router,
     strava_router,
     analytics_router,
+    agent_router,
 ):
     app.include_router(router)
