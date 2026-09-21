@@ -19,6 +19,7 @@ class UserSettingsUpdate(BaseModel):
     fatigue_threshold: int = Field(ge=50, le=100, default=85)
     fitness_goal: Literal["maintenance", "build", "peak", "recovery"] = "build"
     notifications_enabled: bool = True
+    coach_briefing_enabled: bool = True
     theme: Literal["dark", "darker", "abyss"] = "dark"
     exercise_abbreviations: dict[str, str] = {}
     weekly_volume_target_kg: int = Field(ge=1000, le=200000, default=20000)
@@ -39,6 +40,7 @@ class UserSettingsOut(BaseModel):
     fatigue_threshold: int
     fitness_goal: str
     notifications_enabled: bool
+    coach_briefing_enabled: bool
     theme: str
     exercise_abbreviations: dict[str, str]
     weekly_volume_target_kg: int
@@ -64,6 +66,7 @@ def get_settings():
             fatigue_threshold=85,
             fitness_goal="build",
             notifications_enabled=True,
+            coach_briefing_enabled=True,
             theme="dark",
             exercise_abbreviations={},
             weekly_volume_target_kg=20000,
@@ -88,6 +91,7 @@ def update_settings(payload: UserSettingsUpdate):
         fatigue_threshold=payload.fatigue_threshold,
         fitness_goal=payload.fitness_goal,
         notifications_enabled=payload.notifications_enabled,
+        coach_briefing_enabled=payload.coach_briefing_enabled,
         theme=payload.theme,
         exercise_abbreviations=payload.exercise_abbreviations,
         weekly_volume_target_kg=payload.weekly_volume_target_kg,

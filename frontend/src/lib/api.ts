@@ -256,6 +256,7 @@ export interface UserSettings {
   fatigue_threshold: number;
   fitness_goal: "maintenance" | "build" | "peak" | "recovery";
   notifications_enabled: boolean;
+  coach_briefing_enabled: boolean;
   theme: "dark" | "darker" | "abyss";
   exercise_abbreviations: Record<string, string>;
   weekly_volume_target_kg: number;
@@ -272,6 +273,8 @@ export const tipsApi = {
     fetchAPI<{
       tip: string;
       priority: "info" | "warning" | "alert";
+      /** Who wrote it: the coaching agent, or the deterministic rule engine. */
+      source: "agent" | "rules";
       generated_at: string;
     }>("/tips/daily"),
 
