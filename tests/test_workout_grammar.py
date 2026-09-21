@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from arete.llm.workout_grammar import parse_line, unparsed_lines
 from arete.llm.workout_grammar import (
     parse_workout_grammar as _parse_simple_format,
 )
-from arete.llm.workout_grammar import unparsed_lines
 
 # ─── Helper ──────────────────────────────────────────────────────────
 
@@ -314,3 +314,27 @@ class TestRealSessions:
         assert len(result) == 1
         assert result[0]["sets"][-1]["rest_sec"] == 120
         assert unparsed_lines(text) == ["some free text note"]
+
+
+class TestFrenchExerciseNames:
+    """The grammar must read a session written in French, accents included."""
+
+    def test_accented_name_is_parsed(self):
+        parsed = parse_line("développé couché 4x8 @80")
+        assert parsed and parsed[0]["name"] == "développé couché"
+        assert len(parsed[0]["sets"]) == 4
+        assert parsed[0]["sets"][0]["weight_kg"] == 80.0
+
+    def test_unaccented_name_is_parsed(self):
+        parsed = parse_line("developpe couche 4x8 @80")
+        assert parsed and parsed[0]["name"] == "developpe couche"
+
+    def test_french_name_with_rest_and_rpe(self):
+        parsed = parse_line("élévations latérales 3x15 r1'30 RPE 8")
+        assert parsed and parsed[0]["name"] == "élévations latérales"
+        assert parsed[0]["sets"][0]["rest_sec"] == 90
+        assert parsed[0]["sets"][0]["rpe"] == 8.0
+
+    def test_ascii_notation_still_parses(self):
+        parsed = parse_line("bench press 4x8 @80")
+        assert parsed and parsed[0]["name"] == "bench press"

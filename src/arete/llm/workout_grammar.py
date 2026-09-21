@@ -57,7 +57,7 @@ SETSXREPS.4:    /\d+\s*x\s*(\d+(-\d+)?e?|f\b|failure|amrap)/i
 BAREWEIGHT.4:   /\d+(\.\d+)?\s*kg/i
 WEIGHT.3:       /@\s*\d+(\.\d+)?\s*(kg)?/i
 REPS.1:         /\d+(-\d+)?e?/
-WORD.0:         /[a-zA-Z][a-zA-Z'\-]*/
+WORD.0:         /[a-zA-ZÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ'\-]*/
 
 %import common.WS
 %ignore WS

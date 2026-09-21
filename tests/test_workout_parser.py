@@ -137,3 +137,27 @@ class TestParseWorkoutOrchestration:
         ex = result.exercises[0]
         assert ex.exercise_id in (None, "incline_dumbbell_press", "incline_bench_press")
         assert ex.suggestions, "typo'd name should still produce catalog suggestions"
+
+
+class TestFrenchSentencesTypedIn:
+    """A line the notation grammar rejects gets a second reading in French."""
+
+    def test_plain_french_line(self):
+        workout = parse_workout_text("squat 5 séries de 5 à 100 kilos")
+        assert len(workout.exercises) == 1
+        assert workout.exercises[0].exercise_id == "back_squat"
+        assert len(workout.exercises[0].sets) == 5
+        assert workout.exercises[0].sets[0].weight_kg == 100.0
+        assert workout.unparsed_lines == []
+
+    def test_notation_still_wins(self):
+        workout = parse_workout_text("bench press 4x8 @80")
+        assert [e.name for e in workout.exercises] == ["bench press"]
+
+    def test_both_spellings_in_one_session(self):
+        workout = parse_workout_text("bench press 4x8 @80\ntractions 3 fois 10")
+        assert len(workout.exercises) == 2
+
+    def test_prose_is_still_reported(self):
+        workout = parse_workout_text("squat 3x5\nil faisait chaud dans la salle")
+        assert workout.unparsed_lines == ["il faisait chaud dans la salle"]

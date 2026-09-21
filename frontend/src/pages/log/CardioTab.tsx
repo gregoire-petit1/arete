@@ -1,3 +1,4 @@
+import { readableError } from '@/lib/utils';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus, Sparkles } from 'lucide-react';
@@ -14,20 +15,6 @@ interface Upload {
   message?: string;
 }
 
-/** "API Error 400: {"detail":"..."}" -> "..." */
-function readableError(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  const match = raw.match(/\{.*\}/s);
-  if (match) {
-    try {
-      const body = JSON.parse(match[0]) as { detail?: string };
-      if (body.detail) return body.detail;
-    } catch {
-      // fall through to the raw message
-    }
-  }
-  return raw;
-}
 
 export function CardioTab() {
   const queryClient = useQueryClient();

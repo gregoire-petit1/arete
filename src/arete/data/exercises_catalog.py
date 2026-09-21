@@ -654,6 +654,28 @@ def calculate_muscle_volume(
 
 # Exercise name aliases for parsing training logs
 EXERCISE_ALIASES = {
+    # Spoken French: what a dictated session actually sounds like. The matcher
+    # strips accents, so only shapes the catalog labels do not already cover
+    # belong here.
+    "écartés": "pec_fly",
+    "écarté": "pec_fly",
+    "ecartes": "pec_fly",
+    "curl biceps": "ez_bar_curl",
+    "curl haltères": "hammer_curl",
+    "rowing menton": "upright_rows",
+    "tirage menton": "upright_rows",
+    "tractions lestées": "weighted_pull_ups",
+    "traction": "pull_ups",
+    "traction lestée": "weighted_pull_ups",
+    "dips lesté": "weighted_dips",
+    "dip": "dips",
+    "pompe": "push_ups",
+    "fente": "bulgarian_split_squat",
+    "soulevé de terre jambes tendues": "rdl",
+    "extensions triceps": "triceps_extension",
+    "élévations frontales": "front_raises",
+    "montées de mollets": "calf_raises",
+    "vélo elliptique": "stairmaster",
     # Bench variants
     "bp": "bench_press",
     "bench": "bench_press",
