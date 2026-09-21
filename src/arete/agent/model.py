@@ -22,7 +22,14 @@ AGENT_STREAM_CHUNK_TIMEOUT_SEC = 300
 
 #: Default OpenRouter model: free tier, tool-calling capable. Overridable via
 #: LLM_MODEL (any OpenRouter model id).
-DEFAULT_OPENROUTER_MODEL = "qwen/qwen3.8-27b:free"
+#:
+#: Measured on 2026-09-21, five tool-calling requests per candidate against
+#: the live free pool: inkling 5/5 (1.5s avg), inkling-small 5/5 (0.9s),
+#: openrouter/free 4/5 (0.7s), while the previous default qwen3.8-27b and the
+#: previous fallback nex-n2.5-pro both returned 429 on every single call and
+#: nemotron-3.5-lightning took 47s. A primary that always 429s costs a round
+#: trip before the fallback chain even starts.
+DEFAULT_OPENROUTER_MODEL = "thinkingmachines/inkling:free"
 
 #: Default GitHub Models model, mirroring ``llm/provider.py``'s default.
 DEFAULT_GITHUB_MODEL = "Meta-Llama-3.1-8B-Instruct"
@@ -31,10 +38,11 @@ DEFAULT_GITHUB_MODEL = "Meta-Llama-3.1-8B-Instruct"
 #: times out upstream (OpenRouter `models` param — verified working). Free
 #: pools are shared and saturate; a single model is a single point of failure.
 #: Hard cap: OpenRouter rejects fallback chains longer than 3.
+#: Third slot is a different provider on purpose: the two inkling models
+#: share one, so a provider outage would take both.
 OPENROUTER_FALLBACK_MODELS = [
-    "nvidia/nemotron-3.5-lightning:free",
     "thinkingmachines/inkling-small:free",
-    "nex-agi/nex-n2.5-pro:free",
+    "openrouter/free",
 ]
 
 #: OpenRouter gates some free models to "agentic harnesses" (verified: the
