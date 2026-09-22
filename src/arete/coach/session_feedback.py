@@ -41,7 +41,7 @@ faits marquants, le ressenti et ce que tu en retiens. C'est ce qui permettra \
 au briefing de demain d'en tenir compte.
 3. Réponds à l'athlète.
 
-Ta réponse: 2 à 3 phrases, en français, à la deuxième personne. Reprends les \
+Ta réponse: 2 à 3 phrases, en français, en tutoyant l'athlète. Reprends les \
 chiffres qu'on t'a donnés, souligne ce qui s'est bien passé, et donne au plus \
 un point d'amélioration. Pas de préambule, pas de liste, pas de diagnostic \
 médical. Ta réponse finale est ce message seul, rien d'autre."""

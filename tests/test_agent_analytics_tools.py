@@ -83,10 +83,12 @@ def test_fitness_reads_the_default_window():
 
 def test_two_windows_are_comparable():
     # The point of the toolkit: the same metric over two periods, which the
-    # fixed 30-day page dump cannot give.
-    short = json.loads(get_workload.invoke({"days": 7}))
+    # fixed 30-day page dump cannot give. Both windows carry ACWR here; a
+    # window under 28 days is covered by TestAcwrNeedsEnoughHistory.
+    short = json.loads(get_workload.invoke({"days": 28}))
     long = json.loads(get_workload.invoke({"days": 90}))
     assert "acwr" in short and "acwr" in long
+    assert short["window_days"] == 28 and long["window_days"] == 90
 
 
 def test_advice_answers_even_without_data():
@@ -187,7 +189,7 @@ def test_full_graph_search_load_then_read():
         [
             call("search_toolkits", {"query": "analyser la charge"}, "1"),
             call("load_toolkit", {"toolkit_id": "analytics"}, "2"),
-            call("get_workload", {"days": 14}, "3"),
+            call("get_workload", {"days": 28}, "3"),
             AIMessage(content="Ta charge est stable."),
         ]
     )
@@ -219,3 +221,29 @@ def test_loading_analytics_leaves_planning_out_of_the_request():
     names = {getattr(t, "name", "") for t in _augment_tools([], ["analytics"])}
     assert "get_workload" in names
     assert "create_planned_session" not in names
+
+
+class TestAcwrNeedsEnoughHistory:
+    """A short window cannot produce an acute:chronic ratio.
+
+    Chronic load averages four weekly sums over 28 days. Fetch only seven and
+    the last three weeks are empty, the denominator collapses, and the ratio
+    explodes — the coach read 3.2 "danger" on a 7-day window the same day the
+    28-day window read 0.99 "optimal".
+    """
+
+    def test_a_short_window_omits_the_ratio_and_says_why(self):
+        out = json.loads(get_workload.invoke({"days": 7}))
+        assert "acwr" not in out
+        assert "acwr_zone" not in out
+        assert "28" in out["acwr_unavailable"]
+
+    def test_what_a_short_window_can_answer_is_still_there(self):
+        out = json.loads(get_workload.invoke({"days": 7}))
+        # Monotony, strain and acute load are 7-day concepts: still valid.
+        assert "monotony" in out and "strain" in out and "acute_load" in out
+
+    def test_a_full_window_reports_the_ratio(self):
+        out = json.loads(get_workload.invoke({"days": 28}))
+        assert "acwr" in out
+        assert "acwr_unavailable" not in out

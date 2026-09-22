@@ -24,6 +24,12 @@ from arete.agent.tools import MAX_TOOL_OUTPUT_CHARS
 WORKLOAD_DAYS_RANGE = (7, 90)
 FITNESS_DAYS_RANGE = (14, 120)
 MAX_SESSIONS = 100
+
+#: Chronic load is a 28-day rolling average, so a shorter history leaves
+#: its later weeks empty, collapses the denominator and sends ACWR through
+#: the roof — a 7-day read answered 3.2 "danger" the same day the 28-day
+#: read answered 0.99 "optimal". Below this, the ratio is not reported.
+CHRONIC_LOAD_DAYS = 28
 SPORT_TYPES = ("cardio", "strength", "mixed")
 
 
@@ -57,6 +63,25 @@ def _disambiguate_window(payload: dict[str, Any], days: int) -> dict[str, Any]:
     return out
 
 
+def _without_meaningless_acwr(payload: dict[str, Any]) -> dict[str, Any]:
+    """Drop the acute:chronic ratio when the window cannot support it.
+
+    Returning a number the model will quote as "danger" is worse than
+    returning none: the fix is to ask again over 28 days or more.
+    """
+    if payload.get("window_days", 0) >= CHRONIC_LOAD_DAYS:
+        return payload
+    out = dict(payload)
+    for key in ("acwr", "acwr_zone", "acwr_ewma", "chronic_load"):
+        out.pop(key, None)
+    out["acwr_unavailable"] = (
+        f"ACWR needs at least {CHRONIC_LOAD_DAYS} days of history; "
+        f"ask again with days={CHRONIC_LOAD_DAYS} or more. Monotony, strain "
+        "and acute load below are valid for this window."
+    )
+    return out
+
+
 def _error(message: str) -> str:
     return json.dumps({"error": message}, ensure_ascii=False)
 
@@ -71,7 +96,9 @@ def _guard(value: int, bounds: tuple[int, int], name: str) -> str | None:
 @tool
 def get_workload(days: int = 28) -> str:
     """Training load over a window: ACWR (injury-risk ratio), monotony, strain,
-    acute and chronic load, each with its interpretation zone.
+    acute and chronic load, each with its interpretation zone. ACWR needs at
+    least 28 days of history and is omitted below that; monotony, strain and
+    acute load are valid on any window.
 
     Args:
         days: Window to analyze, 7 to 90 (default 28).
@@ -83,7 +110,7 @@ def get_workload(days: int = 28) -> str:
         from arete.api.metrics import get_workload_metrics
 
         payload = get_workload_metrics(days=days).model_dump(mode="json")
-        return _out(_disambiguate_window(payload, days))
+        return _out(_without_meaningless_acwr(_disambiguate_window(payload, days)))
     except Exception as exc:
         return _error(f"{type(exc).__name__}: {exc}")
 
@@ -178,6 +205,7 @@ ANALYTICS_TOOLS: list[BaseTool] = [
 
 ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé — lecture ciblée des données d'entraînement:
 - `get_workload(days?)`: ACWR, monotonie, strain sur une fenêtre (7-90 jours, défaut 28).
+  L'ACWR exige au moins 28 jours d'historique: en dessous il n'est pas renvoyé, n'en invente pas.
   La fenêtre demandée est `window_days`; `days_with_data` est le nombre de jours qui contenaient des données.
 - `get_fitness(days?)`: CTL/ATL/TSB, forme, readiness, ramp rate (14-120 jours, défaut 42).
 - `get_training_advice(sport_type?)`: recommandations déterministes (cardio|strength|mixed).

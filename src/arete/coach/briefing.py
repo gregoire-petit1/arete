@@ -45,7 +45,7 @@ n'y étaient pas. Crois les chiffres et ses notes, pas le titre.
 3. Lis ton journal mémoire pour savoir ce que vous vous êtes déjà dit.
 4. Écris le briefing, puis note dans ton journal ce que tu as retenu du jour.
 
-Le briefing: 2 à 3 phrases, en français, à la deuxième personne. Cite les \
+Le briefing: 2 à 3 phrases, en français, en tutoyant l'athlète. Cite les \
 chiffres qui le justifient et la période sur laquelle tu les lis, en français \
 courant ("sur 28 jours") — jamais un nom de champ ni une valeur brute d'outil. \
 Termine par ce que l'athlète fait AUJOURD'HUI, concrètement. Pas de \
