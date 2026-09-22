@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from arete.garmin.models import ActivitySource, ActualSession
 
@@ -26,6 +26,31 @@ _SPORT_MAP: dict[str, str] = {
 _RUNNING_TYPES = {"Run", "TrailRun", "VirtualRun"}
 
 
+def local_start_time(activity: dict) -> datetime:
+    """The activity's start, as naive local time.
+
+    Strava returns ``start_date_local`` already in the athlete's timezone but
+    with a trailing ``Z``, as if it were UTC. Parsing that as UTC makes an
+    aware datetime, and DuckDB shifts an aware datetime into local time on the
+    way into a naive TIMESTAMP column — so a 07:17 run landed at 09:17, two
+    hours past the 120-second window the Garmin/Strava merge matches on, and
+    the same workout was stored twice.
+
+    Garmin's ``startTimeLocal`` is naive local already; this makes the two
+    sides agree.
+    """
+    local = activity.get("start_date_local")
+    if local:
+        return datetime.fromisoformat(local.rstrip("Zz"))
+
+    # No local field: shift true UTC by the offset Strava ships alongside it.
+    started = datetime.fromisoformat(activity["start_date"].replace("Z", "+00:00"))
+    offset = activity.get("utc_offset")
+    if offset:
+        started += timedelta(seconds=int(offset))
+    return started.replace(tzinfo=None)
+
+
 def strava_activity_to_actual_session(
     activity: dict,
     hr_zones: dict | None = None,
@@ -34,8 +59,7 @@ def strava_activity_to_actual_session(
     strava_type = activity.get("type", "Workout")
     sport = _SPORT_MAP.get(strava_type, strava_type.lower())
 
-    start_str = activity.get("start_date_local") or activity["start_date"]
-    start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+    start_dt = local_start_time(activity)
 
     avg_speed = activity.get("average_speed")
     avg_pace_sec_km = None

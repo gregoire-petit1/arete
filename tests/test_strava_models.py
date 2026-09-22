@@ -1,5 +1,7 @@
 """Tests for Strava -> ActualSession mapping."""
 
+from datetime import date, datetime
+
 from arete.garmin.models import ActivitySource
 from arete.strava.models import strava_activity_to_actual_session
 
@@ -168,3 +170,65 @@ def test_hr_zones_none_when_not_provided():
     }
     session = strava_activity_to_actual_session(activity)
     assert session.hr_zones_json is None
+
+
+class TestLocalStartTime:
+    """Start times must be naive local, or the Garmin/Strava merge misses.
+
+    `find_overlapping_session` matches within 120 seconds. Strava returns
+    `start_date_local` in the athlete's timezone but with a trailing "Z";
+    parsing that as UTC produced an aware datetime, DuckDB shifted it into
+    local time on insert, and a 07:17 run was stored as 09:17 — two hours
+    away, so the same workout was saved twice and its load counted twice.
+    """
+
+    def test_the_bogus_trailing_z_is_not_a_timezone(self):
+        from arete.strava.models import local_start_time
+
+        started = local_start_time(
+            {
+                "start_date_local": "2026-09-21T07:17:22Z",
+                "start_date": "2026-09-21T05:17:22Z",
+            }
+        )
+        assert started == datetime(2026, 9, 21, 7, 17, 22)
+        # Naive: an aware value is what DuckDB shifts.
+        assert started.tzinfo is None
+
+    def test_a_local_time_without_a_z_is_unchanged(self):
+        from arete.strava.models import local_start_time
+
+        assert local_start_time(
+            {"start_date_local": "2026-09-21T07:17:22"}
+        ) == datetime(2026, 9, 21, 7, 17, 22)
+
+    def test_utc_is_shifted_by_the_offset_strava_ships(self):
+        from arete.strava.models import local_start_time
+
+        assert local_start_time(
+            {"start_date": "2026-09-21T05:17:22Z", "utc_offset": 7200.0}
+        ) == datetime(2026, 9, 21, 7, 17, 22)
+
+    def test_utc_without_an_offset_stays_utc_rather_than_guessing(self):
+        from arete.strava.models import local_start_time
+
+        assert local_start_time({"start_date": "2026-09-21T05:17:22Z"}) == datetime(
+            2026, 9, 21, 5, 17, 22
+        )
+
+    def test_the_mapped_session_carries_the_local_start(self):
+        from arete.strava.models import strava_activity_to_actual_session
+
+        session = strava_activity_to_actual_session(
+            {
+                "id": 20263557277,
+                "type": "Run",
+                "name": "Morning Run",
+                "elapsed_time": 4332,
+                "distance": 13237.4,
+                "start_date_local": "2026-09-21T07:17:22Z",
+                "start_date": "2026-09-21T05:17:22Z",
+            }
+        )
+        assert session.start_time == datetime(2026, 9, 21, 7, 17, 22)
+        assert session.date == date(2026, 9, 21)
