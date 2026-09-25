@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import unicodedata
 from typing import Any
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
@@ -38,6 +39,7 @@ from pydantic import BaseModel, Field
 
 from arete.agent.analytics_tools import ANALYTICS_INSTRUCTIONS, ANALYTICS_TOOLS
 from arete.agent.planning_tools import PLANNING_INSTRUCTIONS, PLANNING_TOOLS
+from arete.agent.strength_tools import STRENGTH_INSTRUCTIONS, STRENGTH_TOOLS
 from arete.agent.toolkits import Toolkit, ToolkitState
 
 logger = logging.getLogger(__name__)
@@ -62,6 +64,15 @@ _TOOLKIT_REGISTRY: dict[str, Toolkit] = {
         ),
         tools=ANALYTICS_TOOLS,
         instructions=ANALYTICS_INSTRUCTIONS,
+    ),
+    "strength": Toolkit(
+        id="strength",
+        description=(
+            "Enregistrer une séance de musculation dictée : lire ce que "
+            "l'athlète décrit, vérifier ce qui est reconnu, puis sauvegarder."
+        ),
+        tools=STRENGTH_TOOLS,
+        instructions=STRENGTH_INSTRUCTIONS,
     ),
 }
 
@@ -109,6 +120,16 @@ def _catalog(hint: str) -> str:
     )
 
 
+def _fold(text: str) -> str:
+    """Lowercased and stripped of accents.
+
+    A query typed in a hurry, or transcribed from speech, rarely carries them:
+    "enregistrer une seance" has to reach a toolkit described with "séance".
+    """
+    decomposed = unicodedata.normalize("NFD", text.lower())
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
 def _search_toolkits(query: str, loaded: list[str]) -> str:
     """Find toolkits matching a capability query.
 
@@ -116,16 +137,14 @@ def _search_toolkits(query: str, loaded: list[str]) -> str:
     final 's') must hit the id or description. More forgiving than substring,
     which misses "planifier une séance" vs "créer… des séances".
     """
-    needle_tokens = [
-        t.rstrip("s") for t in query.strip().lower().split() if len(t) >= 4
-    ]
+    needle_tokens = [t.rstrip("s") for t in _fold(query).split() if len(t) >= 4]
     if not needle_tokens:
         # Empty/garbage query: return the catalog rather than everything-is-a-hit.
         return _catalog("Requête vide; voici les toolkits disponibles.")
 
     hits = []
     for tid, tk in _TOOLKIT_REGISTRY.items():
-        haystack = (tid + " " + tk.description).lower()
+        haystack = _fold(tid + " " + tk.description)
         hay_tokens = {t.rstrip("s") for t in haystack.split()}
         if all(tok in haystack or tok in hay_tokens for tok in needle_tokens):
             hits.append(
