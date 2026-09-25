@@ -112,6 +112,14 @@ cd frontend && npm run lint && npm run build
 
 Tests run against a temporary DuckDB (`tests/conftest.py` sets `ARETE_DB`), and every external call (LLM, Strava, Garmin) is mocked.
 
+`tests/test_agent_evals.py` is the exception: it asks a real model real questions and asserts on which tools it reaches for, since nothing else can tell whether the agent still picks them well. Skipped by default, never in CI, and worth a run before changing a system prompt or a tool description:
+
+```bash
+ARETE_EVAL=1 ARETE_EVAL_DB=/path/to/a/copy.duckdb uv run pytest tests/test_agent_evals.py
+```
+
+Point it at a copy: the agent writes to the memory ledger beside whichever database it is given.
+
 ## License
 
 See [LICENSE](LICENSE).
