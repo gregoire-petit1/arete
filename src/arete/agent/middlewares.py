@@ -38,22 +38,27 @@ _FALLBACK_LABEL = "an unknown page"
 
 
 class RuntimeContextMiddleware(AgentMiddleware):
-    """Stamp ``context.source.panel_context`` as a HumanMessage every turn."""
+    """Stamp ``context.source.panel_context`` at the tail of each request.
+
+    For the request only. ``request.messages`` IS the state's message list, so
+    appending to it in place left a copy of the block behind on every model
+    call: a three-turn run carried three identical stamps, sent back to the
+    model on every later turn, returned to the client, and growing with the
+    conversation. ``override`` builds a new list and leaves the state alone.
+    """
 
     def wrap_model_call(self, request, handler):
         message = _panel_context_message(request)
         if message is None:
             return handler(request)
-        request.messages.append(message)
-        return handler(request)
+        return handler(request.override(messages=[*request.messages, message]))
 
     async def awrap_model_call(self, request, handler):
         # Async twin required by astream(); the logic is pure, no awaits.
         message = _panel_context_message(request)
         if message is None:
             return await handler(request)
-        request.messages.append(message)
-        return await handler(request)
+        return await handler(request.override(messages=[*request.messages, message]))
 
 
 def _panel_context_message(request: ModelRequest) -> HumanMessage | None:

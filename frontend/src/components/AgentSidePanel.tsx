@@ -408,8 +408,16 @@ export function AgentSidePanel({ open, onClose }: { open: boolean; onClose: () =
   );
 }
 
+/**
+ * What the agent is told about where the athlete is, and nothing more.
+ *
+ * `path` is left out: every route collapses to one of five pages, so
+ * `/analytics` carries nothing `analytics` does not, and no one on the
+ * backend ever read it. Query params stay — `?tab=force` on the Log page
+ * says which log the athlete is looking at, which the coach can act on.
+ */
 function panelContextToPayload(ctx: PanelPageContext): Record<string, string> {
-  const payload: Record<string, string> = { page: ctx.page, path: ctx.path };
+  const payload: Record<string, string> = { page: ctx.page };
   for (const [key, value] of Object.entries(ctx.params)) {
     payload[`param_${key}`] = value;
   }

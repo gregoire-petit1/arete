@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from langchain_core.messages import HumanMessage
 
 from arete.agent.api import ChatRequest, _panel_context_source
 from arete.agent.context import (
@@ -28,10 +29,22 @@ class _Runtime:
 
 
 class _Request:
-    """Minimal ModelRequest stand-in: only ``runtime`` is read."""
+    """Minimal ModelRequest stand-in: the fields the middlewares touch.
 
-    def __init__(self, context):
-        self.runtime = _Runtime(context)
+    ``override`` matters as much as the fields: it is what keeps a middleware
+    from writing into the state's own message list.
+    """
+
+    def __init__(self, context=None, *, messages=None, runtime=None):
+        self.runtime = runtime if runtime is not None else _Runtime(context)
+        self.messages = messages if messages is not None else []
+        self.tool_call: dict = {}
+
+    def override(self, **overrides):
+        return _Request(
+            messages=overrides.get("messages", self.messages),
+            runtime=self.runtime,
+        )
 
 
 def test_panel_context_roundtrip():
@@ -348,3 +361,64 @@ class TestBuildChatModel:
         monkeypatch.setenv("LLM_PROVIDER", "bedrock")
         with pytest.raises(ValueError, match="ollama, openrouter, github"):
             build_chat_model()
+
+
+class TestPanelContextStaysOutOfState:
+    """The page stamp is for the request, not for the conversation.
+
+    `request.messages` IS the state's message list. Appending to it in place
+    left a copy of the block behind on every model call: a three-turn run
+    carried three identical stamps, re-sent to the model on every later turn
+    and handed back to the client, growing with the conversation.
+    """
+
+    def test_the_caller_list_is_not_mutated(self):
+        from arete.agent.middlewares import RuntimeContextMiddleware
+
+        middleware = RuntimeContextMiddleware()
+        request = _Request(
+            messages=[HumanMessage("salut")],
+            runtime=_Runtime(
+                AgentContext(source={PANEL_CONTEXT_KEY: '{"page": "log"}'})
+            ),
+        )
+        middleware.wrap_model_call(request, lambda r: "ok")
+        assert len(request.messages) == 1
+
+    def test_the_model_still_receives_it(self):
+        from arete.agent.middlewares import RuntimeContextMiddleware
+
+        middleware = RuntimeContextMiddleware()
+        seen: list[int] = []
+
+        def handler(req):
+            seen.append(len(req.messages))
+            assert "page context" in req.messages[-1].text
+            return "ok"
+
+        request = _Request(
+            messages=[HumanMessage("salut")],
+            runtime=_Runtime(
+                AgentContext(source={PANEL_CONTEXT_KEY: '{"page": "log"}'})
+            ),
+        )
+        middleware.wrap_model_call(request, handler)
+        assert seen == [2]
+
+    def test_two_turns_do_not_pile_up(self):
+        from arete.agent.middlewares import RuntimeContextMiddleware
+
+        middleware = RuntimeContextMiddleware()
+        runtime = _Runtime(AgentContext(source={PANEL_CONTEXT_KEY: '{"page": "log"}'}))
+        messages = [HumanMessage("salut")]
+        counts: list[int] = []
+
+        for _ in range(3):
+            request = _Request(messages=messages, runtime=runtime)
+            middleware.wrap_model_call(
+                request, lambda r: counts.append(len(r.messages)) or "ok"
+            )
+
+        # One stamp per request, every time — never two, never three.
+        assert counts == [2, 2, 2]
+        assert len(messages) == 1
