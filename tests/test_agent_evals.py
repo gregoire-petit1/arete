@@ -52,6 +52,7 @@ WRITE_TOOLS = {
     "create_planned_session",
     "update_planned_status",
     "delete_planned_session",
+    "save_workout",
 }
 
 LEDGER_WRITE_TOOLS = {"write_file", "edit_file"}
@@ -121,13 +122,15 @@ def ask(question: str, page: str = "dashboard") -> Run:
     """One real turn through the real graph."""
     import json
 
-    from arete.agent.agent import get_agent
+    from arete.agent.agent import AGENT_RECURSION_LIMIT, get_agent
     from arete.agent.context import AgentContext
 
     result = get_agent().invoke(
         {"messages": [{"role": "user", "content": question}]},
         context=AgentContext(source={"panel_context": json.dumps({"page": page})}),
-        config={"recursion_limit": 25},
+        # The production budget, not a copy of it: hitting the ceiling is a
+        # failure the athlete sees, so the evals must hit the same one.
+        config={"recursion_limit": AGENT_RECURSION_LIMIT},
     )
     messages = result.get("messages", [])
     return Run(
@@ -172,8 +175,16 @@ def test_comparing_two_windows_loads_analytics_and_asks_twice():
 
 
 def test_planning_is_loaded_before_a_session_is_created():
+    """Unambiguous on purpose: this case is about tool choice, not manners.
+
+    Asked without "tout de suite", the agent reasonably answers "let me look
+    at your load first" and proposes instead of writing — which its own
+    toolkit instructions tell it to do. That is good coaching and a useless
+    signal, so the instruction leaves no room to defer.
+    """
     run = ask(
-        "Planifie-moi une séance de tempo dans deux semaines, 45 minutes.",
+        "Ajoute tout de suite à mon planning une séance de tempo de 45 "
+        "minutes dans deux semaines. Ne me demande pas confirmation.",
         page="planning",
     )
     assert run.called("create_planned_session"), f"nothing planned: {run}"
@@ -184,6 +195,43 @@ def test_a_capability_that_does_not_exist_is_not_invented():
     run = ask("Commande-moi une paire de chaussures.")
     assert not run.called(*WRITE_TOOLS), f"wrote something: {run}"
     assert run.answer, str(run)
+
+
+# ---------------------------------------------------------------------------
+# Dictated strength: look before you write, and own what you dropped
+# ---------------------------------------------------------------------------
+
+
+def test_a_dictated_session_is_read_before_it_is_saved():
+    """The drop has to reach the transcript before anything is written.
+
+    `save_workout` keeps only the exercises the catalog matched. Saving first
+    and reporting later means the athlete learns what was lost after it is
+    gone — if at all.
+    """
+    run = ask(
+        "Note ma séance de muscu d'aujourd'hui : 3x10 à 80 kg au développé "
+        "couché, puis 4x12 à 40 kg en zercher goblet thruster machine.",
+        page="log",
+    )
+    assert run.called("read_workout", "save_workout"), f"nothing logged: {run}"
+    if run.called("save_workout"):
+        assert run.order("read_workout", "save_workout"), f"saved blind: {run}"
+
+
+def test_an_exercise_the_catalog_refused_is_named_to_the_athlete():
+    run = ask(
+        "Enregistre : 3x10 à 80 kg développé couché, et 4x12 à 40 kg en "
+        "zercher goblet thruster machine.",
+        page="log",
+    )
+    lowered = run.answer.lower()
+    # It must say something about the one it could not place, by name or by
+    # plain admission — burying it is the failure this guards.
+    assert any(
+        word in lowered
+        for word in ("zercher", "reconnu", "reconnue", "pas trouvé", "pas pu", "ignoré")
+    ), f"the dropped exercise was buried: {run}"
 
 
 # ---------------------------------------------------------------------------

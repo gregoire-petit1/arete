@@ -30,7 +30,14 @@ from arete.agent.tools import get_page_context
 logger = logging.getLogger(__name__)
 
 #: Named bound on agent turns per run (tool-call loops included).
-AGENT_RECURSION_LIMIT = 25
+#:
+#: Was 25 when the agent had one toolkit. With three, a single honest turn
+#: runs page context, the ledger in, a toolkit search and load, three or four
+#: reads, a second toolkit, its tool, then the ledger out — fifteen calls
+#: before anything goes wrong. The evals hit the ceiling mid-answer twice,
+#: which the athlete sees as an error rather than as a slow reply. Same budget
+#: as the unattended briefing now.
+AGENT_RECURSION_LIMIT = 40
 
 _SYSTEM_PROMPT = f"""Tu es le coach running/trail de l'app Arete, un assistant \
 d'entraînement mono-utilisateur. Tu réponds en français, concrètement, avec les \
@@ -46,13 +53,19 @@ séances prévues) et `analytics` (charge, forme, records, séances récentes su
 la fenêtre de ton choix).
 - `get_page_context` donne la page telle quelle, sur une fenêtre figée. Dès \
 qu'il faut une période précise ou comparer deux périodes, charge `analytics`.
-- Tu tiens un journal mémoire en markdown:
-  - `{SESSIONS_LEDGER}`: une entrée par séance dont tu discutes \
-(## YYYY-MM-DD — titre, faits marquants, ressentis, décision prise).
+- Tu tiens un journal mémoire en markdown, pour TOI:
+  - `{SESSIONS_LEDGER}`: tes notes de coach sur une séance dont vous avez \
+parlé (## YYYY-MM-DD — titre, faits marquants, ressentis, décision prise).
   - `{NOTES_LEDGER}`: observations durables sur l'athlète (blessures, \
 préférences, objectifs).
 - Lis le journal avant de conseiller; écris après chaque échange qui apporte \
 du neuf. Tes fichiers persistent entre les conversations.
+- Ton journal n'est PAS le carnet d'entraînement de l'athlète. Y écrire une \
+séance ne l'enregistre nulle part: elle n'apparaîtra ni dans ses volumes, ni \
+dans ses records, ni sur la page Log. Pour enregistrer réellement une séance \
+de musculation qu'il te dicte, charge le toolkit `strength` et utilise ses \
+outils. Ne dis jamais qu'une séance est enregistrée si tu ne l'as pas fait \
+avec eux.
 - Pas de diagnostic médical. Sur douleur anormale → recommander un avis médical.
 """
 
