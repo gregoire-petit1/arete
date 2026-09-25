@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from arete.data.cardio_muscle_impact import CARDIO_MUSCLE_IMPACT
 from arete.features import muscles as muscle_map
+from arete.strength.logging_service import complete_planned_strength
 from arete.strength.models import (
     Exercise,
     ExerciseCategory,
@@ -333,7 +334,7 @@ def create_session(data: StrengthSessionCreate):
         session.exercises.append(session_exercise)
 
     session_id = _repo.create_session(session)
-    _complete_planned_strength(session.date)
+    complete_planned_strength(session.date)
     session.id = session_id
 
     return _session_to_summary_response(session)
@@ -682,17 +683,6 @@ class WorkoutParseResponse(BaseModel):
     unparsed_lines: list[str] = []  # Lines the grammar rejected (to fix by hand)
 
 
-def _complete_planned_strength(day: date_type) -> None:
-    """A logged strength session fulfils the planned strength session of that day."""
-    from arete.garmin.repository import GarminRepository
-    from arete.garmin.sync import complete_planned
-
-    try:
-        complete_planned(GarminRepository(), day, "strength")
-    except Exception as e:  # noqa: BLE001 - never block the save
-        logger.warning("Could not update planned session for %s: %s", day, e)
-
-
 # ─────────────────────────────────────────────────────────────────────────
 # Voice dictation
 # ─────────────────────────────────────────────────────────────────────────
@@ -812,21 +802,10 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
     not confidently matched come back with ``suggestions``.
     User abbreviations are loaded from settings automatically.
     """
-    from arete.dataio.settings import get_user_settings
-    from arete.llm.workout_parser import parse_workout_text
-
-    # Load user abbreviations from settings
-    user_settings = get_user_settings(user_id=1)
-    abbreviations = (
-        user_settings.get("exercise_abbreviations", {}) if user_settings else {}
-    )
+    from arete.strength.logging_service import parse_for_athlete, save_parsed_session
 
     try:
-        parsed = parse_workout_text(
-            text=request.text,
-            workout_date=request.date,
-            abbreviations=abbreviations,
-        )
+        parsed = parse_for_athlete(request.text, workout_date=request.date)
 
         # Convert to response
         exercises_response = []
@@ -864,52 +843,10 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
         session_id = None
         message = None
 
-        # Optionally save to database
         if request.save and parsed.exercises:
-            try:
-                # Build session create data
-                session = StrengthSession(
-                    date=parsed.date,
-                    name=parsed.name,
-                    duration_min=parsed.duration_min,
-                    overall_rpe=parsed.overall_rpe,
-                    notes=parsed.notes,
-                )
-
-                for i, ex in enumerate(parsed.exercises):
-                    if ex.exercise_id:
-                        # Get or create exercise from catalog
-                        exercise = _repo.get_or_create_exercise_from_catalog(
-                            ex.exercise_id
-                        )
-                        if exercise:
-                            session_exercise = SessionExercise(
-                                exercise_id=exercise.id,
-                                exercise=exercise,
-                                order=i + 1,
-                            )
-                            for s in ex.sets:
-                                session_exercise.sets.append(
-                                    ExerciseSet(
-                                        set_number=s.set_number,
-                                        reps=s.reps if s.reps is not None else 0,
-                                        weight_kg=s.weight_kg,
-                                        rpe=s.rpe,
-                                        is_warmup=s.is_warmup,
-                                    )
-                                )
-                            session.exercises.append(session_exercise)
-
-                if session.exercises:
-                    session_id = _repo.create_session(session)
-                    _complete_planned_strength(session.date)
-                    message = f"Session saved with {len(session.exercises)} exercises"
-                else:
-                    message = "No exercises matched - session not saved"
-
-            except Exception as e:
-                logger.error(f"Failed to save parsed session: {e}")
-                message = f"Parsing succeeded but save failed: {str(e)}"
+            outcome = save_parsed_session(parsed, repo=_repo)
+            session_id = outcome.session_id
+            message = outcome.message
 
         return WorkoutParseResponse(
             success=True,
