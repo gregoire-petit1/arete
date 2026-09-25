@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 
 from langchain_core.messages import SystemMessage
 
@@ -323,12 +324,24 @@ def test_full_graph_load_then_execute_planning():
 
 
 def test_create_and_list_planned():
-    from arete.agent.planning_tools import create_planned_session, list_planned
+    """Dates here are relative and cleaned up on the way out.
 
+    The suite shares one database. A row left behind on a hard-coded date is
+    invisible until that day arrives, and then it breaks a test in another
+    file — `test_summary_counts_only_due_sessions` counted it as due the
+    morning of 2026-09-25.
+    """
+    from arete.agent.planning_tools import (
+        create_planned_session,
+        delete_planned_session,
+        list_planned,
+    )
+
+    day = (date.today() + timedelta(days=400)).isoformat()
     out = json.loads(
         create_planned_session.invoke(
             {
-                "date_str": "2026-09-25",
+                "date_str": day,
                 "session_type": "tempo",
                 "description": "6x3' au seuil",
                 "sport": "running",
@@ -336,12 +349,15 @@ def test_create_and_list_planned():
             }
         )
     )
-    assert out["created"] is True
-    assert out["session"]["source"] == "coach"
+    try:
+        assert out["created"] is True
+        assert out["session"]["source"] == "coach"
 
-    listing = json.loads(list_planned.invoke({}))
-    assert listing["count"] >= 1
-    assert any(s["id"] == out["session"]["id"] for s in listing["sessions"])
+        listing = json.loads(list_planned.invoke({"end_date": day}))
+        assert listing["count"] >= 1
+        assert any(s["id"] == out["session"]["id"] for s in listing["sessions"])
+    finally:
+        delete_planned_session.invoke({"session_id": out["session"]["id"]})
 
 
 def test_create_planned_rejects_bad_type():
@@ -349,7 +365,7 @@ def test_create_planned_rejects_bad_type():
 
     out = json.loads(
         create_planned_session.invoke(
-            {"date_str": "2026-09-25", "session_type": "yoga_hot"}
+            {"date_str": "2099-01-05", "session_type": "yoga_hot"}
         )
     )
     assert "error" in out
@@ -364,7 +380,7 @@ def test_update_and_delete_planned():
 
     created = json.loads(
         create_planned_session.invoke(
-            {"date_str": "2026-09-26", "session_type": "recovery"}
+            {"date_str": "2099-01-06", "session_type": "recovery"}
         )
     )
     sid = created["session"]["id"]
