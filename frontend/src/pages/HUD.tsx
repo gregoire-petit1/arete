@@ -290,7 +290,16 @@ export function DashboardPage() {
               <Bot className="w-5 h-5 text-text-muted mt-0.5 flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm font-mono text-text-primary leading-relaxed">{tip.tip}</p>
-                <span className="text-[11px] font-mono text-text-muted mt-2 inline-block opacity-60">Généré par IA</span>
+                <span className="text-[11px] font-mono text-text-muted mt-2 inline-block opacity-60">
+                  {tip.source === 'agent' ? 'Briefing du coach' : 'Calculé à partir de tes métriques'}
+                  {tip.generated_at &&
+                    ` · ${new Date(tip.generated_at).toLocaleString('fr-FR', {
+                      day: 'numeric',
+                      month: 'short',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}`}
+                </span>
               </div>
             </div>
           </section>

@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from arete import scheduler
+from arete.agent.api import router as agent_router
 from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
 from arete.api.garmin import router as garmin_router
@@ -63,6 +64,24 @@ def health():
     return {"status": "ok", "database": db_status}
 
 
+@app.get("/sync/status")
+def sync_status():
+    """State of the daily background sync.
+
+    ``last_run`` is the durable marker beside the database (so it survives a
+    restart); ``sources`` is the per-source outcome of the last run THIS
+    process did, empty when it has not run one yet. The coaching agent reads
+    this before briefing on the day: a briefing written on data that never
+    landed is worse than no briefing.
+    """
+    last_run = scheduler.last_run_date()
+    return {
+        "scheduled_hour": config.auto_sync_hour,
+        "last_run": last_run.isoformat() if last_run else None,
+        "sources": scheduler.last_status(),
+    }
+
+
 for router in (
     settings_router,
     metrics_router,
@@ -73,5 +92,6 @@ for router in (
     ai_tips_router,
     strava_router,
     analytics_router,
+    agent_router,
 ):
     app.include_router(router)

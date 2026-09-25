@@ -27,6 +27,18 @@ TICK_SECONDS = 300
 STATE_FILENAME = "last_daily_sync.json"
 
 
+#: Status of the most recent run, for ``GET /sync/status`` and the agent's
+#: ``get_sync_status`` tool. Process-local and deliberately not persisted: it
+#: answers "what happened on the run this process did", while the durable
+#: "did today's run happen at all" lives in the JSON marker below.
+_last_status: dict[str, str] = {}
+
+
+def last_status() -> dict[str, str]:
+    """Per-source status of the last sync this process ran ({} if none yet)."""
+    return dict(_last_status)
+
+
 def state_path() -> Path:
     """Where the last run is recorded (beside the DuckDB file)."""
     from arete.dataio.db import get_db_path
@@ -105,7 +117,29 @@ def daily_sync() -> dict[str, str]:
         status["strava"] = "not connected"
 
     logger.info("Daily sync: %s", status)
+    _last_status.clear()
+    _last_status.update(status)
     return status
+
+
+def write_daily_briefing() -> str:
+    """Have the coach write the day's briefing, after the sync that feeds it.
+
+    Kept out of ``daily_sync`` so the sync's status dict stays about sources.
+    Log-and-continue: the briefing must never be able to break the loop, and
+    it has its own rule floor, so a failure here is already handled downstream.
+    """
+    from arete.coach.briefing import briefing_enabled, generate_briefing
+
+    if not briefing_enabled():
+        return "disabled"
+    try:
+        briefing = generate_briefing(trigger="scheduler")
+    except Exception as e:  # noqa: BLE001 - background job must not die
+        logger.warning("Daily briefing failed: %s", e)
+        return f"failed: {e}"
+    logger.info("Daily briefing: %s", briefing.source)
+    return briefing.source
 
 
 async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
@@ -120,6 +154,9 @@ async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
         if is_due(hour, now, last_run_date()):
             await asyncio.to_thread(daily_sync)
             record_run(datetime.now())
+            # After the sync, never before: the briefing reads the data the
+            # sync just landed.
+            await asyncio.to_thread(write_daily_briefing)
         await asyncio.sleep(tick_seconds)
 
 

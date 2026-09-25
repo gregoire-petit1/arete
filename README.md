@@ -11,11 +11,12 @@ Self-hosted, single-user training assistant:
 - **Analytics**: volume, CTL/ATL/TSB (Banister model with personalized coefficients), pace trends, HR drift / aerobic decoupling, cardiac efficiency.
 - **Strength log** with a free-text workout parser (Lark grammar + fuzzy catalog matching, no LLM), muscle-volume heatmap and Garmin activity linking.
 - **Planning**: planned sessions matched against actual activities, adherence dashboard.
-- **LLM coaching tips** (daily + post-session), the only LLM use, through any OpenAI-compatible provider: Ollama, OpenRouter or GitHub Models.
+- **Coaching agent** through any OpenAI-compatible provider (Ollama, OpenRouter or GitHub Models). In a side panel it sees the page you are on and reads its data through tools, loading extra toolkits on demand (planning, analytics); unattended it writes a daily briefing on the dashboard after the morning sync and comments each finished session. It keeps a markdown memory ledger across conversations — see [the design doc](docs/plans/2026-09-21-coaching-agent-design.md).
+- **Deterministic fallback**: an eight-rule engine produces the daily tip and the session facts, and is what ships whenever the model is unavailable, so the dashboard is never empty.
 
 ## Stack
 
-- **Backend**: Python 3.11, FastAPI + Pydantic v2, DuckDB, `garminconnect` (Garmin Connect, unofficial API), `fitparse`, `lark` (workout grammar), `openai` SDK (provider-agnostic).
+- **Backend**: Python 3.11, FastAPI + Pydantic v2, DuckDB, `garminconnect` (Garmin Connect, unofficial API), `fitparse`, `lark` (workout grammar), LangChain + `deepagents` + `openai` SDK (the coaching agent and speech-to-text).
 - **Frontend**: React 19 + Vite, Tailwind 4, TanStack Query, recharts, PWA (see `frontend/README.md`).
 - **Tooling**: uv, ruff, mypy, pytest; Docker Compose (backend + nginx-served frontend).
 
@@ -59,18 +60,21 @@ All settings come from environment variables (see `.env.example`):
 | `GARMIN_EMAIL`, `GARMIN_PASSWORD` | Garmin Connect login (or log in from the Settings page) |
 | `ARETE_GARMIN_TOKENS_DIR` | Where the Garmin session tokens are stored (default `data/garmin_tokens`) |
 
+The coaching agent reuses `LLM_PROVIDER` / `LLM_MODEL` — no extra variables. Only `ollama` (any OpenAI-compatible local server) and `openrouter` support it; tool calling is required, so pick a model that has it. Its memory ledger lives next to the database, in `data/agent/memory/`.
+
 ## Project layout
 
 ```
 src/arete/
 ├── config.py   All environment variables in one place; scheduler.py: optional daily sync
+├── agent/      Coaching agent: graph + model, page-context tool, toolkits (progressive loading), markdown memory ledger, /agent routes
 ├── api/        FastAPI routers: analytics, garmin (sessions/FIT), garmin_sync, garmin_health, strength, strava, ai_tips, metrics, settings; main.py wires them
 ├── dataio/     DuckDB connection (db.py), schema + versioned migrations (init_duckdb.py), shared queries, user settings
 ├── features/   Training science: workload (ACWR), cardio (TRIMP, zones), fitness (CTL/ATL/TSB), strength (1RM, INOL), banister fit, hr_drift, recommendations
 ├── garmin/     FIT parser, time-series metrics, planned/actual matching, Garmin Connect client + activity/health sync, readiness
 ├── strength/   Strength models + repository (exercises, sessions, sets, PRs)
 ├── strava/     Strava API client and activity mapping
-├── llm/        Provider abstraction (tips), workout grammar + text parser
+├── llm/        Workout grammar + free-text parser (deterministic), speech-to-text for dictated sessions
 └── data/       Exercise catalog
 frontend/       React app (pages: Dashboard, Planning, Analytics, Log, Settings)
 scripts/        fit_banister.py (fit personal CTL/ATL coefficients), garmin_login.py (one-time token bootstrap)
@@ -92,6 +96,7 @@ Interactive docs at `/docs`. Routers and their prefixes:
 | `/strength` | `exercises` CRUD + `/{id}/prs`, `sessions` CRUD, `sessions/parse` (free-text → structured, optional save), Garmin linking, `stats/volume-by-muscle` |
 | `/strava` | `authorize`, `callback`, `status`, `sync` (POST, `days` or `full: true` for the whole history), `disconnect` |
 | `/tips` | `daily` (GET), `post-session` (POST) |
+| `/agent` | `chat` (POST), `chat/stream` (POST, SSE), `memory` (GET, the coach's ledger) |
 
 ## Single-user by design
 

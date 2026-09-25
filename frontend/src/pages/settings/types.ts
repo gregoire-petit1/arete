@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: LocalSettings = {
   fatigue_threshold: 85,
   fitness_goal: 'build',
   notifications_enabled: true,
+  coach_briefing_enabled: true,
   theme: 'dark',
   exercise_abbreviations: {},
   weekly_volume_target_kg: 20000,

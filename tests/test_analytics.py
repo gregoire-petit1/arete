@@ -124,18 +124,75 @@ class TestRecords:
     def test_keeps_the_fastest_per_distance(self, mock_rows, _con, client):
         mock_rows.return_value = [
             (
-                '[{"name": "1k", "elapsed_time": 240}, '
-                '{"name": "5k", "elapsed_time": 1250}]',
+                '[{"name": "1K", "elapsed_time": 240}, '
+                '{"name": "5K", "elapsed_time": 1250}]',
                 date(2026, 5, 1),
                 "Morning Run",
             ),
-            ('[{"name": "1k", "elapsed_time": 234}]', date(2026, 4, 20), "Fast Run"),
+            ('[{"name": "1K", "elapsed_time": 234}]', date(2026, 4, 20), "Fast Run"),
         ]
         records = client.get("/analytics/records?sport=running").json()["records"]
-        one_k = next(r for r in records if r["name"] == "1k")
+        one_k = next(r for r in records if r["name"] == "1K")
         assert one_k["time_sec"] == 234
         assert one_k["activity_name"] == "Fast Run"
         assert one_k["time_display"] == "3:54"
+
+    @patch("arete.api.analytics.db_connection")
+    @patch("arete.api.analytics.best_effort_rows")
+    def test_distance_names_match_whatever_case_the_source_wrote(
+        self, mock_rows, _con, client
+    ):
+        # Garmin writes "1K"/"5K"/"10K" but "1 mile" and "50k". Comparing
+        # spellings dropped every K distance from the card; the canonical
+        # name is what comes back, whatever went in.
+        mock_rows.return_value = [
+            (
+                '[{"name": "10k", "elapsed_time": 2926}, '
+                '{"name": "50K", "elapsed_time": 16852}, '
+                '{"name": "marathon", "elapsed_time": 13769}]',
+                date(2026, 5, 1),
+                "Ultra",
+            )
+        ]
+        records = client.get("/analytics/records").json()["records"]
+        assert [r["name"] for r in records] == ["10K", "Marathon", "50K"]
+
+    @patch("arete.api.analytics.db_connection")
+    @patch("arete.api.analytics.best_effort_rows")
+    def test_records_come_back_ordered_by_distance(self, mock_rows, _con, client):
+        mock_rows.return_value = [
+            (
+                '[{"name": "Marathon", "elapsed_time": 13769}, '
+                '{"name": "400m", "elapsed_time": 88}, '
+                '{"name": "10 mile", "elapsed_time": 4956}, '
+                '{"name": "15K", "elapsed_time": 4618}, '
+                '{"name": "Half-Marathon", "elapsed_time": 6795}]',
+                date(2026, 5, 1),
+                "Long one",
+            )
+        ]
+        records = client.get("/analytics/records").json()["records"]
+        assert [r["name"] for r in records] == [
+            "400m",
+            "15K",
+            "10 mile",
+            "Half-Marathon",
+            "Marathon",
+        ]
+
+    @patch("arete.api.analytics.db_connection")
+    @patch("arete.api.analytics.best_effort_rows")
+    def test_unknown_distance_is_ignored(self, mock_rows, _con, client):
+        mock_rows.return_value = [
+            (
+                '[{"name": "100m", "elapsed_time": 14}, '
+                '{"name": "5K", "elapsed_time": 1272}]',
+                date(2026, 5, 1),
+                "Track",
+            )
+        ]
+        records = client.get("/analytics/records").json()["records"]
+        assert [r["name"] for r in records] == ["5K"]
 
     @patch("arete.api.analytics.db_connection")
     @patch("arete.api.analytics.best_effort_rows")

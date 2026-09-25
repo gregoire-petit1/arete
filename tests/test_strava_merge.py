@@ -93,3 +93,57 @@ class TestOverlapLookup:
         finally:
             repo.delete_actual_session(sid)
             repo.delete_actual_session(sid2)
+
+
+class TestGarminStravaDoNotDuplicate:
+    """End to end on the real repository: the same run must stay one row.
+
+    Regression guard for the 2026-09-21 duplicate — a Garmin row at 07:17 and
+    a Strava row at 09:17 for one 13.2 km run, two hours apart because the
+    Strava copy was parsed as UTC. The merge matches within 120 seconds, so it
+    never saw them as the same workout and the load was counted twice.
+    """
+
+    def test_the_strava_copy_merges_into_the_garmin_row(self, tmp_path, monkeypatch):
+        from datetime import date, datetime
+
+        monkeypatch.setenv("ARETE_DB", str(tmp_path / "merge.duckdb"))
+        from arete.dataio.init_duckdb import main as init_db
+
+        init_db()
+
+        from arete.garmin.models import ActivitySource, ActualSession
+        from arete.garmin.repository import GarminRepository
+        from arete.strava.models import strava_activity_to_actual_session
+
+        repo = GarminRepository()
+        repo.create_actual_session(
+            ActualSession(
+                date=date(2026, 9, 21),
+                sport="run",
+                name="Paris Running",
+                start_time=datetime(2026, 9, 21, 7, 17, 22),
+                duration_sec=4197,
+                distance_m=13237.36,
+                avg_hr=155,
+                source=ActivitySource.GARMIN_CONNECT,
+                garmin_activity_id="24439724659",
+            )
+        )
+
+        strava = strava_activity_to_actual_session(
+            {
+                "id": 20263557277,
+                "type": "Run",
+                "name": "Morning Run",
+                "elapsed_time": 4332,
+                "distance": 13237.4,
+                # Strava's local time, with the trailing Z it really sends.
+                "start_date_local": "2026-09-21T07:17:22Z",
+                "start_date": "2026-09-21T05:17:22Z",
+            }
+        )
+        twin = repo.find_overlapping_session(strava.start_time, strava.duration_sec)
+
+        assert twin is not None, "the Strava copy must find its Garmin twin"
+        assert twin.name == "Paris Running"

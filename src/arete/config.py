@@ -29,7 +29,7 @@ class Config:
     def garmin_tokens_dir(self) -> Path:
         return Path(_env("ARETE_GARMIN_TOKENS_DIR", "data/garmin_tokens") or "")
 
-    # --- LLM (tips only) ---------------------------------------------------
+    # --- LLM (tips + coaching agent) ----------------------------------------
     @property
     def llm_provider(self) -> str:
         return (_env("LLM_PROVIDER", "ollama") or "ollama").lower().strip()
@@ -49,11 +49,6 @@ class Config:
     @property
     def github_token(self) -> str:
         return _env("GITHUB_TOKEN", "") or ""
-
-    @property
-    def llm_timeout_s(self) -> int:
-        """Cap on a single LLM call; the SDK would otherwise wait 600 seconds."""
-        return int(_env("LLM_TIMEOUT_S", "30") or 30)
 
     # --- Speech to text (dictated sessions) --------------------------------
     @property

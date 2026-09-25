@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Dumbbell, Palette, Save, Target, Terminal, User, Watch, X } from 'lucide-react';
+import { Bot, Check, Dumbbell, Palette, Save, Target, Terminal, User, Watch, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ErrorState, LoadingState } from '@/components';
 import { Button, Spinner } from '@/components/ui';
 import { settingsApi, type UserSettings } from '@/lib/api';
 import {
   AppearanceTab,
+  CoachTab,
   ConnectionsTab,
   DEFAULT_SETTINGS,
   GoalsTab,
@@ -21,6 +22,7 @@ const TABS = [
   { id: 'goals', label: 'OBJECTIFS', icon: Target },
   { id: 'workout', label: 'NOTATION', icon: Dumbbell },
   { id: 'connections', label: 'CONNEXIONS', icon: Watch },
+  { id: 'coach', label: 'COACH', icon: Bot },
   { id: 'appearance', label: 'APPARENCE', icon: Palette },
   { id: 'system', label: 'SYSTÈME', icon: Terminal },
 ] as const;
@@ -133,6 +135,7 @@ export function SettingsPage() {
             {activeTab === 'goals' && <GoalsTab {...tabProps} />}
             {activeTab === 'workout' && <WorkoutTab {...tabProps} />}
             {activeTab === 'connections' && <ConnectionsTab />}
+            {activeTab === 'coach' && <CoachTab {...tabProps} />}
             {activeTab === 'appearance' && <AppearanceTab {...tabProps} />}
             {activeTab === 'system' && <SystemTab />}
           </div>

@@ -93,3 +93,45 @@ class TestZonesFromLaps:
         assert (
             zones_from_laps('[{"moving_time": 60}]', self.model) is None
         )  # no heart rate
+
+
+class TestLabelledZones:
+    """Zone names must come from the athlete's threshold, never a bpm table.
+
+    Regression guard: post-session feedback used to carry its own absolute
+    cutoffs and reported 155 bpm as "zone 4 seuil" for an athlete whose
+    threshold is 176 — two zones off, on a number shown to the athlete.
+    """
+
+    def test_labels_follow_the_threshold(self):
+        from arete.features.hr_zones import ZoneModel
+
+        model = ZoneModel.from_reference(lthr=176)
+        assert model.labelled_zone_of(140) == (1, "récupération")
+        assert model.labelled_zone_of(155) == (2, "endurance")
+        assert model.labelled_zone_of(160) == (3, "tempo")
+        assert model.labelled_zone_of(170) == (4, "seuil")
+        assert model.labelled_zone_of(180) == (5, "VO2max")
+
+    def test_the_same_reading_moves_zone_with_the_athlete(self):
+        from arete.features.hr_zones import ZoneModel
+
+        # 155 bpm is endurance for a threshold of 176, and over it for 150.
+        assert ZoneModel.from_reference(lthr=176).labelled_zone_of(155)[0] == 2
+        assert ZoneModel.from_reference(lthr=150).labelled_zone_of(155)[0] == 5
+
+    def test_every_zone_has_a_name(self):
+        from arete.features.hr_zones import ZONE_LABELS_FR, ZONE_NAMES
+
+        assert len(ZONE_LABELS_FR) == len(ZONE_NAMES) == 5
+
+    def test_the_feedback_helper_reads_the_stored_threshold(self, monkeypatch):
+        from arete.api import ai_tips
+        from arete.features.hr_zones import ZoneModel
+
+        monkeypatch.setattr(
+            ai_tips, "athlete_zone_model", lambda: ZoneModel.from_reference(lthr=176)
+        )
+        assert ai_tips._hr_zone_label(155) == (2, "endurance")
+        # The old hardcoded table answered "seuil" here.
+        assert "seuil" not in ai_tips._hr_zone_label(155)[1]

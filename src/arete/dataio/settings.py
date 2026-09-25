@@ -36,6 +36,9 @@ def _settings_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
         "max_hr": row[13] if len(row) > 13 else None,
         "threshold_pace_sec_km": row[14] if len(row) > 14 else None,
         "lthr_measured_on": row[15] if len(row) > 15 else None,
+        # Appended last: the column arrives with migration 8, so a row read
+        # from a database that has not migrated yet is simply shorter.
+        "coach_briefing_enabled": row[16] if len(row) > 16 else True,
     }
 
 
@@ -49,7 +52,7 @@ def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
                    rest_day_preference, fatigue_threshold, fitness_goal,
                    notifications_enabled, theme, exercise_abbreviations,
                    weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
-                   lthr_measured_on
+                   lthr_measured_on, coach_briefing_enabled
             FROM app.user_settings
             WHERE user_id = ?
             """,
@@ -78,6 +81,7 @@ def upsert_user_settings(
     max_hr: int | None = None,
     threshold_pace_sec_km: int | None = None,
     lthr_measured_on: date | None = None,
+    coach_briefing_enabled: bool = True,
 ) -> dict[str, Any]:
     """Create or update user settings."""
     import json as _json
@@ -95,13 +99,13 @@ def upsert_user_settings(
                 notifications_enabled = ?, theme = ?, exercise_abbreviations = ?,
                 weekly_volume_target_kg = ?, lthr = ?, max_hr = ?,
                 threshold_pace_sec_km = ?, lthr_measured_on = ?,
-                updated_at = CURRENT_TIMESTAMP
+                coach_briefing_enabled = ?, updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
                       notifications_enabled, theme, exercise_abbreviations,
                       weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
-                      lthr_measured_on
+                      lthr_measured_on, coach_briefing_enabled
             """,
             [
                 display_name,
@@ -119,6 +123,7 @@ def upsert_user_settings(
                 max_hr,
                 threshold_pace_sec_km,
                 lthr_measured_on,
+                coach_briefing_enabled,
                 user_id,
             ],
         ).fetchone()
@@ -134,14 +139,14 @@ def upsert_user_settings(
                 rest_day_preference, fatigue_threshold, fitness_goal,
                 notifications_enabled, theme, exercise_abbreviations,
                 weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
-                lthr_measured_on
+                lthr_measured_on, coach_briefing_enabled
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
                       notifications_enabled, theme, exercise_abbreviations,
                       weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
-                      lthr_measured_on
+                      lthr_measured_on, coach_briefing_enabled
             """,
             [
                 user_id,
@@ -160,6 +165,7 @@ def upsert_user_settings(
                 max_hr,
                 threshold_pace_sec_km,
                 lthr_measured_on,
+                coach_briefing_enabled,
             ],
         ).fetchone()
         if row is None:

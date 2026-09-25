@@ -23,6 +23,16 @@ MAX_HR_FRACTIONS: tuple[float, float, float, float] = (0.60, 0.70, 0.80, 0.90)
 
 ZONE_NAMES: tuple[str, ...] = ("z1", "z2", "z3", "z4", "z5")
 
+#: What each zone is called, in French. Same words the Analytics card uses, so
+#: the coach and the chart never disagree about what Z3 means.
+ZONE_LABELS_FR: tuple[str, ...] = (
+    "récupération",
+    "endurance",
+    "tempo",
+    "seuil",
+    "VO2max",
+)
+
 
 @dataclass(frozen=True)
 class ZoneModel:
@@ -48,6 +58,11 @@ class ZoneModel:
             if hr < boundary:
                 return index + 1
         return 5
+
+    def labelled_zone_of(self, hr: float) -> tuple[int, str]:
+        """Zone number and its French name, e.g. ``(2, "endurance")``."""
+        zone = self.zone_of(hr)
+        return zone, ZONE_LABELS_FR[zone - 1]
 
     def seconds_in_zones(
         self, samples: Iterable[tuple[float, float]]

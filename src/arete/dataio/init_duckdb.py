@@ -189,6 +189,7 @@ CREATE TABLE IF NOT EXISTS app.user_settings (
     fatigue_threshold       INTEGER DEFAULT 85,
     fitness_goal            VARCHAR DEFAULT 'build',   -- 'maintenance', 'build', 'peak', 'recovery'
     notifications_enabled   BOOLEAN DEFAULT TRUE,
+    coach_briefing_enabled  BOOLEAN DEFAULT TRUE,  -- the coach writes a daily briefing
     theme                   VARCHAR DEFAULT 'dark',    -- 'dark', 'darker', 'abyss'
     exercise_abbreviations  VARCHAR DEFAULT '{}',      -- JSON: {"bp": "bench press", "ng": "neutral grip", ...}
     weekly_volume_target_kg INTEGER DEFAULT 20000,     -- strength tonnage goal per week
@@ -260,6 +261,28 @@ CREATE TABLE IF NOT EXISTS app.daily_metrics (
     source               VARCHAR DEFAULT 'garmin',
     fetched_at           TIMESTAMP DEFAULT now(),
     PRIMARY KEY (user_id, date)
+);
+
+-- ============================================================
+-- Coach Briefings (the agent's daily word, written once a day)
+-- ============================================================
+
+CREATE SEQUENCE IF NOT EXISTS app.coach_briefings_seq START 1;
+
+-- One row per produced briefing. Kept rather than recomputed: the agent run
+-- costs a model call, and a failed run must stay visible instead of leaving
+-- the dashboard silently empty.
+CREATE TABLE IF NOT EXISTS app.coach_briefings (
+    id           INTEGER PRIMARY KEY DEFAULT nextval('app.coach_briefings_seq'),
+    user_id      INTEGER NOT NULL DEFAULT 1,
+    date         DATE NOT NULL,
+    text         VARCHAR NOT NULL,           -- the briefing itself, or the rule text
+    priority     VARCHAR NOT NULL DEFAULT 'info',   -- 'info', 'warning', 'alert'
+    source       VARCHAR NOT NULL DEFAULT 'rules',  -- 'agent', 'rules'
+    status       VARCHAR NOT NULL DEFAULT 'ok',     -- 'ok', 'failed'
+    error        VARCHAR,                    -- why the agent run failed, when it did
+    trigger      VARCHAR NOT NULL DEFAULT 'api',    -- 'scheduler', 'api'
+    created_at   TIMESTAMP DEFAULT now()
 );
 """
 
@@ -336,6 +359,19 @@ def _m7_threshold_measured_on(con) -> None:
         con.execute("ALTER TABLE app.user_settings ADD COLUMN lthr_measured_on DATE")
 
 
+def _m8_coach_briefing_enabled(con) -> None:
+    """Its own switch, not ``notifications_enabled``.
+
+    One flag meaning both "write me a briefing" and "send me a push" leaves no
+    way to have one without the other the day push lands.
+    """
+    if "coach_briefing_enabled" not in _columns(con, "user_settings"):
+        con.execute(
+            "ALTER TABLE app.user_settings "
+            "ADD COLUMN coach_briefing_enabled BOOLEAN DEFAULT TRUE"
+        )
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -344,6 +380,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (5, _m5_weekly_volume_target),
     (6, _m6_hr_reference),
     (7, _m7_threshold_measured_on),
+    (8, _m8_coach_briefing_enabled),
 ]
 
 

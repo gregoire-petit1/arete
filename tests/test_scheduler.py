@@ -53,6 +53,10 @@ class TestState:
 
 
 class TestRunForever:
+    @pytest.fixture
+    def anyio_backend(self):
+        return "asyncio"
+
     @pytest.fixture(autouse=True)
     def state_file(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
@@ -69,6 +73,7 @@ class TestRunForever:
 
         with (
             patch.object(scheduler, "daily_sync", side_effect=lambda: calls.append(1)),
+            patch.object(scheduler, "write_daily_briefing", return_value="rules"),
             patch("asyncio.sleep", side_effect=fake_sleep),
             patch.object(scheduler, "is_due", side_effect=[True, False]),
             pytest.raises(StopAsyncIteration),
@@ -78,9 +83,71 @@ class TestRunForever:
         assert len(calls) == 1
         assert scheduler.last_run_date() == date.today()
 
-    @pytest.fixture
-    def anyio_backend(self):
-        return "asyncio"
+    @pytest.mark.anyio
+    async def test_the_briefing_is_written_after_the_sync_not_before(self):
+        # It reads the data the sync just landed, so the order matters.
+        order: list[str] = []
+
+        async def fake_sleep(_seconds):
+            if order:
+                raise StopAsyncIteration
+
+        with (
+            patch.object(
+                scheduler, "daily_sync", side_effect=lambda: order.append("sync")
+            ),
+            patch.object(
+                scheduler,
+                "write_daily_briefing",
+                side_effect=lambda: order.append("briefing") or "agent",
+            ),
+            patch("asyncio.sleep", side_effect=fake_sleep),
+            patch.object(scheduler, "is_due", side_effect=[True, False]),
+            pytest.raises(StopAsyncIteration),
+        ):
+            await scheduler.run_forever(9, tick_seconds=1)
+
+        assert order == ["sync", "briefing"]
+
+    @pytest.mark.anyio
+    async def test_a_failing_briefing_does_not_stop_the_loop(self):
+        ticks = []
+
+        async def fake_sleep(_seconds):
+            ticks.append(1)
+            raise StopAsyncIteration
+
+        with (
+            patch.object(scheduler, "daily_sync", return_value={}),
+            patch(
+                "arete.coach.briefing.generate_briefing",
+                side_effect=RuntimeError("model is away"),
+            ),
+            patch("arete.coach.briefing.briefing_enabled", return_value=True),
+            patch("asyncio.sleep", side_effect=fake_sleep),
+            patch.object(scheduler, "is_due", side_effect=[True, False]),
+            pytest.raises(StopAsyncIteration),
+        ):
+            await scheduler.run_forever(9, tick_seconds=1)
+
+        # The loop reached its sleep, i.e. the failure was swallowed.
+        assert ticks == [1]
+
+
+class TestWriteDailyBriefing:
+    def test_disabled_is_reported_not_run(self):
+        with patch("arete.coach.briefing.briefing_enabled", return_value=False):
+            assert scheduler.write_daily_briefing() == "disabled"
+
+    def test_failure_is_reported_not_raised(self):
+        with (
+            patch("arete.coach.briefing.briefing_enabled", return_value=True),
+            patch(
+                "arete.coach.briefing.generate_briefing",
+                side_effect=RuntimeError("boom"),
+            ),
+        ):
+            assert scheduler.write_daily_briefing().startswith("failed:")
 
 
 class TestStart:
@@ -95,3 +162,34 @@ class TestDailySync:
         with patch("arete.api.strava._get_strava_tokens", return_value=None):
             status = scheduler.daily_sync()
         assert status == {"garmin": "no tokens", "strava": "not connected"}
+
+    def test_status_is_kept_not_discarded(self, tmp_path, monkeypatch):
+        # run_forever ignores the return value; the coach needs to know what
+        # the last sync actually did before briefing on the day's data.
+        monkeypatch.setenv("ARETE_GARMIN_TOKENS_DIR", str(tmp_path / "none"))
+        with patch("arete.api.strava._get_strava_tokens", return_value=None):
+            status = scheduler.daily_sync()
+        assert scheduler.last_status() == status
+
+    def test_last_status_is_a_copy(self):
+        # Callers must not be able to edit the scheduler's record.
+        snapshot = scheduler.last_status()
+        snapshot["garmin"] = "tampered"
+        assert scheduler.last_status().get("garmin") != "tampered"
+
+
+class TestSyncStatusEndpoint:
+    def test_reports_schedule_and_last_run(self, client, monkeypatch):
+        monkeypatch.setenv("ARETE_AUTO_SYNC_HOUR", "9")
+        with patch.object(scheduler, "last_run_date", return_value=date(2026, 9, 20)):
+            body = client.get("/sync/status").json()
+        assert body["scheduled_hour"] == 9
+        assert body["last_run"] == "2026-09-20"
+        assert isinstance(body["sources"], dict)
+
+    def test_never_run_reports_null(self, client, monkeypatch):
+        monkeypatch.delenv("ARETE_AUTO_SYNC_HOUR", raising=False)
+        with patch.object(scheduler, "last_run_date", return_value=None):
+            body = client.get("/sync/status").json()
+        assert body["scheduled_hour"] is None
+        assert body["last_run"] is None
