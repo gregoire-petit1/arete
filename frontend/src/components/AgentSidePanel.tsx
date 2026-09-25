@@ -116,19 +116,74 @@ async function runAgentStream(
   return finalText;
 }
 
+const STORAGE_KEY = 'arete.coach.conversation';
+/** Mirrors MAX_MESSAGES in agent/api.py: the backend rejects a longer history. */
+const MAX_STORED_MESSAGES = 60;
+
+/**
+ * Read the conversation back, or start empty.
+ *
+ * Storage can be absent or throw (private window, blocked site data), and
+ * what comes back was written by an older build, so nothing here is trusted:
+ * anything that does not look like a message is dropped rather than rendered.
+ * A tool step left `running` belongs to a stream that died with the tab, so
+ * it is settled on the way in.
+ */
+function loadConversation(): ChatMessage[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (m): m is ChatMessage =>
+          !!m &&
+          typeof m === 'object' &&
+          typeof (m as ChatMessage).content === 'string' &&
+          ((m as ChatMessage).role === 'user' || (m as ChatMessage).role === 'assistant')
+      )
+      .slice(-MAX_STORED_MESSAGES)
+      .map((m) => ({
+        role: m.role,
+        content: m.content,
+        steps: (Array.isArray(m.steps) ? m.steps : [])
+          .filter((step) => !!step && typeof step.name === 'string')
+          .map((step) => ({ kind: 'tool' as const, name: step.name, args: step.args, status: 'done' as const })),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function saveConversation(messages: ChatMessage[]): void {
+  try {
+    if (messages.length === 0) {
+      localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-MAX_STORED_MESSAGES)));
+  } catch {
+    // Storage full or blocked: the conversation still works, it just will not
+    // outlive the tab.
+  }
+}
+
 /**
  * Coaching-agent side panel (port of the Cortex sidepanel, single-page flavor):
  * right drawer, streamed answers over SSE, current page sent as
  * `panel_context` on every message. Tool calls render as a persistent
- * per-message timeline. History is client state only — persistence lands later.
+ * per-message timeline.
  *
- * The conversation survives navigation: the page travels in `panel_context`
- * on every turn, so the agent always knows where the athlete is now, and
- * asking about the dashboard then walking to Planning keeps one thread.
+ * The conversation survives navigation and reload: the page travels in
+ * `panel_context` on every turn, so the agent always knows where the athlete
+ * is now, and the thread itself is kept in localStorage. It stays client-side
+ * on purpose — the API is stateless by design and the durable cross-session
+ * context lives in the agent's own memory ledger, not in the last six turns.
  */
 export function AgentSidePanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const panelContext = usePanelContext();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>(loadConversation);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -140,6 +195,10 @@ export function AgentSidePanel({ open, onClose }: { open: boolean; onClose: () =
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
+
+  // Written on every change, streaming included: a tab closed mid-answer
+  // keeps what had already landed.
+  useEffect(() => saveConversation(messages), [messages]);
 
   // Drop the in-flight run when the panel leaves the tree for good.
   useEffect(() => () => abortRef.current?.abort(), []);
