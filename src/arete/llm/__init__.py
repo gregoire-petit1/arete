@@ -1,17 +1,6 @@
-"""LLM module: multi-provider client (Ollama / OpenRouter / GitHub Models)."""
+"""Reading what the athlete wrote or said: workout grammar, parser, transcription.
 
-from arete.llm.provider import (
-    generate,
-    get_default_model,
-    get_llm_client,
-    get_provider_config,
-    reset_client,
-)
-
-__all__ = [
-    "generate",
-    "get_default_model",
-    "get_llm_client",
-    "get_provider_config",
-    "reset_client",
-]
+No text generation lives here any more — the coaching agent owns that, in
+``arete.agent``. What is left is deterministic (the Lark grammar and the
+free-text parser) plus the speech-to-text call behind dictated sessions.
+"""

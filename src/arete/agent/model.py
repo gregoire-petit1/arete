@@ -31,7 +31,7 @@ AGENT_STREAM_CHUNK_TIMEOUT_SEC = 300
 #: trip before the fallback chain even starts.
 DEFAULT_OPENROUTER_MODEL = "thinkingmachines/inkling:free"
 
-#: Default GitHub Models model, mirroring ``llm/provider.py``'s default.
+#: Default GitHub Models model: free tier, tool-calling capable.
 DEFAULT_GITHUB_MODEL = "Meta-Llama-3.1-8B-Instruct"
 
 #: Free-pool fallback chain, tried in order when the primary model 429s or
@@ -107,7 +107,7 @@ def build_chat_model() -> ChatOpenAI:
         api_key = config.github_token
         if not api_key:
             raise ValueError("GITHUB_TOKEN env var required for github provider")
-        # GitHub Models is OpenAI-compatible; same base URL as llm/provider.py.
+        # GitHub Models speaks the OpenAI protocol behind its own base URL.
         return ChatOpenAI(
             model=config.llm_model or DEFAULT_GITHUB_MODEL,
             base_url="https://models.inference.ai.azure.com",

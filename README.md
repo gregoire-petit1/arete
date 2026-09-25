@@ -11,12 +11,12 @@ Self-hosted, single-user training assistant:
 - **Analytics**: volume, CTL/ATL/TSB (Banister model with personalized coefficients), pace trends, HR drift / aerobic decoupling, cardiac efficiency.
 - **Strength log** with a free-text workout parser (Lark grammar + fuzzy catalog matching, no LLM), muscle-volume heatmap and Garmin activity linking.
 - **Planning**: planned sessions matched against actual activities, adherence dashboard.
-- **LLM coaching tips** (daily + post-session) through any OpenAI-compatible provider: Ollama, OpenRouter or GitHub Models.
-- **Coaching agent** in a side panel: sees the page you are on, reads its data through tools, loads extra toolkits on demand (planning) and keeps a markdown memory ledger across conversations (see [the design doc](docs/plans/2026-09-21-coaching-agent-design.md)).
+- **Coaching agent** through any OpenAI-compatible provider (Ollama, OpenRouter or GitHub Models). In a side panel it sees the page you are on and reads its data through tools, loading extra toolkits on demand (planning, analytics); unattended it writes a daily briefing on the dashboard after the morning sync and comments each finished session. It keeps a markdown memory ledger across conversations — see [the design doc](docs/plans/2026-09-21-coaching-agent-design.md).
+- **Deterministic fallback**: an eight-rule engine produces the daily tip and the session facts, and is what ships whenever the model is unavailable, so the dashboard is never empty.
 
 ## Stack
 
-- **Backend**: Python 3.11, FastAPI + Pydantic v2, DuckDB, `garminconnect` (Garmin Connect, unofficial API), `fitparse`, `lark` (workout grammar), `openai` SDK (provider-agnostic), LangChain + `deepagents` (coaching agent).
+- **Backend**: Python 3.11, FastAPI + Pydantic v2, DuckDB, `garminconnect` (Garmin Connect, unofficial API), `fitparse`, `lark` (workout grammar), LangChain + `deepagents` + `openai` SDK (the coaching agent and speech-to-text).
 - **Frontend**: React 19 + Vite, Tailwind 4, TanStack Query, recharts, PWA (see `frontend/README.md`).
 - **Tooling**: uv, ruff, mypy, pytest; Docker Compose (backend + nginx-served frontend).
 
@@ -74,7 +74,7 @@ src/arete/
 ├── garmin/     FIT parser, time-series metrics, planned/actual matching, Garmin Connect client + activity/health sync, readiness
 ├── strength/   Strength models + repository (exercises, sessions, sets, PRs)
 ├── strava/     Strava API client and activity mapping
-├── llm/        Provider abstraction (tips), workout grammar + text parser
+├── llm/        Workout grammar + free-text parser (deterministic), speech-to-text for dictated sessions
 └── data/       Exercise catalog
 frontend/       React app (pages: Dashboard, Planning, Analytics, Log, Settings)
 scripts/        fit_banister.py (fit personal CTL/ATL coefficients), garmin_login.py (one-time token bootstrap)

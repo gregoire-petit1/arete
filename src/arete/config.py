@@ -50,11 +50,6 @@ class Config:
     def github_token(self) -> str:
         return _env("GITHUB_TOKEN", "") or ""
 
-    @property
-    def llm_timeout_s(self) -> int:
-        """Cap on a single LLM call; the SDK would otherwise wait 600 seconds."""
-        return int(_env("LLM_TIMEOUT_S", "30") or 30)
-
     # --- Speech to text (dictated sessions) --------------------------------
     @property
     def stt_provider(self) -> str:
