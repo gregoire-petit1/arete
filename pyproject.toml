@@ -76,3 +76,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+markers = [
+    "eval: hits a real model over the network; skipped unless ARETE_EVAL=1",
+]
