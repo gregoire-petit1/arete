@@ -46,6 +46,8 @@ const TOOL_LABELS: Record<string, (args?: string) => string> = {
   get_training_advice: () => 'consulte les recommandations',
   get_personal_records: () => 'lit tes records',
   list_recent_sessions: () => 'liste tes séances récentes',
+  read_workout: () => 'relit ta séance de muscu',
+  save_workout: () => 'enregistre ta séance de muscu',
   list_planned: () => 'liste les séances planifiées',
   create_planned_session: () => 'crée une séance planifiée',
   update_planned_status: () => 'met à jour une séance',
