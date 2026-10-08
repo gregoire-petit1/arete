@@ -1,0 +1,15 @@
+"$schema" = "https://conductor.build/schemas/settings.repo.schema.json"
+
+# New workspaces get .env from the repository root (Conductor copies .env* by
+# default); `make install` falls back to .env.example when the root has none.
+[scripts]
+setup = "make install"
+# Safe in parallel: each worktree has its own data/ (DuckDB is single-writer)
+# and its own ports.
+run_mode = "concurrent"
+
+[scripts.run.dev]
+available_in = [ "local" ]
+command = "make dev BACKEND_PORT=$CONDUCTOR_PORT FRONTEND_PORT=$((CONDUCTOR_PORT + 1))"
+default = true
+icon = "play"

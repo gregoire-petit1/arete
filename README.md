@@ -23,21 +23,17 @@ Self-hosted, single-user training assistant:
 
 ```bash
 git clone https://github.com/gregoire-petit1/arete.git && cd arete
-cp .env.example .env            # edit as needed
-uv sync --extra dev
-uv run python -c "from arete.dataio.init_duckdb import main; main()"
-uv run uvicorn arete.api.main:app --reload --app-dir src   # http://localhost:8000/docs
-
-cd frontend && npm ci && npm run dev                        # http://localhost:5173
+make dev        # http://localhost:5173 (app), http://127.0.0.1:8000/docs (API)
 ```
 
-The Vite dev server proxies `/api/*` to the backend on port 8000. The schema is (re)initialized on every backend start, so the init command is only needed for scripts that run without the API.
+`make dev` installs what is missing (`uv sync`, `npm ci`, `.env` copied from `.env.example`; edit it as needed), then runs the API with auto-reload and the Vite dev server with hot module replacement. Ctrl-C stops both; if either exits, the other is stopped too. Ports: `make dev BACKEND_PORT=8002 FRONTEND_PORT=5174`. `make backend` / `make frontend` run one side alone, `make check` runs what CI runs, `make` lists every target.
+
+The Vite dev server proxies `/api/*` to the backend. The schema is (re)initialized on every backend start; scripts that run without the API need `uv run python -c "from arete.dataio.init_duckdb import main; main()"` first.
 
 ## Docker
 
 ```bash
-cp .env.example .env    # required: docker-compose reads env_file .env
-docker compose up --build
+make docker    # copies .env.example to .env if missing (compose reads env_file .env), then docker compose up --build
 # frontend: http://localhost:3080   backend: http://localhost:8001 (8000 is often taken)
 ```
 
