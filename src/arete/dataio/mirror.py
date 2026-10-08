@@ -1,0 +1,143 @@
+"""Keep the data directory in the database when the database is remote.
+
+On Vercel only ``/tmp`` is writable and it dies with the instance, yet the
+Garmin tokens, the coach's memory and transcripts, and the dictation misses
+must outlive it. Code keeps writing plain files under ``config.data_dir``;
+this module copies them into ``app.files`` after each request and back onto
+disk the first time an instance serves one.
+
+An instance only writes back the files it changed itself (compared with what
+it last read or wrote), so two instances do not overwrite each other's work
+with stale copies. FIT files are left out: large, and re-downloadable.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import logging
+import threading
+from collections.abc import Iterator
+from contextlib import closing
+from pathlib import Path
+
+from starlette.types import ASGIApp, Receive, Scope, Send
+
+from arete.config import config
+from arete.dataio.db import connect
+
+logger = logging.getLogger(__name__)
+
+EXCLUDED_DIRS = frozenset({"fit_files"})
+
+DDL = """
+CREATE SCHEMA IF NOT EXISTS app;
+CREATE TABLE IF NOT EXISTS app.files (
+    path        VARCHAR PRIMARY KEY,
+    content     BLOB NOT NULL,
+    updated_at  TIMESTAMP DEFAULT now()
+);
+"""
+
+#: Digest of each file as last read from or written to the database.
+_known: dict[str, str] = {}
+_hydrated = False
+_lock = threading.Lock()
+
+
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _local_files(root: Path) -> Iterator[tuple[str, Path]]:
+    if not root.is_dir():
+        return
+    for path in root.rglob("*"):
+        relative = path.relative_to(root)
+        if path.is_file() and relative.parts[0] not in EXCLUDED_DIRS:
+            yield relative.as_posix(), path
+
+
+def hydrate() -> int:
+    """Write the stored files onto disk, once per process. Returns the count."""
+    global _hydrated
+    with _lock:
+        if _hydrated:
+            return 0
+        root = config.data_dir
+        with closing(connect()) as con:
+            con.execute(DDL)
+            rows = con.execute("SELECT path, content FROM app.files").fetchall()
+        for relative, content in rows:
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+            _known[relative] = _digest(content)
+        _hydrated = True
+        return len(rows)
+
+
+def flush() -> int:
+    """Store the files this process created, changed or deleted. Returns the count."""
+    with _lock:
+        root = config.data_dir
+        changed: list[tuple[str, bytes]] = []
+        present: set[str] = set()
+        for relative, path in _local_files(root):
+            present.add(relative)
+            data = path.read_bytes()
+            if _known.get(relative) != _digest(data):
+                changed.append((relative, data))
+        deleted = [relative for relative in _known if relative not in present]
+        if not changed and not deleted:
+            return 0
+        with closing(connect()) as con:
+            con.execute(DDL)
+            for relative, data in changed:
+                con.execute(
+                    "INSERT OR REPLACE INTO app.files (path, content, updated_at) "
+                    "VALUES (?, ?, now())",
+                    [relative, data],
+                )
+            for relative in deleted:
+                con.execute("DELETE FROM app.files WHERE path = ?", [relative])
+        for relative, data in changed:
+            _known[relative] = _digest(data)
+        for relative in deleted:
+            del _known[relative]
+        return len(changed) + len(deleted)
+
+
+def reset() -> None:
+    """Forget what this process knows (tests)."""
+    global _hydrated
+    with _lock:
+        _known.clear()
+        _hydrated = False
+
+
+class MirrorMiddleware:
+    """Hydrate before the first request, flush after each one.
+
+    Pure ASGI rather than ``BaseHTTPMiddleware`` so the flush runs once the
+    whole body has been sent: the coach writes its memory while it streams.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or not config.is_remote_db:
+            await self.app(scope, receive, send)
+            return
+        try:
+            await asyncio.to_thread(hydrate)
+        except Exception:
+            logger.exception("Could not restore the data directory")
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            try:
+                await asyncio.to_thread(flush)
+            except Exception:
+                logger.exception("Could not store the data directory")

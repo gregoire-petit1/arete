@@ -34,7 +34,7 @@ KEEP_RECENT_MESSAGES = 12
 
 def transcripts_root() -> Path:
     """Absolute path of the transcript archive, created on demand."""
-    root = config.db_path.parent / TRANSCRIPTS_DIR_NAME
+    root = config.data_dir / TRANSCRIPTS_DIR_NAME
     root.mkdir(parents=True, exist_ok=True)
     return root
 

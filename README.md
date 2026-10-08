@@ -37,7 +37,7 @@ make docker    # copies .env.example to .env if missing (compose reads env_file 
 # frontend: http://localhost:3080   backend: http://localhost:8001 (8000 is often taken)
 ```
 
-Data (DuckDB file, Garmin tokens, FIT files) is the repo's `./data` directory, bind-mounted at `/app/data`, so Docker and `uv run uvicorn` share the same database (never run both backends at once: DuckDB allows a single writer). The compose file enables the daily sync (`TZ=Europe/Paris` + `ARETE_AUTO_SYNC_HOUR=9`, after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up; the scheduler checks the wall clock every five minutes and catches up a run missed while the machine slept) and sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
+Docker and Vercel share one MotherDuck database (`ARETE_DB=md:arete`, token `MOTHERDUCK_TOKEN` from `vercel env pull`); files that are not the database (Garmin tokens, coach memory) stay in the repo's `./data`, bind-mounted at `/app/data`, and are mirrored into it (`dataio/mirror.py`). `make dev` keeps the local `data/arete.duckdb` file unless `ARETE_DB` says otherwise. The daily sync runs on Vercel Cron at 08:00 UTC (`GET /api/cron/daily-sync`, `CRON_SECRET`), after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up. `ARETE_AUTO_SYNC_HOUR` still arms the in-process scheduler for a backend that stays up without Vercel. The compose file sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
 
 ## Configuration
 
@@ -45,7 +45,9 @@ All settings come from environment variables (see `.env.example`):
 
 | Variable | Purpose |
 | --- | --- |
-| `ARETE_DB` | DuckDB file path (default `data/arete.duckdb`) |
+| `ARETE_DB` | DuckDB file path (default `data/arete.duckdb`), or `md:<database>` for MotherDuck |
+| `ARETE_DATA_DIR` | Files beside the database (default: its directory, `/tmp/arete-data` on MotherDuck) |
+| `CRON_SECRET` | Bearer token of `GET /cron/daily-sync`; unset = endpoint closed |
 | `ARETE_LOG_LEVEL` | Backend log level (default `INFO`) |
 | `ARETE_AUTO_SYNC_HOUR` | Local hour of the daily Garmin activities + health and Strava sync, best set after wake-up; unset = manual only |
 | `LLM_CONTEXT_TOKENS` | Coaching deployment context window (default 65,536); set to your actual model/server limit |

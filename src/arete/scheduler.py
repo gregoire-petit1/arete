@@ -40,10 +40,10 @@ def last_status() -> dict[str, str]:
 
 
 def state_path() -> Path:
-    """Where the last run is recorded (beside the DuckDB file)."""
-    from arete.dataio.db import get_db_path
+    """Where the last run is recorded (in the data directory)."""
+    from arete.config import config
 
-    return get_db_path().parent / STATE_FILENAME
+    return config.data_dir / STATE_FILENAME
 
 
 def last_run_date() -> date | None:

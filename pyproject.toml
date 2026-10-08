@@ -3,7 +3,7 @@ name = "arete"
 version = "0.1.0"
 description = "Training assistant: Garmin/Strava analytics, strength log and LLM coaching tips"
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "anyio>=4.11.0",
     "deepagents==0.7.4",
@@ -42,7 +42,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 88
 src = ["src"]
 
@@ -67,7 +67,7 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = false
 warn_return_any = true
 warn_unused_ignores = true

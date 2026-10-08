@@ -345,7 +345,7 @@ class GarminSyncClient:
         self, activity_id: int, output_dir: Path | None = None
     ) -> Path | None:
         """Download the original FIT file for an activity (cached on disk)."""
-        output_dir = output_dir or Path("data/fit_files")
+        output_dir = output_dir or config.fit_dir
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"{activity_id}.fit"
         if output_path.exists():
@@ -519,7 +519,7 @@ class GarminSyncClient:
         Recomputes pace from speed, re-reads laps / HR zones from the FIT files on
         disk and fetches the activity names from Garmin. Idempotent.
         """
-        fit_dir = fit_dir or Path("data/fit_files")
+        fit_dir = fit_dir or config.fit_dir
         sessions = [
             s
             for s in self.repository.list_actual_sessions(limit=10000)
@@ -610,7 +610,7 @@ class GarminSyncClient:
         Uses the FIT samples when the file is on disk, lap averages otherwise.
         Needs no Garmin connection: run it after changing the threshold.
         """
-        fit_dir = fit_dir or Path("data/fit_files")
+        fit_dir = fit_dir or config.fit_dir
         zones = self.zones
         sessions = [
             s for s in self.repository.list_actual_sessions(limit=10000) if s.id

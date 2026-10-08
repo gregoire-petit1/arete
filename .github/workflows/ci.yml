@@ -21,7 +21,7 @@ jobs:
         with:
           version: "latest"
           enable-cache: true
-      - run: uv python install 3.11
+      - run: uv python install 3.12
       - run: uv sync --frozen --extra dev
       - run: uv run ruff check src tests
       - run: uv run ruff format --check src tests
@@ -35,7 +35,7 @@ jobs:
         with:
           version: "latest"
           enable-cache: true
-      - run: uv python install 3.11
+      - run: uv python install 3.12
       - run: uv sync --frozen --extra dev
       - run: uv run pytest tests/ --tb=short
 
@@ -48,7 +48,7 @@ jobs:
         with:
           version: "latest"
           enable-cache: true
-      - run: uv python install 3.11
+      - run: uv python install 3.12
       - run: uv sync --frozen --extra dev
       - run: uv run mypy src/arete
 

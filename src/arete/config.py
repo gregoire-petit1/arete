@@ -22,12 +22,46 @@ def _env(name: str, default: str | None = None) -> str | None:
 class Config:
     # --- storage -----------------------------------------------------------
     @property
+    def db_target(self) -> str:
+        """``ARETE_DB`` as given: a file path, or ``md:<database>`` for MotherDuck."""
+        return _env("ARETE_DB", "data/arete.duckdb") or "data/arete.duckdb"
+
+    @property
+    def is_remote_db(self) -> bool:
+        """True when the database lives in MotherDuck rather than in a local file."""
+        return self.db_target.startswith("md:")
+
+    @property
     def db_path(self) -> Path:
-        return Path(_env("ARETE_DB", "data/arete.duckdb") or "data/arete.duckdb")
+        """Local database file. Meaningless when the database is remote."""
+        return Path(self.db_target)
+
+    @property
+    def data_dir(self) -> Path:
+        """Where everything that is not the database is written.
+
+        Beside the database file locally. On a remote database the process may
+        run where only ``/tmp`` is writable (Vercel Functions), so files go
+        there and ``dataio.mirror`` keeps them in the database.
+        """
+        explicit = _env("ARETE_DATA_DIR")
+        if explicit:
+            return Path(explicit)
+        if self.is_remote_db:
+            return Path("/tmp/arete-data")
+        return self.db_path.parent
 
     @property
     def garmin_tokens_dir(self) -> Path:
-        return Path(_env("ARETE_GARMIN_TOKENS_DIR", "data/garmin_tokens") or "")
+        explicit = _env("ARETE_GARMIN_TOKENS_DIR")
+        return Path(explicit) if explicit else self.data_dir / "garmin_tokens"
+
+    @property
+    def fit_dir(self) -> Path:
+        """Downloaded FIT files. Ephemeral on a remote database: the sync reads
+        what it needs at download time, and recomputing zones falls back to
+        lap averages when a file is gone."""
+        return self.data_dir / "fit_files"
 
     # --- LLM (tips + coaching agent) ----------------------------------------
     @property
@@ -156,6 +190,11 @@ class Config:
         if not 0 <= hour <= 23:
             raise ValueError("ARETE_AUTO_SYNC_HOUR must be between 0 and 23")
         return hour
+
+    @property
+    def cron_secret(self) -> str:
+        """Bearer token Vercel Cron sends; empty disables the cron endpoint."""
+        return _env("CRON_SECRET", "") or ""
 
     @property
     def log_level(self) -> str:
