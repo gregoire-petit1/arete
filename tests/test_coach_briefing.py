@@ -8,12 +8,14 @@ reaching the dashboard, and the day's briefing is produced once.
 from __future__ import annotations
 
 from datetime import date, timedelta
-from unittest.mock import patch
+from functools import partial
+from unittest.mock import AsyncMock, patch
 
+import anyio
 import pytest
 
-from arete.coach.briefing import generate_briefing, get_or_create_briefing
-from arete.coach.repository import BriefingRepository
+from arete.coaching import generate_briefing, get_or_create_briefing
+from arete.services.coaching_repository import BriefingRepository
 
 
 @pytest.fixture
@@ -32,7 +34,7 @@ def clean_day(repo):
 
 @pytest.fixture
 def enabled():
-    with patch("arete.coach.briefing.briefing_enabled", return_value=True):
+    with patch("arete.services.briefing.briefing_enabled", return_value=True):
         yield
 
 
@@ -75,8 +77,10 @@ class TestGenerate:
     ):
         # The card's colour must not depend on a model.
         with (
-            patch("arete.coach.briefing._run_agent", return_value="Ta charge monte."),
-            patch("arete.coach.briefing._rule_floor", return_value=("floor", "alert")),
+            patch("arete.coaching.run_briefing", return_value="Ta charge monte."),
+            patch(
+                "arete.services.briefing._rule_floor", return_value=("floor", "alert")
+            ),
         ):
             b = generate_briefing(target_date=clean_day)
         assert b.text == "Ta charge monte."
@@ -88,10 +92,12 @@ class TestGenerate:
     ):
         with (
             patch(
-                "arete.coach.briefing._run_agent",
+                "arete.coaching.run_briefing",
                 side_effect=RuntimeError("model is away"),
             ),
-            patch("arete.coach.briefing._rule_floor", return_value=("floor", "info")),
+            patch(
+                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+            ),
         ):
             b = generate_briefing(target_date=clean_day)
 
@@ -103,9 +109,11 @@ class TestGenerate:
 
     def test_disabled_stores_the_floor_without_calling_the_agent(self, clean_day):
         with (
-            patch("arete.coach.briefing.briefing_enabled", return_value=False),
-            patch("arete.coach.briefing._rule_floor", return_value=("floor", "info")),
-            patch("arete.coach.briefing._run_agent") as run,
+            patch("arete.services.briefing.briefing_enabled", return_value=False),
+            patch(
+                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+            ),
+            patch("arete.coaching.run_briefing") as run,
         ):
             b = generate_briefing(target_date=clean_day)
         run.assert_not_called()
@@ -114,26 +122,34 @@ class TestGenerate:
     def test_a_broken_rule_engine_still_yields_something(self, clean_day):
         # The floor has a floor: the dashboard is never empty.
         with (
-            patch("arete.coach.briefing.briefing_enabled", return_value=False),
+            patch("arete.services.briefing.briefing_enabled", return_value=False),
             patch(
-                "arete.api.ai_tips.daily_rule_tip", side_effect=RuntimeError("no data")
+                "arete.services.coaching_rules.daily_rule_tip",
+                side_effect=RuntimeError("no data"),
             ),
         ):
             b = generate_briefing(target_date=clean_day)
         assert b.text and b.priority == "info"
 
     def test_an_overlong_briefing_is_refused(self, clean_day, enabled):
-        from arete.coach.briefing import MAX_BRIEFING_CHARS
+        from arete.services.briefing import MAX_BRIEFING_CHARS
 
         class _Msg:
             text = "x" * (MAX_BRIEFING_CHARS + 1)
 
         with (
-            patch("arete.agent.execution.invoke_agent") as build,
-            patch("arete.coach.briefing._rule_floor", return_value=("floor", "info")),
+            patch("arete.coaching.build_briefing_agent") as build,
+            patch(
+                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+            ),
         ):
-            build.return_value = {"messages": [_Msg()]}
-            b = generate_briefing(target_date=clean_day)
+            build.return_value.ainvoke = AsyncMock(return_value={"messages": [_Msg()]})
+            b = anyio.run(
+                partial(
+                    anyio.to_thread.run_sync,
+                    partial(generate_briefing, target_date=clean_day),
+                )
+            )
         # Refused, so the floor is served and the failure is on record.
         assert b.source == "rules"
 
@@ -142,10 +158,12 @@ class TestGenerate:
             text = "   "
 
         with (
-            patch("arete.agent.execution.invoke_agent") as build,
-            patch("arete.coach.briefing._rule_floor", return_value=("floor", "info")),
+            patch("arete.coaching.build_briefing_agent") as build,
+            patch(
+                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+            ),
         ):
-            build.return_value = {"messages": [_Msg()]}
+            build.return_value.ainvoke = AsyncMock(return_value={"messages": [_Msg()]})
             b = generate_briefing(target_date=clean_day)
         assert b.source == "rules"
 
@@ -153,8 +171,10 @@ class TestGenerate:
 class TestGetOrCreate:
     def test_the_day_is_produced_once(self, clean_day, enabled):
         with (
-            patch("arete.coach.briefing._run_agent", return_value="written") as run,
-            patch("arete.coach.briefing._rule_floor", return_value=("floor", "info")),
+            patch("arete.coaching.run_briefing", return_value="written") as run,
+            patch(
+                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+            ),
         ):
             first = get_or_create_briefing(target_date=clean_day)
             second = get_or_create_briefing(target_date=clean_day)
@@ -165,8 +185,10 @@ class TestGetOrCreate:
 
     def test_the_trigger_is_recorded(self, repo, clean_day, enabled):
         with (
-            patch("arete.coach.briefing._run_agent", return_value="written"),
-            patch("arete.coach.briefing._rule_floor", return_value=("floor", "info")),
+            patch("arete.coaching.run_briefing", return_value="written"),
+            patch(
+                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+            ),
         ):
             b = get_or_create_briefing(target_date=clean_day, trigger="scheduler")
         assert b.trigger == "scheduler"
@@ -180,7 +202,7 @@ class TestGetOrCreate:
 class TestLedgerRotation:
     @pytest.fixture
     def ledger(self, tmp_path, monkeypatch):
-        from arete.agent import filesystem as fs
+        from arete.services import memory as fs
 
         root = tmp_path / "memory"
         root.mkdir()
@@ -194,7 +216,7 @@ class TestLedgerRotation:
         )
 
     def test_a_small_ledger_is_left_alone(self, ledger):
-        from arete.agent.filesystem import rotate_sessions_ledger
+        from arete.services.memory import rotate_sessions_ledger
 
         ledger.write_text(self._entries(3), encoding="utf-8")
         before = ledger.read_text(encoding="utf-8")
@@ -202,7 +224,7 @@ class TestLedgerRotation:
         assert ledger.read_text(encoding="utf-8") == before
 
     def test_an_overgrown_ledger_is_split_on_an_entry(self, ledger):
-        from arete.agent.filesystem import (
+        from arete.services.memory import (
             MAX_SESSIONS_LEDGER_CHARS,
             rotate_sessions_ledger,
         )
@@ -219,14 +241,14 @@ class TestLedgerRotation:
         assert "séance 1\n" in archive.read_text(encoding="utf-8")
 
     def test_rotation_is_idempotent(self, ledger):
-        from arete.agent.filesystem import rotate_sessions_ledger
+        from arete.services.memory import rotate_sessions_ledger
 
         ledger.write_text(self._entries(60), encoding="utf-8")
         assert rotate_sessions_ledger() is not None
         assert rotate_sessions_ledger() is None
 
     def test_a_missing_ledger_is_not_an_error(self, ledger):
-        from arete.agent.filesystem import rotate_sessions_ledger
+        from arete.services.memory import rotate_sessions_ledger
 
         assert rotate_sessions_ledger() is None
 
@@ -238,19 +260,17 @@ class TestLedgerRotation:
 
 class TestSessionFeedback:
     def test_the_agent_text_wins_when_the_run_succeeds(self):
-        from arete.coach.session_feedback import enrich_session_feedback
+        from arete.coaching import enrich_session_feedback
 
-        with patch(
-            "arete.coach.session_feedback._run_agent", return_value="Belle séance."
-        ):
+        with patch("arete.coaching.run_feedback", return_value="Belle séance."):
             text, source = enrich_session_feedback("Séance terminée.", ["10 km"])
         assert (text, source) == ("Belle séance.", "agent")
 
     def test_a_failed_run_returns_the_rule_text(self):
-        from arete.coach.session_feedback import enrich_session_feedback
+        from arete.coaching import enrich_session_feedback
 
         with patch(
-            "arete.coach.session_feedback._run_agent",
+            "arete.coaching.run_feedback",
             side_effect=RuntimeError("model is away"),
         ):
             text, source = enrich_session_feedback("Séance terminée.", ["10 km"])
@@ -258,28 +278,48 @@ class TestSessionFeedback:
         assert (text, source) == ("Séance terminée.", "rules")
 
     def test_the_highlights_reach_the_agent_as_facts(self):
-        from arete.coach.session_feedback import enrich_session_feedback
+        from arete.coaching import enrich_session_feedback
 
-        with patch("arete.coach.session_feedback._run_agent", return_value="ok") as run:
+        with patch("arete.coaching.run_feedback", return_value="ok") as run:
             enrich_session_feedback("Séance terminée.", ["10 km", "FC 150"])
         facts = run.call_args[0][0]
         assert "Séance terminée." in facts
         assert "- 10 km" in facts and "- FC 150" in facts
 
     def test_no_highlights_is_not_an_empty_bullet_list(self):
-        from arete.coach.session_feedback import enrich_session_feedback
+        from arete.coaching import enrich_session_feedback
 
-        with patch("arete.coach.session_feedback._run_agent", return_value="ok") as run:
+        with patch("arete.coaching.run_feedback", return_value="ok") as run:
             enrich_session_feedback("Séance terminée.", [])
         assert run.call_args[0][0] == "Séance terminée."
 
     def test_an_overlong_answer_is_refused(self):
-        from arete.coach.session_feedback import MAX_FEEDBACK_CHARS, _run_agent
+        from arete.coaching import run_feedback as _run_agent
+        from arete.services.session_feedback import MAX_FEEDBACK_CHARS
 
         class _Msg:
             text = "x" * (MAX_FEEDBACK_CHARS + 1)
 
-        with patch("arete.agent.execution.invoke_agent") as build:
-            build.return_value = {"messages": [_Msg()]}
+        with patch("arete.coaching.build_feedback_agent") as build:
+            build.return_value.ainvoke = AsyncMock(return_value={"messages": [_Msg()]})
             with pytest.raises(RuntimeError, match="too long"):
-                _run_agent("facts")
+                anyio.run(partial(anyio.to_thread.run_sync, _run_agent, "facts"))
+
+    def test_the_briefing_and_the_feedback_do_not_share_a_graph(self):
+        # Different prompts, so the cached factory must hand back two graphs.
+        from arete.coaching import build_briefing_agent, build_feedback_agent
+
+        with (
+            patch(
+                "arete.agent.factory.create_agent",
+                side_effect=lambda *a, **k: k["name"],
+            ),
+            patch("arete.coaching.build_chat_model", return_value=object()),
+        ):
+            build_briefing_agent.cache_clear()
+            build_feedback_agent.cache_clear()
+            first = build_briefing_agent()
+            second = build_feedback_agent()
+            build_briefing_agent.cache_clear()
+            build_feedback_agent.cache_clear()
+        assert first != second

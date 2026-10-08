@@ -8,9 +8,13 @@ import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from langgraph.types import Command
 
-from arete.agent.middlewares import ToolEventMiddleware
-from arete.agent.streaming import StreamProjection
-from arete.agent.tool_events import MAX_TOOL_PREVIEW_CHARS, preview, tool_result_event
+from arete.agent.middlewares.events import ToolEventMiddleware
+from arete.agent.runtime.events import (
+    MAX_TOOL_PREVIEW_CHARS,
+    preview,
+    tool_result_event,
+)
+from arete.api.agent_streaming import StreamProjection
 
 
 def token(text, message_id, **metadata):
@@ -61,7 +65,7 @@ def test_empty_and_oversized_stream_fail_explicitly():
     with pytest.raises(ValueError, match="aucune réponse"):
         stream.done()
     with (
-        patch("arete.agent.streaming.MAX_STREAM_TEXT_CHARS", 5),
+        patch("arete.api.agent_streaming.MAX_STREAM_TEXT_CHARS", 5),
         pytest.raises(ValueError, match="taille"),
     ):
         stream.events(token("Too long", "m"))
@@ -126,10 +130,10 @@ def test_system_skill_catalog_and_loaded_instructions_reach_every_model_call(
 ):
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
-    from arete.agent.agent import get_agent
-    from arete.agent.context import AgentContext
-    from arete.agent.system_skill import SYSTEM_SKILL
-    from arete.agent.toolkit_middleware import _TOOLKIT_REGISTRY
+    from arete.agent.capabilities.registry import CAPABILITIES
+    from arete.agent.prompts.coach import SYSTEM_SKILL
+    from arete.agent.runtime.context import AgentContext
+    from arete.coaching import get_agent
 
     monkeypatch.setenv("ARETE_DB", str(tmp_path / "isolated.duckdb"))
     seen = []
@@ -162,12 +166,19 @@ def test_system_skill_catalog_and_loaded_instructions_reach_every_model_call(
             ]
         )
     )
+    monkeypatch.setattr(
+        "arete.agent.nodes.suggestions.SuggestionGenerator._messages",
+        lambda *args: None,
+    )
     get_agent.cache_clear()
     try:
-        with patch("arete.agent.agent.build_chat_model", return_value=model):
+        with patch("arete.coaching.build_chat_model", return_value=model):
             graph = get_agent()
         args = ({"messages": [{"role": "user", "content": "Charge analytics"}]},)
-        kwargs = {"context": AgentContext(source={}), "config": {"recursion_limit": 8}}
+        kwargs = {
+            "context": AgentContext(source={}),
+            "config": {"recursion_limit": 100},
+        }
         if async_mode:
             asyncio.run(graph.ainvoke(*args, **kwargs))
         else:
@@ -178,11 +189,11 @@ def test_system_skill_catalog_and_loaded_instructions_reach_every_model_call(
     for prompt in seen:
         assert SYSTEM_SKILL in prompt
         assert prompt.count("Skills disponibles") == 1
-        for tk in _TOOLKIT_REGISTRY.values():
+        for tk in CAPABILITIES.values():
             assert tk.description in prompt
     assert all("read_file" in tools for tools in bound_tools)
-    assert _TOOLKIT_REGISTRY["analytics"].instructions not in seen[0]
-    assert _TOOLKIT_REGISTRY["analytics"].instructions in seen[1]
+    assert CAPABILITIES["analytics"].instructions not in seen[0]
+    assert CAPABILITIES["analytics"].instructions in seen[1]
 
 
 def test_real_graph_sse_delivers_correlated_tools_and_final_snapshot(client):
@@ -191,7 +202,7 @@ def test_real_graph_sse_delivers_correlated_tools_and_final_snapshot(client):
     from langchain.agents import create_agent
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
-    from arete.agent.toolkit_middleware import ToolkitMiddleware
+    from arete.agent.middlewares.capabilities import ToolkitMiddleware
 
     class Model(GenericFakeChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -221,7 +232,7 @@ def test_real_graph_sse_delivers_correlated_tools_and_final_snapshot(client):
         ),
         middleware=[ToolEventMiddleware(), ToolkitMiddleware()],
     )
-    with patch("arete.agent.execution.get_agent", return_value=graph):
+    with patch("arete.api.agent.get_agent", return_value=graph):
         response = client.post(
             "/agent/chat/stream",
             json={"messages": [{"role": "user", "content": "Charge analytics"}]},

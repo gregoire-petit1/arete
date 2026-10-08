@@ -63,21 +63,21 @@ def _tool_call(name: str, args: dict[str, Any]) -> AIMessage:
 
 def record_turn(page: str, script: list[AIMessage]) -> list[dict[str, Any]]:
     """Run one turn of the real chat graph and return the recorded requests."""
-    import arete.agent.agent as agent_module
-    import arete.agent.model as model_module
-    from arete.agent.context import AgentContext
+    import arete.coaching as agent_module
+    from arete.agent.nodes.suggestions import SuggestionGenerator
+    from arete.agent.runtime.context import AgentContext
 
     _Recorder.calls = []
     model = _Recorder(messages=iter(script))
     with (
-        patch.object(agent_module, "build_chat_model", lambda: model),
-        patch.object(model_module, "build_chat_model", lambda: model),
+        patch.object(agent_module, "build_chat_model", lambda **kw: model),
+        patch.object(SuggestionGenerator, "_messages", lambda *args: None),
     ):
         agent_module.get_agent.cache_clear()
         agent_module.get_agent().invoke(
             {"messages": [{"role": "user", "content": "Comment je vais ?"}]},
             context=AgentContext(source={"panel_context": json.dumps({"page": page})}),
-            config={"recursion_limit": 40},
+            config={"recursion_limit": 100},
         )
     agent_module.get_agent.cache_clear()
     return list(_Recorder.calls)
@@ -95,14 +95,14 @@ def call_cost(call: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
-    from arete.agent.analytics_tools import (
+    from arete.agent.tools.analytics import (
         get_fitness,
         get_personal_records,
         get_training_advice,
         get_workload,
         list_recent_sessions,
     )
-    from arete.agent.tools import get_page_context
+    from arete.agent.tools.pages import get_page_context
     from arete.dataio.init_duckdb import main as init_schema
 
     init_schema()

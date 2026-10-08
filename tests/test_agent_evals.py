@@ -118,16 +118,37 @@ class Run:
         return f"tools={self.tools} answer={self.answer[:120]!r}"
 
 
+_model_portal = None
+
+
+@pytest.fixture(scope="module", autouse=True)
+def model_portal():
+    global _model_portal
+    from anyio.from_thread import start_blocking_portal
+
+    with start_blocking_portal() as portal:
+        _model_portal = portal
+        yield
+        _model_portal = None
+
+
 def ask(question: str, page: str = "dashboard") -> Run:
     """One real turn through the real graph."""
     import json
+    from functools import partial
 
-    from arete.agent.context import AgentContext
-    from arete.agent.execution import invoke_agent
+    from arete.agent.runtime.context import AgentContext
+    from arete.agent.runtime.execution import invoke_agent
+    from arete.coaching import get_agent
 
-    result = invoke_agent(
-        {"messages": [{"role": "user", "content": question}]},
-        context=AgentContext(source={"panel_context": json.dumps({"page": page})}),
+    assert _model_portal is not None
+    result = _model_portal.call(
+        partial(
+            invoke_agent,
+            get_agent(),
+            {"messages": [{"role": "user", "content": question}]},
+            context=AgentContext(source={"panel_context": json.dumps({"page": page})}),
+        )
     )
     messages = result.get("messages", [])
     return Run(
@@ -236,17 +257,6 @@ def test_an_exercise_the_catalog_refused_is_named_to_the_athlete():
 # ---------------------------------------------------------------------------
 
 
-def test_a_simple_question_does_not_fetch_the_journal():
-    """The journal arrives with the prompt now; fetching it again is waste.
-
-    Each `ls` or `read_file` is a model round trip, and the free tier allows
-    50 requests a day. Before the injection a single question opened with
-    `ls, read_file, read_file` before any real work.
-    """
-    run = ask("Je suis en forme aujourd'hui ?")
-    assert not run.called("ls", "read_file"), f"re-read the journal: {run}"
-
-
 def test_a_durable_fact_is_written_to_the_ledger():
     run = ask("Retiens que j'ai une douleur au tendon d'Achille droit depuis lundi.")
     assert run.called(*LEDGER_WRITE_TOOLS), f"nothing written down: {run}"
@@ -276,3 +286,14 @@ def test_sharp_pain_points_at_a_doctor():
             "avis médical",
         )
     ), f"no referral: {run}"
+
+
+def test_a_simple_question_does_not_fetch_the_journal():
+    """The journal arrives with the prompt now; fetching it again is waste.
+
+    Each `ls` or `read_file` is a model round trip, and the free tier allows
+    50 requests a day. Before the injection a single question opened with
+    `ls, read_file, read_file` before any real work.
+    """
+    run = ask("Je suis en forme aujourd'hui ?")
+    assert not run.called("ls", "read_file"), f"re-read the journal: {run}"

@@ -1,0 +1,77 @@
+"""The final request budget includes schemas and system context, not history alone."""
+
+from types import SimpleNamespace
+
+import pytest
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.tools import StructuredTool
+
+from arete.agent.context.builder import ContextBudgetExceeded, validate_context
+from arete.agent.runtime.context import AgentContext
+from arete.agent.runtime.policy import resolve_policy
+
+
+def test_large_system_instructions_exceed_the_complete_budget():
+    request = SimpleNamespace(
+        messages=[HumanMessage("hi")],
+        tools=[],
+        system_message=SystemMessage("long " * 8000),
+    )
+    with pytest.raises(ContextBudgetExceeded):
+        validate_context(request, context_tokens=8192, output_tokens=4096)
+
+
+def test_tool_schemas_consume_the_same_context_budget():
+    def read() -> str:
+        """Read."""
+        return "ok"
+
+    request = SimpleNamespace(
+        messages=[HumanMessage("hi")], tools=[], system_message=SystemMessage("coach")
+    )
+    assert validate_context(request, context_tokens=8192, output_tokens=4096) < 100
+    request.tools = [StructuredTool.from_function(read, description="schema " * 8000)]
+    with pytest.raises(ContextBudgetExceeded):
+        validate_context(request, context_tokens=8192, output_tokens=4096)
+
+
+def test_execution_policy_is_independent_of_framework_hooks():
+    assert resolve_policy("chat").can_execute(
+        "planning", "create_planned_session", frozenset({"list_planned"})
+    )
+    assert not resolve_policy("briefing").can_execute(
+        "planning", "create_planned_session", frozenset({"list_planned"})
+    )
+    assert not resolve_policy("briefing").can_execute(
+        "analytics", "future_write", frozenset({"get_workload"})
+    )
+    assert resolve_policy("briefing").can_execute(
+        "analytics", "get_workload", frozenset({"get_workload"})
+    )
+    with pytest.raises(ValueError, match="Unknown"):
+        resolve_policy("client_admin")
+
+
+def test_small_model_window_compacts_earlier(tmp_path, monkeypatch):
+    from arete.agent.context.compaction import build_summarization
+    from arete.agent.models.providers import build_chat_model
+
+    monkeypatch.setenv("ARETE_DB", str(tmp_path / "db.duckdb"))
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    middleware = build_summarization(
+        build_chat_model(), context_tokens=8192, output_tokens=4096
+    )
+    messages = [HumanMessage("hi")]
+    assert middleware._should_summarize(messages, 3000)
+    assert not middleware._should_summarize(messages, 1000)
+
+
+def test_compiled_background_profile_rejects_chat_policy_before_model_execution():
+    from arete.agent.middlewares.policy import ProfilePolicyMiddleware
+
+    middleware = ProfilePolicyMiddleware("briefing")
+    with pytest.raises(AssertionError, match="compiled policy"):
+        middleware.before_agent(
+            {},
+            SimpleNamespace(context=AgentContext(profile="chat")),
+        )

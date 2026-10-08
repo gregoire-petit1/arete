@@ -6,8 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from arete import scheduler
-from arete.agent.api import router as agent_router
-from arete.agent.tracing import close_tracing, get_tracing_client
+from arete.api.agent import router as agent_router
 from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
 from arete.api.garmin import router as garmin_router
@@ -20,6 +19,7 @@ from arete.api.strength import router as strength_router
 from arete.config import config
 from arete.dataio.db import db_connection
 from arete.dataio.init_duckdb import main as init_schema
+from arete.observability.tracing import close_tracing, get_tracing_client
 
 logger = logging.getLogger(__name__)
 

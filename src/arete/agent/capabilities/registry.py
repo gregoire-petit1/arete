@@ -1,0 +1,84 @@
+"""One capability catalog: tools, instructions and read-only classifications."""
+
+from arete.agent.capabilities.models import Toolkit
+from arete.agent.tools.analytics import ANALYTICS_TOOLS
+from arete.agent.tools.planning import PLANNING_TOOLS
+from arete.agent.tools.strength import STRENGTH_TOOLS
+
+ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé. Règles:
+- Pour une période précise ou une comparaison, appelle les outils avec des `days` différents plutôt que de raisonner sur le bloc de la page.
+- L'ACWR exige 28 jours d'historique; quand il manque, ne l'invente pas.
+- Le `name` d'une séance est ce qui a été lancé sur la montre, pas ce qui a été fait: crois les chiffres, `notes` et `rpe`.
+- Cite chaque valeur avec la période sur laquelle tu la lis."""
+
+
+PLANNING_INSTRUCTIONS = """Toolkit `planning` chargé. Règles:
+- Avant de planifier, regarde la charge récente et ce qui est déjà prévu, pour ne pas doubler une séance.
+- Une séance qui ne se fera pas passe en `skipped`; ne la supprime que si l'athlète le demande."""
+
+
+STRENGTH_INSTRUCTIONS = """Toolkit `strength` chargé. Règles:
+- Toujours `read_workout` d'abord, puis tu dis à l'athlète ce qui a été compris et ce qui ne l'a pas été, et seulement ensuite `save_workout`.
+- Ce qui est dans `not_recognised` est perdu à l'enregistrement: cite les noms et propose les `did_you_mean`.
+- Passe le texte tel qu'il l'a dit. N'invente jamais une série, une charge ou un RPE."""
+
+
+#: All registered toolkits. Registering a new one is one line here.
+CAPABILITIES: dict[str, Toolkit] = {
+    "planning": Toolkit(
+        id="planning",
+        description=(
+            "Planifier l'entraînement : créer, lister, modifier ou supprimer "
+            "des séances prévues sur la page Planning."
+        ),
+        tools=PLANNING_TOOLS,
+        instructions=PLANNING_INSTRUCTIONS,
+        read_tools=frozenset({"list_planned"}),
+    ),
+    "analytics": Toolkit(
+        id="analytics",
+        description=(
+            "Analyser l'entraînement : charge (ACWR, monotonie), forme "
+            "(CTL/ATL/TSB), records, séances récentes, conseils chiffrés sur "
+            "une fenêtre de jours au choix."
+        ),
+        tools=ANALYTICS_TOOLS,
+        instructions=ANALYTICS_INSTRUCTIONS,
+        read_tools=frozenset(
+            {
+                "get_workload",
+                "get_fitness",
+                "get_training_advice",
+                "get_personal_records",
+                "list_recent_sessions",
+            }
+        ),
+    ),
+    "strength": Toolkit(
+        id="strength",
+        description=(
+            "Enregistrer une séance de musculation dictée : lire ce que "
+            "l'athlète décrit, vérifier ce qui est reconnu, puis sauvegarder."
+        ),
+        tools=STRENGTH_TOOLS,
+        instructions=STRENGTH_INSTRUCTIONS,
+        read_tools=frozenset({"read_workout"}),
+    ),
+}
+
+
+def validate_registry() -> None:
+    names = {"search_toolkits", "load_toolkit"} | {
+        "get_page_context",
+        "ls",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "delete",
+    }
+    for tid, tk in CAPABILITIES.items():
+        assert tid == tk.id, f"Toolkit id mismatch: {tid}"
+        assert tk.read_tools <= {t.name for t in tk.tools}, f"Unknown read tools: {tid}"
+        for tool in tk.tools:
+            assert tool.name not in names, f"Duplicate tool name: {tool.name}"
+            names.add(tool.name)

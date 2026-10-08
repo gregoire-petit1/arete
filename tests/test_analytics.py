@@ -46,13 +46,13 @@ def stub_queries():
         "training_loads": [],
     }
     patches = {
-        name: patch(f"arete.api.analytics.{name}", return_value=value)
+        name: patch(f"arete.services.analytics.{name}", return_value=value)
         for name, value in targets.items()
     }
     mocks = {name: p.start() for name, p in patches.items()}
     with (
-        patch("arete.api.analytics.db_connection"),
-        patch("arete.api.analytics.tss_history", return_value=[]) as tss,
+        patch("arete.services.analytics.db_connection"),
+        patch("arete.services.analytics.tss_history", return_value=[]) as tss,
     ):
         mocks["tss_history"] = tss
         yield mocks
@@ -119,8 +119,8 @@ class TestOverview:
 
 
 class TestRecords:
-    @patch("arete.api.analytics.db_connection")
-    @patch("arete.api.analytics.best_effort_rows")
+    @patch("arete.services.analytics.db_connection")
+    @patch("arete.services.analytics.best_effort_rows")
     def test_keeps_the_fastest_per_distance(self, mock_rows, _con, client):
         mock_rows.return_value = [
             (
@@ -137,8 +137,8 @@ class TestRecords:
         assert one_k["activity_name"] == "Fast Run"
         assert one_k["time_display"] == "3:54"
 
-    @patch("arete.api.analytics.db_connection")
-    @patch("arete.api.analytics.best_effort_rows")
+    @patch("arete.services.analytics.db_connection")
+    @patch("arete.services.analytics.best_effort_rows")
     def test_distance_names_match_whatever_case_the_source_wrote(
         self, mock_rows, _con, client
     ):
@@ -157,8 +157,8 @@ class TestRecords:
         records = client.get("/analytics/records").json()["records"]
         assert [r["name"] for r in records] == ["10K", "Marathon", "50K"]
 
-    @patch("arete.api.analytics.db_connection")
-    @patch("arete.api.analytics.best_effort_rows")
+    @patch("arete.services.analytics.db_connection")
+    @patch("arete.services.analytics.best_effort_rows")
     def test_records_come_back_ordered_by_distance(self, mock_rows, _con, client):
         mock_rows.return_value = [
             (
@@ -180,8 +180,8 @@ class TestRecords:
             "Marathon",
         ]
 
-    @patch("arete.api.analytics.db_connection")
-    @patch("arete.api.analytics.best_effort_rows")
+    @patch("arete.services.analytics.db_connection")
+    @patch("arete.services.analytics.best_effort_rows")
     def test_unknown_distance_is_ignored(self, mock_rows, _con, client):
         mock_rows.return_value = [
             (
@@ -194,8 +194,8 @@ class TestRecords:
         records = client.get("/analytics/records").json()["records"]
         assert [r["name"] for r in records] == ["5K"]
 
-    @patch("arete.api.analytics.db_connection")
-    @patch("arete.api.analytics.best_effort_rows")
+    @patch("arete.services.analytics.db_connection")
+    @patch("arete.services.analytics.best_effort_rows")
     def test_long_efforts_display_hours(self, mock_rows, _con, client):
         mock_rows.return_value = [
             (
@@ -207,14 +207,14 @@ class TestRecords:
         record = client.get("/analytics/records").json()["records"][0]
         assert record["time_display"] == "1:32:15"
 
-    @patch("arete.api.analytics.db_connection")
-    @patch("arete.api.analytics.best_effort_rows", return_value=[])
+    @patch("arete.services.analytics.db_connection")
+    @patch("arete.services.analytics.best_effort_rows", return_value=[])
     def test_no_records(self, _rows, _con, client):
         assert client.get("/analytics/records").json() == {"records": []}
 
 
 class TestSessionUpdate:
-    @patch("arete.api.analytics.connect")
+    @patch("arete.services.analytics.connect")
     def test_update_rpe_and_notes(self, mock_connect, client):
         mock_conn = mock_connect.return_value
         resp = client.patch(
@@ -224,7 +224,7 @@ class TestSessionUpdate:
         assert resp.json()["success"] is True
         mock_conn.execute.assert_called_once()
 
-    @patch("arete.api.analytics.connect")
+    @patch("arete.services.analytics.connect")
     def test_update_empty_body(self, mock_connect, client):
         mock_conn = mock_connect.return_value
         resp = client.patch("/analytics/sessions/42", json={})
@@ -233,7 +233,7 @@ class TestSessionUpdate:
 
 
 class TestListSessions:
-    @patch("arete.api.analytics.db_connection")
+    @patch("arete.services.analytics.db_connection")
     def test_returns_sessions(self, mock_db, client):
         con = mock_db.return_value.__enter__.return_value
         con.execute.return_value.fetchall.return_value = [

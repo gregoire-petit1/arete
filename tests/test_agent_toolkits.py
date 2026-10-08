@@ -7,17 +7,18 @@ from datetime import date, timedelta
 
 from langchain_core.messages import SystemMessage
 
-from arete.agent.planning_tools import PLANNING_INSTRUCTIONS, PLANNING_TOOLS
-from arete.agent.toolkit_middleware import (
-    _TOOLKIT_REGISTRY,
-    ToolkitMiddleware,
-    _augment_tools,
-    _load,
+from arete.agent.capabilities.discovery import (
     _search_toolkits,
     loaded_toolkits,
     tool_instructions_suffix,
 )
-from arete.agent.toolkits import merge_loaded
+from arete.agent.capabilities.registry import CAPABILITIES, PLANNING_INSTRUCTIONS
+from arete.agent.context.builder import _augment_tools
+from arete.agent.middlewares.capabilities import ToolkitMiddleware
+from arete.agent.middlewares.context import ContextBuilderMiddleware
+from arete.agent.runtime.state import merge_loaded
+from arete.agent.tools.planning import PLANNING_TOOLS
+from arete.agent.tools.toolkits import _load
 
 
 class _Runtime:
@@ -40,7 +41,7 @@ def load_toolkit(toolkit_id: str, state=None) -> dict:
 
 
 def test_planning_toolkit_registered():
-    tk = _TOOLKIT_REGISTRY["planning"]
+    tk = CAPABILITIES["planning"]
     assert tk.id == "planning"
     assert {t.name for t in tk.tools} == {
         "list_planned",
@@ -138,15 +139,14 @@ class _Request:
 
 
 def test_toolkit_tools_not_in_primary_request_until_loaded():
-    middleware = ToolkitMiddleware()
     seen: list[list[str]] = []
 
     def capture(request):
         seen.append([getattr(t, "name", "") for t in request.tools])
         return "ok"
 
-    middleware.wrap_model_call(_Request(), capture)
-    middleware.wrap_model_call(
+    ContextBuilderMiddleware().wrap_model_call(_Request(), capture)
+    ContextBuilderMiddleware().wrap_model_call(
         _Request(state={"loaded_toolkits": ["planning"]}), capture
     )
 
@@ -159,9 +159,8 @@ def test_toolkit_tools_not_in_primary_request_until_loaded():
 def test_wrap_model_call_leaves_caller_request_untouched():
     # override() is the contract: the request the caller holds must not be
     # mutated (direct attribute assignment is deprecated in LangChain 1.x).
-    middleware = ToolkitMiddleware()
     request = _Request()
-    middleware.wrap_model_call(request, lambda r: "ok")
+    ContextBuilderMiddleware().wrap_model_call(request, lambda r: "ok")
     assert request.tools == []
 
 
@@ -179,7 +178,6 @@ def test_two_interleaved_runs_keep_their_own_toolkits():
     One middleware instance, two states, interleaved: each must see only its
     own.
     """
-    middleware = ToolkitMiddleware()
     run_a = {"loaded_toolkits": ["planning"]}
     run_b: dict = {}
     seen: list[set[str]] = []
@@ -189,10 +187,10 @@ def test_two_interleaved_runs_keep_their_own_toolkits():
         return "ok"
 
     # A has planning, B starts bare, A takes another turn, B takes one.
-    middleware.wrap_model_call(_Request(state=run_a), capture)
-    middleware.wrap_model_call(_Request(state=run_b), capture)
-    middleware.wrap_model_call(_Request(state=run_a), capture)
-    middleware.wrap_model_call(_Request(state=run_b), capture)
+    ContextBuilderMiddleware().wrap_model_call(_Request(state=run_a), capture)
+    ContextBuilderMiddleware().wrap_model_call(_Request(state=run_b), capture)
+    ContextBuilderMiddleware().wrap_model_call(_Request(state=run_a), capture)
+    ContextBuilderMiddleware().wrap_model_call(_Request(state=run_b), capture)
 
     assert "create_planned_session" in seen[0]
     assert "create_planned_session" not in seen[1]
@@ -203,7 +201,6 @@ def test_two_interleaved_runs_keep_their_own_toolkits():
 
 
 def test_interleaved_runs_keep_their_own_instructions():
-    middleware = ToolkitMiddleware()
     seen: list[str] = []
 
     def capture(request):
@@ -211,10 +208,12 @@ def test_interleaved_runs_keep_their_own_instructions():
         return "ok"
 
     base = SystemMessage(content="Tu es le coach.")
-    middleware.wrap_model_call(
+    ContextBuilderMiddleware().wrap_model_call(
         _Request(system_message=base, state={"loaded_toolkits": ["planning"]}), capture
     )
-    middleware.wrap_model_call(_Request(system_message=base, state={}), capture)
+    ContextBuilderMiddleware().wrap_model_call(
+        _Request(system_message=base, state={}), capture
+    )
 
     assert PLANNING_INSTRUCTIONS in seen[0]
     assert PLANNING_INSTRUCTIONS not in seen[1]
@@ -227,7 +226,6 @@ def test_pinned_instructions_reach_the_system_message_after_load():
     instructions have to be appended to the system message of every later
     model call, without dropping the base prompt.
     """
-    middleware = ToolkitMiddleware()
     seen: list[str | None] = []
 
     def capture(request):
@@ -235,8 +233,8 @@ def test_pinned_instructions_reach_the_system_message_after_load():
         return "ok"
 
     base = SystemMessage(content="Tu es le coach.")
-    middleware.wrap_model_call(_Request(system_message=base), capture)
-    middleware.wrap_model_call(
+    ContextBuilderMiddleware().wrap_model_call(_Request(system_message=base), capture)
+    ContextBuilderMiddleware().wrap_model_call(
         _Request(system_message=base, state={"loaded_toolkits": ["planning"]}), capture
     )
 
@@ -262,9 +260,9 @@ def test_full_graph_load_then_execute_planning():
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain_core.messages import AIMessage
 
-    from arete.agent.context import AgentContext
-    from arete.agent.filesystem import build_memory_filesystem
-    from arete.agent.tools import get_page_context
+    from arete.agent.backends.memory import build_memory_filesystem
+    from arete.agent.runtime.context import AgentContext
+    from arete.agent.tools.pages import get_page_context
 
     class FakeToolModel(GenericFakeChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -305,7 +303,7 @@ def test_full_graph_load_then_execute_planning():
     graph = create_agent(
         FakeToolModel(messages=messages),
         tools=[get_page_context],
-        middleware=[middleware, build_memory_filesystem()],
+        middleware=[middleware, build_memory_filesystem(), ContextBuilderMiddleware()],
         system_prompt="t",
         context_schema=AgentContext,
     )
@@ -333,7 +331,7 @@ def test_create_and_list_planned():
     file — `test_summary_counts_only_due_sessions` counted it as due the
     morning of 2026-09-25.
     """
-    from arete.agent.planning_tools import (
+    from arete.agent.tools.planning import (
         create_planned_session,
         delete_planned_session,
         list_planned,
@@ -363,7 +361,7 @@ def test_create_and_list_planned():
 
 
 def test_create_planned_rejects_bad_type():
-    from arete.agent.planning_tools import create_planned_session
+    from arete.agent.tools.planning import create_planned_session
 
     out = json.loads(
         create_planned_session.invoke(
@@ -374,7 +372,7 @@ def test_create_planned_rejects_bad_type():
 
 
 def test_update_and_delete_planned():
-    from arete.agent.planning_tools import (
+    from arete.agent.tools.planning import (
         create_planned_session,
         delete_planned_session,
         update_planned_status,
@@ -402,7 +400,7 @@ def test_update_and_delete_planned():
 
 def test_planning_tools_have_names_matching_registry():
     assert {t.name for t in PLANNING_TOOLS} == {
-        t.name for t in _TOOLKIT_REGISTRY["planning"].tools
+        t.name for t in CAPABILITIES["planning"].tools
     }
 
 
@@ -415,10 +413,10 @@ def test_full_graph_async_path_executes_toolkit_tools():
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain_core.messages import AIMessage
 
-    from arete.agent.context import AgentContext
-    from arete.agent.filesystem import build_memory_filesystem
-    from arete.agent.middlewares import ToolEventMiddleware
-    from arete.agent.tools import get_page_context
+    from arete.agent.backends.memory import build_memory_filesystem
+    from arete.agent.middlewares.events import ToolEventMiddleware
+    from arete.agent.runtime.context import AgentContext
+    from arete.agent.tools.pages import get_page_context
 
     class FakeToolModel(GenericFakeChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -464,6 +462,7 @@ def test_full_graph_async_path_executes_toolkit_tools():
                 middleware,
                 ToolEventMiddleware(),
                 build_memory_filesystem(),
+                ContextBuilderMiddleware(),
             ],
             system_prompt="t",
             context_schema=AgentContext,

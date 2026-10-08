@@ -1,103 +1,18 @@
-from datetime import date
-from typing import Literal
+"""HTTP settings adapter."""
 
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
 
-from arete.dataio import settings as repo
+from arete.services import settings as service
+from arete.services.settings import UserSettingsOut, UserSettingsUpdate
 
 router = APIRouter()
 
 
-# ---------- User Settings ----------
-class UserSettingsUpdate(BaseModel):
-    display_name: str = "HUNTER"
-    email: str | None = None
-    timezone: str = "Europe/Paris"
-    weekly_training_goal: int = Field(ge=1, le=14, default=6)
-    rest_day_preference: list[str] = ["monday"]
-    fatigue_threshold: int = Field(ge=50, le=100, default=85)
-    fitness_goal: Literal["maintenance", "build", "peak", "recovery"] = "build"
-    notifications_enabled: bool = True
-    coach_briefing_enabled: bool = True
-    theme: Literal["dark", "darker", "abyss"] = "dark"
-    exercise_abbreviations: dict[str, str] = {}
-    weekly_volume_target_kg: int = Field(ge=1000, le=200000, default=20000)
-    lthr: int | None = Field(ge=100, le=220, default=None)
-    max_hr: int | None = Field(ge=120, le=230, default=None)
-    threshold_pace_sec_km: int | None = Field(ge=120, le=900, default=None)
-    # Set by the Garmin sync; sent back untouched by the settings form.
-    lthr_measured_on: date | None = None
-
-
-class UserSettingsOut(BaseModel):
-    user_id: int
-    display_name: str
-    email: str | None
-    timezone: str
-    weekly_training_goal: int
-    rest_day_preference: list[str]
-    fatigue_threshold: int
-    fitness_goal: str
-    notifications_enabled: bool
-    coach_briefing_enabled: bool
-    theme: str
-    exercise_abbreviations: dict[str, str]
-    weekly_volume_target_kg: int
-    lthr: int | None
-    max_hr: int | None
-    threshold_pace_sec_km: int | None
-    lthr_measured_on: date | None
-
-
 @router.get("/settings", response_model=UserSettingsOut)
 def get_settings():
-    """Get current user settings."""
-    settings = repo.get_user_settings(user_id=1)
-    if not settings:
-        # Return defaults if no settings exist
-        return UserSettingsOut(
-            user_id=1,
-            display_name="HUNTER",
-            email=None,
-            timezone="Europe/Paris",
-            weekly_training_goal=6,
-            rest_day_preference=["monday"],
-            fatigue_threshold=85,
-            fitness_goal="build",
-            notifications_enabled=True,
-            coach_briefing_enabled=True,
-            theme="dark",
-            exercise_abbreviations={},
-            weekly_volume_target_kg=20000,
-            lthr=None,
-            max_hr=None,
-            threshold_pace_sec_km=None,
-            lthr_measured_on=None,
-        )
-    return UserSettingsOut(**settings)
+    return service.get_settings()
 
 
 @router.put("/settings", response_model=UserSettingsOut)
 def update_settings(payload: UserSettingsUpdate):
-    """Update user settings."""
-    settings = repo.upsert_user_settings(
-        user_id=1,
-        display_name=payload.display_name,
-        email=payload.email,
-        timezone=payload.timezone,
-        weekly_training_goal=payload.weekly_training_goal,
-        rest_day_preference=payload.rest_day_preference,
-        fatigue_threshold=payload.fatigue_threshold,
-        fitness_goal=payload.fitness_goal,
-        notifications_enabled=payload.notifications_enabled,
-        coach_briefing_enabled=payload.coach_briefing_enabled,
-        theme=payload.theme,
-        exercise_abbreviations=payload.exercise_abbreviations,
-        weekly_volume_target_kg=payload.weekly_volume_target_kg,
-        lthr=payload.lthr,
-        max_hr=payload.max_hr,
-        threshold_pace_sec_km=payload.threshold_pace_sec_km,
-        lthr_measured_on=payload.lthr_measured_on,
-    )
-    return UserSettingsOut(**settings)
+    return service.update_settings(payload)

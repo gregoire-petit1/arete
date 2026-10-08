@@ -1,0 +1,36 @@
+"""Translate a resolved model route into the OpenAI-compatible adapter."""
+
+from langchain_openai import ChatOpenAI
+
+from arete.agent.models.registry import (
+    AGENT_MAX_RETRIES,
+    AGENT_MAX_TOKENS,
+    AGENT_STREAM_CHUNK_TIMEOUT_SEC,
+    AGENT_TEMPERATURE,
+    AGENT_TIMEOUT_SEC,
+    ModelRoute,
+)
+from arete.agent.models.routing import resolve_route
+
+
+def build_chat_model(
+    *,
+    route: ModelRoute | None = None,
+    max_tokens: int = AGENT_MAX_TOKENS,
+    timeout: float = AGENT_TIMEOUT_SEC,
+    max_retries: int = AGENT_MAX_RETRIES,
+    temperature: float = AGENT_TEMPERATURE,
+) -> ChatOpenAI:
+    route = route or resolve_route()
+    if not 0 < max_tokens < route.context_tokens:
+        raise ValueError("Output reservation must fit the configured model context")
+    return ChatOpenAI(
+        model=route.model,
+        base_url=route.base_url,
+        api_key=route.api_key,
+        temperature=temperature,
+        max_completion_tokens=max_tokens,
+        timeout=timeout,
+        max_retries=max_retries,
+        stream_chunk_timeout=min(timeout, AGENT_STREAM_CHUNK_TIMEOUT_SEC),
+    )

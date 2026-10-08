@@ -10,11 +10,11 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import SystemMessage
 
-from arete.agent.journal_memory import (
+from arete.agent.context.builder import build_context
+from arete.services.journal import (
     MAX_NOTES_CHARS,
     MAX_SESSIONS_CHARS,
     RECENT_SESSION_ENTRIES,
-    JournalMemoryMiddleware,
     journal_block,
     recent_entries,
 )
@@ -96,22 +96,22 @@ def test_an_empty_journal_adds_nothing(journal):
 class _Request:
     def __init__(self, system_message=None):
         self.system_message = system_message
+        self.tools = []
+        self.messages = []
 
     def override(self, **kw):
         return _Request(kw.get("system_message", self.system_message))
 
 
 def test_it_ends_the_system_prompt_and_leaves_the_caller_alone(journal, monkeypatch):
-    import arete.agent.journal_memory as module
+    import arete.services.journal as module
 
     (journal / "notes.md").write_text("- Objectif: semi en 1h35")
     monkeypatch.setattr(module, "memory_root", lambda: journal)
     seen: list[str] = []
     request = _Request(SystemMessage("Tu es le coach."))
 
-    JournalMemoryMiddleware().wrap_model_call(
-        request, lambda r: seen.append(r.system_message.text) or "ok"
-    )
+    seen.append(build_context(request).system_message.text)
 
     assert seen[0].startswith("Tu es le coach.")
     assert seen[0].rstrip().endswith("(vide)") or "semi en 1h35" in seen[0]
@@ -119,15 +119,13 @@ def test_it_ends_the_system_prompt_and_leaves_the_caller_alone(journal, monkeypa
 
 
 def test_no_journal_means_an_untouched_request(journal, monkeypatch):
-    import arete.agent.journal_memory as module
+    import arete.services.journal as module
 
     monkeypatch.setattr(module, "memory_root", lambda: journal)
     request = _Request(SystemMessage("Tu es le coach."))
-    passed: list = []
-    JournalMemoryMiddleware().wrap_model_call(
-        request, lambda r: passed.append(r) or "ok"
-    )
-    assert passed[0] is request
+    result = build_context(request)
+    assert "Ton journal" not in result.system_message.text
+    assert request.system_message.text == "Tu es le coach."
 
 
 # ---------------------------------------------------------------------------
@@ -136,10 +134,10 @@ def test_no_journal_means_an_untouched_request(journal, monkeypatch):
 
 
 def test_no_prompt_tells_the_agent_to_read_its_journal_first():
-    from arete.agent.prompts import TASK_INSTRUCTIONS
-    from arete.agent.system_skill import SYSTEM_SKILL
+    from arete.agent.profiles.catalog import PROFILES
+    from arete.agent.prompts.coach import SYSTEM_SKILL
 
-    for prompt in (SYSTEM_SKILL, *TASK_INSTRUCTIONS.values()):
+    for prompt in (SYSTEM_SKILL, *(p.instructions for p in PROFILES.values())):
         assert "Lis le journal" not in prompt
         assert "Relis ton journal" not in prompt
         assert "Lis ton journal" not in prompt
