@@ -160,14 +160,10 @@ def save_workout(text: str, date_str: str = "") -> str:
 
 STRENGTH_TOOLS: list[BaseTool] = [read_workout, save_workout]
 
-STRENGTH_INSTRUCTIONS = """Toolkit `strength` chargé — enregistrer une séance de musculation dictée:
-- `read_workout(text, date_str?)`: lit SANS rien écrire. Renvoie ce que le parser a compris, \
-`not_recognised` (exercices que le catalogue ne reconnaît pas) et `unparsed_lines` (lignes illisibles).
-- `save_workout(text, date_str?)`: enregistre. Les exercices non reconnus NE SONT PAS enregistrés.
-
-Toujours dans cet ordre: `read_workout` d'abord, tu annonces à l'athlète ce qui a été compris \
-et surtout ce qui ne l'a pas été, puis `save_workout` seulement après. Ce qui tombe dans \
-`not_recognised` est perdu à l'enregistrement: ne l'enterre pas, cite les noms et propose \
-les `did_you_mean` pour qu'il reformule.
-Passe le texte tel que l'athlète l'a dit — ses abréviations sont résolues côté serveur. \
-N'invente jamais une série, une charge ou un RPE qu'il n'a pas donné."""
+#: Rules only. The tools' own schemas and descriptions already reach the model
+#: once the toolkit is loaded; listing them again here cost tokens on every
+#: later call of the turn and said nothing new.
+STRENGTH_INSTRUCTIONS = """Toolkit `strength` chargé. Règles:
+- Toujours `read_workout` d'abord, puis tu dis à l'athlète ce qui a été compris et ce qui ne l'a pas été, et seulement ensuite `save_workout`.
+- Ce qui est dans `not_recognised` est perdu à l'enregistrement: cite les noms et propose les `did_you_mean`.
+- Passe le texte tel qu'il l'a dit. N'invente jamais une série, une charge ou un RPE."""

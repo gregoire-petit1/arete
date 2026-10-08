@@ -203,16 +203,11 @@ ANALYTICS_TOOLS: list[BaseTool] = [
     list_recent_sessions,
 ]
 
-ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé — lecture ciblée des données d'entraînement:
-- `get_workload(days?)`: ACWR, monotonie, strain sur une fenêtre (7-90 jours, défaut 28).
-  L'ACWR exige au moins 28 jours d'historique: en dessous il n'est pas renvoyé, n'en invente pas.
-  La fenêtre demandée est `window_days`; `days_with_data` est le nombre de jours qui contenaient des données.
-- `get_fitness(days?)`: CTL/ATL/TSB, forme, readiness, ramp rate (14-120 jours, défaut 42).
-- `get_training_advice(sport_type?)`: recommandations déterministes (cardio|strength|mixed).
-- `get_personal_records(sport?)`: records du 400m au 50K (400m, 1/2 mile, 1K, 1 mile, 2 mile, 5K, 10K, 15K, 10 mile, 20K, semi, 30K, marathon, 50K).
-- `list_recent_sessions(limit?, offset?)`: séances récentes, `offset` pour remonter dans le temps.
-  Le champ `name` est le titre lancé sur la montre, pas ce qui a été fait; `notes` et `rpe` viennent de l'athlète.
-Préfère ces outils à `get_page_context('analytics')` dès que tu veux une fenêtre \
-précise ou comparer deux périodes: appelle-les deux fois avec des `days` différents \
-plutôt que de raisonner sur un seul bloc de 30 jours.
-Chiffre toujours ce que tu avances: cite la valeur et la fenêtre sur laquelle tu la lis."""
+#: Rules only. The tools' own schemas and descriptions already reach the model
+#: once the toolkit is loaded; listing them again here cost tokens on every
+#: later call of the turn and said nothing new.
+ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé. Règles:
+- Pour une période précise ou une comparaison, appelle les outils avec des `days` différents plutôt que de raisonner sur le bloc de la page.
+- L'ACWR exige 28 jours d'historique; quand il manque, ne l'invente pas.
+- Le `name` d'une séance est ce qui a été lancé sur la montre, pas ce qui a été fait: crois les chiffres, `notes` et `rpe`.
+- Cite chaque valeur avec la période sur laquelle tu la lis."""
