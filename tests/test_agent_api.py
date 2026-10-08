@@ -594,3 +594,31 @@ class TestAnalyticsPageRead:
         cards = client.get("/analytics/overview?period=30d").json()["cards"]
         assert any("series" in card for card in cards.values())
 
+
+class TestLedgerTools:
+    """The journal's tools, described for a journal — and safe to append with."""
+
+    def _tools(self):
+        from arete.agent.filesystem import build_memory_filesystem
+
+        return {t.name: t for t in build_memory_filesystem().tools}
+
+    def test_no_tool_can_delete_a_journal_file(self):
+        # Rotation is the server's job; a delete could only lose data.
+        assert "delete" not in self._tools()
+
+    def test_reading_points_at_the_end_of_the_journal(self):
+        """`read_file` reads 100 lines from the top; new entries are appended.
+
+        Past 100 lines, a default read returns the oldest entries and misses
+        the recent ones.
+        """
+        assert "fin" in self._tools()["read_file"].description
+
+    def test_rewriting_the_journal_whole_is_warned_against(self):
+        # Read 100 lines, rewrite with an entry appended, lose the rest.
+        description = self._tools()["write_file"].description
+        assert "sessions.md" in description and "edit_file" in description
+
+    def test_appending_is_routed_to_edit_file(self):
+        assert "ajouter" in self._tools()["edit_file"].description
