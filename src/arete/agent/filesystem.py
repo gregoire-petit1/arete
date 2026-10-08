@@ -75,8 +75,9 @@ LEDGER_TOOL_DESCRIPTIONS = {
     "lis la fin du fichier pour les trouver. Les lignes arrivent numérotées, "
     "ne recopie jamais ces numéros.",
     "edit_file": "Remplace un passage exact d'un fichier du journal, recopié à "
-    "l'identique et unique dans le fichier. Lis le fichier avant, l'outil "
-    "échoue sinon. C'est l'outil pour ajouter une entrée.",
+    "l'identique et unique dans le fichier. Le journal joint à ton prompt suffit "
+    "pour le recopier; read_file seulement si le passage n'y figure pas. C'est "
+    "l'outil pour ajouter une entrée.",
     "write_file": "Crée un fichier ou le remplace en entier. N'y passe jamais "
     "pour ajouter à sessions.md ou notes.md: tout ce que tu n'as pas relu "
     "serait effacé. Pour ajouter, edit_file.",

@@ -9,6 +9,7 @@ from langchain.agents import create_agent
 
 from arete.agent.context import AgentContext
 from arete.agent.filesystem import build_memory_filesystem
+from arete.agent.journal_memory import JournalMemoryMiddleware
 from arete.agent.middlewares import (
     RuntimeContextMiddleware,
     TaskInstructionsMiddleware,
@@ -49,6 +50,11 @@ def get_agent():
             RuntimeContextMiddleware(),
             ToolEventMiddleware(),
             ToolkitMiddleware(),
+            # After the task instructions and the toolkits, so the journal
+            # ends the system prompt and what comes before it keeps the same
+            # prefix from call to call. One graph serves chat, briefing and
+            # session feedback, so all three get it from here.
+            JournalMemoryMiddleware(),
             build_memory_filesystem(),
             # After the filesystem, the order deepagents uses itself. Chat
             # only: the briefing and the session feedback are single-turn and

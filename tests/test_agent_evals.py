@@ -236,6 +236,17 @@ def test_an_exercise_the_catalog_refused_is_named_to_the_athlete():
 # ---------------------------------------------------------------------------
 
 
+def test_a_simple_question_does_not_fetch_the_journal():
+    """The journal arrives with the prompt now; fetching it again is waste.
+
+    Each `ls` or `read_file` is a model round trip, and the free tier allows
+    50 requests a day. Before the injection a single question opened with
+    `ls, read_file, read_file` before any real work.
+    """
+    run = ask("Je suis en forme aujourd'hui ?")
+    assert not run.called("ls", "read_file"), f"re-read the journal: {run}"
+
+
 def test_a_durable_fact_is_written_to_the_ledger():
     run = ask("Retiens que j'ai une douleur au tendon d'Achille droit depuis lundi.")
     assert run.called(*LEDGER_WRITE_TOOLS), f"nothing written down: {run}"

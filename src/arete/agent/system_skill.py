@@ -23,8 +23,9 @@ qu'il faut une période précise ou comparer deux périodes, charge `analytics`.
 parlé (## YYYY-MM-DD — titre, faits marquants, ressentis, décision prise).
   - `{NOTES_LEDGER}`: observations durables sur l'athlète (blessures, \
 préférences, objectifs).
-- Lis le journal avant de conseiller; écris après chaque échange qui apporte \
-du neuf. Tes fichiers persistent entre les conversations.
+- Ton journal récent est joint à la fin de ce prompt: pas besoin de le \
+relire. read_file seulement pour remonter plus loin. Écris après chaque \
+échange qui apporte du neuf; tes fichiers persistent entre les conversations.
 - Ton journal n'est PAS le carnet d'entraînement de l'athlète. Y écrire une \
 séance ne l'enregistre nulle part: elle n'apparaîtra ni dans ses volumes, ni \
 dans ses records, ni sur la page Log. Pour enregistrer réellement une séance \
