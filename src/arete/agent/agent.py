@@ -24,6 +24,7 @@ from arete.agent.filesystem import (
 )
 from arete.agent.middlewares import RuntimeContextMiddleware, ToolEventMiddleware
 from arete.agent.model import build_chat_model
+from arete.agent.summarization import build_summarization
 from arete.agent.toolkit_middleware import ToolkitMiddleware
 from arete.agent.tools import get_page_context
 
@@ -86,6 +87,11 @@ def get_agent():
             ToolEventMiddleware(),
             ToolkitMiddleware(),
             build_memory_filesystem(),
+            # After the filesystem, the order deepagents uses itself. Chat
+            # only: the briefing and the session feedback are single-turn and
+            # bounded by their recursion limit, so there is nothing to
+            # summarize and a model call to save.
+            build_summarization(),
         ],
         system_prompt=_SYSTEM_PROMPT,
         context_schema=AgentContext,
