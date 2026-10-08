@@ -1,0 +1,15 @@
+# Uploaded by `vercel deploy`: never personal data, secrets or local builds.
+data/
+PROG_*.md
+prog_*.md
+.env
+.env.*
+!.env.example
+.venv/
+**/node_modules/
+frontend/dist/
+tests/
+.agents/
+wip-deepagent-sidepanel/
+*.duckdb
+*.fit

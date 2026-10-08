@@ -49,3 +49,9 @@ frontend/.vite/
 
 # orca workspaces cloned inside this one
 wip-deepagent-sidepanel/
+
+# Vercel: project link, pulled env vars, and the skills its integrations install
+.vercel
+.env*.local
+.agents/
+skills-lock.json
