@@ -14,6 +14,7 @@ Two backends behind one ``connect()``:
 from __future__ import annotations
 
 import logging
+import os
 import pathlib
 import threading
 from collections.abc import Iterator
@@ -62,6 +63,9 @@ def _open_remote() -> duckdb.DuckDBPyConnection:
     ``MOTHERDUCK_TOKEN`` in the environment.
     """
     REMOTE_HOME.mkdir(parents=True, exist_ok=True)
+    # The MotherDuck extension also reads $HOME, which Vercel leaves empty.
+    if not os.environ.get("HOME"):
+        os.environ["HOME"] = str(REMOTE_HOME)
     con = duckdb.connect()
     con.execute(f"SET home_directory='{REMOTE_HOME}'")
     con.execute(f"SET temp_directory='{REMOTE_HOME / 'tmp'}'")

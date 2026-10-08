@@ -1,15 +1,17 @@
-# Uploaded by `vercel deploy`: never personal data, secrets or local builds.
-data/
-PROG_*.md
-prog_*.md
-.env
-.env.*
-!.env.example
-.venv/
-**/node_modules/
-frontend/dist/
-tests/
-.agents/
-wip-deepagent-sidepanel/
-*.duckdb
-*.fit
+# Allowlist: `vercel deploy` uploads only what the two services build from.
+# Everything else stays home — data/ (database, Garmin tokens), training
+# plans, env files, caches — since the CLI does not read .gitignore.
+/*
+!/src
+!/frontend
+!/pyproject.toml
+!/uv.lock
+!/.python-version
+!/vercel.json
+!/asgi.py
+!/README.md
+
+**/__pycache__
+/frontend/node_modules
+/frontend/dist
+/frontend/.vite
