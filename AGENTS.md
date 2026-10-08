@@ -92,8 +92,12 @@ do not add tests that merely repeat an implementation. Live model evaluations in
   shipping. Each push needs its own authorization. Never rename the current branch
   unless requested. PRs target `main`; no automatic merge.
 - Use Conventional Commits with an English subject and a body explaining why.
-- DuckDB allows one writer. Do not open the real database from a local script while
-  the Docker backend is running; use its HTTP API instead.
+- The real data lives in the MotherDuck database `arete`, shared by Vercel and the
+  Docker stack (`ARETE_DB=md:arete`). Read it through the HTTP API rather than
+  scripts. A local DuckDB file (`make dev`, tests) allows one writer: a script that
+  opens it while a backend runs makes the API answer 500.
+- Deploy previews with `vercel deploy --archive=tgz`: `.vercelignore` is an
+  allowlist, and loose uploads hit Vercel's 5000-file daily quota.
 - `data/`, Garmin tokens, FIT files, `PROG_*.md` and `.context/` stay untracked.
   Secrets live in `.env`; use `.env.example` to discover configuration names.
 - UI text is French. Code, comments and commit messages are English.

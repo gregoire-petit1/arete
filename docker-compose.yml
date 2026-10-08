@@ -4,16 +4,20 @@ services:
       context: .
       dockerfile: backend.Dockerfile
     container_name: arete-backend
-    env_file: .env
+    env_file:
+      - .env
+      # MOTHERDUCK_TOKEN, pulled by `vercel env pull`
+      - path: .env.local
+        required: false
     environment:
-      - ARETE_DB=/app/data/arete.duckdb
-      - ARETE_GARMIN_TOKENS_DIR=/app/data/garmin_tokens
+      # Same MotherDuck database as the Vercel deployment: one source of truth.
+      # The daily sync runs there (Vercel Cron), so none is scheduled here.
+      - ARETE_DB=md:arete
+      # Files beside the database stay on the host and are mirrored into it.
+      - ARETE_DATA_DIR=/app/data
       # The frontend container is published on 3080 (overrides .env for Docker)
       - FRONTEND_URL=http://localhost:3080
-      # Daily Garmin + Strava sync at 09:00 Paris time. The image is UTC, so
-      # without TZ the hour below would mean 09:00 UTC (11:00 in Paris).
       - TZ=Europe/Paris
-      - ARETE_AUTO_SYNC_HOUR=9
       # Ollama running on the Docker host (default). Switch to
       # http://ollama:11434/v1 when enabling the ollama service below.
       - OLLAMA_BASE_URL=http://host.docker.internal:11434/v1
