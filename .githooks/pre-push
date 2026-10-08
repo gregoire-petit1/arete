@@ -1,0 +1,20 @@
+#!/bin/sh
+# Catches in two seconds what CI would report in forty: formatting and lint.
+# Tests stay in CI, where they belong; this is only the cheap, common failure.
+# Skip once with: git push --no-verify
+set -e
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "pre-push: uv not found, skipping checks" >&2
+    exit 0
+fi
+
+echo "pre-push: ruff format + lint…"
+if ! uv run --quiet ruff format --check src tests >/dev/null 2>&1; then
+    echo "pre-push: code is not formatted. Run: uv run ruff format src tests" >&2
+    exit 1
+fi
+if ! uv run --quiet ruff check src tests; then
+    echo "pre-push: lint errors above. Many are fixable: uv run ruff check --fix src tests" >&2
+    exit 1
+fi

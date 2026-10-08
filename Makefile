@@ -19,12 +19,15 @@ FRONTEND_CMD = cd frontend && VITE_API_TARGET=http://127.0.0.1:$(BACKEND_PORT) \
 	exec ./node_modules/.bin/vite --port $(FRONTEND_PORT) --strictPort
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev backend frontend test lint typecheck check docker
+.PHONY: help install hooks dev backend frontend test lint typecheck check docker
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
 
-install: .env .venv frontend/node_modules ## Python + npm dependencies, .env from the example
+install: .env .venv frontend/node_modules hooks ## Python + npm dependencies, .env from the example
+
+hooks: ## Use the versioned git hooks (pre-push: format + lint)
+	@git config core.hooksPath .githooks
 
 .env:
 	cp .env.example .env
