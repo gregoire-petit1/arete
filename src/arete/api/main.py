@@ -1,9 +1,11 @@
 import asyncio
+import hmac
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 
 from arete import scheduler
 from arete.agent.api import router as agent_router
@@ -20,6 +22,7 @@ from arete.api.strength import router as strength_router
 from arete.config import config
 from arete.dataio.db import db_connection
 from arete.dataio.init_duckdb import main as init_schema
+from arete.dataio.mirror import MirrorMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Arete API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(MirrorMiddleware)
 
 
 @app.get("/health")
@@ -84,6 +88,23 @@ def sync_status():
         "last_run": last_run.isoformat() if last_run else None,
         "sources": scheduler.last_status(),
     }
+
+
+@app.get("/cron/daily-sync")
+def cron_daily_sync(authorization: str | None = Header(default=None)):
+    """The daily sync, triggered by Vercel Cron where no process stays up.
+
+    Vercel sends ``Authorization: Bearer $CRON_SECRET``; without a configured
+    secret the endpoint stays closed rather than open to anyone.
+    """
+    secret = config.cron_secret
+    expected = f"Bearer {secret}"
+    if not secret or not hmac.compare_digest(authorization or "", expected):
+        raise HTTPException(status_code=401, detail="Non autorisé")
+    status = scheduler.daily_sync()
+    scheduler.record_run(datetime.now())
+    status["briefing"] = scheduler.write_daily_briefing()
+    return status
 
 
 for router in (

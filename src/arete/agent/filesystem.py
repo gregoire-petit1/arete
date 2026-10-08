@@ -51,7 +51,7 @@ MEMORY_PERMISSION = FilesystemPermission(
 
 def memory_root() -> Path:
     """Absolute path of the memory directory, created on demand."""
-    root = config.db_path.parent / MEMORY_DIR_NAME
+    root = config.data_dir / MEMORY_DIR_NAME
     root.mkdir(parents=True, exist_ok=True)
     return root
 

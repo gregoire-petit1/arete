@@ -771,10 +771,11 @@ def _record_dictation_misses(missed: list[str]) -> None:
     import json
     from datetime import datetime
 
-    from arete.dataio.db import get_db_path
+    from arete.config import config
 
-    path = get_db_path().parent / "dictation_misses.jsonl"
+    path = config.data_dir / "dictation_misses.jsonl"
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
             for sentence in missed:
                 handle.write(
