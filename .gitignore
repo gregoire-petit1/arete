@@ -12,6 +12,9 @@ build/
 
 # Données locales (ne pas versionner)
 /data/
+# Programmes d'entraînement personnels : le seeder les lit depuis le disque
+PROG_*.md
+/prog_*.md
 *.db
 *.duckdb
 mlruns/
