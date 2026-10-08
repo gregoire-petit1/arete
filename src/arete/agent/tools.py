@@ -28,9 +28,25 @@ def _dashboard() -> dict[str, Any]:
 
 
 def _analytics() -> dict[str, Any]:
+    """The Analytics page as the coach needs it: what each card says.
+
+    Every card carried a 30-point daily series for its chart, and the series
+    were 84 % of the read — 9.7k of 11.6k tokens on real data, the zones card
+    alone 3.1k. The model reasons from the headline, the comparison with the
+    previous period and the card's own French insight; a trend over a chosen
+    window is what the analytics toolkit is for.
+    """
     from arete.api.analytics import get_overview
 
-    return {"overview": get_overview(period="30d")}
+    overview = get_overview(period="30d")
+    cards = {
+        name: {k: v for k, v in card.items() if k != "series"}
+        for name, card in overview.get("cards", {}).items()
+    }
+    return {
+        "overview": {**overview, "cards": cards},
+        "trends": "analytics toolkit: get_workload(days), get_fitness(days)",
+    }
 
 
 #: What a Planning page read covers: the week just gone and three ahead.

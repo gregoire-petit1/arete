@@ -564,3 +564,33 @@ class TestPlanningPageRead:
         out = json.loads(get_page_context.invoke({"page": "planning"}))
         assert out["window"]["from"] < out["window"]["to"]
         assert "list_planned" in out["beyond_the_window"]
+
+
+class TestAnalyticsPageRead:
+    """The coach reads what each card says; the chart keeps its points.
+
+    The daily series were 84 % of an Analytics read on real data. The agent
+    reasons from the headline, the previous-period comparison and the card's
+    insight, and asks the analytics toolkit when it needs a trend.
+    """
+
+    def test_the_agent_read_has_no_series(self):
+        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        cards = out["overview"]["cards"]
+        assert cards, "no cards at all"
+        assert all("series" not in card for card in cards.values())
+
+    def test_what_each_card_says_is_kept(self):
+        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        for card in out["overview"]["cards"].values():
+            assert "headline" in card
+
+    def test_the_read_points_at_the_toolkit_for_trends(self):
+        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        assert "get_workload" in out["trends"]
+
+    def test_the_page_itself_still_gets_its_series(self, client):
+        # Trimming the agent's read must not touch the route the chart uses.
+        cards = client.get("/analytics/overview?period=30d").json()["cards"]
+        assert any("series" in card for card in cards.values())
+
