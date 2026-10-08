@@ -501,3 +501,124 @@ def test_chat_routes_reject_invalid_thread_id(client, endpoint):
         },
     )
     assert response.status_code == 422
+
+
+class TestPlanningPageRead:
+    """The Planning page read is a window, not the whole plan.
+
+    Read whole, a plan that runs months out overflowed the 32k bound — 109
+    sessions on real data — and the tool answered with an error, so the coach
+    on the Planning page could not see the plan at all.
+    """
+
+    def _plan(self, offsets_days):
+        from datetime import date, timedelta
+
+        from arete.garmin.models import PlannedSession, SessionType
+        from arete.garmin.repository import GarminRepository
+
+        repo = GarminRepository()
+        today = date.today()
+        return repo, [
+            repo.create_planned_session(
+                PlannedSession(
+                    date=today + timedelta(days=offset),
+                    sport="running",
+                    session_type=SessionType.ENDURANCE,
+                    description=f"offset {offset}",
+                )
+            )
+            for offset in offsets_days
+        ]
+
+    def test_only_the_window_is_read(self):
+        from arete.agent.tools import PLANNING_AHEAD_DAYS, PLANNING_PAST_DAYS
+
+        repo, ids = self._plan(
+            [-(PLANNING_PAST_DAYS + 5), -2, 3, PLANNING_AHEAD_DAYS + 30]
+        )
+        try:
+            out = json.loads(get_page_context.invoke({"page": "planning"}))
+            seen = {row["description"] for row in out["planned_sessions"]}
+        finally:
+            for i in ids:
+                repo.delete_planned_session(i)
+        assert "offset -2" in seen and "offset 3" in seen
+        assert f"offset {-(PLANNING_PAST_DAYS + 5)}" not in seen
+        assert f"offset {PLANNING_AHEAD_DAYS + 30}" not in seen
+
+    def test_rows_are_in_date_order_and_carry_no_nulls(self):
+        repo, ids = self._plan([5, 1, 3])
+        try:
+            rows = json.loads(get_page_context.invoke({"page": "planning"}))[
+                "planned_sessions"
+            ]
+        finally:
+            for i in ids:
+                repo.delete_planned_session(i)
+        dates = [row["date"] for row in rows]
+        assert dates == sorted(dates)
+        assert all(value is not None for row in rows for value in row.values())
+
+    def test_the_read_says_where_to_look_beyond_it(self):
+        out = json.loads(get_page_context.invoke({"page": "planning"}))
+        assert out["window"]["from"] < out["window"]["to"]
+        assert "list_planned" in out["beyond_the_window"]
+
+
+class TestAnalyticsPageRead:
+    """The coach reads what each card says; the chart keeps its points.
+
+    The daily series were 84 % of an Analytics read on real data. The agent
+    reasons from the headline, the previous-period comparison and the card's
+    insight, and asks the analytics toolkit when it needs a trend.
+    """
+
+    def test_the_agent_read_has_no_series(self):
+        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        cards = out["overview"]["cards"]
+        assert cards, "no cards at all"
+        assert all("series" not in card for card in cards.values())
+
+    def test_what_each_card_says_is_kept(self):
+        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        for card in out["overview"]["cards"].values():
+            assert "headline" in card
+
+    def test_the_read_points_at_the_toolkit_for_trends(self):
+        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        assert "get_workload" in out["trends"]
+
+    def test_the_page_itself_still_gets_its_series(self, client):
+        # Trimming the agent's read must not touch the route the chart uses.
+        cards = client.get("/analytics/overview?period=30d").json()["cards"]
+        assert any("series" in card for card in cards.values())
+
+
+class TestLedgerTools:
+    """The journal's tools, described for a journal — and safe to append with."""
+
+    def _tools(self):
+        from arete.agent.filesystem import build_memory_filesystem
+
+        return {t.name: t for t in build_memory_filesystem().tools}
+
+    def test_no_tool_can_delete_a_journal_file(self):
+        # Rotation is the server's job; a delete could only lose data.
+        assert "delete" not in self._tools()
+
+    def test_reading_points_at_the_end_of_the_journal(self):
+        """`read_file` reads 100 lines from the top; new entries are appended.
+
+        Past 100 lines, a default read returns the oldest entries and misses
+        the recent ones.
+        """
+        assert "fin" in self._tools()["read_file"].description
+
+    def test_rewriting_the_journal_whole_is_warned_against(self):
+        # Read 100 lines, rewrite with an entry appended, lose the rest.
+        description = self._tools()["write_file"].description
+        assert "sessions.md" in description and "edit_file" in description
+
+    def test_appending_is_routed_to_edit_file(self):
+        assert "ajouter" in self._tools()["edit_file"].description

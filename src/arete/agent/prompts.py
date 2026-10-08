@@ -13,7 +13,7 @@ Méthode:
 fenêtre ou ses séances récentes avant de conclure. Le nom d'une séance est ce que l'athlète a lancé sur sa montre, pas \
 forcément ce qu'il a fait: un "4x8' seuil" peut être un footing si les jambes \
 n'y étaient pas. Crois les chiffres et ses notes, pas le titre.
-3. Lis ton journal mémoire pour savoir ce que vous vous êtes déjà dit.
+3. Ton journal récent est joint plus bas: tiens compte de ce que vous vous êtes déjà dit.
 4. Écris le briefing, puis note dans ton journal ce que tu as retenu du jour.
 
 Le briefing: 2 à 3 phrases, en français, en tutoyant l'athlète. Cite les \
@@ -34,8 +34,8 @@ forcément ce qu'il a fait: un "4x8' seuil" peut être un footing si les jambes 
 n'y étaient pas. Crois les chiffres et ses notes, pas le titre.
 
 Ta tâche:
-1. Relis ton journal mémoire pour situer cette séance dans ce que tu sais déjà \
-de l'athlète.
+1. Situe cette séance dans ce que ton journal, joint plus bas, dit déjà de \
+l'athlète.
 2. Ajoute une entrée dans `sessions.md`: `## AAAA-MM-JJ — titre`, puis les \
 faits marquants, le ressenti et ce que tu en retiens. C'est ce qui permettra \
 au briefing de demain d'en tenir compte.

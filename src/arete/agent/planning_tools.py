@@ -168,10 +168,9 @@ PLANNING_TOOLS: list[BaseTool] = [
     delete_planned_session,
 ]
 
-PLANNING_INSTRUCTIONS = """Toolkit `planning` chargé — planification d'entraînement:
-- `list_planned(start_date?, end_date?)`: sessions planifiées (défaut: 7 jours en arrière → 120 jours devant).
-- `create_planned_session(date_str, session_type, description?, sport?, target_duration_min?, target_distance_km?, target_intensity?)`: crée une séance (source 'coach', visible sur la page Planning).
-- `update_planned_status(session_id, status)`: pending|completed|skipped|modified.
-- `delete_planned_session(session_id)`: supprime — préfère 'skipped' sauf demande explicite.
-Types valides: recovery, endurance, tempo, intervals, long_run, strength, hypertrophy, power, deload, cross_training, race, other.
-Avant de planifier, regarde la charge récente (get_page_context('analytics')) et les séances déjà prévues pour éviter les doublons."""
+#: Rules only. The tools' own schemas and descriptions already reach the model
+#: once the toolkit is loaded; listing them again here cost tokens on every
+#: later call of the turn and said nothing new.
+PLANNING_INSTRUCTIONS = """Toolkit `planning` chargé. Règles:
+- Avant de planifier, regarde la charge récente et ce qui est déjà prévu, pour ne pas doubler une séance.
+- Une séance qui ne se fera pas passe en `skipped`; ne la supprime que si l'athlète le demande."""

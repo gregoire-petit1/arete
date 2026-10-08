@@ -9,6 +9,7 @@ existing repositories/features — no LLM, no writes.
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 from typing import Any
 
 from langchain.tools import tool
@@ -27,22 +28,60 @@ def _dashboard() -> dict[str, Any]:
 
 
 def _analytics() -> dict[str, Any]:
+    """The Analytics page as the coach needs it: what each card says.
+
+    Every card carried a 30-point daily series for its chart, and the series
+    were 84 % of the read — 9.7k of 11.6k tokens on real data, the zones card
+    alone 3.1k. The model reasons from the headline, the comparison with the
+    previous period and the card's own French insight; a trend over a chosen
+    window is what the analytics toolkit is for.
+    """
     from arete.api.analytics import get_overview
 
-    return {"overview": get_overview(period="30d")}
+    overview = get_overview(period="30d")
+    cards = {
+        name: {k: v for k, v in card.items() if k != "series"}
+        for name, card in overview.get("cards", {}).items()
+    }
+    return {
+        "overview": {**overview, "cards": cards},
+        "trends": "analytics toolkit: get_workload(days), get_fitness(days)",
+    }
+
+
+#: What a Planning page read covers: the week just gone and three ahead.
+#: The whole plan used to be read at once, and a plan runs months out — 109
+#: sessions to December on real data, 35k characters — so it overflowed the
+#: read bound and the coach on the Planning page could not see the plan at
+#: all. Anything further is one `list_planned` call away in the planning
+#: toolkit.
+PLANNING_PAST_DAYS = 7
+PLANNING_AHEAD_DAYS = 21
+
+
+def _without_nulls(row: dict[str, Any]) -> dict[str, Any]:
+    """Drop empty fields: a null is a token spent saying nothing."""
+    return {k: v for k, v in row.items() if v is not None and v != ""}
 
 
 def _planning() -> dict[str, Any]:
     from arete.api.garmin import list_planned_sessions
 
+    today = date.today()
+    start = today - timedelta(days=PLANNING_PAST_DAYS)
+    end = today + timedelta(days=PLANNING_AHEAD_DAYS)
     # API default params are FastAPI Query objects; call with plain values.
+    sessions = list_planned_sessions(
+        start_date=start, end_date=end, status=None, limit=200
+    )
+    rows = sorted(
+        (_without_nulls(s.model_dump(mode="json")) for s in sessions),
+        key=lambda row: row["date"],
+    )
     return {
-        "planned_sessions": [
-            s.model_dump(mode="json")
-            for s in list_planned_sessions(
-                start_date=None, end_date=None, status=None, limit=200
-            )
-        ]
+        "window": {"from": start.isoformat(), "to": end.isoformat()},
+        "planned_sessions": rows,
+        "beyond_the_window": "planning toolkit: list_planned(start_date, end_date)",
     }
 
 
