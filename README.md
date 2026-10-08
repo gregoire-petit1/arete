@@ -61,6 +61,12 @@ All settings come from environment variables (see `.env.example`):
 
 The agent reuses `LLM_PROVIDER` / `LLM_MODEL` and needs a tool-calling model; its memory ledger sits next to the database, in `data/agent/memory/`.
 
+For free hosted inference, set `LLM_PROVIDER=openrouter` and `OPENROUTER_API_KEY`,
+and leave `LLM_MODEL` unset (or set it to `openrouter/free`). The
+[Free Models Router](https://openrouter.ai/openrouter/free) selects an available
+free model supporting the request's tools. Rate limits, latency and model quality
+can vary. Set `LLM_MODEL` to pin a specific model; Arete sends no fallback list.
+
 ## Project layout
 
 ```

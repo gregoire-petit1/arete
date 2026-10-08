@@ -29,8 +29,9 @@ FilesystemMiddleware       deepagents, scoped to data/agent/memory/
 
 Provider comes from the existing `LLM_PROVIDER` / `LLM_MODEL` — no new environment
 variables. `ollama` is the generic OpenAI-compatible bucket (Ollama, LM Studio);
-`openrouter` additionally gets a three-model fallback chain, because free pools
-saturate and a single model is a single point of failure.
+`openrouter` defaults to `openrouter/free`, which selects a free model supporting
+the request's tools. Model selection lives in OpenRouter; Arete maintains no
+fallback list. `LLM_MODEL` can still pin a specific model.
 
 ### Page context
 
