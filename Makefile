@@ -8,7 +8,11 @@ FRONTEND_PORT ?= 5173
 
 # 127.0.0.1, not localhost: uvicorn binds IPv4 only and Node may resolve
 # localhost to ::1 first, which turns every proxied /api call into a 502.
-BACKEND_CMD  = uv run uvicorn arete.api.main:app --app-dir src \
+# .venv/bin, not `uv run`: uv forwards SIGTERM to the reloader, which also gets
+# the process group's own SIGTERM (how Conductor stops a run script), and the
+# doubled signal leaves uvicorn's --reload supervisor hanging. The .venv
+# prerequisite already keeps the environment synced with uv.lock.
+BACKEND_CMD  = .venv/bin/uvicorn arete.api.main:app --app-dir src \
 	--host 127.0.0.1 --port $(BACKEND_PORT) --reload --reload-dir src
 # --strictPort: fail on a taken port instead of silently moving to another one.
 FRONTEND_CMD = cd frontend && VITE_API_TARGET=http://127.0.0.1:$(BACKEND_PORT) \
