@@ -90,7 +90,9 @@ do not add tests that merely repeat an implementation. Live model evaluations in
   personal data must not be swept into a commit.
 - Do not commit or push until the user has tested locally and explicitly authorized
   shipping. Each push needs its own authorization. Never rename the current branch
-  unless requested. PRs target `main`; no automatic merge.
+  unless requested. `main` only takes pull requests, never a direct or forced
+  push, and a PR merges once CI passes (lint, test, typecheck, frontend). Open
+  it with auto-merge armed: `gh pr create … && gh pr merge --auto --merge`.
 - Use Conventional Commits with an English subject and a body explaining why.
 - The real data lives in the MotherDuck database `arete`, shared by Vercel and the
   Docker stack (`ARETE_DB=md:arete`). Read it through the HTTP API rather than
