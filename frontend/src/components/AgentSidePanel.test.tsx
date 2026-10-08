@@ -120,3 +120,23 @@ it('creates a thread without erasing the old one and retains a stream when hidde
   );
   expect(screen.getByText('Réponse au trail').tagName).toBe('STRONG');
 });
+
+it('shows follow-ups only after completion and sends a clicked suggestion', async () => {
+  render(<Harness />);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ouvrir le coach' })[0]);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message au coach' }), {
+    target: { value: 'Ma forme ?' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
+  await act(async () => {
+    stream.emit?.({ type: 'suggestions', suggestions: ['Quelle séance demain ?'] });
+  });
+  expect(screen.queryByRole('button', { name: 'Quelle séance demain ?' })).toBeNull();
+  await act(async () => {
+    stream.emit?.({ type: 'done', message: { role: 'assistant', content: 'Repos aujourd’hui.' } });
+    stream.resolve?.();
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Quelle séance demain ?' }));
+  expect(screen.getByText('Quelle séance demain ?')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Quelle séance demain ?' })).toBeNull();
+});

@@ -129,7 +129,8 @@ def write_daily_briefing() -> str:
     Log-and-continue: the briefing must never be able to break the loop, and
     it has its own rule floor, so a failure here is already handled downstream.
     """
-    from arete.coach.briefing import briefing_enabled, generate_briefing
+    from arete.coaching import generate_briefing
+    from arete.services.briefing import briefing_enabled
 
     if not briefing_enabled():
         return "disabled"
@@ -156,7 +157,11 @@ async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
             record_run(datetime.now())
             # After the sync, never before: the briefing reads the data the
             # sync just landed.
-            await asyncio.to_thread(write_daily_briefing)
+            # The coach bridges model calls back onto this loop, keeping the
+            # shared SDK HTTP pool on its owning loop across daily runs.
+            from anyio import to_thread
+
+            await to_thread.run_sync(write_daily_briefing)
         await asyncio.sleep(tick_seconds)
 
 

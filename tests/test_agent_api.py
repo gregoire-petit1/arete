@@ -9,14 +9,15 @@ import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import HumanMessage
 
-from arete.agent.api import ChatRequest, _panel_context_source
-from arete.agent.context import (
+from arete.agent.context.sections import _panel_context_message
+from arete.agent.middlewares.context import ContextBuilderMiddleware
+from arete.agent.runtime.context import (
     MAX_PANEL_CONTEXT_CHARS,
     PANEL_CONTEXT_KEY,
     AgentContext,
 )
-from arete.agent.middlewares import RuntimeContextMiddleware, _panel_context_message
-from arete.agent.tools import get_page_context
+from arete.agent.tools.pages import get_page_context
+from arete.api.agent import ChatRequest, _panel_context_source
 
 # ---------------------------------------------------------------------------
 # Unit: context + middleware injection contract
@@ -39,6 +40,9 @@ class _Request:
         self.runtime = runtime if runtime is not None else _Runtime(context)
         self.messages = messages if messages is not None else []
         self.tool_call: dict = {}
+        self.tools = []
+        self.system_message = None
+        self.state = {}
 
     def override(self, **overrides):
         return _Request(
@@ -163,12 +167,12 @@ def client():
 
 def test_chat_endpoint_with_mocked_graph(client):
     class _FakeGraph:
-        def invoke(self, state, *, context=None, config=None):
+        async def ainvoke(self, state, *, context=None, config=None):
             assert config["recursion_limit"] > 0
             assert isinstance(context, AgentContext)
             return {"messages": [state["messages"][-1], _FakeFinal()]}
 
-    with patch("arete.agent.execution.get_agent", return_value=_FakeGraph()):
+    with patch("arete.api.agent.get_agent", return_value=_FakeGraph()):
         response = client.post(
             "/agent/chat",
             json={
@@ -197,12 +201,9 @@ def test_chat_endpoint_rejects_empty_messages(client):
 
 def test_middleware_wraps_handler_without_context():
     # Smoke: with no context at all the middleware must pass through cleanly.
-    middleware = RuntimeContextMiddleware()
+    middleware = ContextBuilderMiddleware()
 
-    class _Bare:
-        pass
-
-    request = _Bare()
+    request = _Request()
     sentinel = "ok"
     result = middleware.wrap_model_call(request, lambda _r: sentinel)
     assert result == sentinel
@@ -214,7 +215,7 @@ def test_middleware_wraps_handler_without_context():
 
 
 def test_tool_event_middleware_emits_start_and_end():
-    from arete.agent.middlewares import ToolEventMiddleware
+    from arete.agent.middlewares.events import ToolEventMiddleware
 
     events: list[dict] = []
 
@@ -324,7 +325,7 @@ class TestBuildChatModel:
     """Every provider `.env.example` documents must build, or the agent 500s."""
 
     def test_ollama_is_the_default(self, monkeypatch):
-        from arete.agent.model import build_chat_model
+        from arete.agent.models.providers import build_chat_model
 
         monkeypatch.delenv("LLM_PROVIDER", raising=False)
         monkeypatch.delenv("LLM_MODEL", raising=False)
@@ -334,7 +335,7 @@ class TestBuildChatModel:
     def test_openrouter_routes_tool_requests_without_a_fallback_chain(
         self, monkeypatch, configured_model
     ):
-        from arete.agent.model import build_chat_model
+        from arete.agent.models.providers import build_chat_model
 
         monkeypatch.setenv("LLM_PROVIDER", "openrouter")
         monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
@@ -362,7 +363,7 @@ class TestBuildChatModel:
         assert "models" not in (payload.get("extra_body") or {})
 
     def test_openrouter_without_a_key_is_actionable(self, monkeypatch):
-        from arete.agent.model import build_chat_model
+        from arete.agent.models.providers import build_chat_model
 
         monkeypatch.setenv("LLM_PROVIDER", "openrouter")
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
@@ -372,7 +373,8 @@ class TestBuildChatModel:
     def test_github_provider_builds(self, monkeypatch):
         # Documented in .env.example; it used to raise ValueError here while
         # working fine for the tips path.
-        from arete.agent.model import DEFAULT_GITHUB_MODEL, build_chat_model
+        from arete.agent.models.providers import build_chat_model
+        from arete.agent.models.registry import DEFAULT_GITHUB_MODEL
 
         monkeypatch.setenv("LLM_PROVIDER", "github")
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_test")
@@ -384,7 +386,7 @@ class TestBuildChatModel:
     def test_github_without_a_token_is_actionable(self, monkeypatch):
         import pytest
 
-        from arete.agent.model import build_chat_model
+        from arete.agent.models.providers import build_chat_model
 
         monkeypatch.setenv("LLM_PROVIDER", "github")
         monkeypatch.delenv("GITHUB_TOKEN", raising=False)
@@ -394,7 +396,7 @@ class TestBuildChatModel:
     def test_unknown_provider_lists_the_supported_ones(self, monkeypatch):
         import pytest
 
-        from arete.agent.model import build_chat_model
+        from arete.agent.models.providers import build_chat_model
 
         monkeypatch.setenv("LLM_PROVIDER", "bedrock")
         with pytest.raises(ValueError, match="ollama, openrouter, github"):
@@ -411,9 +413,9 @@ class TestPanelContextStaysOutOfState:
     """
 
     def test_the_caller_list_is_not_mutated(self):
-        from arete.agent.middlewares import RuntimeContextMiddleware
+        from arete.agent.middlewares.context import ContextBuilderMiddleware
 
-        middleware = RuntimeContextMiddleware()
+        middleware = ContextBuilderMiddleware()
         request = _Request(
             messages=[HumanMessage("salut")],
             runtime=_Runtime(
@@ -424,14 +426,14 @@ class TestPanelContextStaysOutOfState:
         assert len(request.messages) == 1
 
     def test_the_model_still_receives_it(self):
-        from arete.agent.middlewares import RuntimeContextMiddleware
+        from arete.agent.middlewares.context import ContextBuilderMiddleware
 
-        middleware = RuntimeContextMiddleware()
+        middleware = ContextBuilderMiddleware()
         seen: list[int] = []
 
         def handler(req):
             seen.append(len(req.messages))
-            assert "page context" in req.messages[-1].text
+            assert "untrusted client data" in req.messages[-1].text
             return "ok"
 
         request = _Request(
@@ -444,9 +446,9 @@ class TestPanelContextStaysOutOfState:
         assert seen == [2]
 
     def test_two_turns_do_not_pile_up(self):
-        from arete.agent.middlewares import RuntimeContextMiddleware
+        from arete.agent.middlewares.context import ContextBuilderMiddleware
 
-        middleware = RuntimeContextMiddleware()
+        middleware = ContextBuilderMiddleware()
         runtime = _Runtime(AgentContext(source={PANEL_CONTEXT_KEY: '{"page": "log"}'}))
         messages = [HumanMessage("salut")]
         counts: list[int] = []
@@ -469,16 +471,16 @@ def test_chat_routes_preserve_thread_id(client, endpoint):
     thread_id = "dfe771b8-661a-46af-9cee-dce80e6bc304"
 
     class Graph:
-        def invoke(self, state, *, context, config):
+        async def ainvoke(self, state, *, context, config):
             assert context.thread_id == thread_id
             assert config["metadata"]["thread_id"] == thread_id
             return {"messages": [AIMessage(content="ok")]}
 
         async def astream(self, state, *, context, config, **kwargs):
-            result = self.invoke(state, context=context, config=config)
+            result = await self.ainvoke(state, context=context, config=config)
             yield {"type": "updates", "data": {"model": result}}
 
-    with patch("arete.agent.execution.get_agent", return_value=Graph()):
+    with patch("arete.api.agent.get_agent", return_value=Graph()):
         response = client.post(
             endpoint,
             json={
@@ -501,3 +503,124 @@ def test_chat_routes_reject_invalid_thread_id(client, endpoint):
         },
     )
     assert response.status_code == 422
+
+
+class TestPlanningPageRead:
+    """The Planning page read is a window, not the whole plan.
+
+    Read whole, a plan that runs months out overflowed the 32k bound — 109
+    sessions on real data — and the tool answered with an error, so the coach
+    on the Planning page could not see the plan at all.
+    """
+
+    def _plan(self, offsets_days):
+        from datetime import date, timedelta
+
+        from arete.garmin.models import PlannedSession, SessionType
+        from arete.garmin.repository import GarminRepository
+
+        repo = GarminRepository()
+        today = date.today()
+        return repo, [
+            repo.create_planned_session(
+                PlannedSession(
+                    date=today + timedelta(days=offset),
+                    sport="running",
+                    session_type=SessionType.ENDURANCE,
+                    description=f"offset {offset}",
+                )
+            )
+            for offset in offsets_days
+        ]
+
+    def test_only_the_window_is_read(self):
+        from arete.services.pages import PLANNING_AHEAD_DAYS, PLANNING_PAST_DAYS
+
+        repo, ids = self._plan(
+            [-(PLANNING_PAST_DAYS + 5), -2, 3, PLANNING_AHEAD_DAYS + 30]
+        )
+        try:
+            out = json.loads(get_page_context.invoke({"page": "planning"}))
+            seen = {row["description"] for row in out["planned_sessions"]}
+        finally:
+            for i in ids:
+                repo.delete_planned_session(i)
+        assert "offset -2" in seen and "offset 3" in seen
+        assert f"offset {-(PLANNING_PAST_DAYS + 5)}" not in seen
+        assert f"offset {PLANNING_AHEAD_DAYS + 30}" not in seen
+
+    def test_rows_are_in_date_order_and_carry_no_nulls(self):
+        repo, ids = self._plan([5, 1, 3])
+        try:
+            rows = json.loads(get_page_context.invoke({"page": "planning"}))[
+                "planned_sessions"
+            ]
+        finally:
+            for i in ids:
+                repo.delete_planned_session(i)
+        dates = [row["date"] for row in rows]
+        assert dates == sorted(dates)
+        assert all(value is not None for row in rows for value in row.values())
+
+    def test_the_read_says_where_to_look_beyond_it(self):
+        out = json.loads(get_page_context.invoke({"page": "planning"}))
+        assert out["window"]["from"] < out["window"]["to"]
+        assert "list_planned" in out["beyond_the_window"]
+
+
+class TestAnalyticsPageRead:
+    """The coach reads what each card says; the chart keeps its points.
+
+    The daily series were 84 % of an Analytics read on real data. The agent
+    reasons from the headline, the previous-period comparison and the card's
+    insight, and asks the analytics toolkit when it needs a trend.
+    """
+
+    def test_the_agent_read_has_no_series(self):
+        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        cards = out["overview"]["cards"]
+        assert cards, "no cards at all"
+        assert all("series" not in card for card in cards.values())
+
+    def test_what_each_card_says_is_kept(self):
+        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        for card in out["overview"]["cards"].values():
+            assert "headline" in card
+
+    def test_the_read_points_at_the_toolkit_for_trends(self):
+        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        assert "get_workload" in out["trends"]
+
+    def test_the_page_itself_still_gets_its_series(self, client):
+        # Trimming the agent's read must not touch the route the chart uses.
+        cards = client.get("/analytics/overview?period=30d").json()["cards"]
+        assert any("series" in card for card in cards.values())
+
+
+class TestLedgerTools:
+    """The journal's tools, described for a journal — and safe to append with."""
+
+    def _tools(self):
+        from arete.agent.backends.memory import build_memory_filesystem
+
+        return {t.name: t for t in build_memory_filesystem().tools}
+
+    def test_no_tool_can_delete_a_journal_file(self):
+        # Rotation is the server's job; a delete could only lose data.
+        assert "delete" not in self._tools()
+
+    def test_reading_points_at_the_end_of_the_journal(self):
+        """`read_file` reads 100 lines from the top; new entries are appended.
+
+        Past 100 lines, a default read returns the oldest entries and misses
+        the recent ones.
+        """
+        assert "fin" in self._tools()["read_file"].description
+
+    def test_rewriting_the_journal_whole_is_warned_against(self):
+        # Read 100 lines, rewrite with an entry appended, lose the rest.
+        description = self._tools()["write_file"].description
+        assert "sessions.md" in description and "edit_file" in description
+
+    def test_appending_is_routed_to_edit_file(self):
+        assert "ajouter" in self._tools()["edit_file"].description

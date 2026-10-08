@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import json
 
-from arete.agent.analytics_tools import (
-    ANALYTICS_INSTRUCTIONS,
+from arete.agent.capabilities.registry import ANALYTICS_INSTRUCTIONS, CAPABILITIES
+from arete.agent.tools.analytics import (
     ANALYTICS_TOOLS,
     get_fitness,
     get_personal_records,
@@ -18,7 +18,6 @@ from arete.agent.analytics_tools import (
     get_workload,
     list_recent_sessions,
 )
-from arete.agent.toolkit_middleware import _TOOLKIT_REGISTRY
 
 # ---------------------------------------------------------------------------
 # Registration
@@ -26,7 +25,7 @@ from arete.agent.toolkit_middleware import _TOOLKIT_REGISTRY
 
 
 def test_analytics_toolkit_registered():
-    tk = _TOOLKIT_REGISTRY["analytics"]
+    tk = CAPABILITIES["analytics"]
     assert {t.name for t in tk.tools} == {
         "get_workload",
         "get_fitness",
@@ -39,7 +38,7 @@ def test_analytics_toolkit_registered():
 
 def test_tool_names_match_the_registry():
     assert {t.name for t in ANALYTICS_TOOLS} == {
-        t.name for t in _TOOLKIT_REGISTRY["analytics"].tools
+        t.name for t in CAPABILITIES["analytics"].tools
     }
 
 
@@ -134,7 +133,7 @@ def test_recent_sessions_rejects_bad_paging():
 
 def test_errors_never_raise_out_of_a_tool():
     # A failing read must reach the model as an error payload, not kill the run.
-    import arete.api.metrics as metrics
+    import arete.services.metrics as metrics
 
     original = metrics.get_workload_metrics
     metrics.get_workload_metrics = lambda days: (_ for _ in ()).throw(
@@ -148,7 +147,7 @@ def test_errors_never_raise_out_of_a_tool():
 
 
 def test_oversized_result_degrades_to_an_error_not_a_truncation():
-    import arete.agent.analytics_tools as mod
+    import arete.agent.tools.analytics as mod
 
     original = mod.MAX_TOOL_OUTPUT_CHARS
     mod.MAX_TOOL_OUTPUT_CHARS = 10
@@ -169,9 +168,9 @@ def test_full_graph_search_load_then_read():
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain_core.messages import AIMessage
 
-    from arete.agent.context import AgentContext
-    from arete.agent.toolkit_middleware import ToolkitMiddleware
-    from arete.agent.tools import get_page_context
+    from arete.agent.middlewares.capabilities import ToolkitMiddleware
+    from arete.agent.runtime.context import AgentContext
+    from arete.agent.tools.pages import get_page_context
 
     class FakeToolModel(GenericFakeChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -216,7 +215,7 @@ def test_full_graph_search_load_then_read():
 
 def test_loading_analytics_leaves_planning_out_of_the_request():
     # Progressive loading still holds with two toolkits registered.
-    from arete.agent.toolkit_middleware import _augment_tools
+    from arete.agent.context.builder import _augment_tools
 
     names = {getattr(t, "name", "") for t in _augment_tools([], ["analytics"])}
     assert "get_workload" in names

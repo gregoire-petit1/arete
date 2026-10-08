@@ -329,6 +329,20 @@ export function AgentSidePanel({
                         <Bot className="size-3.5 text-neon-cyan/70" /> ARETE
                       </div>
                       <MessageSurfaces message={message} />
+                      {i === messages.length - 1 && !busy && !message.pending &&
+                        !message.error && !message.interrupted && !!message.suggestions?.length && (
+                        <div aria-label="Suggestions de suivi" className="mt-4 flex flex-wrap gap-2">
+                          {message.suggestions.map((prompt) => (
+                            <button
+                              key={prompt}
+                              onClick={() => send(prompt)}
+                              className="rounded-xl border border-neon-cyan/20 px-3 py-2 text-left text-xs text-text-secondary hover:bg-neon-cyan/5"
+                            >
+                              {prompt}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {streaming && i === messages.length - 1 && (
                         <div
                           role="status"

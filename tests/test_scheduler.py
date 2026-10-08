@@ -120,10 +120,10 @@ class TestRunForever:
         with (
             patch.object(scheduler, "daily_sync", return_value={}),
             patch(
-                "arete.coach.briefing.generate_briefing",
+                "arete.coaching.generate_briefing",
                 side_effect=RuntimeError("model is away"),
             ),
-            patch("arete.coach.briefing.briefing_enabled", return_value=True),
+            patch("arete.services.briefing.briefing_enabled", return_value=True),
             patch("asyncio.sleep", side_effect=fake_sleep),
             patch.object(scheduler, "is_due", side_effect=[True, False]),
             pytest.raises(StopAsyncIteration),
@@ -136,14 +136,14 @@ class TestRunForever:
 
 class TestWriteDailyBriefing:
     def test_disabled_is_reported_not_run(self):
-        with patch("arete.coach.briefing.briefing_enabled", return_value=False):
+        with patch("arete.services.briefing.briefing_enabled", return_value=False):
             assert scheduler.write_daily_briefing() == "disabled"
 
     def test_failure_is_reported_not_raised(self):
         with (
-            patch("arete.coach.briefing.briefing_enabled", return_value=True),
+            patch("arete.services.briefing.briefing_enabled", return_value=True),
             patch(
-                "arete.coach.briefing.generate_briefing",
+                "arete.coaching.generate_briefing",
                 side_effect=RuntimeError("boom"),
             ),
         ):

@@ -12,14 +12,13 @@ from datetime import date, timedelta
 
 import pytest
 
-from arete.agent.strength_tools import (
+from arete.agent.capabilities.registry import CAPABILITIES, STRENGTH_INSTRUCTIONS
+from arete.agent.tools.strength import (
     MAX_WORKOUT_TEXT_CHARS,
-    STRENGTH_INSTRUCTIONS,
     STRENGTH_TOOLS,
     read_workout,
     save_workout,
 )
-from arete.agent.toolkit_middleware import _TOOLKIT_REGISTRY
 from arete.strength.repository import StrengthRepository
 
 # One line the grammar reads and the catalog matches, one it cannot place.
@@ -44,7 +43,7 @@ def day():
 
 
 def test_registered_with_both_tools():
-    toolkit = _TOOLKIT_REGISTRY["strength"]
+    toolkit = CAPABILITIES["strength"]
     assert {t.name for t in toolkit.tools} == {"read_workout", "save_workout"}
     assert toolkit.instructions == STRENGTH_INSTRUCTIONS
     assert {t.name for t in STRENGTH_TOOLS} == {t.name for t in toolkit.tools}

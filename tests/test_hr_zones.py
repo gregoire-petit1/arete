@@ -126,8 +126,8 @@ class TestLabelledZones:
         assert len(ZONE_LABELS_FR) == len(ZONE_NAMES) == 5
 
     def test_the_feedback_helper_reads_the_stored_threshold(self, monkeypatch):
-        from arete.api import ai_tips
         from arete.features.hr_zones import ZoneModel
+        from arete.services import coaching_rules as ai_tips
 
         monkeypatch.setattr(
             ai_tips, "athlete_zone_model", lambda: ZoneModel.from_reference(lthr=176)

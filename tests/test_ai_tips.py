@@ -56,7 +56,7 @@ def rules_only():
     numbers underneath it, so they assert on the floor.
     """
     with patch(
-        "arete.api.ai_tips.enrich_session_feedback",
+        "arete.coaching.enrich_session_feedback",
         side_effect=lambda text, highlights: (text, "rules"),
     ):
         yield
@@ -69,7 +69,7 @@ class TestPostSessionStrength:
     def _floor(self, rules_only):
         pass
 
-    @patch("arete.api.ai_tips.StrengthRepository")
+    @patch("arete.services.coaching_rules.StrengthRepository")
     def test_strength_feedback_with_volume(self, mock_repo_cls, client):
         repo = mock_repo_cls.return_value
         exercises = [
@@ -90,7 +90,7 @@ class TestPostSessionStrength:
         )
         assert len(data["highlights"]) >= 1
 
-    @patch("arete.api.ai_tips.StrengthRepository")
+    @patch("arete.services.coaching_rules.StrengthRepository")
     def test_strength_not_found(self, mock_repo_cls, client):
         repo = mock_repo_cls.return_value
         repo.get_session.return_value = None
@@ -132,7 +132,7 @@ class TestPostSessionCardio:
 
     """POST /tips/post-session with session_type=cardio."""
 
-    @patch("arete.api.ai_tips.GarminRepository")
+    @patch("arete.services.coaching_rules.GarminRepository")
     def test_cardio_feedback_with_hr_and_pace(self, mock_repo_cls, client):
         repo = mock_repo_cls.return_value
         repo.get_actual_session.return_value = _make_actual_session()
@@ -147,7 +147,7 @@ class TestPostSessionCardio:
         assert any("bpm" in h for h in data["highlights"])
         assert any("/km" in h for h in data["highlights"])
 
-    @patch("arete.api.ai_tips.GarminRepository")
+    @patch("arete.services.coaching_rules.GarminRepository")
     def test_cardio_not_found(self, mock_repo_cls, client):
         repo = mock_repo_cls.return_value
         repo.get_actual_session.return_value = None
@@ -158,7 +158,7 @@ class TestPostSessionCardio:
         )
         assert resp.status_code == 404
 
-    @patch("arete.api.ai_tips.GarminRepository")
+    @patch("arete.services.coaching_rules.GarminRepository")
     def test_cardio_no_hr_data(self, mock_repo_cls, client):
         repo = mock_repo_cls.return_value
         repo.get_actual_session.return_value = _make_actual_session(
@@ -182,27 +182,27 @@ class TestTipUsesSettings:
     """The threshold and the goal come from the athlete's settings, not constants."""
 
     def test_readiness_is_read_against_the_athletes_threshold(self):
-        from arete.api.ai_tips import generate_daily_tip
+        from arete.services.coaching_rules import generate_daily_tip
 
         tip, priority = generate_daily_tip(1.0, 0.0, 82.0, fatigue_threshold=75)
         assert "82/100" in tip and "75" in tip
         assert priority == "info"
 
     def test_readiness_below_threshold_falls_through(self):
-        from arete.api.ai_tips import generate_daily_tip
+        from arete.services.coaching_rules import generate_daily_tip
 
         tip, _ = generate_daily_tip(1.0, 0.0, 82.0, fatigue_threshold=90)
         assert "ACWR 1.00" in tip
 
     def test_goal_closes_the_balanced_load_tip(self):
-        from arete.api.ai_tips import GOAL_ADVICE, generate_daily_tip
+        from arete.services.coaching_rules import GOAL_ADVICE, generate_daily_tip
 
         for goal, advice in GOAL_ADVICE.items():
             tip, _ = generate_daily_tip(1.0, 0.0, None, fitness_goal=goal)
             assert advice in tip
 
     def test_unknown_goal_falls_back_to_build(self):
-        from arete.api.ai_tips import GOAL_ADVICE, generate_daily_tip
+        from arete.services.coaching_rules import GOAL_ADVICE, generate_daily_tip
 
         tip, _ = generate_daily_tip(1.0, 0.0, None, fitness_goal="whatever")
         assert GOAL_ADVICE["build"] in tip
@@ -210,10 +210,10 @@ class TestTipUsesSettings:
     def test_the_rule_floor_passes_settings_through(self):
         from unittest.mock import patch
 
-        from arete.api.ai_tips import daily_rule_tip
+        from arete.services.coaching_rules import daily_rule_tip
 
         with patch(
-            "arete.api.ai_tips.get_user_settings",
+            "arete.services.coaching_rules.get_user_settings",
             return_value={"fatigue_threshold": 60, "fitness_goal": "recovery"},
         ):
             tip, _ = daily_rule_tip()
@@ -227,7 +227,7 @@ class TestDailyEndpoint:
         from datetime import date
         from unittest.mock import patch
 
-        from arete.coach.repository import BriefingRepository
+        from arete.services.coaching_repository import BriefingRepository
 
         repo = BriefingRepository()
         repo.delete_for_day(date.today())
@@ -238,7 +238,7 @@ class TestDailyEndpoint:
             briefing_date=date.today(),
         )
         try:
-            with patch("arete.coach.briefing.generate_briefing") as produce:
+            with patch("arete.services.briefing.generate_briefing") as produce:
                 body = client.get("/tips/daily").json()
             produce.assert_not_called()
         finally:
@@ -253,18 +253,17 @@ class TestDailyEndpoint:
         from datetime import date
         from unittest.mock import patch
 
-        from arete.coach.repository import BriefingRepository
+        from arete.services.coaching_repository import BriefingRepository
 
         repo = BriefingRepository()
         repo.delete_for_day(date.today())
         try:
             with (
-                patch("arete.coach.briefing.briefing_enabled", return_value=True),
+                patch("arete.services.briefing.briefing_enabled", return_value=True),
+                patch("arete.coaching.run_briefing", return_value="Écrit ce matin."),
                 patch(
-                    "arete.coach.briefing._run_agent", return_value="Écrit ce matin."
-                ),
-                patch(
-                    "arete.coach.briefing._rule_floor", return_value=("floor", "info")
+                    "arete.services.briefing._rule_floor",
+                    return_value=("floor", "info"),
                 ),
             ):
                 body = client.get("/tips/daily").json()
@@ -278,15 +277,15 @@ class TestDailyEndpoint:
         from datetime import date
         from unittest.mock import patch
 
-        from arete.coach.repository import BriefingRepository
+        from arete.services.coaching_repository import BriefingRepository
 
         repo = BriefingRepository()
         repo.delete_for_day(date.today())
         try:
             with (
-                patch("arete.coach.briefing.briefing_enabled", return_value=True),
+                patch("arete.services.briefing.briefing_enabled", return_value=True),
                 patch(
-                    "arete.coach.briefing._run_agent",
+                    "arete.coaching.run_briefing",
                     side_effect=RuntimeError("model is away"),
                 ),
             ):
@@ -304,14 +303,14 @@ class TestLowLoadIsNotSilence:
     """An athlete training under their chronic load still gets a reading."""
 
     def test_undertrained_acwr_has_its_own_tip(self):
-        from arete.api.ai_tips import generate_daily_tip
+        from arete.services.coaching_rules import generate_daily_tip
 
         tip, priority = generate_daily_tip(0.41, -8.2, 65.5)
         assert "ACWR 0.41" in tip
         assert priority == "info"
 
     def test_generic_tip_only_without_any_metric(self):
-        from arete.api.ai_tips import generate_daily_tip
+        from arete.services.coaching_rules import generate_daily_tip
 
         tip, _ = generate_daily_tip(None, None, None)
         assert "Enregistre tes séances" in tip

@@ -48,6 +48,7 @@ All settings come from environment variables (see `.env.example`):
 | `ARETE_DB` | DuckDB file path (default `data/arete.duckdb`) |
 | `ARETE_LOG_LEVEL` | Backend log level (default `INFO`) |
 | `ARETE_AUTO_SYNC_HOUR` | Local hour of the daily Garmin activities + health and Strava sync, best set after wake-up; unset = manual only |
+| `LLM_CONTEXT_TOKENS` | Coaching deployment context window (default 65,536); set to your actual model/server limit |
 | `LLM_PROVIDER`, `LLM_MODEL` | `ollama` \| `openrouter` \| `github`, and the model name |
 | `OLLAMA_BASE_URL` / `OPENROUTER_API_KEY` / `GITHUB_TOKEN` | Credentials for the chosen provider |
 | `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REDIRECT_URI` | Strava OAuth app |
@@ -63,9 +64,26 @@ drafts. Threads are saved in this browser (up to 30), while the coach’s memory
 ledger remains shared across conversations. Hiding the panel or switching threads
 keeps the current response running in its original thread; one response runs at a time.
 
-Chat, daily briefing, and session feedback use one cached coach graph with
-task-specific instructions. Their execution budgets remain 40, 40, and 20 graph
-steps respectively; only chat uses conversation summarization.
+Completed answers can show up to three French follow-up suggestions. Clicking one
+sends it as the next message; suggestions are stored with the browser thread and
+are never sent as conversation history unless selected. `AutoSuggestionMiddleware`
+uses one tool-free completion (512 output tokens, eight-second timeout, no retry).
+If generation fails, the exchange is too large, or the run has insufficient time
+remaining, the answer is kept without suggestions.
+
+Chat, daily briefings and session feedback share a five-minute execution deadline,
+16 main model calls and 32 tool calls per run, with at most four concurrent tools.
+SDK retries remain separately bounded; summarization and suggestions are auxiliary
+calls within the deadline, not part of the main-call count. These are execution
+limits, not a cumulative token or spend cap. Cancellation cannot undo a committed
+write or stop a synchronous tool already running in a worker thread; failed runs
+are never automatically replayed.
+
+Background briefings receive read-only analytics already loaded. Session feedback
+uses supplied facts and the memory ledger only. Both can maintain coaching memory,
+but neither can change the training plan or log workouts. The server checks these
+permissions at execution as well as filtering tool schemas. Chat retains direct
+training writes after the corresponding toolkit has been loaded.
 
 To trace the coach, set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in the
 backend `.env`, then restart. This key is separate from inference credentials.
@@ -101,7 +119,10 @@ can vary. Set `LLM_MODEL` to pin a specific model; Arete sends no fallback list.
 ```
 src/arete/
 ├── config.py   All environment variables in one place; scheduler.py: optional daily sync
-├── agent/      Coaching agent: graph + model, page-context tool, toolkits (progressive loading), markdown memory ledger, /agent routes
+├── coaching.py Application composition for chat and background coaching
+├── agent/      Runtime, context builder, model routes, capability catalog, tools, profiles, prompts and hooks
+├── services/   Domain operations shared by HTTP routes, tools and scheduled work
+├── observability/ Model usage and timing
 ├── api/        FastAPI routers: analytics, garmin (sessions/FIT), garmin_sync, garmin_health, strength, strava, ai_tips, metrics, settings; main.py wires them
 ├── dataio/     DuckDB connection (db.py), schema + versioned migrations (init_duckdb.py), shared queries, user settings
 ├── features/   Training science: workload (ACWR), cardio (TRIMP, zones), fitness (CTL/ATL/TSB), strength (1RM, INOL), banister fit, hr_drift, recommendations
@@ -115,6 +136,9 @@ scripts/        fit_banister.py (fit personal CTL/ATL coefficients), garmin_logi
 tests/          pytest suite (isolated temp DuckDB via ARETE_DB, no network)
 docs/plans/     Design documents
 ```
+
+The coaching dependency boundaries and execution envelope are documented in
+[Architecture](docs/architecture.md) and enforced by structural tests.
 
 ## API overview
 
@@ -137,6 +161,11 @@ Interactive docs at `/docs`. Routers and their prefixes:
 Arete assumes one athlete: `user_id = 1` everywhere, no authentication on the API, Strava tokens stored in DuckDB and Garmin session tokens on disk in clear text. Run it on your own machine or behind something that authenticates (VPN, reverse proxy with auth). Do not expose port 8000 to the internet as is.
 
 ## Development
+
+Start coding sessions with [AGENTS.md](AGENTS.md) (shared instructions) or
+[CLAUDE.md](CLAUDE.md) (Claude entrypoint). The [architecture guide](docs/architecture.md)
+explains ownership, allowed dependencies, profiles and runtime limits. Changes to
+these boundaries must update the guide and the dependency tests together.
 
 ```bash
 uv run ruff check src tests && uv run ruff format --check src tests

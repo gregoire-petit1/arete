@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
-from arete.agent.summarization import (
+from arete.agent.context.compaction import (
     KEEP_RECENT_MESSAGES,
     SUMMARIZE_ABOVE_TOKENS,
     build_summarization,
@@ -24,7 +24,9 @@ from arete.agent.summarization import (
 def middleware(tmp_path, monkeypatch):
     monkeypatch.setenv("ARETE_DB", str(tmp_path / "s.duckdb"))
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    return build_summarization()
+    from arete.agent.models.providers import build_chat_model
+
+    return build_summarization(build_chat_model())
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +42,7 @@ def test_transcripts_never_land_in_the_memory_ledger(tmp_path, monkeypatch):
     that already had it writing a training session into its journal.
     """
     monkeypatch.setenv("ARETE_DB", str(tmp_path / "s.duckdb"))
-    from arete.agent.filesystem import memory_root
+    from arete.services.memory import memory_root
 
     assert transcripts_root() != memory_root()
     assert memory_root() not in transcripts_root().parents
@@ -50,7 +52,7 @@ def test_the_agent_cannot_reach_the_transcripts(tmp_path, monkeypatch):
     # The filesystem middleware is scoped to the memory root, so the archive
     # is for us to read, not for the agent to quote back.
     monkeypatch.setenv("ARETE_DB", str(tmp_path / "s.duckdb"))
-    from arete.agent.filesystem import memory_root
+    from arete.services.memory import memory_root
 
     assert transcripts_root().resolve() not in memory_root().resolve().parents
     assert not str(transcripts_root()).startswith(str(memory_root()) + "/")
@@ -70,10 +72,8 @@ def test_it_builds_without_a_model_profile(middleware):
     assert middleware is not None
 
 
-def test_the_threshold_fits_the_smallest_free_window():
-    # The smallest free tool-calling model in the pool is 65k, and
-    # `openrouter/free` advertises 200k. Leave room for the system prompt,
-    # the tool schemas and a reply.
+def test_the_threshold_fits_the_default_configured_window():
+    # The configured default leaves room for schemas, instructions and output.
     assert SUMMARIZE_ABOVE_TOKENS < 65_536 * 0.7
 
 
@@ -83,7 +83,7 @@ def test_the_threshold_is_reachable_by_this_agent():
     A page read is bounded at 32k characters, roughly 8k tokens, so a handful
     of data-heavy turns has to be able to cross the line.
     """
-    from arete.agent.tools import MAX_TOOL_OUTPUT_CHARS
+    from arete.agent.runtime.budget import MAX_TOOL_OUTPUT_CHARS
 
     biggest_tool_result_tokens = MAX_TOOL_OUTPUT_CHARS / 4
     assert biggest_tool_result_tokens * 6 >= SUMMARIZE_ABOVE_TOKENS
@@ -120,7 +120,7 @@ def test_the_counted_tokens_come_from_real_text(middleware):
     A bounded page read is 32k characters; a few of those must cross 40k
     tokens, or the trigger is decorative.
     """
-    from arete.agent.tools import MAX_TOOL_OUTPUT_CHARS
+    from arete.agent.runtime.budget import MAX_TOOL_OUTPUT_CHARS
 
     page_read = "detail " * (MAX_TOOL_OUTPUT_CHARS // 7)
     messages = [HumanMessage(page_read) for _ in range(6)]

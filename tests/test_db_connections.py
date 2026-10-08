@@ -2,11 +2,11 @@
 
 from contextlib import closing
 
-from arete.api.metrics import _week_history
 from arete.dataio.db import connect, db_connection
 from arete.dataio.init_duckdb import main as init_schema
 from arete.dataio.settings import get_user_settings
 from arete.features.banister import load_coefficients
+from arete.services.metrics import _week_history
 
 
 def test_dashboard_readers_coexist_with_writer(tmp_path, monkeypatch):

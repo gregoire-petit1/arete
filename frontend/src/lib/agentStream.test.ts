@@ -194,3 +194,27 @@ describe('Independent surfaces', () => {
     ).toMatchObject({ status: 'error' });
   });
 });
+
+describe('follow-up suggestions', () => {
+  it('preserves suggestions with the answer and across browser restore', async () => {
+    let message = empty;
+    await consumeStream(
+      stream(frame({ type: 'suggestions', suggestions: ['Et demain ?'] }) + frame(done)),
+      (event) => { message = applyEvent(message, event); }
+    );
+    expect(message.content).toBe('Réponse');
+    expect(message.suggestions).toEqual(['Et demain ?']);
+    expect(restoreConversation(JSON.stringify([message]))[0].suggestions).toEqual(['Et demain ?']);
+  });
+  it('rejects oversized suggestion events', async () => {
+    await expect(consumeStream(
+      stream(frame({ type: 'suggestions', suggestions: ['x'.repeat(121)] }) + frame(done)),
+      () => {}
+    )).rejects.toThrow('Événement du coach invalide');
+  });
+  it('ignores corrupt optional suggestions in stored messages', () => {
+    const messages = restoreConversation(JSON.stringify([{ role: 'assistant', content: 'Réponse', suggestions: [42] }]));
+    expect(messages[0].content).toBe('Réponse');
+    expect(messages[0].suggestions).toBeUndefined();
+  });
+});

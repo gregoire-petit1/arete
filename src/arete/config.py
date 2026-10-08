@@ -73,6 +73,15 @@ class Config:
         return _env("LLM_MODEL")
 
     @property
+    def llm_context_tokens(self) -> int:
+        # Deployment contract: especially for routers/local servers, the model
+        # name alone does not establish the actual configured context window.
+        value = int(_env("LLM_CONTEXT_TOKENS", "65536") or 65536)
+        if value < 8192:
+            raise ValueError("LLM_CONTEXT_TOKENS must be at least 8192")
+        return value
+
+    @property
     def ollama_base_url(self) -> str:
         return _env("OLLAMA_BASE_URL", "http://localhost:11434/v1") or ""
 
