@@ -9,6 +9,7 @@ existing repositories/features — no LLM, no writes.
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 from typing import Any
 
 from langchain.tools import tool
@@ -32,17 +33,39 @@ def _analytics() -> dict[str, Any]:
     return {"overview": get_overview(period="30d")}
 
 
+#: What a Planning page read covers: the week just gone and three ahead.
+#: The whole plan used to be read at once, and a plan runs months out — 109
+#: sessions to December on real data, 35k characters — so it overflowed the
+#: read bound and the coach on the Planning page could not see the plan at
+#: all. Anything further is one `list_planned` call away in the planning
+#: toolkit.
+PLANNING_PAST_DAYS = 7
+PLANNING_AHEAD_DAYS = 21
+
+
+def _without_nulls(row: dict[str, Any]) -> dict[str, Any]:
+    """Drop empty fields: a null is a token spent saying nothing."""
+    return {k: v for k, v in row.items() if v is not None and v != ""}
+
+
 def _planning() -> dict[str, Any]:
     from arete.api.garmin import list_planned_sessions
 
+    today = date.today()
+    start = today - timedelta(days=PLANNING_PAST_DAYS)
+    end = today + timedelta(days=PLANNING_AHEAD_DAYS)
     # API default params are FastAPI Query objects; call with plain values.
+    sessions = list_planned_sessions(
+        start_date=start, end_date=end, status=None, limit=200
+    )
+    rows = sorted(
+        (_without_nulls(s.model_dump(mode="json")) for s in sessions),
+        key=lambda row: row["date"],
+    )
     return {
-        "planned_sessions": [
-            s.model_dump(mode="json")
-            for s in list_planned_sessions(
-                start_date=None, end_date=None, status=None, limit=200
-            )
-        ]
+        "window": {"from": start.isoformat(), "to": end.isoformat()},
+        "planned_sessions": rows,
+        "beyond_the_window": "planning toolkit: list_planned(start_date, end_date)",
     }
 
 

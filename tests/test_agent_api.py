@@ -501,3 +501,66 @@ def test_chat_routes_reject_invalid_thread_id(client, endpoint):
         },
     )
     assert response.status_code == 422
+
+
+class TestPlanningPageRead:
+    """The Planning page read is a window, not the whole plan.
+
+    Read whole, a plan that runs months out overflowed the 32k bound — 109
+    sessions on real data — and the tool answered with an error, so the coach
+    on the Planning page could not see the plan at all.
+    """
+
+    def _plan(self, offsets_days):
+        from datetime import date, timedelta
+
+        from arete.garmin.models import PlannedSession, SessionType
+        from arete.garmin.repository import GarminRepository
+
+        repo = GarminRepository()
+        today = date.today()
+        return repo, [
+            repo.create_planned_session(
+                PlannedSession(
+                    date=today + timedelta(days=offset),
+                    sport="running",
+                    session_type=SessionType.ENDURANCE,
+                    description=f"offset {offset}",
+                )
+            )
+            for offset in offsets_days
+        ]
+
+    def test_only_the_window_is_read(self):
+        from arete.agent.tools import PLANNING_AHEAD_DAYS, PLANNING_PAST_DAYS
+
+        repo, ids = self._plan(
+            [-(PLANNING_PAST_DAYS + 5), -2, 3, PLANNING_AHEAD_DAYS + 30]
+        )
+        try:
+            out = json.loads(get_page_context.invoke({"page": "planning"}))
+            seen = {row["description"] for row in out["planned_sessions"]}
+        finally:
+            for i in ids:
+                repo.delete_planned_session(i)
+        assert "offset -2" in seen and "offset 3" in seen
+        assert f"offset {-(PLANNING_PAST_DAYS + 5)}" not in seen
+        assert f"offset {PLANNING_AHEAD_DAYS + 30}" not in seen
+
+    def test_rows_are_in_date_order_and_carry_no_nulls(self):
+        repo, ids = self._plan([5, 1, 3])
+        try:
+            rows = json.loads(get_page_context.invoke({"page": "planning"}))[
+                "planned_sessions"
+            ]
+        finally:
+            for i in ids:
+                repo.delete_planned_session(i)
+        dates = [row["date"] for row in rows]
+        assert dates == sorted(dates)
+        assert all(value is not None for row in rows for value in row.values())
+
+    def test_the_read_says_where_to_look_beyond_it(self):
+        out = json.loads(get_page_context.invoke({"page": "planning"}))
+        assert out["window"]["from"] < out["window"]["to"]
+        assert "list_planned" in out["beyond_the_window"]
