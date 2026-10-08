@@ -194,7 +194,7 @@ def _weekly_goal_tss(settings: dict) -> float:
 
 def _week_history(goal_tss: float) -> tuple[int, int]:
     """(consecutive finished weeks at goal, all-time count of such weeks)."""
-    con = connect(read_only=True)
+    con = connect()
     try:
         today = date.today()
         current_monday = today - timedelta(days=today.weekday())
@@ -291,7 +291,7 @@ def get_player_stats():
 
     # --- XP: this week's load ---
     monday = today - timedelta(days=today.weekday())
-    con = connect(read_only=True)
+    con = connect()
     try:
         xp_current = round(weekly_tss(con, monday, today), 1)
     finally:

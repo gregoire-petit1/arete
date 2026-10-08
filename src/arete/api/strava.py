@@ -30,7 +30,7 @@ def _get_strava_tokens(user_id: int = 1) -> dict | None:
     """Get Strava tokens from DB."""
     from arete.dataio.db import connect
 
-    con = connect(True)
+    con = connect()
     try:
         row = con.execute(
             "SELECT athlete_id, access_token, refresh_token, expires_at, athlete_name "

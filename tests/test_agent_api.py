@@ -223,17 +223,27 @@ def test_tool_event_middleware_emits_start_and_end():
             events.append(event)
 
     class _Request:
-        tool_call = {"name": "get_page_context", "args": {"page": "log"}}
+        tool_call = {
+            "id": "call-1",
+            "name": "get_page_context",
+            "args": {"page": "log"},
+        }
 
     with patch("langgraph.config.get_stream_writer", return_value=_FakeWriter()):
         middleware = ToolEventMiddleware()
         result = middleware.wrap_tool_call(_Request(), lambda _r: "result")
 
     assert result == "result"
-    assert events == [
-        {"type": "tool_start", "name": "get_page_context", "args": "log"},
-        {"type": "tool_end", "name": "get_page_context"},
-    ]
+    assert events[0] == {
+        "type": "tool_start",
+        "id": "call-1",
+        "name": "get_page_context",
+        "args": {"text": '{"page": "log"}', "truncated": False},
+    }
+    assert events[1]["id"] == "call-1"
+    assert events[1]["status"] == "done"
+    assert events[1]["output"]["text"] == "result"
+    assert events[1]["elapsed_ms"] >= 0
 
 
 def test_chat_stream_endpoint_sse(client):

@@ -178,3 +178,42 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-neon-cyan);
 }
+
+/* Assistant prose owns its typography; activity cards have their own surface. */
+.coach-markdown { min-width: 0; font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; color: var(--color-text-primary); }
+.coach-markdown + .coach-markdown { margin-top: 1rem; }
+.coach-markdown > :first-child { margin-top: 0; }
+.coach-markdown > :last-child { margin-bottom: 0; }
+.coach-markdown p { margin: 0.7em 0; }
+.coach-markdown h1, .coach-markdown h2, .coach-markdown h3, .coach-markdown h4 { margin: 1.3em 0 0.5em; font-size: 1em; font-weight: 700; line-height: 1.4; }
+.coach-markdown h1 { font-size: 1.2em; }
+.coach-markdown h2 { font-size: 1.1em; }
+.coach-markdown strong { font-weight: 700; color: #fff; }
+.coach-markdown ul, .coach-markdown ol { margin: 0.6em 0; padding-left: 1.5em; }
+.coach-markdown ul { list-style: disc; }
+.coach-markdown ol { list-style: decimal; }
+.coach-markdown li { padding-left: 0.2em; margin: 0.35em 0; }
+.coach-markdown li > p { margin: 0.35em 0; }
+.coach-markdown li::marker { color: var(--color-text-muted); }
+.coach-markdown a { color: var(--color-neon-cyan); text-decoration: underline; text-underline-offset: 3px; }
+.coach-markdown blockquote { margin: 1em 0; border-left: 2px solid var(--color-neon-cyan); padding-left: 1em; color: var(--color-text-secondary); }
+.coach-markdown code { border-radius: 4px; background: var(--color-shadow); padding: 0.15em 0.35em; font-family: var(--font-mono); font-size: 0.85em; }
+.coach-markdown pre { margin: 1em 0; overflow-x: auto; padding: 1em; border: 1px solid var(--color-shadow); border-radius: 10px; background: var(--color-void); }
+.coach-markdown pre code { padding: 0; background: transparent; font-size: 12px; white-space: pre; }
+.coach-markdown hr { margin: 1.5em 0; border-color: var(--color-shadow); }
+.coach-table-scroll { max-width: 100%; overflow-x: auto; margin: 1em 0; }
+.coach-markdown table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.coach-markdown th, .coach-markdown td { border-bottom: 1px solid var(--color-shadow); padding: 0.6em 0.8em; text-align: left; vertical-align: top; }
+.coach-markdown th { color: var(--color-text-secondary); font-weight: 600; background: var(--color-void); }
+.coach-markdown .contains-task-list { list-style: none; padding-left: 0.2em; }
+.coach-markdown input[type="checkbox"] { margin-right: 0.5em; accent-color: var(--color-neon-cyan); }
+
+/* Keep the coach below desktop navigation and above the mobile tab bar,
+   so its toggle remains reachable while the conversation is open. */
+.coach-panel { top: 0; bottom: calc(4rem + env(safe-area-inset-bottom)); }
+@media (min-width: 768px) {
+  .coach-panel { top: 3.5rem; bottom: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-panel { animation: none; }
+}

@@ -7,6 +7,7 @@ history each call; persistence lands later if needed.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -25,6 +26,11 @@ from arete.agent.context import (
     AgentContext,
 )
 from arete.agent.filesystem import NOTES_LEDGER, SESSIONS_LEDGER, memory_root
+from arete.agent.streaming import (
+    MAX_STREAM_EVENTS,
+    MAX_STREAM_SECONDS,
+    StreamProjection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -145,62 +151,50 @@ class StreamRequest(ChatRequest):
     """Body of POST /agent/chat/stream — same contract, SSE response."""
 
 
-async def _sse_stream(
-    body: StreamRequest,
-) -> AsyncIterator[str]:
-    """Yield SSE frames for one agent run.
+def _sse(event: dict) -> str:
+    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-    Events (JSON in ``data:`` frames, one JSON object per frame):
-    - ``{"type": "tool_start"|"tool_end", "name": ..., "args": ...}`` — custom
-      events from ``ToolEventMiddleware``
-    - ``{"type": "token", "text": ...}`` — final-answer deltas (messages mode,
-      model node only)
-    - ``{"type": "done", "message": {role, content}}`` — full final message,
-      so the client replaces its streamed buffer with a consistent value
-    - ``{"type": "error", "detail": ...}`` — mid-stream failure
-    """
-    graph = get_agent()
-    history = [_to_langchain(m.role, m.content) for m in body.messages]
-    context = _to_agent_context(_panel_context_source(body))
 
+async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
+    """Messages, tool activity and failures are separate UI events."""
+    projection = StreamProjection()
     try:
-        async for part in graph.astream(
-            {"messages": history},
-            context=context,
-            config={"recursion_limit": AGENT_RECURSION_LIMIT},
-            stream_mode=["messages", "custom"],
-            version="v2",
-        ):
-            kind = part["type"]
-            if kind == "custom":
-                event = part["data"]
-                if isinstance(event, dict) and event.get("type") in (
-                    "tool_start",
-                    "tool_end",
-                ):
-                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            elif kind == "messages":
-                chunk, meta = part["data"]
-                # Only model-node tokens: tool-node message passthroughs are
-                # already covered by the custom tool events.
-                text = getattr(chunk, "text", "") or ""
-                if meta.get("langgraph_node") == "model" and text:
-                    yield f"data: {json.dumps({'type': 'token', 'text': text}, ensure_ascii=False)}\n\n"
+        graph = get_agent()
+        history = [_to_langchain(m.role, m.content) for m in body.messages]
+        context = _to_agent_context(_panel_context_source(body))
+        async with asyncio.timeout(MAX_STREAM_SECONDS):
+            event_count = 0
+            async for part in graph.astream(
+                {"messages": history},
+                context=context,
+                config={"recursion_limit": AGENT_RECURSION_LIMIT},
+                stream_mode=["messages", "updates", "custom"],
+                version="v2",
+            ):
+                event_count += 1
+                if event_count > MAX_STREAM_EVENTS:
+                    raise ValueError("Le stream dépasse la limite d'événements.")
+                for event in projection.events(part):
+                    yield _sse(event)
+        yield _sse(projection.done())
+    except TimeoutError:
+        yield _sse(
+            {
+                "type": "error",
+                "detail": "Le coach a dépassé le délai de 5 minutes. Réessaie avec une demande plus courte.",
+            }
+        )
     except ValueError as exc:
-        # Model misconfiguration (missing key, unknown provider).
-        yield f"data: {json.dumps({'type': 'error', 'detail': str(exc)}, ensure_ascii=False)}\n\n"
-        return
+        yield _sse({"type": "error", "detail": str(exc)})
     except Exception as exc:
         logger.exception("Agent stream failed")
-        yield f"data: {json.dumps({'type': 'error', 'detail': f'Agent run failed: {exc}'}, ensure_ascii=False)}\n\n"
-        return
-
-    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        yield _sse({"type": "error", "detail": f"Agent run failed: {exc}"})
 
 
 @router.post("/chat/stream")
 async def chat_stream(body: StreamRequest) -> StreamingResponse:
-    """Stream one agent run as Server-Sent Events (see _sse_stream)."""
+    """Stream a run; validate page context before sending HTTP 200."""
+    _panel_context_source(body)
     return StreamingResponse(
         _sse_stream(body),
         media_type="text/event-stream",

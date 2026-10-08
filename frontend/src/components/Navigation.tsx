@@ -1,5 +1,15 @@
+import type { MouseEvent } from 'react';
 import { NavLink } from 'react-router-dom';
-import { BarChart3, CalendarDays, Dumbbell, LayoutDashboard, Settings } from 'lucide-react';
+import {
+  BarChart3,
+  Bot,
+  CalendarDays,
+  Dumbbell,
+  LayoutDashboard,
+  Loader2,
+  PanelRightClose,
+  Settings,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
@@ -14,7 +24,15 @@ const navItems = [
  * Desktop: sticky top navbar
  * Mobile: fixed bottom tab bar (fitness app pattern)
  */
-export function Navigation() {
+export function Navigation({
+  agentOpen,
+  agentBusy,
+  onToggleAgent,
+}: {
+  agentOpen: boolean;
+  agentBusy: boolean;
+  onToggleAgent: (event: MouseEvent<HTMLButtonElement>) => void;
+}) {
   return (
     <>
       {/* Desktop top nav — hidden on mobile */}
@@ -25,7 +43,9 @@ export function Navigation() {
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex items-center justify-between h-14">
             <div className="flex items-center gap-2 animate-fade-left">
-              <span className="text-xl font-bold text-neon-cyan font-mono tracking-wider">[ARETE]</span>
+              <span className="text-xl font-bold text-neon-cyan font-mono tracking-wider">
+                [ARETE]
+              </span>
             </div>
 
             <div className="flex items-center gap-1">
@@ -33,6 +53,7 @@ export function Navigation() {
                 <NavLink
                   key={item.path}
                   to={item.path}
+                  aria-label={item.label}
                   end={item.path === '/'}
                   className={({ isActive }) =>
                     cn(
@@ -45,13 +66,32 @@ export function Navigation() {
                   }
                 >
                   <item.icon className="w-4 h-4" />
-                  <span>{item.label}</span>
+                  <span className="hidden lg:inline">{item.label}</span>
                 </NavLink>
               ))}
             </div>
 
-            {/* Spacer: same width as the logo so the links stay centered */}
-            <div className="w-[72px]" />
+            <button
+              onClick={onToggleAgent}
+              aria-controls="coach-panel"
+              aria-expanded={agentOpen}
+              aria-label={agentOpen ? 'Masquer le coach' : 'Ouvrir le coach'}
+              className={cn(
+                'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors',
+                agentOpen
+                  ? 'border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan'
+                  : 'border-text-muted/20 text-text-secondary hover:border-neon-cyan/30 hover:text-neon-cyan'
+              )}
+            >
+              {agentBusy ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : agentOpen ? (
+                <PanelRightClose className="size-4" />
+              ) : (
+                <Bot className="size-4" />
+              )}
+              <span>Coach</span>
+            </button>
           </div>
         </div>
       </nav>
@@ -67,19 +107,29 @@ export function Navigation() {
             <NavLink
               key={item.path}
               to={item.path}
+              aria-label={item.label}
               end={item.path === '/'}
               className={({ isActive }) =>
                 cn(
-                  'relative flex flex-col items-center justify-center gap-0.5 py-1 px-3 rounded-lg',
-                  'transition-all duration-200 min-w-[56px]',
-                  isActive ? 'text-neon-cyan' : 'text-text-muted active:text-text-secondary'
+                  'relative flex flex-1 flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-lg',
+                  'transition-all duration-200 min-w-0',
+                  isActive
+                    ? 'text-neon-cyan'
+                    : 'text-text-muted active:text-text-secondary'
                 )
               }
             >
               {({ isActive }) => (
                 <>
-                  <item.icon className={cn('w-5 h-5', isActive && 'drop-shadow-[0_0_6px_rgba(0,240,255,0.5)]')} />
-                  <span className="text-[10px] font-mono">{item.label}</span>
+                  <item.icon
+                    className={cn(
+                      'w-5 h-5',
+                      isActive && 'drop-shadow-[0_0_6px_rgba(0,240,255,0.5)]'
+                    )}
+                  />
+                  <span className="text-[9px] font-mono">
+                    {item.path === '/' ? 'Accueil' : item.label}
+                  </span>
                   {/* Active indicator; the NavLink is `relative` so it sits on this tab */}
                   <span
                     aria-hidden
@@ -92,6 +142,25 @@ export function Navigation() {
               )}
             </NavLink>
           ))}
+          <button
+            onClick={onToggleAgent}
+            aria-controls="coach-panel"
+            aria-expanded={agentOpen}
+            aria-label={agentOpen ? 'Masquer le coach' : 'Ouvrir le coach'}
+            className={cn(
+              'flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1',
+              agentOpen ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-text-muted'
+            )}
+          >
+            {agentBusy ? (
+              <Loader2 className="size-5 animate-spin" />
+            ) : agentOpen ? (
+              <PanelRightClose className="size-5" />
+            ) : (
+              <Bot className="size-5" />
+            )}
+            <span className="text-[9px] font-mono">Coach</span>
+          </button>
         </div>
       </nav>
     </>

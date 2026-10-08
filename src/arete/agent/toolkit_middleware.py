@@ -24,7 +24,6 @@ as deepagents' filesystem middleware, so the two compose).
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import unicodedata
@@ -222,7 +221,7 @@ LOAD_TOOLKIT_TOOL = StructuredTool.from_function(
     name="load_toolkit",
     description=(
         "Charge un toolkit et rend ses outils disponibles pour le reste "
-        "de la conversation."
+        "de cette exécution."
     ),
     args_schema=_LoadToolkitInput,
     infer_schema=False,
@@ -271,7 +270,13 @@ def _apply(request: ModelRequest):
     """
     loaded = loaded_toolkits(request.state)
     overrides: dict[str, Any] = {"tools": _augment_tools(request.tools, loaded)}
-    suffix = tool_instructions_suffix(loaded)
+    # Keep discovery cheap and accurate: one registry is the source of truth,
+    # and catalog text is appended to the request, never accumulated in state.
+    catalog = (
+        "Skills disponibles (charger leurs outils avec load_toolkit):\n"
+        + "\n".join(f"- {tk.id}: {tk.description}" for tk in _TOOLKIT_REGISTRY.values())
+    )
+    suffix = catalog + "\n\n" + tool_instructions_suffix(loaded)
     if suffix:
         overrides["system_message"] = _append_system_text(
             request.system_message, suffix
@@ -326,38 +331,27 @@ class ToolkitMiddleware(AgentMiddleware):
     async def awrap_model_call(self, request: ModelRequest, handler):
         return await handler(_apply(request))
 
-    async def _passthrough_async(self, request, handler):
-        return await handler(request)
-
-    def _execute_dynamic(self, request, handler, *, await_handler: bool):
-        """Run toolkit tools this middleware owns; pass the rest through.
-
-        ``await_handler`` matters for the passthrough branch: in the async
-        tool chain the handler returns a coroutine — returning it un-awaited
-        would land a coroutine in the messages channel ("Unsupported message
-        type: <class 'coroutine'>").
-        """
+    def wrap_tool_call(self, request, handler):
         name = str(request.tool_call.get("name", ""))
         tool = _toolkit_tool(name, loaded_toolkits(request.state))
         if tool is None:
-            if await_handler:
-                return self._passthrough_async(request, handler)
             return handler(request)
         result = tool.invoke(dict(request.tool_call.get("args") or {}))
         return ToolMessage(
-            content=str(result),
-            name=name,
-            tool_call_id=str(request.tool_call.get("id", "")),
+            content=str(result), name=name, tool_call_id=request.tool_call["id"]
         )
 
-    def wrap_tool_call(self, request, handler):
-        return self._execute_dynamic(request, handler, await_handler=False)
-
     async def awrap_tool_call(self, request, handler):
-        result = self._execute_dynamic(request, handler, await_handler=True)
-        if asyncio.iscoroutine(result):
-            return await result
-        return result
+        name = str(request.tool_call.get("name", ""))
+        tool = _toolkit_tool(name, loaded_toolkits(request.state))
+        if tool is None:
+            return await handler(request)
+        # ainvoke runs sync database tools off the event loop, allowing live
+        # progress and concurrent requests to keep flowing during execution.
+        result = await tool.ainvoke(dict(request.tool_call.get("args") or {}))
+        return ToolMessage(
+            content=str(result), name=name, tool_call_id=request.tool_call["id"]
+        )
 
 
 def reset_registry_for_tests() -> None:  # pragma: no cover - test helper

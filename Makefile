@@ -71,6 +71,7 @@ typecheck: .venv ## mypy
 	uv run mypy src/arete
 
 check: lint typecheck test ## Everything CI runs, frontend build included
+	npm --prefix frontend test
 	npm --prefix frontend run build
 
 docker: .env ## Production-like stack: frontend :3080, API :8001

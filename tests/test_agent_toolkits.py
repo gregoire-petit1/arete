@@ -240,8 +240,10 @@ def test_pinned_instructions_reach_the_system_message_after_load():
         _Request(system_message=base, state={"loaded_toolkits": ["planning"]}), capture
     )
 
-    # Before the load: untouched system message, no planning instructions.
-    assert seen[0] == "Tu es le coach."
+    # Before loading: base prompt + current catalog, no detailed instructions.
+    assert seen[0].startswith("Tu es le coach.")
+    assert "Skills disponibles" in seen[0]
+    assert PLANNING_INSTRUCTIONS not in seen[0]
     # After: the base prompt is kept and the instructions appended, not replaced.
     assert seen[1].startswith("Tu es le coach.")
     assert PLANNING_INSTRUCTIONS in seen[1]

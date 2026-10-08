@@ -44,7 +44,7 @@ def _settings_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
 
 def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
     """Get user settings by user_id."""
-    con = connect(True)
+    con = connect()
     try:
         row = con.execute(
             """

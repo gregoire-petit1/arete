@@ -14,6 +14,7 @@ from arete.config import config
 
 #: Named bounds, per TigerStyle: no silent SDK defaults on the agent loop.
 AGENT_TEMPERATURE = 0.3
+AGENT_MAX_TOKENS = 4096
 AGENT_TIMEOUT_SEC = 300
 #: Free-tier providers (OpenRouter :free pool) 429 often and hang sometimes;
 #: the SDK retries 429/5xx with backoff, the stream watchdog bounds hangs.
@@ -46,6 +47,7 @@ def build_chat_model() -> ChatOpenAI:
                 "ollama"
             ),  # local servers ignore the key; SDK requires one
             temperature=AGENT_TEMPERATURE,
+            max_completion_tokens=AGENT_MAX_TOKENS,
             timeout=AGENT_TIMEOUT_SEC,
             max_retries=AGENT_MAX_RETRIES,
             stream_chunk_timeout=AGENT_STREAM_CHUNK_TIMEOUT_SEC,
@@ -62,6 +64,7 @@ def build_chat_model() -> ChatOpenAI:
             base_url="https://openrouter.ai/api/v1",
             api_key=SecretStr(api_key),
             temperature=AGENT_TEMPERATURE,
+            max_completion_tokens=AGENT_MAX_TOKENS,
             timeout=AGENT_TIMEOUT_SEC,
             max_retries=AGENT_MAX_RETRIES,
             stream_chunk_timeout=AGENT_STREAM_CHUNK_TIMEOUT_SEC,
@@ -77,6 +80,7 @@ def build_chat_model() -> ChatOpenAI:
             base_url="https://models.inference.ai.azure.com",
             api_key=SecretStr(api_key),
             temperature=AGENT_TEMPERATURE,
+            max_completion_tokens=AGENT_MAX_TOKENS,
             timeout=AGENT_TIMEOUT_SEC,
             max_retries=AGENT_MAX_RETRIES,
             stream_chunk_timeout=AGENT_STREAM_CHUNK_TIMEOUT_SEC,

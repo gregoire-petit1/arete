@@ -1,425 +1,417 @@
-import { useEffect, useRef, useState } from 'react';
-import { Bot, BotMessageSquare, Send, Loader2, Wrench, X, Check, Trash2, Square } from 'lucide-react';
+import { memo, useEffect, useRef, useState } from 'react';
+import {
+  ArrowDown,
+  Bot,
+  BotMessageSquare,
+  CircleAlert,
+  Send,
+  Loader2,
+  X,
+  Plus,
+  History,
+  ChevronDown,
+  Square,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { usePanelContext, type PanelPageContext } from '@/lib/pageContext';
+import { usePanelContext } from '@/lib/pageContext';
+import {
+  MAX_MESSAGE_CHARS,
+  type ChatMessage,
+  type ChatPart,
+  type ToolPart,
+} from '@/lib/agentStream';
+import { useCoachThreads } from '@/hooks/useCoachThreads';
+import { ThreadHistory } from './agent/ThreadHistory';
+import { AgentMarkdown } from './agent/AgentMarkdown';
+import { ToolActivity } from './agent/ToolActivity';
 
-type ToolStatus = 'running' | 'done';
-
-interface ToolCallStep {
-  kind: 'tool';
-  name: string;
-  args?: string;
-  status: ToolStatus;
-}
-
-interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  /** Tool-call timeline that happened while producing this message. */
-  steps?: ToolCallStep[];
-}
-
-interface ToolEvent {
-  type: 'tool_start' | 'tool_end';
-  name: string;
-  args?: string;
-}
-
-type StreamEvent =
-  | { type: 'token'; text: string }
-  | ToolEvent
-  | { type: 'done' }
-  | { type: 'error'; detail: string };
-
-const TOOL_LABELS: Record<string, (args?: string) => string> = {
-  get_page_context: (args?: string) => `lit les données de la page ${args ?? '…'}`,
-  read_file: () => 'lit sa mémoire',
-  write_file: () => 'écrit dans son journal',
-  edit_file: () => 'met à jour son journal',
-  ls: () => 'liste sa mémoire',
-  glob: () => 'cherche dans sa mémoire',
-  grep: () => 'cherche dans sa mémoire',
-  search_toolkits: (args) => `cherche un toolkit${args ? `: ${args}` : ''}`,
-  load_toolkit: (args) => `charge le toolkit ${args ?? '…'}`,
-  get_workload: () => 'lit ta charge (ACWR, monotonie)',
-  get_fitness: () => 'lit ta forme (CTL/ATL/TSB)',
-  get_training_advice: () => 'consulte les recommandations',
-  get_personal_records: () => 'lit tes records',
-  list_recent_sessions: () => 'liste tes séances récentes',
-  read_workout: () => 'relit ta séance de muscu',
-  save_workout: () => 'enregistre ta séance de muscu',
-  list_planned: () => 'liste les séances planifiées',
-  create_planned_session: () => 'crée une séance planifiée',
-  update_planned_status: () => 'met à jour une séance',
-  delete_planned_session: () => 'supprime une séance',
+const PAGE_LABELS: Record<string, string> = {
+  dashboard: 'Tableau de bord',
+  planning: 'Planning',
+  analytics: 'Analyses',
+  log: 'Carnet',
+  settings: 'Paramètres',
 };
+const SUGGESTIONS = [
+  'Que peux-tu faire pour moi ?',
+  'Analyse ma forme du moment',
+  'Aide-moi à planifier ma semaine',
+];
 
-function toolLabel(name: string, args?: string): string {
-  const fn = TOOL_LABELS[name];
-  return fn ? fn(args) : name;
-}
-
-/**
- * Consume the POST /api/agent/chat/stream SSE run, emitting callbacks for
- * tool events and token deltas. Returns the full final text.
- */
-async function runAgentStream(
-  history: ChatMessage[],
-  panelContext: PanelPageContext,
-  onTool: (event: ToolEvent) => void,
-  onToken: (text: string) => void,
-  signal: AbortSignal,
-): Promise<string> {
-  const response = await fetch('/api/agent/chat/stream', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messages: history.map(({ role, content }) => ({ role, content })),
-      panel_context: panelContextToPayload(panelContext),
-    }),
-    signal,
-  });
-  if (!response.ok || !response.body) {
-    const detail = await response.text().catch(() => '');
-    throw new Error(`API Error ${response.status}: ${detail}`);
+/** Keep model turns in order, with independent tool groups between them. */
+const MessageSurfaces = memo(function MessageSurfaces({
+  message,
+}: {
+  message: ChatMessage;
+}) {
+  const parts: ChatPart[] = message.parts?.length
+    ? message.parts
+    : message.content
+      ? [{ kind: 'text', id: 'answer', text: message.content }]
+      : [];
+  const groups: (ChatPart | ToolPart[])[] = [];
+  for (const part of parts) {
+    const previous = groups[groups.length - 1];
+    if (part.kind === 'tool') {
+      if (Array.isArray(previous)) previous.push(part);
+      else groups.push([part]);
+    } else groups.push(part);
   }
+  return (
+    <>
+      {groups.map((part) =>
+        Array.isArray(part) ? (
+          <ToolActivity key={`tool-${part[0].id}`} tools={part} />
+        ) : part.kind === 'text' ? (
+          <AgentMarkdown key={`text-${part.id}`} text={part.text} />
+        ) : null
+      )}
+      {message.error && (
+        <div
+          role="alert"
+          className="mt-3 flex gap-2 rounded-lg border border-danger-red/20 bg-danger-red/5 p-3 text-xs leading-relaxed text-danger-red"
+        >
+          <CircleAlert className="mt-0.5 size-4 shrink-0" />
+          <span>{message.error}</span>
+        </div>
+      )}
+      {message.interrupted && (
+        <p className="mt-3 text-xs text-text-muted">Réponse interrompue.</p>
+      )}
+    </>
+  );
+});
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let finalText = '';
-
-  // SSE frames are `data: <json>\n\n`; accumulate until the double newline.
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let sep: number;
-    while ((sep = buffer.indexOf('\n\n')) !== -1) {
-      const frame = buffer.slice(0, sep);
-      buffer = buffer.slice(sep + 2);
-      if (!frame.startsWith('data: ')) continue;
-      let event: StreamEvent;
-      try {
-        event = JSON.parse(frame.slice(6)) as StreamEvent;
-      } catch {
-        continue;
-      }
-      if (event.type === 'token') {
-        finalText += event.text;
-        onToken(event.text);
-      } else if (event.type === 'tool_start' || event.type === 'tool_end') {
-        onTool(event);
-      } else if (event.type === 'error') {
-        throw new Error(event.detail);
-      }
-    }
-  }
-  return finalText;
-}
-
-const STORAGE_KEY = 'arete.coach.conversation';
-/** Mirrors MAX_MESSAGES in agent/api.py: the backend rejects a longer history. */
-const MAX_STORED_MESSAGES = 60;
-
-/**
- * Read the conversation back, or start empty.
- *
- * Storage can be absent or throw (private window, blocked site data), and
- * what comes back was written by an older build, so nothing here is trusted:
- * anything that does not look like a message is dropped rather than rendered.
- * A tool step left `running` belongs to a stream that died with the tab, so
- * it is settled on the way in.
- */
-function loadConversation(): ChatMessage[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(
-        (m): m is ChatMessage =>
-          !!m &&
-          typeof m === 'object' &&
-          typeof (m as ChatMessage).content === 'string' &&
-          ((m as ChatMessage).role === 'user' || (m as ChatMessage).role === 'assistant')
-      )
-      .slice(-MAX_STORED_MESSAGES)
-      .map((m) => ({
-        role: m.role,
-        content: m.content,
-        steps: (Array.isArray(m.steps) ? m.steps : [])
-          .filter((step) => !!step && typeof step.name === 'string')
-          .map((step) => ({ kind: 'tool' as const, name: step.name, args: step.args, status: 'done' as const })),
-      }));
-  } catch {
-    return [];
-  }
-}
-
-function saveConversation(messages: ChatMessage[]): void {
-  try {
-    if (messages.length === 0) {
-      localStorage.removeItem(STORAGE_KEY);
-      return;
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-MAX_STORED_MESSAGES)));
-  } catch {
-    // Storage full or blocked: the conversation still works, it just will not
-    // outlive the tab.
-  }
-}
-
-/**
- * Coaching-agent side panel (port of the Cortex sidepanel, single-page flavor):
- * right drawer, streamed answers over SSE, current page sent as
- * `panel_context` on every message. Tool calls render as a persistent
- * per-message timeline.
- *
- * The conversation survives navigation and reload: the page travels in
- * `panel_context` on every turn, so the agent always knows where the athlete
- * is now, and the thread itself is kept in localStorage. It stays client-side
- * on purpose — the API is stateless by design and the durable cross-session
- * context lives in the agent's own memory ledger, not in the last six turns.
- */
-export function AgentSidePanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AgentSidePanel({
+  open,
+  onClose,
+  onBusyChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   const panelContext = usePanelContext();
-  const [messages, setMessages] = useState<ChatMessage[]>(loadConversation);
-  const [input, setInput] = useState('');
-  const [streaming, setStreaming] = useState(false);
+  const coach = useCoachThreads(panelContext);
+  const { active, store, runningId } = coach;
+  const messages = active.messages;
+  const streaming = runningId === active.id;
+  const busy = runningId !== null;
+  const [showHistory, setShowHistory] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [following, setFollowing] = useState(true);
+  const followRef = useRef(true);
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Live run, so the user can stop a model that stalls (free-tier pools hang
-  // up to the 300s backend timeout). Closing the drawer does NOT abort: the
-  // answer keeps landing and is there on reopen.
-  const abortRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
-
-  // Written on every change, streaming included: a tab closed mid-answer
-  // keeps what had already landed.
-  useEffect(() => saveConversation(messages), [messages]);
-
-  // Drop the in-flight run when the panel leaves the tree for good.
-  useEffect(() => () => abortRef.current?.abort(), []);
-
+    if (followRef.current)
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+  }, [messages, open, showHistory]);
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy, onBusyChange]);
+  useEffect(() => {
+    if (open && !showHistory) inputRef.current?.focus();
+  }, [open, showHistory, active.id]);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (deleteId) setDeleteId(null);
+        else if (showHistory) setShowHistory(false);
+        else onClose();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, showHistory, deleteId]);
 
-  const busy = streaming;
-
-  const stop = () => abortRef.current?.abort();
-
-  const send = () => {
-    const content = input.trim();
-    if (!content || busy) return;
-    const history = [...messages, { role: 'user' as const, content }];
-    setMessages([...history, { role: 'assistant', content: '', steps: [] }]);
-    setInput('');
-    setStreaming(true);
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    const patchLast = (patch: (m: ChatMessage) => ChatMessage) => {
-      setMessages((prev) => {
-        const next = [...prev];
-        const last = next[next.length - 1];
-        if (last?.role === 'assistant') next[next.length - 1] = patch(last);
-        return next;
-      });
-    };
-
-    runAgentStream(
-      history,
-      panelContext,
-      (event) => {
-        patchLast((m) => {
-          const steps = m.steps ?? [];
-          if (event.type === 'tool_start') {
-            return { ...m, steps: [...steps, { kind: 'tool', name: event.name, args: event.args, status: 'running' }] };
-          }
-          // tool_end: mark the last running call with this name as done.
-          let idx = -1;
-          for (let k = steps.length - 1; k >= 0; k--) {
-            const s = steps[k];
-            if (s.kind === 'tool' && s.name === event.name && s.status === 'running') {
-              idx = k;
-              break;
-            }
-          }
-          if (idx === -1) return m;
-          const next = [...steps];
-          next[idx] = { ...next[idx], status: 'done' as const };
-          return { ...m, steps: next };
-        });
-      },
-      (text) => {
-        patchLast((m) => ({ ...m, content: m.content + text }));
-      },
-      controller.signal,
-    )
-      .then((finalText) => {
-        patchLast((m) => ({ ...m, content: finalText }));
-      })
-      .catch((error: unknown) => {
-        // A stop is a user decision, not a failure: keep the partial answer
-        // and mark it, rather than replacing it with an error.
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          patchLast((m) => ({
-            ...m,
-            content: m.content ? `${m.content}\n\n_(interrompu)_` : '_(interrompu)_',
-            steps: (m.steps ?? []).map((s) => (s.status === 'running' ? { ...s, status: 'done' as const } : s)),
-          }));
-          return;
-        }
-        const detail = error instanceof Error ? error.message : 'Erreur inconnue';
-        patchLast((m) => ({ ...m, content: `Erreur — ${detail}` }));
-      })
-      .finally(() => {
-        abortRef.current = null;
-        setStreaming(false);
-      });
+  const followLatest = () => {
+    followRef.current = true;
+    setFollowing(true);
+  };
+  const selectThread = (id: string) => {
+    coach.select(id);
+    setShowHistory(false);
+    followLatest();
+  };
+  const newThread = () => {
+    coach.create();
+    setShowHistory(false);
+    followLatest();
+  };
+  const send = (prompt?: string) => {
+    if (coach.send(prompt)) followLatest();
   };
 
   if (!open) return null;
-  const page = panelContext.page;
-
+  const page = PAGE_LABELS[panelContext.page] ?? panelContext.page;
   return (
     <aside
-      className={cn(
-        'fixed right-0 top-0 z-40 h-full w-full max-w-md bg-abyss/95 backdrop-blur-md',
-        'border-l border-text-muted/20 flex flex-col animate-fade-left'
-      )}
+      id="coach-panel"
+      className="coach-panel fixed right-0 z-40 flex w-full max-w-[520px] flex-col border-l border-text-muted/20 bg-abyss shadow-2xl animate-fade-in"
       role="complementary"
       aria-label="Coach IA"
     >
-      <header className="flex items-center gap-2 px-4 py-3 border-b border-text-muted/20">
-        <Bot className="size-5 text-neon-cyan" />
-        <h2 className="font-semibold">Coach</h2>
-        <span className="text-xs text-text-muted">· page : {page}</span>
+      <header className="flex shrink-0 items-center gap-3 border-b border-text-muted/15 px-5 py-4">
+        <div className="flex size-9 items-center justify-center rounded-xl border border-neon-cyan/15 bg-neon-cyan/5">
+          <Bot className="size-5 text-neon-cyan" />
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold">Coach Arete</h2>
+          <p className="mt-0.5 text-[11px] text-text-muted">{page}</p>
+        </div>
         <button
-          onClick={() => setMessages([])}
-          disabled={busy || messages.length === 0}
-          className="ml-auto p-1.5 rounded hover:bg-text-muted/10 text-text-muted disabled:opacity-30"
+          onClick={() => setShowHistory((v) => !v)}
+          className="ml-auto rounded-lg p-2 text-text-muted hover:bg-text-muted/10"
+          aria-label="Historique des conversations"
+          aria-expanded={showHistory}
+          title="Historique des conversations"
+        >
+          <History className="size-4" />
+        </button>
+        <button
+          onClick={newThread}
+          className="rounded-lg p-2 text-text-muted hover:bg-text-muted/10"
           aria-label="Nouvelle conversation"
           title="Nouvelle conversation"
         >
-          <Trash2 className="size-4" />
+          <Plus className="size-4" />
         </button>
         <button
           onClick={onClose}
-          className="p-1.5 rounded hover:bg-text-muted/10 text-text-muted"
-          aria-label="Fermer le panneau"
+          className="rounded-lg p-2 text-text-muted hover:bg-text-muted/10"
+          aria-label="Masquer le coach"
+          title="Masquer le coach"
         >
           <X className="size-5" />
         </button>
       </header>
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
-        {messages.length === 0 && (
-          <div className="text-center mt-8 space-y-3">
-            <BotMessageSquare className="size-10 mx-auto text-text-muted/50" />
-            <p className="text-sm text-text-muted">
-              Demande ton coach — il voit la page {page} et peut lire tes données.
-              <br />
-              <span className="text-xs">Charge le toolkit « planning » pour qu'il planifie tes séances.</span>
-            </p>
-          </div>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} className={cn(m.role === 'user' && 'flex flex-col items-end')}>
-            {m.steps && m.steps.length > 0 && (
-              <div className={cn('space-y-1 mb-1.5', m.role === 'user' && 'items-end')}>
-                {m.steps.map((step, j) => (
-                  <div
-                    key={j}
-                    className="flex items-center gap-1.5 text-[11px] text-text-muted"
-                  >
-                    {step.status === 'running' ? (
-                      <Loader2 className="size-3 animate-spin text-neon-cyan" />
-                    ) : (
-                      <Check className="size-3 text-success-green" />
-                    )}
-                    <Wrench className="size-3" />
-                    <span>{toolLabel(step.name, step.args)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {(m.content || m.role === 'user') && (
-              <div
-                className={cn(
-                  'max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap',
-                  m.role === 'user' ? 'bg-neon-purple/20' : 'glass-panel'
-                )}
-              >
-                {m.content}
-              </div>
-            )}
-          </div>
-        ))}
-        {busy && messages[messages.length - 1]?.content === '' && (
-          <div className="flex items-center gap-2 text-text-muted text-sm">
-            <Loader2 className="size-4 animate-spin" /> le coach réfléchit…
-          </div>
-        )}
-      </div>
-
-      <footer className="p-3 border-t border-text-muted/20">
-        <div className="flex gap-2">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && send()}
-            placeholder="Pose ta question…"
-            className="flex-1 bg-abyss/50 border border-text-muted/20 rounded px-3 py-2 text-sm focus:outline-none focus:border-neon-cyan/50"
-            disabled={busy}
-          />
-          {busy ? (
+      {coach.storageError && (
+        <p
+          role="alert"
+          className="border-b border-warning-orange/20 bg-warning-orange/5 px-4 py-2 text-xs text-warning-orange"
+        >
+          {coach.storageError}
+        </p>
+      )}
+      {coach.error && (
+        <p role="alert" className="px-4 py-2 text-xs text-danger-red">
+          {coach.error}
+        </p>
+      )}
+      {deleteId && (
+        <div
+          role="alert"
+          className="border-b border-text-muted/15 bg-shadow px-4 py-3 text-xs"
+        >
+          <p>
+            Supprimer « {store.threads.find((t) => t.id === deleteId)?.title} »
+            ? Cette conversation sera effacée de ce navigateur.
+          </p>
+          <div className="mt-2 flex gap-3">
             <button
-              onClick={stop}
-              className="p-2 rounded bg-danger-red/20 hover:bg-danger-red/30"
-              aria-label="Arrêter la réponse"
-              title="Arrêter"
+              onClick={() => {
+                coach.remove(deleteId);
+                setDeleteId(null);
+              }}
+              className="rounded bg-danger-red/15 px-3 py-1.5 text-danger-red"
             >
-              <Square className="size-4" />
+              Supprimer
             </button>
-          ) : (
             <button
-              onClick={send}
-              disabled={!input.trim()}
-              className="p-2 rounded bg-neon-purple/20 hover:bg-neon-purple/30 disabled:opacity-40"
-              aria-label="Envoyer"
+              onClick={() => setDeleteId(null)}
+              className="rounded px-3 py-1.5 text-text-muted"
             >
-              <Send className="size-4" />
+              Annuler
+            </button>
+          </div>
+        </div>
+      )}
+      {showHistory ? (
+        <ThreadHistory
+          threads={store.threads}
+          activeId={active.id}
+          runningId={runningId}
+          onSelect={selectThread}
+          onCreate={newThread}
+          onDelete={setDeleteId}
+          onClose={() => setShowHistory(false)}
+        />
+      ) : (
+        <>
+          <button
+            onClick={() => setShowHistory(true)}
+            className="flex shrink-0 items-center gap-2 border-b border-text-muted/10 px-5 py-2.5 text-left text-xs text-text-secondary hover:bg-shadow/40"
+            aria-label="Changer de conversation"
+          >
+            <span className="min-w-0 flex-1 truncate">{active.title}</span>
+            <ChevronDown className="size-3.5 text-text-muted" />
+          </button>
+          {busy && !streaming && (
+            <div
+              role="status"
+              className="border-b border-neon-cyan/10 bg-neon-cyan/5 px-4 py-3 text-xs text-text-secondary"
+            >
+              <p className="flex items-center gap-2">
+                <Loader2 className="size-3 animate-spin" />
+                Le coach répond dans un autre fil.
+              </p>
+              <button
+                onClick={() => selectThread(runningId!)}
+                className="mt-2 text-neon-cyan underline underline-offset-2"
+              >
+                Revenir à la réponse
+              </button>
+              <span className="mx-2">·</span>
+              <button
+                onClick={coach.stop}
+                className="text-text-muted underline underline-offset-2"
+              >
+                Arrêter
+              </button>
+            </div>
+          )}
+          <div
+            ref={scrollRef}
+            onScroll={() => {
+              const el = scrollRef.current;
+              if (!el) return;
+              const nearBottom =
+                el.scrollHeight - el.scrollTop - el.clientHeight < 64;
+              followRef.current = nearBottom;
+              setFollowing(nearBottom);
+            }}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6"
+          >
+            {!messages.length && (
+              <div className="mx-auto mt-10 max-w-sm">
+                <BotMessageSquare className="mb-5 size-8 text-neon-cyan/70" />
+                <h3 className="text-lg font-semibold">On prépare la suite ?</h3>
+                <p className="mt-2 text-sm leading-relaxed text-text-muted">
+                  Ta forme, tes séances, tes objectifs. Pose une question, je
+                  consulte les données utiles.
+                </p>
+                <div className="mt-6 space-y-2">
+                  {SUGGESTIONS.map((prompt) => (
+                    <button
+                      key={prompt}
+                      onClick={() => send(prompt)}
+                      disabled={busy}
+                      className="block w-full rounded-xl border border-text-muted/15 px-3.5 py-3 text-left text-sm text-text-secondary hover:border-neon-cyan/30 hover:bg-neon-cyan/5"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="space-y-6">
+              {messages.map((message, i) => (
+                <article
+                  key={`${active.id}-${i}`}
+                  aria-label={
+                    message.role === 'user' ? 'Ton message' : 'Réponse du coach'
+                  }
+                  className={cn(
+                    'min-w-0',
+                    message.role === 'user' && 'flex justify-end'
+                  )}
+                >
+                  {message.role === 'user' ? (
+                    <div className="max-w-[90%] whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm bg-neon-purple/15 px-4 py-3 text-sm leading-relaxed">
+                      {message.content}
+                    </div>
+                  ) : (
+                    <div className="min-w-0">
+                      <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-text-muted">
+                        <Bot className="size-3.5 text-neon-cyan/70" /> ARETE
+                      </div>
+                      <MessageSurfaces message={message} />
+                      {streaming && i === messages.length - 1 && (
+                        <div
+                          role="status"
+                          className="mt-3 flex items-center gap-2 text-xs text-text-muted"
+                        >
+                          <Loader2 className="size-3 animate-spin" />
+                          {message.parts?.some(
+                            (p) => p.kind === 'tool' && p.status === 'running'
+                          )
+                            ? 'Consultation en cours…'
+                            : message.content
+                              ? 'Rédaction…'
+                              : 'Le coach réfléchit…'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          </div>
+          {!following && (
+            <button
+              onClick={() => {
+                followRef.current = true;
+                setFollowing(true);
+                scrollRef.current?.scrollTo({
+                  top: scrollRef.current.scrollHeight,
+                  behavior: 'smooth',
+                });
+              }}
+              className="absolute bottom-36 right-5 flex items-center gap-1.5 rounded-full border border-text-muted/20 bg-shadow px-3 py-2 text-xs shadow-lg"
+            >
+              <ArrowDown className="size-3" /> Derniers messages
             </button>
           )}
-        </div>
-      </footer>
+          <footer className="shrink-0 border-t border-text-muted/15 bg-abyss px-4 pb-4 pt-3">
+            <div className="flex items-end gap-2 rounded-xl border border-text-muted/20 bg-void/40 p-2 focus-within:border-neon-cyan/40">
+              <textarea
+                ref={inputRef}
+                aria-label="Message au coach"
+                value={active.draft}
+                onChange={(e) => coach.draft(e.target.value)}
+                rows={2}
+                maxLength={MAX_MESSAGE_CHARS}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === 'Enter' &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+                placeholder="Pose ta question…"
+                className="max-h-36 min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none"
+              />
+              {streaming ? (
+                <button
+                  onClick={coach.stop}
+                  className="rounded-lg bg-text-muted/15 p-2.5 hover:bg-text-muted/25"
+                  aria-label="Arrêter la réponse"
+                >
+                  <Square className="size-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => send()}
+                  disabled={busy || !active.draft.trim()}
+                  className="rounded-lg bg-neon-cyan/15 p-2.5 text-neon-cyan hover:bg-neon-cyan/25 disabled:opacity-30"
+                  aria-label="Envoyer"
+                >
+                  <Send className="size-4" />
+                </button>
+              )}
+            </div>
+            <p className="mt-2 text-center text-[10px] text-text-muted">
+              Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne
+            </p>
+          </footer>
+        </>
+      )}
     </aside>
   );
-}
-
-/**
- * What the agent is told about where the athlete is, and nothing more.
- *
- * `path` is left out: every route collapses to one of five pages, so
- * `/analytics` carries nothing `analytics` does not, and no one on the
- * backend ever read it. Query params stay — `?tab=force` on the Log page
- * says which log the athlete is looking at, which the coach can act on.
- */
-function panelContextToPayload(ctx: PanelPageContext): Record<string, string> {
-  const payload: Record<string, string> = { page: ctx.page };
-  for (const [key, value] of Object.entries(ctx.params)) {
-    payload[`param_${key}`] = value;
-  }
-  return payload;
 }

@@ -57,6 +57,12 @@ All settings come from environment variables (see `.env.example`):
 
 The agent reuses `LLM_PROVIDER` / `LLM_MODEL` and needs a tool-calling model; its memory ledger sits next to the database, in `data/agent/memory/`.
 
+Open or hide the coach from the navigation bar. The **+** button starts a new
+conversation; **History** restores earlier threads, with separate messages and
+drafts. Threads are saved in this browser (up to 30), while the coach’s memory
+ledger remains shared across conversations. Hiding the panel or switching threads
+keeps the current response running in its original thread; one response runs at a time.
+
 For free hosted inference, set `LLM_PROVIDER=openrouter` and `OPENROUTER_API_KEY`,
 and leave `LLM_MODEL` unset (or set it to `openrouter/free`). The
 [Free Models Router](https://openrouter.ai/openrouter/free) selects an available
@@ -109,7 +115,7 @@ Arete assumes one athlete: `user_id = 1` everywhere, no authentication on the AP
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy src/arete
 uv run pytest                     # ~330 tests, a few seconds
-cd frontend && npm run lint && npm run build
+cd frontend && npm run lint && npm test && npm run build
 ```
 
 Tests run against a temporary DuckDB (`tests/conftest.py` sets `ARETE_DB`), and every external call (LLM, Strava, Garmin) is mocked.

@@ -13,11 +13,13 @@ from __future__ import annotations
 
 import json
 import logging
+from time import monotonic
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
 from langchain_core.messages import HumanMessage
 
 from arete.agent.context import MAX_PANEL_CONTEXT_CHARS, PANEL_CONTEXT_KEY
+from arete.agent.tool_events import preview, tool_result_event
 
 logger = logging.getLogger(__name__)
 
@@ -99,41 +101,75 @@ def _panel_context_message(request: ModelRequest) -> HumanMessage | None:
 
 
 class ToolEventMiddleware(AgentMiddleware):
-    """Emit tool_start/tool_end custom events for live UI progress.
+    """Track calls by ID, including parallel calls to the same tool.
 
-    Payloads stay tiny: the tool NAME plus, for the page-source tool, the
-    page argument — never the tool output (the UI has no use for 30kB of
-    analytics JSON).
+    A failed or cancelled tool must never leave a green success tick behind.
+    The UI receives bounded previews, not the entire analytics payload.
     """
+
+    @staticmethod
+    def _start(request, writer):
+        call = request.tool_call
+        call_id, name = call["id"], call["name"]
+        writer(
+            {
+                "type": "tool_start",
+                "id": call_id,
+                "name": name,
+                "args": preview(call.get("args", {})),
+            }
+        )
+        return call_id, name, monotonic()
+
+    @staticmethod
+    def _failure(writer, call_id, name, started, exc):
+        writer(
+            {
+                "type": "tool_end",
+                "id": call_id,
+                "name": name,
+                "status": "error",
+                "output": preview(str(exc)),
+                "elapsed_ms": round((monotonic() - started) * 1000),
+            }
+        )
 
     def wrap_tool_call(self, request, handler):
         from langgraph.config import get_stream_writer
 
         writer = get_stream_writer()
-        tool_call = request.tool_call
-        name = str(tool_call.get("name", "unknown"))
-        args_preview = ""
-        if name == "get_page_context":
-            page = tool_call.get("args", {}).get("page", "")
-            args_preview = str(page)[:40]
-        writer({"type": "tool_start", "name": name, "args": args_preview})
+        call_id, name, started = self._start(request, writer)
         try:
-            return handler(request)
-        finally:
-            writer({"type": "tool_end", "name": name})
+            result = handler(request)
+        except Exception as exc:
+            self._failure(writer, call_id, name, started, exc)
+            raise
+        writer(
+            tool_result_event(
+                result,
+                call_id=call_id,
+                name=name,
+                elapsed_ms=round((monotonic() - started) * 1000),
+            )
+        )
+        return result
 
     async def awrap_tool_call(self, request, handler):
         from langgraph.config import get_stream_writer
 
         writer = get_stream_writer()
-        tool_call = request.tool_call
-        name = str(tool_call.get("name", "unknown"))
-        args_preview = ""
-        if name == "get_page_context":
-            page = tool_call.get("args", {}).get("page", "")
-            args_preview = str(page)[:40]
-        writer({"type": "tool_start", "name": name, "args": args_preview})
+        call_id, name, started = self._start(request, writer)
         try:
-            return await handler(request)
-        finally:
-            writer({"type": "tool_end", "name": name})
+            result = await handler(request)
+        except Exception as exc:
+            self._failure(writer, call_id, name, started, exc)
+            raise
+        writer(
+            tool_result_event(
+                result,
+                call_id=call_id,
+                name=name,
+                elapsed_ms=round((monotonic() - started) * 1000),
+            )
+        )
+        return result

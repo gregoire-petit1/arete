@@ -1,0 +1,174 @@
+// @vitest-environment jsdom
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import type { ChatMessage, StreamEvent } from '@/lib/agentStream';
+import { THREADS_KEY } from '@/lib/agentThreads';
+import { useCoachThreads } from './useCoachThreads';
+
+const runs = vi.hoisted(
+  () =>
+    [] as {
+      history: ChatMessage[];
+      emit: (e: StreamEvent) => void;
+      resolve: () => void;
+      reject: (e: Error) => void;
+      signal: AbortSignal;
+    }[]
+);
+vi.mock('@/lib/agentStream', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/agentStream')>()),
+  runAgentStream: vi.fn(
+    (history, _context, emit, signal) =>
+      new Promise<void>((resolve, reject) => {
+        runs.push({ history, emit, resolve, reject, signal });
+        signal.addEventListener(
+          'abort',
+          () => reject(new DOMException('Stopped', 'AbortError')),
+          { once: true }
+        );
+      })
+  ),
+}));
+const context = { page: 'dashboard', path: '/', params: {} };
+beforeEach(() => {
+  localStorage.clear();
+  runs.length = 0;
+});
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
+
+it('keeps background results in their originating thread and sends only the selected history', async () => {
+  const { result } = renderHook(() => useCoachThreads(context));
+  const first = result.current.active.id;
+  act(() => {
+    result.current.send('Question A');
+  });
+  act(() => {
+    result.current.create();
+  });
+  const second = result.current.active.id;
+  expect(second).not.toBe(first);
+  act(() => {
+    result.current.draft('Question B');
+  });
+  act(() => {
+    result.current.send();
+  });
+  expect(runs).toHaveLength(1); // Bound remains one run even after switching.
+  await act(async () => {
+    runs[0].emit({ type: 'token', id: 'm1', text: 'Réponse A' });
+    runs[0].emit({
+      type: 'done',
+      message: { role: 'assistant', content: 'Réponse A' },
+    });
+    runs[0].resolve();
+  });
+  expect(result.current.active.messages).toEqual([]);
+  expect(result.current.active.draft).toBe('Question B');
+  expect(
+    result.current.store.threads.find((t) => t.id === first)?.messages[1]
+      .content
+  ).toBe('Réponse A');
+  act(() => {
+    result.current.send();
+  });
+  expect(runs[1].history).toEqual([{ role: 'user', content: 'Question B' }]);
+  await act(async () => {
+    runs[1].resolve();
+  });
+  act(() => {
+    result.current.select(first);
+  });
+  expect(result.current.active.messages[1].content).toBe('Réponse A');
+});
+
+it('aborts deletion of an active run without leaking into the replacement thread', async () => {
+  const { result } = renderHook(() => useCoachThreads(context));
+  const first = result.current.active.id;
+  act(() => {
+    result.current.send('Question');
+  });
+  await act(async () => {
+    result.current.remove(first);
+  });
+  expect(runs[0].signal.aborted).toBe(true);
+  expect(result.current.runningId).toBeNull();
+  expect(result.current.active.id).not.toBe(first);
+  act(() => {
+    runs[0].emit({ type: 'token', id: 'late', text: 'Trop tard' });
+  });
+  expect(result.current.active.messages).toEqual([]);
+});
+
+it('flushes threads and drafts on page exit and restores the active one', () => {
+  const { result, unmount } = renderHook(() => useCoachThreads(context));
+  act(() => {
+    result.current.draft('Draft A');
+  });
+  act(() => {
+    result.current.create();
+  });
+  act(() => {
+    result.current.draft('Draft B');
+  });
+  const activeId = result.current.active.id;
+  act(() => {
+    window.dispatchEvent(new Event('pagehide'));
+  });
+  expect(JSON.parse(localStorage.getItem(THREADS_KEY)!).threads).toHaveLength(
+    2
+  );
+  unmount();
+  const restored = renderHook(() => useCoachThreads(context));
+  expect(restored.result.current.active.id).toBe(activeId);
+  expect(restored.result.current.active.draft).toBe('Draft B');
+});
+
+it('preserves corrupt storage instead of overwriting it with an empty thread', () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  localStorage.setItem(THREADS_KEY, '{broken');
+  const { result, unmount } = renderHook(() => useCoachThreads(context));
+  expect(result.current.storageError).toContain('préservée');
+  act(() => {
+    result.current.draft('New draft');
+  });
+  unmount();
+  expect(localStorage.getItem(THREADS_KEY)).toBe('{broken');
+});
+
+it('retires the legacy copy only after a successful migration save', () => {
+  const legacyKey = 'arete.coach.conversation';
+  localStorage.setItem(
+    legacyKey,
+    JSON.stringify([{ role: 'user', content: 'Ancien fil' }])
+  );
+  const { result } = renderHook(() => useCoachThreads(context));
+  expect(result.current.active.messages[0].content).toBe('Ancien fil');
+  expect(localStorage.getItem(legacyKey)).not.toBeNull();
+  act(() => {
+    window.dispatchEvent(new Event('pagehide'));
+  });
+  expect(localStorage.getItem(legacyKey)).toBeNull();
+  expect(
+    JSON.parse(localStorage.getItem(THREADS_KEY)!).threads[0].messages[0]
+      .content
+  ).toBe('Ancien fil');
+});
+
+it('retains legacy history when saving fails', () => {
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const legacyKey = 'arete.coach.conversation';
+  const legacy = JSON.stringify([{ role: 'user', content: 'Ancien fil' }]);
+  localStorage.setItem(legacyKey, legacy);
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('Quota', 'QuotaExceededError');
+  });
+  renderHook(() => useCoachThreads(context));
+  act(() => {
+    window.dispatchEvent(new Event('pagehide'));
+  });
+  expect(localStorage.getItem(legacyKey)).toBe(legacy);
+  expect(localStorage.getItem(THREADS_KEY)).toBeNull();
+});

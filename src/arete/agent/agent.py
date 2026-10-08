@@ -17,14 +17,11 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 
 from arete.agent.context import AgentContext
-from arete.agent.filesystem import (
-    NOTES_LEDGER,
-    SESSIONS_LEDGER,
-    build_memory_filesystem,
-)
+from arete.agent.filesystem import build_memory_filesystem
 from arete.agent.middlewares import RuntimeContextMiddleware, ToolEventMiddleware
 from arete.agent.model import build_chat_model
 from arete.agent.summarization import build_summarization
+from arete.agent.system_skill import SYSTEM_SKILL
 from arete.agent.toolkit_middleware import ToolkitMiddleware
 from arete.agent.tools import get_page_context
 
@@ -39,36 +36,6 @@ logger = logging.getLogger(__name__)
 #: which the athlete sees as an error rather than as a slow reply. Same budget
 #: as the unattended briefing now.
 AGENT_RECURSION_LIMIT = 40
-
-_SYSTEM_PROMPT = f"""Tu es le coach running/trail de l'app Arete, un assistant \
-d'entraînement mono-utilisateur. Tu réponds en français, concrètement, avec les \
-chiffres de l'athlète.
-
-Règles:
-- Utilise `get_page_context` pour lire les données de la page que l'athlète \
-consulte avant de répondre — ne devine jamais un chiffre d'entraînement.
-- Des capacités supplémentaires sont des toolkits: cherche avec \
-`search_toolkits`, charge avec `load_toolkit`, puis les outils du toolkit \
-deviennent disponibles. Aujourd'hui: `planning` (créer et modifier des \
-séances prévues) et `analytics` (charge, forme, records, séances récentes sur \
-la fenêtre de ton choix).
-- `get_page_context` donne la page telle quelle, sur une fenêtre figée. Dès \
-qu'il faut une période précise ou comparer deux périodes, charge `analytics`.
-- Tu tiens un journal mémoire en markdown, pour TOI:
-  - `{SESSIONS_LEDGER}`: tes notes de coach sur une séance dont vous avez \
-parlé (## YYYY-MM-DD — titre, faits marquants, ressentis, décision prise).
-  - `{NOTES_LEDGER}`: observations durables sur l'athlète (blessures, \
-préférences, objectifs).
-- Lis le journal avant de conseiller; écris après chaque échange qui apporte \
-du neuf. Tes fichiers persistent entre les conversations.
-- Ton journal n'est PAS le carnet d'entraînement de l'athlète. Y écrire une \
-séance ne l'enregistre nulle part: elle n'apparaîtra ni dans ses volumes, ni \
-dans ses records, ni sur la page Log. Pour enregistrer réellement une séance \
-de musculation qu'il te dicte, charge le toolkit `strength` et utilise ses \
-outils. Ne dis jamais qu'une séance est enregistrée si tu ne l'as pas fait \
-avec eux.
-- Pas de diagnostic médical. Sur douleur anormale → recommander un avis médical.
-"""
 
 
 @lru_cache(maxsize=1)
@@ -93,7 +60,7 @@ def get_agent():
             # summarize and a model call to save.
             build_summarization(),
         ],
-        system_prompt=_SYSTEM_PROMPT,
+        system_prompt=SYSTEM_SKILL,
         context_schema=AgentContext,
         name="arete_coach",
     )
@@ -123,7 +90,7 @@ def build_unattended_agent(system_prompt: str, name: str):
         model,
         tools=[get_page_context],
         middleware=middleware,
-        system_prompt=system_prompt,
+        system_prompt=f"{SYSTEM_SKILL}\n\nMission spécifique:\n{system_prompt}",
         context_schema=AgentContext,
         name=name,
     )

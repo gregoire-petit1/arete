@@ -118,7 +118,7 @@ def load_coefficients(user_id: int = 1) -> dict | None:
 
     Returns None if coefficients are not available or R² is too low.
     """
-    con = connect(read_only=True)
+    con = connect()
     try:
         row = con.execute(
             "SELECT k1, k2, baseline, r2 FROM app.banister_coefficients WHERE user_id = ?",

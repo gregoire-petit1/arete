@@ -1,0 +1,121 @@
+import { describe, expect, it } from 'vitest';
+import {
+  addThread,
+  emptyStore,
+  MAX_THREADS,
+  removeThread,
+  restoreThreads,
+  updateThread,
+} from './agentThreads';
+
+it('migrates the existing conversation without dropping text or tool history', () => {
+  const legacy = JSON.stringify([
+    { role: 'user', content: 'Ma semaine' },
+    {
+      role: 'assistant',
+      content: '**Plan**',
+      steps: [{ name: 'read_file', status: 'done' }],
+    },
+  ]);
+  const store = restoreThreads(null, legacy);
+  expect(store.threads).toHaveLength(1);
+  expect(store.threads[0].title).toBe('Ma semaine');
+  expect(store.threads[0].messages[1].parts?.[0]).toMatchObject({
+    kind: 'tool',
+    status: 'done',
+  });
+});
+
+it('creates new threads without erasing existing history or drafts', () => {
+  let store = emptyStore();
+  const first = store.activeId;
+  store = updateThread(store, first, (t) => ({
+    ...t,
+    draft: 'Mon brouillon',
+    messages: [{ role: 'user', content: 'Plan course' }],
+  }));
+  store = addThread(store);
+  expect(store.activeId).not.toBe(first);
+  expect(store.threads.find((t) => t.id === first)).toMatchObject({
+    draft: 'Mon brouillon',
+    messages: [{ content: 'Plan course' }],
+  });
+  // Repeated clicks on New never fill history with empty placeholders.
+  expect(addThread(store).threads).toHaveLength(2);
+});
+
+it('restores the active thread and interrupted streams after reload', () => {
+  let store = emptyStore();
+  store = updateThread(store, store.activeId, (t) => ({
+    ...t,
+    draft: 'Un brouillon',
+    messages: [{ role: 'assistant', content: 'Début', pending: true }],
+  }));
+  const restored = restoreThreads(JSON.stringify(store), null);
+  expect(restored.activeId).toBe(store.activeId);
+  expect(restored.threads[0].draft).toBe('Un brouillon');
+  expect(restored.threads[0].messages[0]).toMatchObject({
+    content: 'Début',
+    interrupted: true,
+    pending: false,
+  });
+});
+
+it('deletes a thread and always leaves a valid active conversation', () => {
+  let store = emptyStore();
+  const first = store.activeId;
+  store = updateThread(store, first, (t) => ({ ...t, draft: 'Keep me' }));
+  store = addThread(store);
+  store = removeThread(store, store.activeId);
+  expect(store.activeId).toBe(first);
+  store = removeThread(store, first);
+  expect(store.threads).toHaveLength(1);
+  expect(store.threads[0].messages).toEqual([]);
+  expect(store.activeId).toBe(store.threads[0].id);
+});
+
+it('never redirects a late stream event from a deleted thread into another', () => {
+  const before = emptyStore();
+  const after = removeThread(before, before.activeId);
+  const late = updateThread(after, before.activeId, (t) => ({
+    ...t,
+    title: 'Late result',
+  }));
+  expect(late).toEqual(after);
+});
+
+describe('storage and capacity bounds', () => {
+  it('rejects corrupt state and unknown versions', () => {
+    for (const raw of ['{}', '{broken', '{"version":2,"threads":[]}'])
+      expect(() => restoreThreads(raw, null)).toThrow();
+    const store = emptyStore();
+    expect(() =>
+      restoreThreads(JSON.stringify({ ...store, activeId: 'missing' }), null)
+    ).toThrow();
+    expect(() =>
+      restoreThreads(
+        JSON.stringify({
+          ...store,
+          threads: [store.threads[0], store.threads[0]],
+        }),
+        null
+      )
+    ).toThrow();
+  });
+  it('fails at the thread limit without silently pruning existing conversations', () => {
+    let store = emptyStore();
+    for (let i = 1; i < MAX_THREADS; i++) {
+      store = updateThread(store, store.activeId, (t) => ({
+        ...t,
+        draft: `draft ${i}`,
+      }));
+      store = addThread(store);
+    }
+    store = updateThread(store, store.activeId, (t) => ({
+      ...t,
+      draft: 'Final draft',
+    }));
+    expect(() => addThread(store)).toThrow('Limite');
+    expect(store.threads).toHaveLength(MAX_THREADS);
+  });
+});

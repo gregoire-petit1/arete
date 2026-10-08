@@ -26,8 +26,12 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
 
 
 @contextmanager
-def db_connection(read_only: bool = True) -> Iterator[duckdb.DuckDBPyConnection]:
-    """``with db_connection() as con:`` — always closed, even on error."""
+def db_connection(read_only: bool = False) -> Iterator[duckdb.DuckDBPyConnection]:
+    """Always close; default to the same mode as concurrent API writers.
+
+    DuckDB rejects overlapping connections with different read_only settings,
+    even when the read-only caller only executes SELECT statements.
+    """
     con = connect(read_only=read_only)
     try:
         yield con
