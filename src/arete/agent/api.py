@@ -11,6 +11,8 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
+from contextlib import aclosing
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -18,13 +20,13 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.messages import BaseMessage as LangchainMessage
 from pydantic import BaseModel, Field
 
-from arete.agent.agent import AGENT_RECURSION_LIMIT, get_agent
 from arete.agent.context import (
     MAX_PANEL_CONTEXT_CHARS,
     PANEL_CONTEXT_KEY,
     PANEL_PAGES,
     AgentContext,
 )
+from arete.agent.execution import invoke_agent, stream_agent
 from arete.agent.filesystem import NOTES_LEDGER, SESSIONS_LEDGER, memory_root
 from arete.agent.streaming import (
     MAX_STREAM_EVENTS,
@@ -54,6 +56,7 @@ class ChatRequest(BaseModel):
     """Body of POST /agent/chat."""
 
     messages: list[ChatMessageIn] = Field(..., min_length=1, max_length=MAX_MESSAGES)
+    thread_id: UUID | None = Field(default=None, description="Stable chat thread ID")
     page: str | None = Field(
         default=None, description="Frontend page currently open (panel context)"
     )
@@ -106,27 +109,27 @@ def _panel_context_source(request: ChatRequest) -> dict[str, str]:
     return {PANEL_CONTEXT_KEY: raw}
 
 
-def _to_agent_context(source: dict[str, str]) -> AgentContext:
+def _to_agent_context(
+    source: dict[str, str], thread_id: UUID | None = None
+) -> AgentContext:
     """Coerce the raw source dict into the declared context schema.
 
     ``create_agent(context_schema=AgentContext)`` does NOT coerce a plain dict
     passed at invoke time (verified: ``request.runtime.context`` arrives as
     ``None``), so the router builds the dataclass itself.
     """
-    return AgentContext(source=source)
+    return AgentContext(source=source, thread_id=str(thread_id) if thread_id else None)
 
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(body: ChatRequest) -> ChatResponse:
     """Run the coaching agent over the client-provided history."""
-    graph = get_agent()
     history = [_to_langchain(m.role, m.content) for m in body.messages]
     source = _panel_context_source(body)
     try:
-        result = graph.invoke(
+        result = invoke_agent(
             {"messages": history},
-            context=_to_agent_context(source),
-            config={"recursion_limit": AGENT_RECURSION_LIMIT},
+            context=_to_agent_context(source, body.thread_id),
         )
     except ValueError as exc:
         # Model misconfiguration (missing key, unknown provider).
@@ -159,23 +162,19 @@ async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
     """Messages, tool activity and failures are separate UI events."""
     projection = StreamProjection()
     try:
-        graph = get_agent()
         history = [_to_langchain(m.role, m.content) for m in body.messages]
-        context = _to_agent_context(_panel_context_source(body))
+        context = _to_agent_context(_panel_context_source(body), body.thread_id)
         async with asyncio.timeout(MAX_STREAM_SECONDS):
             event_count = 0
-            async for part in graph.astream(
-                {"messages": history},
-                context=context,
-                config={"recursion_limit": AGENT_RECURSION_LIMIT},
-                stream_mode=["messages", "updates", "custom"],
-                version="v2",
-            ):
-                event_count += 1
-                if event_count > MAX_STREAM_EVENTS:
-                    raise ValueError("Le stream dépasse la limite d'événements.")
-                for event in projection.events(part):
-                    yield _sse(event)
+            async with aclosing(
+                stream_agent({"messages": history}, context=context)
+            ) as stream:
+                async for part in stream:
+                    event_count += 1
+                    if event_count > MAX_STREAM_EVENTS:
+                        raise ValueError("Le stream dépasse la limite d'événements.")
+                    for event in projection.events(part):
+                        yield _sse(event)
         yield _sse(projection.done())
     except TimeoutError:
         yield _sse(

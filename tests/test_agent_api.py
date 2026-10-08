@@ -168,7 +168,7 @@ def test_chat_endpoint_with_mocked_graph(client):
             assert isinstance(context, AgentContext)
             return {"messages": [state["messages"][-1], _FakeFinal()]}
 
-    with patch("arete.agent.api.get_agent", return_value=_FakeGraph()):
+    with patch("arete.agent.execution.get_agent", return_value=_FakeGraph()):
         response = client.post(
             "/agent/chat",
             json={
@@ -460,3 +460,44 @@ class TestPanelContextStaysOutOfState:
         # One stamp per request, every time — never two, never three.
         assert counts == [2, 2, 2]
         assert len(messages) == 1
+
+
+@pytest.mark.parametrize("endpoint", ["/agent/chat", "/agent/chat/stream"])
+def test_chat_routes_preserve_thread_id(client, endpoint):
+    from langchain_core.messages import AIMessage
+
+    thread_id = "dfe771b8-661a-46af-9cee-dce80e6bc304"
+
+    class Graph:
+        def invoke(self, state, *, context, config):
+            assert context.thread_id == thread_id
+            assert config["metadata"]["thread_id"] == thread_id
+            return {"messages": [AIMessage(content="ok")]}
+
+        async def astream(self, state, *, context, config, **kwargs):
+            result = self.invoke(state, context=context, config=config)
+            yield {"type": "updates", "data": {"model": result}}
+
+    with patch("arete.agent.execution.get_agent", return_value=Graph()):
+        response = client.post(
+            endpoint,
+            json={
+                "messages": [{"role": "user", "content": "hi"}],
+                "thread_id": thread_id,
+            },
+        )
+    assert response.status_code == 200
+    assert "ok" in response.text
+    assert '"type": "error"' not in response.text
+
+
+@pytest.mark.parametrize("endpoint", ["/agent/chat", "/agent/chat/stream"])
+def test_chat_routes_reject_invalid_thread_id(client, endpoint):
+    response = client.post(
+        endpoint,
+        json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "thread_id": "not-a-uuid",
+        },
+    )
+    assert response.status_code == 422

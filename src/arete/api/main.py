@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -6,6 +7,7 @@ from fastapi import FastAPI
 
 from arete import scheduler
 from arete.agent.api import router as agent_router
+from arete.agent.tracing import close_tracing, get_tracing_client
 from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
 from arete.api.garmin import router as garmin_router
@@ -35,6 +37,7 @@ def configure_logging() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
+    get_tracing_client()
     try:
         init_schema()
         logger.info("Database schema initialized")
@@ -46,6 +49,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     finally:
         if task is not None:
             task.cancel()
+        await asyncio.to_thread(close_tracing)
 
 
 app = FastAPI(title="Arete API", version="0.1.0", lifespan=lifespan)

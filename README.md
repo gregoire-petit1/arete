@@ -63,6 +63,33 @@ drafts. Threads are saved in this browser (up to 30), while the coach’s memory
 ledger remains shared across conversations. Hiding the panel or switching threads
 keeps the current response running in its original thread; one response runs at a time.
 
+Chat, daily briefing, and session feedback use one cached coach graph with
+task-specific instructions. Their execution budgets remain 40, 40, and 20 graph
+steps respectively; only chat uses conversation summarization.
+
+To trace the coach, set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in the
+backend `.env`, then restart. This key is separate from inference credentials.
+`LANGSMITH_PROJECT` defaults to `Arete` and must be the exact project name.
+Before the first live run, verify that name against
+[the intended project](https://smith.langchain.com/o/22f0221c-5eef-4f4d-8b2e-f0313a7017fc/projects/p/3aef9b7c-d687-4a57-9ac7-d36dd2c905ae).
+`LANGSMITH_ENDPOINT` defaults to `https://api.smith.langchain.com`; use your
+region's endpoint when different. Set `LANGSMITH_WORKSPACE_ID` only when required
+by the key; the organization ID in the URL is not a workspace ID.
+
+Tracing exports complete agent inputs/outputs and tool results, including training
+data and memory reads. Each invocation has one `arete_coach` root with `task`,
+`provider`, and `model` metadata and nested model/tool/middleware spans; model
+usage is recorded when supplied by the provider. Tracing defaults off, uses a
+background exporter, and adds no inference calls. Export failures are logged
+without replacing the coach's answer. Shutdown waits at most five seconds for
+queued traces; an interrupted process or export failure can leave incomplete traces.
+
+Chat requests include the persisted conversation UUID as `thread_id`. Each turn
+still creates its own trace, with that ID propagated to all spans so LangSmith
+groups turns into one thread. API clients may omit it for standalone requests.
+The coach receives the backend's current date on each chat invocation, and the
+UI refreshes session data after successful coach writes.
+
 For free hosted inference, set `LLM_PROVIDER=openrouter` and `OPENROUTER_API_KEY`,
 and leave `LLM_MODEL` unset (or set it to `openrouter/free`). The
 [Free Models Router](https://openrouter.ai/openrouter/free) selects an available

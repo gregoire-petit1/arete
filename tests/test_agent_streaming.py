@@ -221,7 +221,7 @@ def test_real_graph_sse_delivers_correlated_tools_and_final_snapshot(client):
         ),
         middleware=[ToolEventMiddleware(), ToolkitMiddleware()],
     )
-    with patch("arete.agent.api.get_agent", return_value=graph):
+    with patch("arete.agent.execution.get_agent", return_value=graph):
         response = client.post(
             "/agent/chat/stream",
             json={"messages": [{"role": "user", "content": "Charge analytics"}]},

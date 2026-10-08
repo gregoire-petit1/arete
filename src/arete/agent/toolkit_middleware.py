@@ -336,7 +336,13 @@ class ToolkitMiddleware(AgentMiddleware):
         tool = _toolkit_tool(name, loaded_toolkits(request.state))
         if tool is None:
             return handler(request)
-        result = tool.invoke(dict(request.tool_call.get("args") or {}))
+        # Dynamic tools bypass ToolNode's handler: explicitly keep its callback
+        # parent/config so their spans stay under this invocation's tools node.
+        runtime = getattr(request, "runtime", None)
+        result = tool.invoke(
+            dict(request.tool_call.get("args") or {}),
+            config=getattr(runtime, "config", None),
+        )
         return ToolMessage(
             content=str(result), name=name, tool_call_id=request.tool_call["id"]
         )
@@ -348,7 +354,11 @@ class ToolkitMiddleware(AgentMiddleware):
             return await handler(request)
         # ainvoke runs sync database tools off the event loop, allowing live
         # progress and concurrent requests to keep flowing during execution.
-        result = await tool.ainvoke(dict(request.tool_call.get("args") or {}))
+        runtime = getattr(request, "runtime", None)
+        result = await tool.ainvoke(
+            dict(request.tool_call.get("args") or {}),
+            config=getattr(runtime, "config", None),
+        )
         return ToolMessage(
             content=str(result), name=name, tool_call_id=request.tool_call["id"]
         )

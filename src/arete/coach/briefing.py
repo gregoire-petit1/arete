@@ -24,35 +24,9 @@ from arete.dataio.settings import get_user_settings
 
 logger = logging.getLogger(__name__)
 
-#: The unattended run gets more room than a chat turn: search + load + three
-#: to five metric reads + ledger read + ledger write is 10-14 steps, and
-#: nobody is waiting on it.
-BRIEFING_RECURSION_LIMIT = 40
-
 #: Bound on what we persist — a model that ignores "2 to 3 sentences" must not
 #: push an essay into the dashboard card.
 MAX_BRIEFING_CHARS = 1200
-
-BRIEFING_PROMPT = """Tu es le coach running/trail de l'athlète. Tu écris son \
-briefing du matin, qu'il lira sur son tableau de bord sans pouvoir te répondre.
-
-Méthode:
-1. Charge le toolkit `analytics` (`search_toolkits` puis `load_toolkit`).
-2. Lis sa charge et sa forme. Si un chiffre te surprend, regarde une autre \
-fenêtre ou ses séances récentes avant de conclure. Le nom d'une séance est ce que l'athlète a lancé sur sa montre, pas \
-forcément ce qu'il a fait: un "4x8' seuil" peut être un footing si les jambes \
-n'y étaient pas. Crois les chiffres et ses notes, pas le titre.
-3. Lis ton journal mémoire pour savoir ce que vous vous êtes déjà dit.
-4. Écris le briefing, puis note dans ton journal ce que tu as retenu du jour.
-
-Le briefing: 2 à 3 phrases, en français, en tutoyant l'athlète. Cite les \
-chiffres qui le justifient et la période sur laquelle tu les lis, en français \
-courant ("sur 28 jours") — jamais un nom de champ ni une valeur brute d'outil. \
-Termine par ce que l'athlète fait AUJOURD'HUI, concrètement. Pas de \
-préambule, pas de liste, pas de formule creuse type "pense à bien récupérer". \
-Pas de diagnostic médical.
-
-Ta réponse finale est le briefing seul, rien d'autre."""
 
 
 def briefing_enabled(user_id: int = 1) -> bool:
@@ -79,8 +53,8 @@ def _rule_floor(target_date: date) -> tuple[str, str]:
 
 def _run_agent() -> str:
     """One agent run. Returns the briefing text; raises on any failure."""
-    from arete.agent.agent import build_briefing_agent
     from arete.agent.context import AgentContext
+    from arete.agent.execution import invoke_agent
     from arete.agent.filesystem import rotate_sessions_ledger
 
     # Before the run, not after: a briefing every morning grows the journal
@@ -88,11 +62,9 @@ def _run_agent() -> str:
     # paying for yesterday's overflow.
     rotate_sessions_ledger()
 
-    graph = build_briefing_agent()
-    result = graph.invoke(
+    result = invoke_agent(
         {"messages": [{"role": "user", "content": "Écris mon briefing du jour."}]},
-        context=AgentContext(source={}),
-        config={"recursion_limit": BRIEFING_RECURSION_LIMIT},
+        context=AgentContext(task="briefing"),
     )
     messages = result.get("messages", [])
     if not messages:

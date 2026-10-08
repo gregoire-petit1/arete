@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { qk } from '@/lib/queryKeys';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { ChatMessage, StreamEvent } from '@/lib/agentStream';
 import { THREADS_KEY } from '@/lib/agentThreads';
@@ -9,6 +12,7 @@ const runs = vi.hoisted(
   () =>
     [] as {
       history: ChatMessage[];
+      threadId: string;
       emit: (e: StreamEvent) => void;
       resolve: () => void;
       reject: (e: Error) => void;
@@ -18,9 +22,9 @@ const runs = vi.hoisted(
 vi.mock('@/lib/agentStream', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/agentStream')>()),
   runAgentStream: vi.fn(
-    (history, _context, emit, signal) =>
+    (history, _context, emit, signal, threadId) =>
       new Promise<void>((resolve, reject) => {
-        runs.push({ history, emit, resolve, reject, signal });
+        runs.push({ history, emit, resolve, reject, signal, threadId });
         signal.addEventListener(
           'abort',
           () => reject(new DOMException('Stopped', 'AbortError')),
@@ -30,17 +34,23 @@ vi.mock('@/lib/agentStream', async (importOriginal) => ({
   ),
 }));
 const context = { page: 'dashboard', path: '/', params: {} };
+let queryClient: QueryClient;
+function wrapper({ children }: { children: ReactNode }) {
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
 beforeEach(() => {
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   localStorage.clear();
   runs.length = 0;
 });
 afterEach(() => {
   cleanup();
+  queryClient.clear();
   vi.restoreAllMocks();
 });
 
 it('keeps background results in their originating thread and sends only the selected history', async () => {
-  const { result } = renderHook(() => useCoachThreads(context));
+  const { result } = renderHook(() => useCoachThreads(context), { wrapper });
   const first = result.current.active.id;
   act(() => {
     result.current.send('Question A');
@@ -56,6 +66,7 @@ it('keeps background results in their originating thread and sends only the sele
   act(() => {
     result.current.send();
   });
+  expect(runs[0].threadId).toBe(first);
   expect(runs).toHaveLength(1); // Bound remains one run even after switching.
   await act(async () => {
     runs[0].emit({ type: 'token', id: 'm1', text: 'Réponse A' });
@@ -74,6 +85,7 @@ it('keeps background results in their originating thread and sends only the sele
   act(() => {
     result.current.send();
   });
+  expect(runs[1].threadId).toBe(second);
   expect(runs[1].history).toEqual([{ role: 'user', content: 'Question B' }]);
   await act(async () => {
     runs[1].resolve();
@@ -85,7 +97,7 @@ it('keeps background results in their originating thread and sends only the sele
 });
 
 it('aborts deletion of an active run without leaking into the replacement thread', async () => {
-  const { result } = renderHook(() => useCoachThreads(context));
+  const { result } = renderHook(() => useCoachThreads(context), { wrapper });
   const first = result.current.active.id;
   act(() => {
     result.current.send('Question');
@@ -103,7 +115,9 @@ it('aborts deletion of an active run without leaking into the replacement thread
 });
 
 it('flushes threads and drafts on page exit and restores the active one', () => {
-  const { result, unmount } = renderHook(() => useCoachThreads(context));
+  const { result, unmount } = renderHook(() => useCoachThreads(context), {
+    wrapper,
+  });
   act(() => {
     result.current.draft('Draft A');
   });
@@ -121,7 +135,7 @@ it('flushes threads and drafts on page exit and restores the active one', () => 
     2
   );
   unmount();
-  const restored = renderHook(() => useCoachThreads(context));
+  const restored = renderHook(() => useCoachThreads(context), { wrapper });
   expect(restored.result.current.active.id).toBe(activeId);
   expect(restored.result.current.active.draft).toBe('Draft B');
 });
@@ -129,7 +143,9 @@ it('flushes threads and drafts on page exit and restores the active one', () => 
 it('preserves corrupt storage instead of overwriting it with an empty thread', () => {
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   localStorage.setItem(THREADS_KEY, '{broken');
-  const { result, unmount } = renderHook(() => useCoachThreads(context));
+  const { result, unmount } = renderHook(() => useCoachThreads(context), {
+    wrapper,
+  });
   expect(result.current.storageError).toContain('préservée');
   act(() => {
     result.current.draft('New draft');
@@ -144,7 +160,7 @@ it('retires the legacy copy only after a successful migration save', () => {
     legacyKey,
     JSON.stringify([{ role: 'user', content: 'Ancien fil' }])
   );
-  const { result } = renderHook(() => useCoachThreads(context));
+  const { result } = renderHook(() => useCoachThreads(context), { wrapper });
   expect(result.current.active.messages[0].content).toBe('Ancien fil');
   expect(localStorage.getItem(legacyKey)).not.toBeNull();
   act(() => {
@@ -165,10 +181,111 @@ it('retains legacy history when saving fails', () => {
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
     throw new DOMException('Quota', 'QuotaExceededError');
   });
-  renderHook(() => useCoachThreads(context));
+  renderHook(() => useCoachThreads(context), { wrapper });
   act(() => {
     window.dispatchEvent(new Event('pagehide'));
   });
   expect(localStorage.getItem(legacyKey)).toBe(legacy);
   expect(localStorage.getItem(THREADS_KEY)).toBeNull();
+});
+
+it('reuses the persisted thread ID across turns and reloads', async () => {
+  const { result, unmount } = renderHook(() => useCoachThreads(context), {
+    wrapper,
+  });
+  const id = result.current.active.id;
+  act(() => {
+    result.current.send('Bonjour');
+  });
+  await act(async () => {
+    runs[0].emit({
+      type: 'done',
+      message: { role: 'assistant', content: 'Bonjour' },
+    });
+    runs[0].resolve();
+  });
+  unmount();
+  const restored = renderHook(() => useCoachThreads(context), { wrapper });
+  act(() => {
+    restored.result.current.send('Et demain ?');
+  });
+  expect(runs.map((run) => run.threadId)).toEqual([id, id]);
+  await act(async () => {
+    runs[1].resolve();
+  });
+});
+
+it('refreshes session caches after a successful tool write even in a background thread', async () => {
+  for (const key of [qk.planned(), qk.actual(), qk.workload])
+    queryClient.setQueryData(key, []);
+  const { result } = renderHook(() => useCoachThreads(context), { wrapper });
+  act(() => {
+    result.current.send('Prévois une séance');
+  });
+  act(() => {
+    result.current.create();
+  });
+  const event: StreamEvent = {
+    type: 'tool_end',
+    id: 'write',
+    name: 'create_planned_session',
+    status: 'error',
+    output: { text: '{}', truncated: false },
+    elapsed_ms: 5,
+  };
+  act(() => {
+    runs[0].emit(event);
+  });
+  expect(queryClient.getQueryState(qk.planned())?.isInvalidated).toBe(false);
+  act(() => {
+    runs[0].emit({ ...event, name: 'list_planned', status: 'done'
+  }); });
+  expect(queryClient.getQueryState(qk.planned())?.isInvalidated).toBe(false);
+  act(() => {
+    runs[0].emit({ ...event, status: 'done'
+  }); });
+  for (const key of [qk.planned(), qk.actual(), qk.workload])
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+  await act(async () => {
+    runs[0].reject(new Error('Final answer failed'));
+  });
+  expect(result.current.active.messages).toEqual([]);
+});
+
+it('refetches the visible planning window as soon as a session is created', async () => {
+  const session = { id: 2, date: '2026-10-09', target_duration_min: 40 };
+  const fetchPlanning = vi
+    .fn()
+    .mockResolvedValueOnce([])
+    .mockResolvedValue([session]);
+  const { result } = renderHook(
+    () => ({
+      coach: useCoachThreads(context),
+      planning: useQuery({
+        queryKey: qk.planned('2026-10-05', '2026-10-11'),
+        queryFn: fetchPlanning,
+        staleTime: Infinity,
+      }),
+    }),
+    { wrapper }
+  );
+  await waitFor(() => expect(result.current.planning.data).toEqual([]));
+  act(() => {
+    result.current.coach.send('Prévois une séance demain');
+  });
+  act(() => {
+    runs[0].emit({
+      type: 'tool_end',
+      id: 'created',
+      name: 'create_planned_session',
+      status: 'done',
+      output: { text: '{}', truncated: false },
+      elapsed_ms: 5,
+    });
+  });
+  await waitFor(() => expect(result.current.planning.data).toEqual([session]));
+  expect(fetchPlanning).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    runs[0].resolve();
+  });
 });

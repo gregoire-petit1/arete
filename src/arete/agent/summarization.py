@@ -41,6 +41,7 @@ from deepagents.backends import FilesystemBackend
 from deepagents.middleware import SummarizationMiddleware
 from langchain.agents.middleware import AgentMiddleware
 
+from arete.agent.middlewares import is_chat_request
 from arete.config import config
 
 #: Where evicted messages land. Beside the ledger, never inside it.
@@ -63,15 +64,29 @@ def transcripts_root() -> Path:
     return root
 
 
-def build_summarization() -> AgentMiddleware:
+class ChatSummarizationMiddleware(SummarizationMiddleware):
+    """Unattended tasks have no conversation to compact or archive."""
+
+    def wrap_model_call(self, request, handler):
+        if not is_chat_request(request):
+            return handler(request)
+        return super().wrap_model_call(request, handler)
+
+    async def awrap_model_call(self, request, handler):
+        if not is_chat_request(request):
+            return await handler(request)
+        return await super().awrap_model_call(request, handler)
+
+
+def build_summarization(model=None) -> AgentMiddleware:
     """Summarization for the chat agent, on its own filesystem.
 
     The class rather than ``create_summarization_middleware``: the factory
     takes no trigger, and its fraction-of-window default raises on a model
     with no profile — which is every model the free router can pick.
     """
-    return SummarizationMiddleware(
-        _summarization_model(),
+    return ChatSummarizationMiddleware(
+        model if model is not None else _summarization_model(),
         backend=FilesystemBackend(root_dir=transcripts_root()),
         trigger=("tokens", SUMMARIZE_ABOVE_TOKENS),
         keep=("messages", KEEP_RECENT_MESSAGES),

@@ -122,15 +122,12 @@ def ask(question: str, page: str = "dashboard") -> Run:
     """One real turn through the real graph."""
     import json
 
-    from arete.agent.agent import AGENT_RECURSION_LIMIT, get_agent
     from arete.agent.context import AgentContext
+    from arete.agent.execution import invoke_agent
 
-    result = get_agent().invoke(
+    result = invoke_agent(
         {"messages": [{"role": "user", "content": question}]},
         context=AgentContext(source={"panel_context": json.dumps({"page": page})}),
-        # The production budget, not a copy of it: hitting the ceiling is a
-        # failure the athlete sees, so the evals must hit the same one.
-        config={"recursion_limit": AGENT_RECURSION_LIMIT},
     )
     messages = result.get("messages", [])
     return Run(

@@ -13,15 +13,49 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import timedelta
 from time import monotonic
 
 from langchain.agents.middleware import AgentMiddleware, ModelRequest
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from arete.agent.context import MAX_PANEL_CONTEXT_CHARS, PANEL_CONTEXT_KEY
+from arete.agent.prompts import TASK_INSTRUCTIONS
 from arete.agent.tool_events import preview, tool_result_event
 
 logger = logging.getLogger(__name__)
+
+
+def is_chat_request(request) -> bool:
+    context = getattr(getattr(request, "runtime", None), "context", None)
+    return getattr(context, "task", "chat") == "chat"
+
+
+class TaskInstructionsMiddleware(AgentMiddleware):
+    """Select instructions per request; never store a task on the shared graph."""
+
+    def _apply(self, request):
+        task = request.runtime.context.task
+        common = request.system_message.text if request.system_message else ""
+        instructions = TASK_INSTRUCTIONS[task]
+        if task == "chat":
+            today = request.runtime.context.current_date
+            tomorrow = today + timedelta(days=1)
+            instructions += (
+                f"\nDate actuelle : {today.isoformat()}. Demain : {tomorrow.isoformat()}. "
+                "Résous les dates relatives à partir de cette date, même si "
+                "l'historique contient d'anciennes dates."
+            )
+        return request.override(
+            system_message=SystemMessage(content=f"{common}\n\n{instructions}")
+        )
+
+    def wrap_model_call(self, request, handler):
+        return handler(self._apply(request))
+
+    async def awrap_model_call(self, request, handler):
+        return await handler(self._apply(request))
+
 
 _PANEL_CONTEXT_PREFIX = (
     "System-provided page context: the user is currently viewing {label} of "
@@ -65,6 +99,8 @@ class RuntimeContextMiddleware(AgentMiddleware):
 
 def _panel_context_message(request: ModelRequest) -> HumanMessage | None:
     """Render the open page at the request tail, or None to skip injection."""
+    if not is_chat_request(request):
+        return None
     runtime = getattr(request, "runtime", None)
     context = getattr(runtime, "context", None)
     if context is None:
@@ -135,6 +171,8 @@ class ToolEventMiddleware(AgentMiddleware):
         )
 
     def wrap_tool_call(self, request, handler):
+        if not is_chat_request(request):
+            return handler(request)
         from langgraph.config import get_stream_writer
 
         writer = get_stream_writer()
@@ -155,6 +193,8 @@ class ToolEventMiddleware(AgentMiddleware):
         return result
 
     async def awrap_tool_call(self, request, handler):
+        if not is_chat_request(request):
+            return await handler(request)
         from langgraph.config import get_stream_writer
 
         writer = get_stream_writer()

@@ -8,7 +8,10 @@ an editable draft, so there is no live-draft machinery here.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import date
+from typing import Any, Literal
+
+AgentTask = Literal["chat", "briefing", "session_feedback"]
 
 #: Key under which the API layer stamps the open-page payload in the source
 #: dict. The middleware in ``middlewares.py`` is the reader; ``api/agent.py``
@@ -35,6 +38,13 @@ class AgentContext:
     """
 
     source: dict[str, Any] = field(default_factory=dict)
+    task: AgentTask = "chat"
+    thread_id: str | None = None
+    # Snapshot per invocation, never at cached graph construction time.
+    current_date: date = field(default_factory=date.today)
+
+    def __post_init__(self) -> None:
+        assert self.task in ("chat", "briefing", "session_feedback"), self.task
 
     @property
     def panel_context(self) -> dict[str, Any] | None:

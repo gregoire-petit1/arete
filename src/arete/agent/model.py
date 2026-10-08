@@ -29,6 +29,16 @@ DEFAULT_OPENROUTER_MODEL = "openrouter/free"
 DEFAULT_GITHUB_MODEL = "Meta-Llama-3.1-8B-Instruct"
 
 
+def configured_model_name() -> str:
+    """Shared by inference and trace metadata so their defaults cannot drift."""
+    defaults = {
+        "ollama": "llama3.1:8b",
+        "openrouter": DEFAULT_OPENROUTER_MODEL,
+        "github": DEFAULT_GITHUB_MODEL,
+    }
+    return config.llm_model or defaults.get(config.llm_provider, "unknown")
+
+
 def build_chat_model() -> ChatOpenAI:
     """ChatOpenAI pointed at the configured provider.
 
@@ -41,7 +51,7 @@ def build_chat_model() -> ChatOpenAI:
     if provider == "ollama":
         # Generic OpenAI-compatible local server: Ollama or LM Studio.
         return ChatOpenAI(
-            model=config.llm_model or "llama3.1:8b",
+            model=configured_model_name(),
             base_url=config.ollama_base_url,
             api_key=SecretStr(
                 "ollama"
@@ -60,7 +70,7 @@ def build_chat_model() -> ChatOpenAI:
                 "OPENROUTER_API_KEY env var required for openrouter provider"
             )
         return ChatOpenAI(
-            model=config.llm_model or DEFAULT_OPENROUTER_MODEL,
+            model=configured_model_name(),
             base_url="https://openrouter.ai/api/v1",
             api_key=SecretStr(api_key),
             temperature=AGENT_TEMPERATURE,
@@ -76,7 +86,7 @@ def build_chat_model() -> ChatOpenAI:
             raise ValueError("GITHUB_TOKEN env var required for github provider")
         # GitHub Models speaks the OpenAI protocol behind its own base URL.
         return ChatOpenAI(
-            model=config.llm_model or DEFAULT_GITHUB_MODEL,
+            model=configured_model_name(),
             base_url="https://models.inference.ai.azure.com",
             api_key=SecretStr(api_key),
             temperature=AGENT_TEMPERATURE,

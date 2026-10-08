@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { invalidateAfterSession } from '@/lib/queryKeys';
 import type { PanelPageContext } from '@/lib/pageContext';
 import {
   applyEvent,
@@ -21,8 +23,15 @@ import {
 // One model run for the whole coach. Switching threads can never fan out requests.
 const MAX_ACTIVE_RUNS = 1;
 const SAVE_DELAY_MS = 250;
+const SESSION_WRITE_TOOLS = new Set([
+  'create_planned_session',
+  'update_planned_status',
+  'delete_planned_session',
+  'save_workout',
+]);
 
 export function useCoachThreads(context: PanelPageContext) {
+  const queryClient = useQueryClient();
   const [initial] = useState(loadThreads);
   const [store, setStore] = useState(initial.store);
   const [storageError, setStorageError] = useState(initial.error);
@@ -151,8 +160,19 @@ export function useCoachThreads(context: PanelPageContext) {
     void runAgentStream(
       history,
       context,
-      (event) => patchAnswer((m) => applyEvent(m, event)),
-      controller.signal
+      (event) => {
+        patchAnswer((m) => applyEvent(m, event));
+        // Refresh when the write completes, even if the final answer fails or
+        // the athlete has switched threads while this run was in flight.
+        if (
+          event.type === 'tool_end' &&
+          event.status === 'done' &&
+          SESSION_WRITE_TOOLS.has(event.name)
+        )
+          invalidateAfterSession(queryClient);
+      },
+      controller.signal,
+      threadId
     )
       .catch((err: unknown) =>
         patchAnswer((m) =>

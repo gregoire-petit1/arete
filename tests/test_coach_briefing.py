@@ -129,10 +129,10 @@ class TestGenerate:
             text = "x" * (MAX_BRIEFING_CHARS + 1)
 
         with (
-            patch("arete.agent.agent.build_briefing_agent") as build,
+            patch("arete.agent.execution.invoke_agent") as build,
             patch("arete.coach.briefing._rule_floor", return_value=("floor", "info")),
         ):
-            build.return_value.invoke.return_value = {"messages": [_Msg()]}
+            build.return_value = {"messages": [_Msg()]}
             b = generate_briefing(target_date=clean_day)
         # Refused, so the floor is served and the failure is on record.
         assert b.source == "rules"
@@ -142,10 +142,10 @@ class TestGenerate:
             text = "   "
 
         with (
-            patch("arete.agent.agent.build_briefing_agent") as build,
+            patch("arete.agent.execution.invoke_agent") as build,
             patch("arete.coach.briefing._rule_floor", return_value=("floor", "info")),
         ):
-            build.return_value.invoke.return_value = {"messages": [_Msg()]}
+            build.return_value = {"messages": [_Msg()]}
             b = generate_briefing(target_date=clean_day)
         assert b.source == "rules"
 
@@ -279,21 +279,7 @@ class TestSessionFeedback:
         class _Msg:
             text = "x" * (MAX_FEEDBACK_CHARS + 1)
 
-        with patch("arete.agent.agent.build_unattended_agent") as build:
-            build.return_value.invoke.return_value = {"messages": [_Msg()]}
+        with patch("arete.agent.execution.invoke_agent") as build:
+            build.return_value = {"messages": [_Msg()]}
             with pytest.raises(RuntimeError, match="too long"):
                 _run_agent("facts")
-
-    def test_the_briefing_and_the_feedback_do_not_share_a_graph(self):
-        # Different prompts, so the cached factory must hand back two graphs.
-        from arete.agent.agent import build_unattended_agent
-
-        with (
-            patch(
-                "arete.agent.agent.create_agent", side_effect=lambda *a, **k: k["name"]
-            ),
-            patch("arete.agent.agent.build_chat_model", return_value=object()),
-        ):
-            first = build_unattended_agent("prompt A", "agent_a")
-            second = build_unattended_agent("prompt B", "agent_b")
-        assert first != second

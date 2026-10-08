@@ -12,6 +12,9 @@ from fastapi.testclient import TestClient
 # Set test database path before importing app modules
 _test_db_dir = tempfile.mkdtemp()
 os.environ["ARETE_DB"] = str(Path(_test_db_dir) / "test_arete.duckdb")
+# A developer's .env may enable tracing; normal tests must remain offline.
+# Dedicated tracing tests opt in with an in-memory transport.
+os.environ["LANGSMITH_TRACING"] = "false"
 
 
 @pytest.fixture(scope="session")

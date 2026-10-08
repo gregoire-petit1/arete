@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import {
   act,
@@ -37,15 +38,18 @@ vi.mock('@/lib/agentStream', async (importOriginal) => ({
 }));
 function Harness() {
   const [open, setOpen] = useState(false);
+  const [queryClient] = useState(() => new QueryClient());
   return (
-    <MemoryRouter>
-      <Navigation
-        agentOpen={open}
-        agentBusy={false}
-        onToggleAgent={() => setOpen((v) => !v)}
-      />
-      <AgentSidePanel open={open} onClose={() => setOpen(false)} />
-    </MemoryRouter>
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <Navigation
+          agentOpen={open}
+          agentBusy={false}
+          onToggleAgent={() => setOpen((v) => !v)}
+        />
+        <AgentSidePanel open={open} onClose={() => setOpen(false)} />
+      </MemoryRouter>
+    </QueryClientProvider>
   );
 }
 beforeEach(() => {

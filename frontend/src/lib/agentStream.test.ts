@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   applyEvent,
   consumeStream,
+  runAgentStream,
   settleMessage,
   type ChatMessage,
   type StreamEvent,
@@ -27,6 +28,26 @@ function stream(text: string, split = 1) {
 }
 
 describe('SSE transport', () => {
+  it('sends the stable conversation ID without UI-only history fields', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(stream(frame(done))));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      await runAgentStream(
+        [{ role: 'user', content: 'Demain ?', pending: false, parts: [] }],
+        { page: 'planning', path: '/planning', params: {} },
+        () => {},
+        new AbortController().signal,
+        'dfe771b8-661a-46af-9cee-dce80e6bc304'
+      );
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+        messages: [{ role: 'user', content: 'Demain ?' }],
+        panel_context: { page: 'planning' },
+        thread_id: 'dfe771b8-661a-46af-9cee-dce80e6bc304',
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it('decodes split UTF-8 and CRLF frames without dropping tokens', async () => {
     const events: StreamEvent[] = [];
     await consumeStream(

@@ -1,0 +1,583 @@
+"""Exercise the shared graph and actual LangChain callbacks without the network."""
+
+from __future__ import annotations
+
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Lock
+from unittest.mock import Mock
+
+import pytest
+from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.outputs import ChatGenerationChunk
+from langsmith import Client
+from pydantic import PrivateAttr
+
+from arete.agent import agent, execution, tracing
+from arete.agent.context import AgentContext
+from arete.agent.prompts import TASK_INSTRUCTIONS
+
+
+class FakeCoach(GenericFakeChatModel):
+    _seen: list = PrivateAttr(default_factory=list)
+    _barrier: Barrier | None = PrivateAttr(default=None)
+    _fail: bool = PrivateAttr(default=False)
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, **kwargs):
+        self._seen.append(messages)
+        if self._barrier:
+            self._barrier.wait(timeout=5)
+        if self._fail:
+            raise RuntimeError("inference unavailable")
+        return super()._generate(messages, **kwargs)
+
+    def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+        # GenericFakeChatModel only streams text/legacy function_call fields;
+        # preserve modern tool_calls and usage just as ChatOpenAI does.
+        message = self._generate(messages, **kwargs).generations[0].message
+        chunk = ChatGenerationChunk(
+            message=AIMessageChunk(
+                **message.model_dump(exclude={"type"}), chunk_position="last"
+            )
+        )
+        if run_manager:
+            run_manager.on_llm_new_token(chunk.text, chunk=chunk)
+        yield chunk
+
+
+class RecordingClient(Client):
+    """Capture the SDK write boundary; use the real RunTree/LangChain tracer."""
+
+    def __init__(self):
+        super().__init__(api_key="test-key", auto_batch_tracing=False)
+        self.recorded_runs = {}
+        self.lock = Lock()
+
+    def create_run(self, name, inputs, run_type, **kwargs):
+        with self.lock:
+            self.recorded_runs[str(kwargs["id"])] = {
+                "name": name,
+                "inputs": inputs,
+                "run_type": run_type,
+                **kwargs,
+            }
+
+    def update_run(self, run_id, **kwargs):
+        with self.lock:
+            self.recorded_runs[str(run_id)].update(kwargs)
+
+
+@pytest.fixture(autouse=True)
+def isolated_graph(monkeypatch, tmp_path):
+    monkeypatch.setenv("ARETE_DB", str(tmp_path / "agent.duckdb"))
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("LLM_MODEL", "test-coach")
+    monkeypatch.setenv("LANGSMITH_PROJECT", "test-project")
+    monkeypatch.setenv("LANGSMITH_TRACING", "false")
+    monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
+    monkeypatch.setattr(tracing, "_client", None)
+    # Accidental real requests are test failures, not hidden network access.
+    monkeypatch.setattr(
+        "requests.sessions.Session.request",
+        Mock(side_effect=AssertionError("network forbidden")),
+    )
+    agent.get_agent.cache_clear()
+    yield
+    agent.get_agent.cache_clear()
+
+
+@pytest.fixture
+def recorder(monkeypatch):
+    client = RecordingClient()
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "test-key")
+    monkeypatch.setattr(tracing, "_client", client)
+    yield client
+    client.close(timeout=0)
+
+
+def install_model(monkeypatch, responses):
+    model = FakeCoach(messages=iter(responses))
+    factory = Mock(return_value=model)
+    monkeypatch.setattr(agent, "build_chat_model", factory)
+    return model, factory
+
+
+def state(text="hello"):
+    return {"messages": [HumanMessage(text)]}
+
+
+def tool_call(name, args, call_id):
+    return AIMessage(
+        content="",
+        tool_calls=[{"name": name, "args": args, "id": call_id, "type": "tool_call"}],
+    )
+
+
+def assert_trace_tree(client, roots=1):
+    runs = list(client.recorded_runs.values())
+    root_runs = [r for r in runs if r.get("parent_run_id") is None]
+    assert len(root_runs) == roots
+    root_ids = {str(r["id"]) for r in root_runs}
+    for run in runs:
+        assert str(run["trace_id"]) in root_ids
+        assert run.get("end_time"), run["name"]
+        assert run.get("session_name") == "test-project"
+        parent = run.get("parent_run_id")
+        if parent is not None:
+            assert str(parent) in client.recorded_runs, run["name"]
+            assert client.recorded_runs[str(parent)]["trace_id"] == run["trace_id"]
+    assert {r["name"] for r in root_runs} == {"arete_coach"}
+    return runs, root_runs
+
+
+def test_one_graph_concurrent_tasks_keep_instructions_and_traces_isolated(
+    monkeypatch, recorder
+):
+    model, factory = install_model(monkeypatch, [AIMessage(content="ok")] * 3)
+    model._barrier = Barrier(3)
+    tasks = list(TASK_INSTRUCTIONS)
+
+    def run(task):
+        return execution.invoke_agent(
+            state(task),
+            context=AgentContext(task=task, source={"panel_context": '{"page":"log"}'}),
+        )
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        results = list(pool.map(run, tasks, timeout=10))
+    assert all(r["messages"][-1].content == "ok" for r in results)
+    factory.assert_called_once()  # The summarizer also reuses this model.
+    for messages in model._seen:
+        task = next(
+            m.content for m in messages if m.type == "human" and m.content in tasks
+        )
+        prompt = messages[0].content
+        assert TASK_INSTRUCTIONS[task] in prompt
+        for other in set(tasks) - {task}:
+            assert TASK_INSTRUCTIONS[other] not in prompt
+        has_panel = any(
+            "System-provided page context:" in str(m.content) for m in messages
+        )
+        assert has_panel == (task == "chat")
+    runs, roots = assert_trace_tree(recorder, roots=3)
+    assert {r["extra"]["metadata"]["task"] for r in roots} == set(tasks)
+    for root in roots:
+        metadata = root["extra"]["metadata"]
+        assert metadata["model"] == "test-coach"
+        assert metadata["provider"] == "ollama"
+        assert metadata["task"] == root["inputs"]["messages"][0].content
+        children = [r for r in runs if r["trace_id"] == root["trace_id"]]
+        assert all(r["extra"]["metadata"]["task"] == metadata["task"] for r in children)
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_native_dynamic_and_filesystem_tools_stay_in_one_trace(
+    monkeypatch, recorder, streaming
+):
+    install_model(
+        monkeypatch,
+        [
+            tool_call("get_page_context", {"page": "bogus"}, "page"),
+            tool_call("search_toolkits", {"query": "analytics"}, "search"),
+            tool_call("load_toolkit", {"toolkit_id": "analytics"}, "load"),
+            tool_call("get_workload", {"days": 0}, "dynamic"),
+            tool_call("read_file", {"file_path": "/notes.md"}, "memory"),
+            AIMessage(
+                content="Finished.",
+                usage_metadata={
+                    "input_tokens": 10,
+                    "output_tokens": 2,
+                    "total_tokens": 12,
+                },
+            ),
+        ],
+    )
+    if streaming:
+
+        async def consume():
+            return [
+                part
+                async for part in execution.stream_agent(
+                    state(), context=AgentContext()
+                )
+            ]
+
+        parts = asyncio.run(consume())
+        events = [p["data"] for p in parts if p["type"] == "custom"]
+        assert {e["name"] for e in events if e["type"] == "tool_start"} >= {
+            "get_workload",
+            "read_file",
+        }
+        assert any(p["type"] == "messages" for p in parts)
+    else:
+        result = execution.invoke_agent(state(), context=AgentContext())
+        assert result["messages"][-1].content == "Finished."
+    runs, roots = assert_trace_tree(recorder)
+    tools = [r for r in runs if r["run_type"] == "tool"]
+    assert {r["name"] for r in tools} == {
+        "get_page_context",
+        "search_toolkits",
+        "load_toolkit",
+        "get_workload",
+        "read_file",
+    }
+    assert len(tools) == 5  # No double instrumentation.
+    assert len([r for r in runs if r["run_type"] == "llm"]) == 6
+    llms = [r for r in runs if r["run_type"] == "llm"]
+    assert any(
+        r["outputs"]["generations"][0][0]["message"]["kwargs"].get("usage_metadata")
+        == {"input_tokens": 10, "output_tokens": 2, "total_tokens": 12}
+        for r in llms
+    )
+    assert all(r.get("outputs") for r in tools)
+    assert roots[0].get("outputs") is not None
+
+
+def test_loaded_toolkits_do_not_leak_between_tasks(monkeypatch):
+    install_model(
+        monkeypatch,
+        [
+            tool_call("load_toolkit", {"toolkit_id": "analytics"}, "load"),
+            AIMessage(content="briefing"),
+            AIMessage(content="feedback"),
+        ],
+    )
+    first = execution.invoke_agent(state(), context=AgentContext(task="briefing"))
+    second = execution.invoke_agent(
+        state(), context=AgentContext(task="session_feedback")
+    )
+    assert first["loaded_toolkits"] == ["analytics"]
+    assert not second.get("loaded_toolkits")
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_inference_errors_close_the_root_and_model_spans(
+    monkeypatch, recorder, streaming
+):
+    model, _ = install_model(monkeypatch, [])
+    model._fail = True
+    with pytest.raises(RuntimeError, match="inference unavailable"):
+        if streaming:
+
+            async def consume():
+                return [
+                    p
+                    async for p in execution.stream_agent(
+                        state(), context=AgentContext()
+                    )
+                ]
+
+            asyncio.run(consume())
+        else:
+            execution.invoke_agent(state(), context=AgentContext())
+    runs, roots = assert_trace_tree(recorder)
+    assert "inference unavailable" in roots[0]["error"]
+    assert any(r["run_type"] == "llm" and r.get("error") for r in runs)
+
+
+@pytest.mark.parametrize("task", ["chat", "briefing", "session_feedback"])
+@pytest.mark.parametrize("streaming", [False, True])
+def test_summarization_is_chat_only_and_nested(monkeypatch, recorder, task, streaming):
+    from deepagents.backends import FilesystemBackend
+
+    from arete.agent.summarization import ChatSummarizationMiddleware, transcripts_root
+
+    model, _ = install_model(
+        monkeypatch, [AIMessage(content="summary"), AIMessage(content="answer")]
+    )
+    summary = ChatSummarizationMiddleware(
+        model,
+        backend=FilesystemBackend(root_dir=transcripts_root()),
+        trigger=("messages", 4),
+        keep=("messages", 2),
+    )
+    monkeypatch.setattr(agent, "build_summarization", lambda _: summary)
+    history = {
+        "messages": [
+            m
+            for i in range(4)
+            for m in (HumanMessage(f"question {i}"), AIMessage(content=f"reply {i}"))
+        ]
+        + [HumanMessage("now?")]
+    }
+    if streaming:
+
+        async def consume():
+            return [
+                p
+                async for p in execution.stream_agent(
+                    history, context=AgentContext(task=task)
+                )
+            ]
+
+        asyncio.run(consume())
+    else:
+        execution.invoke_agent(history, context=AgentContext(task=task))
+    runs, _ = assert_trace_tree(recorder)
+    llms = [r for r in runs if r["run_type"] == "llm"]
+    summaries = [
+        r for r in llms if r["extra"]["metadata"].get("lc_source") == "summarization"
+    ]
+    assert len(llms) == (2 if task == "chat" else 1)
+    assert len(summaries) == (1 if task == "chat" else 0)
+    assert bool(list(transcripts_root().rglob("*.md"))) == (task == "chat")
+
+
+def test_disabled_tracing_overrides_legacy_environment(monkeypatch):
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+    client_factory = Mock(side_effect=AssertionError("must not create client"))
+    monkeypatch.setattr(tracing, "Client", client_factory)
+    install_model(monkeypatch, [AIMessage(content="offline")])
+    assert (
+        execution.invoke_agent(state(), context=AgentContext())["messages"][-1].content
+        == "offline"
+    )
+    client_factory.assert_not_called()
+
+
+def test_enabled_tracing_requires_key_before_inference(monkeypatch):
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    _, factory = install_model(monkeypatch, [])
+    with pytest.raises(ValueError, match="LANGSMITH_API_KEY"):
+        execution.invoke_agent(state(), context=AgentContext())
+    factory.assert_not_called()
+
+
+def test_trace_export_failure_preserves_the_answer(monkeypatch, recorder, caplog):
+    install_model(monkeypatch, [AIMessage(content="still works")])
+    monkeypatch.setattr(
+        recorder, "create_run", Mock(side_effect=ConnectionError("export unavailable"))
+    )
+    monkeypatch.setattr(
+        recorder, "update_run", Mock(side_effect=ConnectionError("export unavailable"))
+    )
+    result = execution.invoke_agent(state(), context=AgentContext())
+    assert result["messages"][-1].content == "still works"
+    assert "export unavailable" in caplog.text
+
+
+def test_client_is_reused_bounded_and_closed(monkeypatch, caplog):
+    from queue import PriorityQueue
+
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setenv("LANGSMITH_API_KEY", "private-key")
+    monkeypatch.setenv("LANGSMITH_ENDPOINT", "https://eu.api.smith.langchain.com/")
+    monkeypatch.setenv("LANGSMITH_WORKSPACE_ID", "workspace-id")
+    client = Mock(tracing_queue=PriorityQueue())
+    factory = Mock(return_value=client)
+    monkeypatch.setattr(tracing, "Client", factory)
+    assert tracing.get_tracing_client() is tracing.get_tracing_client()
+    factory.assert_called_once()
+    options = factory.call_args.kwargs
+    assert options["timeout_ms"] == tracing.TRACE_TIMEOUT_MS
+    assert options["retry_config"].total == tracing.TRACE_MAX_RETRIES
+    assert options["tracing_sampling_rate"] == 1.0
+    assert options["api_url"] == "https://eu.api.smith.langchain.com"
+    assert options["workspace_id"] == "workspace-id"
+    assert client.tracing_queue.maxsize == tracing.TRACE_QUEUE_MAX_SIZE
+    options["tracing_error_callback"](ConnectionError("private-key"))
+    assert "LangSmith trace export failed" in caplog.text
+    assert "private-key" not in caplog.text
+    tracing.close_tracing()
+    client.close.assert_called_once_with(timeout=tracing.TRACE_SHUTDOWN_TIMEOUT_SEC)
+    tracing.close_tracing()
+    assert tracing._client is None
+
+
+@pytest.mark.parametrize("cancel_task", [False, True])
+@pytest.mark.parametrize("export_failure", [False, True])
+def test_early_stream_close_finishes_trace_in_its_original_context(
+    monkeypatch, recorder, cancel_task, export_failure, caplog
+):
+    from contextlib import aclosing
+
+    from langsmith.run_helpers import get_tracing_context
+
+    class PausedCoach(FakeCoach):
+        async def _astream(self, messages, **kwargs):
+            yield ChatGenerationChunk(message=AIMessageChunk(content="first token"))
+            # Keep inference unfinished until the consumer disconnects. A fast
+            # synchronous fake races graph shutdown and can hide missing spans.
+            async with asyncio.timeout(5):
+                await asyncio.Event().wait()
+
+    monkeypatch.setattr(
+        agent, "build_chat_model", lambda: PausedCoach(messages=iter([]))
+    )
+
+    async def consume():
+        before = get_tracing_context().copy()
+        async with aclosing(
+            execution.stream_agent(state(), context=AgentContext())
+        ) as stream:
+            async with asyncio.timeout(5):
+                async for part in stream:
+                    if part["type"] == "messages":
+                        break
+                else:
+                    pytest.fail("Model never streamed a token")
+            if export_failure:
+                monkeypatch.setattr(
+                    recorder,
+                    "update_run",
+                    Mock(side_effect=ConnectionError("export unavailable")),
+                )
+            if cancel_task:
+                task = asyncio.current_task()
+                assert task is not None
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await anext(stream)
+        # Check before asyncio.run performs its own async-generator cleanup.
+        assert get_tracing_context() == before
+        if export_failure:
+            assert "LangSmith trace export failed" in caplog.text
+            return
+        runs, _ = assert_trace_tree(recorder)
+        models = [r for r in runs if r["run_type"] == "llm"]
+        assert len(models) == 1
+        assert models[0]["error"]
+
+    asyncio.run(consume())
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_dynamic_tool_exception_is_traced_and_propagated(
+    monkeypatch, recorder, streaming
+):
+    from arete.agent.analytics_tools import get_workload
+
+    install_model(monkeypatch, [tool_call("get_workload", {"days": 28}, "broken")])
+    monkeypatch.setattr(
+        get_workload, "func", Mock(side_effect=RuntimeError("tool unavailable"))
+    )
+    with pytest.raises(RuntimeError, match="tool unavailable"):
+        if streaming:
+
+            async def consume():
+                return [
+                    p
+                    async for p in execution.stream_agent(
+                        state(), context=AgentContext()
+                    )
+                ]
+
+            asyncio.run(consume())
+        else:
+            execution.invoke_agent(state(), context=AgentContext())
+    runs, roots = assert_trace_tree(recorder)
+    tool_span = next(r for r in runs if r["name"] == "get_workload")
+    assert "tool unavailable" in tool_span["error"]
+    assert "tool unavailable" in roots[0]["error"]
+
+
+@pytest.mark.parametrize(
+    "task, limit", [("chat", 40), ("briefing", 40), ("session_feedback", 20)]
+)
+def test_task_limits_reach_both_execution_paths(monkeypatch, task, limit):
+    graph = Mock()
+    graph.invoke.return_value = {"messages": []}
+    seen = []
+
+    async def stream(_state, *, context, config, **kwargs):
+        seen.append(config)
+        yield {"type": "custom", "data": {}}
+
+    graph.astream = stream
+    monkeypatch.setattr(execution, "get_agent", lambda: graph)
+    execution.invoke_agent(state(), context=AgentContext(task=task))
+
+    async def consume():
+        return [
+            p
+            async for p in execution.stream_agent(
+                state(), context=AgentContext(task=task)
+            )
+        ]
+
+    asyncio.run(consume())
+    assert graph.invoke.call_args.kwargs["config"]["recursion_limit"] == limit
+    assert seen[0]["recursion_limit"] == limit
+
+
+def test_producers_select_the_correct_task(monkeypatch):
+    from arete.coach.briefing import _run_agent as briefing
+    from arete.coach.session_feedback import _run_agent as feedback
+
+    invoke = Mock(return_value={"messages": [AIMessage(content="Un conseil.")]})
+    monkeypatch.setattr(execution, "invoke_agent", invoke)
+    assert briefing() == "Un conseil."
+    assert feedback("session facts") == "Un conseil."
+    assert [call.kwargs["context"].task for call in invoke.call_args_list] == [
+        "briefing",
+        "session_feedback",
+    ]
+    assert invoke.call_args.args[0]["messages"][0]["content"] == "session facts"
+
+
+def test_unattended_runs_do_not_emit_ui_tool_events(monkeypatch):
+    install_model(
+        monkeypatch,
+        [
+            tool_call("read_file", {"file_path": "/notes.md"}, "memory"),
+            AIMessage(content="feedback"),
+        ],
+    )
+
+    async def consume():
+        return [
+            p
+            async for p in execution.stream_agent(
+                state(), context=AgentContext(task="session_feedback")
+            )
+        ]
+
+    assert not [p for p in asyncio.run(consume()) if p["type"] == "custom"]
+
+
+def test_invalid_tracing_switch_is_a_configuration_error(monkeypatch):
+    monkeypatch.setenv("LANGSMITH_TRACING", "typo")
+    with pytest.raises(ValueError, match="true or false"):
+        tracing.get_tracing_client()
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_chat_turns_share_thread_metadata_without_reusing_trace_or_date(
+    monkeypatch, recorder, streaming
+):
+    from datetime import date, timedelta
+
+    model, factory = install_model(monkeypatch, [AIMessage(content="ok")] * 3)
+    for index, thread_id in enumerate(("thread-a", "thread-a", "thread-b")):
+        today = date(2026, 10, 8) + timedelta(days=index)
+        context = AgentContext(thread_id=thread_id, current_date=today)
+        if streaming:
+
+            async def consume(context=context):
+                return [
+                    p async for p in execution.stream_agent(state(), context=context)
+                ]
+
+            asyncio.run(consume())
+        else:
+            execution.invoke_agent(state(), context=context)
+        prompt = model._seen[-1][0].content
+        assert f"Date actuelle : {today.isoformat()}" in prompt
+        assert f"Demain : {(today + timedelta(days=1)).isoformat()}" in prompt
+    factory.assert_called_once()
+    runs, roots = assert_trace_tree(recorder, roots=3)
+    assert len({r["trace_id"] for r in roots}) == 3
+    assert sorted(r["extra"]["metadata"]["thread_id"] for r in roots) == [
+        "thread-a",
+        "thread-a",
+        "thread-b",
+    ]
+    threads = {r["trace_id"]: r["extra"]["metadata"]["thread_id"] for r in roots}
+    assert all(
+        r["extra"]["metadata"]["thread_id"] == threads[r["trace_id"]] for r in runs
+    )

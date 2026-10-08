@@ -50,6 +50,32 @@ class Config:
     def github_token(self) -> str:
         return _env("GITHUB_TOKEN", "") or ""
 
+    # --- Agent tracing (independent of inference credentials) --------------
+    @property
+    def langsmith_tracing(self) -> bool:
+        raw = (_env("LANGSMITH_TRACING", "false") or "false").lower().strip()
+        if raw not in ("true", "false"):
+            raise ValueError("LANGSMITH_TRACING must be true or false")
+        return raw == "true"
+
+    @property
+    def langsmith_api_key(self) -> str:
+        return (_env("LANGSMITH_API_KEY", "") or "").strip()
+
+    @property
+    def langsmith_project(self) -> str:
+        return _env("LANGSMITH_PROJECT", "Arete") or "Arete"
+
+    @property
+    def langsmith_endpoint(self) -> str:
+        return (
+            _env("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com") or ""
+        ).rstrip("/")
+
+    @property
+    def langsmith_workspace_id(self) -> str | None:
+        return _env("LANGSMITH_WORKSPACE_ID")
+
     # --- Speech to text (dictated sessions) --------------------------------
     @property
     def stt_provider(self) -> str:

@@ -213,7 +213,8 @@ export async function runAgentStream(
   history: ChatMessage[],
   context: PanelPageContext,
   onEvent: (event: StreamEvent) => void,
-  signal: AbortSignal
+  signal: AbortSignal,
+  threadId: string
 ): Promise<void> {
   const panel_context: Record<string, string> = { page: context.page };
   for (const [key, value] of Object.entries(context.params))
@@ -223,6 +224,7 @@ export async function runAgentStream(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messages: history.map(({ role, content }) => ({ role, content })),
+      thread_id: threadId,
       panel_context,
     }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]),
