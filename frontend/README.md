@@ -3,7 +3,7 @@
 React 19 + Vite + Tailwind 4 + TanStack Query. PWA via `vite-plugin-pwa`.
 
 ```bash
-npm ci
+npm ci           # or `make dev` from the repo root: API + this dev server together
 npm run dev      # http://localhost:5173, proxies /api -> http://localhost:8000 (strips /api)
 VITE_API_TARGET=http://localhost:8001 npm run dev   # backend on another port
 npm run lint     # eslint
