@@ -143,11 +143,70 @@ class TestWriteDailyBriefing:
         with (
             patch("arete.services.briefing.briefing_enabled", return_value=True),
             patch(
+                "arete.services.coaching_repository.BriefingRepository.get_for_day",
+                return_value=None,
+            ),
+            patch(
                 "arete.coaching.generate_briefing",
                 side_effect=RuntimeError("boom"),
             ),
         ):
             assert scheduler.write_daily_briefing().startswith("failed:")
+
+    def _existing(self, trigger):
+        from arete.services.coaching_repository import Briefing
+
+        return Briefing(
+            id=1,
+            date=date.today(),
+            text="Déjà écrit.",
+            priority="info",
+            source="agent",
+            status="ok",
+            error=None,
+            trigger=trigger,
+            created_at=None,
+        )
+
+    def test_a_second_scheduler_run_keeps_its_briefing(self):
+        with (
+            patch("arete.services.briefing.briefing_enabled", return_value=True),
+            patch(
+                "arete.services.coaching_repository.BriefingRepository.get_for_day",
+                return_value=self._existing("scheduler"),
+            ),
+            patch("arete.coaching.generate_briefing") as generate,
+        ):
+            assert scheduler.write_daily_briefing() == "agent"
+        generate.assert_not_called()
+
+    def test_the_written_briefing_is_pushed_by_its_first_sentence(self):
+        fresh = self._existing("scheduler")
+        fresh = type(fresh)(**{**fresh.__dict__, "text": "Footing 45'. Puis repos."})
+        with (
+            patch("arete.services.briefing.briefing_enabled", return_value=True),
+            patch(
+                "arete.services.coaching_repository.BriefingRepository.get_for_day",
+                return_value=None,
+            ),
+            patch("arete.coaching.generate_briefing", return_value=fresh),
+            patch("arete.services.notifications.notify") as notify,
+        ):
+            scheduler.write_daily_briefing()
+        notify.assert_called_once_with("Briefing du coach", "Footing 45'.", "/")
+
+    def test_a_briefing_written_before_the_sync_is_rewritten(self):
+        fresh = self._existing("scheduler")
+        with (
+            patch("arete.services.briefing.briefing_enabled", return_value=True),
+            patch(
+                "arete.services.coaching_repository.BriefingRepository.get_for_day",
+                return_value=self._existing("api"),
+            ),
+            patch("arete.coaching.generate_briefing", return_value=fresh) as generate,
+        ):
+            scheduler.write_daily_briefing()
+        generate.assert_called_once_with(trigger="scheduler")
 
 
 class TestStart:
@@ -159,9 +218,38 @@ class TestStart:
 class TestDailySync:
     def test_reports_missing_connectors(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ARETE_GARMIN_TOKENS_DIR", str(tmp_path / "none"))
-        with patch("arete.api.strava._get_strava_tokens", return_value=None):
+        with (
+            patch("arete.api.strava._get_strava_tokens", return_value=None),
+            patch("arete.services.plan_adaptation.adapt_today", return_value=[]),
+        ):
             status = scheduler.daily_sync()
-        assert status == {"garmin": "no tokens", "strava": "not connected"}
+        assert status == {
+            "garmin": "no tokens",
+            "plan": "0 decisions (none)",
+            "strava": "not connected",
+        }
+
+    def test_adaptation_runs_before_strava_and_failures_are_reported(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ARETE_GARMIN_TOKENS_DIR", str(tmp_path / "none"))
+        calls: list[str] = []
+
+        def adapt(**_kwargs):
+            calls.append("adapt")
+            raise RuntimeError("db down")
+
+        def tokens():
+            calls.append("strava")
+            return None
+
+        with (
+            patch("arete.services.plan_adaptation.adapt_today", side_effect=adapt),
+            patch("arete.api.strava._get_strava_tokens", side_effect=tokens),
+        ):
+            status = scheduler.daily_sync()
+        assert calls == ["adapt", "strava"]
+        assert status["plan"] == "failed: db down"
 
     def test_status_is_kept_not_discarded(self, tmp_path, monkeypatch):
         # run_forever ignores the return value; the coach needs to know what
@@ -170,6 +258,47 @@ class TestDailySync:
         with patch("arete.api.strava._get_strava_tokens", return_value=None):
             status = scheduler.daily_sync()
         assert scheduler.last_status() == status
+
+    def test_with_garmin_the_push_follows_the_decisions(self):
+        from unittest.mock import MagicMock
+
+        garmin = MagicMock()
+        garmin.has_tokens.return_value = True
+        calls: list[str] = []
+        sync_client = MagicMock()
+        sync_client.sync_activities.return_value = MagicMock(
+            activities_synced=0, errors=[]
+        )
+        with (
+            patch("arete.garmin.client.GarminClient", return_value=garmin),
+            patch("arete.garmin.sync.GarminSyncClient", return_value=sync_client),
+            patch("arete.garmin.health_sync.sync_range", return_value=[]),
+            patch("arete.garmin.readiness.update_readiness_range"),
+            patch(
+                "arete.services.plan_adaptation.adapt_today",
+                side_effect=lambda **_: calls.append("adapt") or [],
+            ),
+            patch(
+                "arete.services.plan_adaptation.push_today",
+                side_effect=lambda client: calls.append("push") or "1 sent",
+            ),
+            patch("arete.api.strava._get_strava_tokens", return_value=None),
+        ):
+            status = scheduler.daily_sync()
+        assert calls == ["adapt", "push"]
+        assert status["garmin_push"] == "1 sent"
+
+    def test_new_sessions_are_announced_once(self):
+        with (
+            patch("arete.services.plan_adaptation.adapt_today", return_value=[]),
+            patch("arete.api.strava._get_strava_tokens", return_value={"x": 1}),
+            patch("arete.api.strava.sync", return_value={"imported": 2}),
+            patch("arete.services.notifications.notify") as notify,
+        ):
+            scheduler.daily_sync()
+        notify.assert_called_once_with(
+            "Arete", "2 séance(s) importée(s)", "/log?tab=cardio"
+        )
 
     def test_last_status_is_a_copy(self):
         # Callers must not be able to edit the scheduler's record.

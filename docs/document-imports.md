@@ -13,7 +13,7 @@ session leaves an explicit removal task. No background job exports these workout
 
 ## Ownership and persistence
 
-Migration 9 adds document/chunk/quota, draft and Garmin operation tables, plus
+Migration 13 adds document/chunk/quota, draft and Garmin operation tables, plus
 `prescription`, `provenance` and `revision` on existing planned sessions. Originals,
 extractions and drafts use the configured DuckDB/MotherDuck database, not the
 server filesystem. Upload reservations count towards quota even when interrupted;
@@ -140,3 +140,14 @@ Before production acceptance:
    detection; delete locally and explicitly remove only the Arete-created object.
 
 No live Garmin writes, Vercel deployment, commit or push is part of the automated suite.
+
+## Coexistence with daily planning
+
+Reviewed document prescriptions are excluded from automatic daily adaptation and
+watch push. Their editor and export service remain their only owners; daily
+sessions keep the existing structure/push flow. Moving an imported session via
+the coach increments its revision and marks its Garmin copy stale. Summary-only
+changes to its duration, targets or sport are rejected to preserve its steps.
+The prescription editor cannot convert a daily session while its separate export
+may be in flight. Migration 13 follows main's readiness, adaptation and Web Push
+migrations, and both sets of fields are retained in planning responses.

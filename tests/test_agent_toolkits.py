@@ -48,11 +48,13 @@ def test_planning_toolkit_registered():
         "list_planned",
         "create_planned_session",
         "update_planned_status",
+        "update_planned_session",
         "delete_planned_session",
         "prepare_import",
         "inspect_import",
     }
     assert "planning" in tk.instructions.lower()
+    assert "update_planned_session" not in tk.read_tools  # a write, chat only
 
 
 def test_search_finds_planning_by_capability():
@@ -485,3 +487,120 @@ def test_full_graph_async_path_executes_toolkit_tools():
     assert len(contents) == 2
     assert '"loaded": true' in contents[0]
     assert '"created": true' in contents[1]
+
+
+def test_list_planned_is_chronological_and_reports_truncation(monkeypatch):
+    from arete.agent.tools.planning import (
+        create_planned_session,
+        delete_planned_session,
+        list_planned,
+    )
+    from arete.services import planning
+
+    monkeypatch.setattr(planning, "_MAX_LIST", 2)
+    base = date.today() + timedelta(days=500)
+    days = [(base + timedelta(days=i)).isoformat() for i in (2, 0, 1)]
+    ids = [
+        json.loads(
+            create_planned_session.invoke({"date_str": d, "session_type": "endurance"})
+        )["session"]["id"]
+        for d in days
+    ]
+    try:
+        listing = json.loads(
+            list_planned.invoke(
+                {
+                    "start_date": base.isoformat(),
+                    "end_date": (base + timedelta(days=2)).isoformat(),
+                }
+            )
+        )
+        assert [s["date"] for s in listing["sessions"]] == [
+            base.isoformat(),
+            (base + timedelta(days=1)).isoformat(),
+        ]
+        assert listing["truncated"] is True
+        assert listing["next_start_date"] == (base + timedelta(days=2)).isoformat()
+    finally:
+        for session_id in ids:
+            delete_planned_session.invoke({"session_id": session_id})
+
+
+def test_bad_dates_are_tool_errors_not_exceptions():
+    from arete.agent.tools.planning import create_planned_session, list_planned
+
+    listing = json.loads(list_planned.invoke({"start_date": "jeudi prochain"}))
+    assert "start_date" in listing["error"] and "YYYY-MM-DD" in listing["error"]
+    created = json.loads(
+        create_planned_session.invoke(
+            {"date_str": "2026-13-40", "session_type": "endurance"}
+        )
+    )
+    assert "date_str" in created["error"]
+
+
+def test_update_planned_session_moves_the_date_and_keeps_the_rest():
+    from arete.agent.tools.planning import (
+        create_planned_session,
+        delete_planned_session,
+        update_planned_session,
+    )
+
+    day = date.today() + timedelta(days=450)
+    created = json.loads(
+        create_planned_session.invoke(
+            {
+                "date_str": day.isoformat(),
+                "session_type": "tempo",
+                "description": "3x10' seuil",
+                "target_duration_min": 50,
+            }
+        )
+    )
+    session_id = created["session"]["id"]
+    try:
+        moved = json.loads(
+            update_planned_session.invoke(
+                {
+                    "session_id": session_id,
+                    "date_str": (day + timedelta(days=1)).isoformat(),
+                    "target_hr_zone": "z4",
+                }
+            )
+        )
+        session = moved["session"]
+        assert session["date"] == (day + timedelta(days=1)).isoformat()
+        assert session["target_hr_zone"] == "Z4"
+        assert (session["session_type"], session["target_duration_min"]) == (
+            "tempo",
+            50,
+        )
+        assert session["description"] == "3x10' seuil"
+    finally:
+        delete_planned_session.invoke({"session_id": session_id})
+
+
+def test_update_planned_session_rejects_bad_input():
+    from arete.agent.tools.planning import update_planned_session
+
+    for args, word in (
+        ({"target_hr_zone": "Z7"}, "target_hr_zone"),
+        ({"date_str": "demain"}, "date_str"),
+        ({"session_type": "sprint"}, "session_type"),
+        ({}, "Nothing to change"),
+    ):
+        out = json.loads(update_planned_session.invoke({"session_id": 1, **args}))
+        assert word in out["error"]
+
+
+@pytest.mark.parametrize("profile", ["briefing", "feedback"])
+def test_background_profiles_cannot_move_a_session(profile):
+    from arete.agent.runtime.policy import resolve_policy
+
+    planning = CAPABILITIES["planning"]
+    assert not resolve_policy(profile).can_execute(
+        "planning", "update_planned_session", planning.read_tools
+    )
+    assert resolve_policy("chat").can_execute(
+        "planning", "update_planned_session", planning.read_tools
+    )

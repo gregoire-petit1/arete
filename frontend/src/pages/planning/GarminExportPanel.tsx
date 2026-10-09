@@ -51,7 +51,8 @@ export function GarminExportPanel({ sessions }: { sessions: PlannedSession[] }) 
   const [error, setError] = useState('');
   const [reviewed, setReviewed] = useState(false);
   const byId = new Map(statuses.data?.map(status => [status.session_id, status]));
-  const visibleIds = new Set(sessions.map(s => s.id));
+  const structured = sessions.filter(session => session.prescription);
+  const visibleIds = new Set(structured.map(s => s.id));
   const effectiveSelection = selected.filter(id => visibleIds.has(id));
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['garmin-exports'] });
   const run = async (work: () => Promise<unknown>) => {
@@ -76,9 +77,10 @@ export function GarminExportPanel({ sessions }: { sessions: PlannedSession[] }) 
     {statuses.error && <p role="alert" className="text-danger-red">{statuses.error.message}</p>}
     {open && <fieldset disabled={busy} className="space-y-3">
       <p className="text-sm text-text-muted">Sélectionne les séances de cette semaine. Elles seront programmées aux mêmes dates dans Garmin Connect.</p>
-      {sessions.map(session => <div key={session.id} className="rounded border border-text-muted/20 p-3 space-y-1 text-sm">
+      {structured.length === 0 && <p className="text-sm text-text-muted">Aucune prescription importée cette semaine. Les séances quotidiennes s’envoient depuis leur fiche.</p>}
+      {structured.map(session => <div key={session.id} className="rounded border border-text-muted/20 p-3 space-y-1 text-sm">
         <label className="flex gap-2"><input type="checkbox" disabled={!session.prescription} checked={effectiveSelection.includes(session.id)} onChange={e => { setSelected(ids => e.target.checked ? [...ids, session.id] : ids.filter(id => id !== session.id)); setReviewed(false); }} />{session.date} · {session.description || session.sport}</label>
-        <button className="text-neon-cyan text-xs" onClick={() => setEditing(session)}>{session.prescription ? 'Voir ou modifier les étapes' : 'Définir les étapes avant export'}</button>
+        <button className="text-neon-cyan text-xs" onClick={() => setEditing(session)}>Voir ou modifier les étapes</button>
         {byId.has(session.id) && <><p>{labels[byId.get(session.id)!.state] ?? byId.get(session.id)!.state}</p>{byId.get(session.id)!.error && <p className="text-danger-red">{byId.get(session.id)!.error}</p>}<button className="underline text-xs" onClick={() => run(() => exportApi.reconcile(session.id))}>Vérifier Garmin</button></>}
       </div>)}
       <label className="block text-sm">Destination<select className="block bg-void border p-2 rounded w-full" value={deviceId ?? ''} onChange={e => { setDeviceId(e.target.value ? Number(e.target.value) : null); setReviewed(false); }}><option value="">Garmin Connect uniquement</option>{devices.data?.map(device => <option key={device.id} value={device.id} disabled={!device.sports.length}>{device.name}{device.sports.length ? '' : ' — compatibilité à vérifier dans Connect'}</option>)}</select></label>

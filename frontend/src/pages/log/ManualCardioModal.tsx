@@ -27,7 +27,16 @@ const empty = () => ({
 });
 
 /** Log a cardio session done without a watch (no FIT file to upload). */
-export function ManualCardioModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ManualCardioModal({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Called with the new session's id, e.g. to ask the coach for feedback. */
+  onCreated?: (id: number) => void;
+}) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(empty());
 
@@ -43,10 +52,11 @@ export function ManualCardioModal({ open, onClose }: { open: boolean; onClose: (
         rpe: form.rpe === '' ? null : Number(form.rpe),
         notes: form.notes || null,
       }),
-    onSuccess: () => {
+    onSuccess: (session) => {
       invalidateAfterSession(queryClient);
       setForm(empty());
       onClose();
+      onCreated?.(session.id);
     },
   });
 

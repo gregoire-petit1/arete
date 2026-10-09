@@ -75,16 +75,16 @@ export function FitDropzone({ onUpload, isUploading = false, recentUploads = [] 
 
           <div>
             <span className={cn('text-sm font-mono', isDragOver ? 'text-neon-cyan' : 'text-text-muted')}>
-              {isUploading ? 'UPLOADING...' : 'DRAG & DROP .FIT FILE HERE'}
+              {isUploading ? 'IMPORT EN COURS…' : 'DÉPOSE UN FICHIER .FIT ICI'}
             </span>
-            <div className="text-xs text-text-muted/70 mt-1 font-mono">or click to browse</div>
+            <div className="text-xs text-text-muted/70 mt-1 font-mono">ou clique pour parcourir</div>
           </div>
         </div>
       </div>
 
       {recentUploads.length > 0 && (
         <div className="space-y-2">
-          <span className="text-xs font-mono text-text-muted">Recent uploads:</span>
+          <span className="text-xs font-mono text-text-muted">Imports récents :</span>
           {recentUploads.map((upload, idx) => (
             <div key={idx} className="flex items-center gap-2 text-xs font-mono">
               <FileUp className="w-3 h-3 text-text-muted" />
@@ -94,13 +94,13 @@ export function FitDropzone({ onUpload, isUploading = false, recentUploads = [] 
               {upload.status === 'success' && (
                 <>
                   <Check className="w-3 h-3 text-success-green" />
-                  <span className="text-success-green">{upload.message || 'Parsed'}</span>
+                  <span className="text-success-green">{upload.message || 'Analysé'}</span>
                 </>
               )}
               {upload.status === 'error' && (
                 <>
                   <X className="w-3 h-3 text-danger-red" />
-                  <span className="text-danger-red">{upload.message || 'Failed'}</span>
+                  <span className="text-danger-red">{upload.message || 'Échec'}</span>
                 </>
               )}
             </div>

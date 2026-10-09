@@ -1,14 +1,15 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Bot, Calendar, Dumbbell, Loader2, Zap } from 'lucide-react';
 import { LoadingState, MetricCard, OffPlanRow, SessionCard, strengthAsActual } from '@/components';
 import { Panel } from '@/components/ui';
-import { garminApi, garminHealthApi, metricsApi, settingsApi, tipsApi } from '@/lib/api';
+import { ApiError, garminApi, garminHealthApi, metricsApi, planApi, settingsApi, tipsApi } from '@/lib/api';
 import { formatHoursMinutes } from '@/lib/fr';
-import { cn, getZoneColor } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { toLocalISODate } from '@/lib/dates';
-import { qk, strengthSessionsQuery } from '@/lib/queryKeys';
-import { linkDay } from '@/lib/sessionMatch';
+import { invalidateAfterSession, qk, strengthSessionsQuery } from '@/lib/queryKeys';
+import { linkDay, type DayLink } from '@/lib/sessionMatch';
+import type { PlanDecision } from '@/types';
 
 /** Readiness / stress traffic lights as Tailwind classes (theme colors).
  *  `threshold` is the user's fatigue threshold from Settings (default 85). */
@@ -35,7 +36,69 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
   );
 }
 
+/**
+ * Today's planned session with its adaptation and the Garmin controls. The watch
+ * structure is fetched only here, for a session still to do and not yet sent.
+ */
+function TodaySession({
+  row,
+  decision,
+  garminConnected,
+}: {
+  row: DayLink['planned'][number];
+  decision: PlanDecision | null;
+  garminConnected: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const { session, realised, state } = row;
+
+  const push = useMutation({
+    mutationFn: () => garminApi.pushToWatch(session.id),
+    onSuccess: () => invalidateAfterSession(queryClient),
+  });
+  const revert = useMutation({
+    mutationFn: (decisionId: number) => planApi.revert(decisionId),
+    // The server drops the Garmin copy on revert: forget the local one too.
+    onSuccess: () => push.reset(),
+    // 409 means it was already reverted elsewhere: a refetch shows it.
+    onSettled: () => invalidateAfterSession(queryClient),
+  });
+
+  const pushedAt = session.garmin_pushed_at ?? push.data?.garmin_pushed_at ?? null;
+  const wantsStructure = garminConnected && !realised && state === 'pending' && !pushedAt;
+  const { data: structure } = useQuery({
+    queryKey: qk.plannedStructure(session.id),
+    queryFn: () => garminApi.getStructure(session.id),
+    enabled: wantsStructure,
+    staleTime: 1000 * 60 * 5,
+    retry: false,
+  });
+
+  const pushError = push.error
+    ? push.error instanceof ApiError && push.error.detail
+      ? push.error.detail
+      : 'Envoi à Garmin impossible, réessaie plus tard.'
+    : null;
+
+  return (
+    <SessionCard
+      planned={pushedAt === session.garmin_pushed_at ? session : { ...session, garmin_pushed_at: pushedAt }}
+      realised={realised}
+      state={state}
+      decision={decision}
+      busy={revert.isPending}
+      onRevert={decision ? () => revert.mutate(decision.id) : undefined}
+      push={
+        wantsStructure && structure?.pushable
+          ? { text: structure.text, onPush: () => push.mutate(), pending: push.isPending, error: pushError }
+          : undefined
+      }
+    />
+  );
+}
+
 export function DashboardPage() {
+  const queryClient = useQueryClient();
   const today = toLocalISODate();
 
   const { data: userSettings } = useQuery({ queryKey: qk.settings, queryFn: settingsApi.get });
@@ -54,6 +117,21 @@ export function DashboardPage() {
     select: (data) => data.filter((s) => s.date === today).map(strengthAsActual),
   });
   const todayLink = linkDay(today, allPlanned ?? [], [...(todayActual ?? []), ...(todayStrength ?? [])], today);
+
+  const { data: syncStatus } = useQuery({ queryKey: qk.syncStatus, queryFn: garminApi.getSyncStatus });
+  const garminConnected = syncStatus?.garmin_authenticated ?? false;
+
+  const { data: planToday } = useQuery({ queryKey: qk.planToday, queryFn: planApi.getToday });
+  const decisionFor = (sessionId: number) =>
+    planToday?.decisions.find((d) => d.planned_session_id === sessionId) ?? null;
+  const adapt = useMutation({
+    mutationFn: planApi.adaptNow,
+    onSuccess: () => invalidateAfterSession(queryClient),
+  });
+  const canAdapt =
+    planToday != null &&
+    planToday.decisions.length === 0 &&
+    todayLink.planned.some((row) => row.state === 'pending');
 
   const {
     data: playerStats,
@@ -122,13 +200,33 @@ export function DashboardPage() {
           <SectionHeader icon={<Calendar className="w-4 h-4 text-neon-purple" />} title="SÉANCE DU JOUR" />
           {todayLink.planned.length > 0 || todayLink.offPlan.length > 0 ? (
             <div className="space-y-2">
-              {todayLink.planned.map(({ session, realised, state }) => (
-                <SessionCard key={session.id} planned={session} realised={realised} state={state} />
+              {todayLink.planned.map((row) => (
+                <TodaySession
+                  key={row.session.id}
+                  row={row}
+                  decision={decisionFor(row.session.id)}
+                  garminConnected={garminConnected}
+                />
               ))}
               {todayLink.offPlan.map((a) => (
                 <OffPlanRow key={a.id} session={a} />
               ))}
-              <div className="flex justify-end gap-4 pt-1 text-xs font-mono">
+              <div className="flex justify-end items-center gap-4 pt-1 text-xs font-mono">
+                {adapt.data?.decisions.length === 0 && (
+                  <span className="text-text-muted">Rien à adapter aujourd&apos;hui.</span>
+                )}
+                {adapt.isError && <span className="text-danger-red">Recalcul impossible.</span>}
+                {canAdapt && adapt.data == null && (
+                  <button
+                    type="button"
+                    disabled={adapt.isPending}
+                    onClick={() => adapt.mutate()}
+                    title="Adapter la séance du jour à ta préparation et à ta charge"
+                    className="text-neon-purple hover:underline disabled:opacity-40"
+                  >
+                    {adapt.isPending ? 'Recalcul…' : 'Recalculer'}
+                  </button>
+                )}
                 <Link to="/planning" className="text-neon-cyan hover:underline">
                   Semaine →
                 </Link>
@@ -140,7 +238,7 @@ export function DashboardPage() {
           ) : (
             <div className="text-center py-4">
               <p className="text-sm font-mono text-text-muted mb-2">Repos — aucune séance prévue</p>
-              <Link to="/planning" className="text-xs font-mono text-neon-cyan hover:underline">
+              <Link to="/planning?new=1" className="text-xs font-mono text-neon-cyan hover:underline">
                 + Ajouter une séance
               </Link>
             </div>
@@ -193,16 +291,16 @@ export function DashboardPage() {
             <MetricCard
               title="Charge (ACWR)"
               value={workload?.acwr?.toFixed(2) ?? '—'}
-              zone={workload?.acwr_zone ?? 'unknown'}
-              zoneColor={getZoneColor(workload?.acwr_zone)}
+              kind="acwr"
+              zone={workload?.acwr_zone}
             />
             <MetricCard
               title="Fraîcheur (TSB)"
               value={
                 fitness?.tsb != null ? `${fitness.tsb > 0 ? '+' : ''}${fitness.tsb.toFixed(1)}` : '—'
               }
-              zone={fitness?.form_zone ?? 'unknown'}
-              zoneColor={getZoneColor(fitness?.form_zone)}
+              kind="form"
+              zone={fitness?.form_zone}
             />
           </div>
         </Panel>
@@ -223,6 +321,14 @@ export function DashboardPage() {
               </div>
 
               <div className="flex-1 grid grid-cols-2 gap-x-6 gap-y-1.5">
+                {healthData.training_readiness_score != null && (
+                  <>
+                    <span className="text-xs font-mono text-text-muted">Préparation Garmin</span>
+                    <span className="text-xs font-mono text-text-primary text-right">
+                      {healthData.training_readiness_score}/100
+                    </span>
+                  </>
+                )}
                 {healthData.hrv_last_night != null && (
                   <>
                     <span className="text-xs font-mono text-text-muted">VFC</span>
@@ -270,7 +376,7 @@ export function DashboardPage() {
           ) : (
             <p className="text-sm font-mono text-text-muted">
               Pas de données santé aujourd&apos;hui.{' '}
-              <Link to="/settings" className="text-neon-cyan hover:underline">
+              <Link to="/settings?tab=system" className="text-neon-cyan hover:underline">
                 Synchroniser
               </Link>
             </p>

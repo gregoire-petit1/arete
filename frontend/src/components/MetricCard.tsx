@@ -1,12 +1,12 @@
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react';
-import { zoneLabel } from '@/lib/fr';
-import { cn } from '@/lib/utils';
+import { type ZoneKind, zoneLabel } from '@/lib/fr';
+import { cn, getZoneColor } from '@/lib/utils';
 
 interface MetricCardProps {
   title: string;
   value: number | string;
-  zone: string;
-  zoneColor: 'green' | 'orange' | 'red' | 'cyan';
+  kind: ZoneKind;
+  zone: string | null | undefined;
   subtitle?: string;
   trend?: 'up' | 'down' | 'stable';
 }
@@ -35,7 +35,8 @@ const zoneColorMap = {
   },
 };
 
-export function MetricCard({ title, value, zone, zoneColor, subtitle, trend }: MetricCardProps) {
+export function MetricCard({ title, value, kind, zone, subtitle, trend }: MetricCardProps) {
+  const zoneColor = getZoneColor(kind, zone);
   const colors = zoneColorMap[zoneColor];
   const TrendIcon = trend === 'up' ? TrendingUp : trend === 'down' ? TrendingDown : Minus;
 
@@ -66,7 +67,7 @@ export function MetricCard({ title, value, zone, zoneColor, subtitle, trend }: M
       <div
         className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-mono uppercase', colors.badge)}
       >
-        {zoneLabel(zone)}
+        {zoneLabel(kind, zone)}
         {zoneColor === 'green' && ' ✓'}
         {zoneColor === 'red' && ' ⚠'}
       </div>

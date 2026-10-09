@@ -48,6 +48,7 @@ All settings come from environment variables (see `.env.example`):
 | `ARETE_DB` | DuckDB file path (default `data/arete.duckdb`), or `md:<database>` for MotherDuck |
 | `ARETE_DATA_DIR` | Files beside the database (default: its directory, `/tmp/arete-data` on MotherDuck) |
 | `CRON_SECRET` | Bearer token of `GET /cron/daily-sync`; unset = endpoint closed |
+| `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, `WEB_PUSH_SUBJECT` | Web Push keys for the coach's notifications (`uv run vapid --gen`); unset = no push |
 | `ARETE_LOG_LEVEL` | Backend log level (default `INFO`) |
 | `ARETE_AUTO_SYNC_HOUR` | Local hour of the daily Garmin activities + health and Strava sync, best set after wake-up; unset = manual only |
 | `LLM_CONTEXT_TOKENS` | Coaching deployment context window (default 65,536); set to your actual model/server limit |
@@ -77,6 +78,11 @@ SDK retries remain separately bounded. These are execution
 limits, not a cumulative token or spend cap. Cancellation cannot undo a committed
 write or stop a synchronous tool already running in a worker thread; failed runs
 are never automatically replayed.
+
+Sessions imported from Strava never reach the model: Strava's API agreement
+forbids using its data in AI applications. The coach reads Garmin, FIT and
+manual sessions, and points to the Analytics page for records (Strava best
+efforts).
 
 The daily briefing and the session feedback (cardio uploads and saved strength
 sessions) are one model request each, with no tool: the server computes their

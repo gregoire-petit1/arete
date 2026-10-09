@@ -38,7 +38,11 @@ CREATE TABLE IF NOT EXISTS app.planned_sessions (
     description     VARCHAR,                   -- workout description
     source          VARCHAR DEFAULT 'manual',  -- 'manual', 'llm', 'coach'
     status          VARCHAR DEFAULT 'pending', -- 'pending', 'completed', 'skipped', 'modified'
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    structure_json  VARCHAR,                   -- explicit workout steps (optional)
+    garmin_workout_id  VARCHAR,                -- copy scheduled on Garmin's calendar
+    garmin_schedule_id VARCHAR,
+    garmin_pushed_at   TIMESTAMP
 );
 
 -- Actual training sessions (imported from Garmin/FIT files)
@@ -192,6 +196,8 @@ CREATE TABLE IF NOT EXISTS app.user_settings (
     fitness_goal            VARCHAR DEFAULT 'build',   -- 'maintenance', 'build', 'peak', 'recovery'
     notifications_enabled   BOOLEAN DEFAULT TRUE,
     coach_briefing_enabled  BOOLEAN DEFAULT TRUE,  -- the coach writes a daily briefing
+    auto_adapt_enabled      BOOLEAN DEFAULT TRUE,  -- readiness adapts today's session
+    push_to_garmin_enabled  BOOLEAN DEFAULT FALSE, -- schedule it on Garmin's calendar
     theme                   VARCHAR DEFAULT 'dark',    -- 'dark', 'darker', 'abyss'
     exercise_abbreviations  VARCHAR DEFAULT '{}',      -- JSON: {"bp": "bench press", "ng": "neutral grip", ...}
     weekly_volume_target_kg INTEGER DEFAULT 20000,     -- strength tonnage goal per week
@@ -260,6 +266,17 @@ CREATE TABLE IF NOT EXISTS app.daily_metrics (
     steps                INTEGER,
     intensity_minutes    INTEGER,
     readiness_score      INTEGER,
+    training_readiness_score    INTEGER,  -- Garmin's morning Training Readiness
+    training_readiness_level    VARCHAR,
+    training_readiness_feedback VARCHAR,
+    training_status      VARCHAR,     -- e.g. PRODUCTIVE_1
+    vo2max_run           DOUBLE,
+    race_5k_sec          INTEGER,     -- Garmin race predictions
+    race_10k_sec         INTEGER,
+    race_half_sec        INTEGER,
+    race_marathon_sec    INTEGER,
+    endurance_score      INTEGER,
+    hill_score           INTEGER,
     source               VARCHAR DEFAULT 'garmin',
     fetched_at           TIMESTAMP DEFAULT now(),
     PRIMARY KEY (user_id, date)
@@ -285,6 +302,44 @@ CREATE TABLE IF NOT EXISTS app.coach_briefings (
     error        VARCHAR,                    -- why the agent run failed, when it did
     trigger      VARCHAR NOT NULL DEFAULT 'api',    -- 'scheduler', 'api'
     created_at   TIMESTAMP DEFAULT now()
+);
+
+-- ============================================================
+-- Plan decisions: what the morning's readiness did to a planned session
+-- ============================================================
+CREATE SEQUENCE IF NOT EXISTS app.plan_decisions_seq START 1;
+
+-- One decision per planned session and day (the unique key is the "never
+-- twice" guarantee when the cron and a manual recompute race). original_json
+-- is what reverting restores.
+CREATE TABLE IF NOT EXISTS app.plan_decisions (
+    id                 INTEGER PRIMARY KEY DEFAULT nextval('app.plan_decisions_seq'),
+    user_id            INTEGER NOT NULL DEFAULT 1,
+    date               DATE NOT NULL,
+    planned_session_id INTEGER NOT NULL,
+    decision           VARCHAR NOT NULL,   -- 'keep', 'ease', 'replace_easy', 'rest'
+    reason             VARCHAR NOT NULL,
+    readiness_score    DOUBLE,
+    readiness_source   VARCHAR,            -- 'garmin_training', 'garmin', 'model'
+    acwr               DOUBLE,
+    original_json      VARCHAR,
+    adapted_json       VARCHAR,
+    applied_at         TIMESTAMP,
+    reverted_at        TIMESTAMP,
+    created_at         TIMESTAMP DEFAULT now(),
+    UNIQUE (user_id, date, planned_session_id)
+);
+
+-- ============================================================
+-- Web Push subscriptions (one per browser that accepted notifications)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS app.push_subscriptions (
+    endpoint         VARCHAR PRIMARY KEY,
+    p256dh           VARCHAR NOT NULL,
+    auth             VARCHAR NOT NULL,
+    user_agent       VARCHAR,
+    created_at       TIMESTAMP DEFAULT now(),
+    last_success_at  TIMESTAMP
 );
 """
 
@@ -374,11 +429,82 @@ def _m8_coach_briefing_enabled(con) -> None:
         )
 
 
+def _m9_canonical_sport_names(con) -> None:
+    """One spelling per sport: Strava's "run" never matched a planned "running"."""
+    from arete.garmin.models import SPORT_ALIASES
+
+    for table in ("actual_sessions", "planned_sessions"):
+        if "sport" not in _columns(con, table):
+            continue
+        for alias, canonical in SPORT_ALIASES.items():
+            con.execute(
+                f"UPDATE app.{table} SET sport = ? WHERE lower(sport) = ?",
+                [canonical, alias],
+            )
+
+
+#: Garmin's own training metrics, pulled beside the health data.
+GARMIN_PERFORMANCE_COLUMNS: dict[str, str] = {
+    "training_readiness_score": "INTEGER",
+    "training_readiness_level": "VARCHAR",
+    "training_readiness_feedback": "VARCHAR",
+    "training_status": "VARCHAR",
+    "vo2max_run": "DOUBLE",
+    "race_5k_sec": "INTEGER",
+    "race_10k_sec": "INTEGER",
+    "race_half_sec": "INTEGER",
+    "race_marathon_sec": "INTEGER",
+    "endurance_score": "INTEGER",
+    "hill_score": "INTEGER",
+}
+
+
+def _m10_garmin_performance_columns(con) -> None:
+    """Training Readiness, status, VO2max, race predictions, endurance and hill."""
+    existing = _columns(con, "daily_metrics")
+    for name, sql_type in GARMIN_PERFORMANCE_COLUMNS.items():
+        if name not in existing:
+            con.execute(f"ALTER TABLE app.daily_metrics ADD COLUMN {name} {sql_type}")
+
+
+def _m11_plan_adaptation(con) -> None:
+    """Daily adaptation: its switches, the push state, the decision log."""
+    settings = _columns(con, "user_settings")
+    for name, sql_type in (
+        ("auto_adapt_enabled", "BOOLEAN DEFAULT TRUE"),
+        ("push_to_garmin_enabled", "BOOLEAN DEFAULT FALSE"),
+    ):
+        if name not in settings:
+            con.execute(f"ALTER TABLE app.user_settings ADD COLUMN {name} {sql_type}")
+    planned = _columns(con, "planned_sessions")
+    for name, sql_type in (
+        ("structure_json", "VARCHAR"),
+        ("garmin_workout_id", "VARCHAR"),
+        ("garmin_schedule_id", "VARCHAR"),
+        ("garmin_pushed_at", "TIMESTAMP"),
+    ):
+        if name not in planned:
+            con.execute(
+                f"ALTER TABLE app.planned_sessions ADD COLUMN {name} {sql_type}"
+            )
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.plan_decisions_seq")
+    end = (
+        DDL.index(");", DDL.index("CREATE TABLE IF NOT EXISTS app.plan_decisions")) + 2
+    )
+    con.execute(DDL[start:end])
+
+
+def _m12_push_subscriptions(con) -> None:
+    """The browsers that accepted the coach's notifications."""
+    start = DDL.index("CREATE TABLE IF NOT EXISTS app.push_subscriptions")
+    con.execute(DDL[start : DDL.index(");", start) + 2])
+
+
 #: Append-only. A database at the last version skips the DDL entirely on boot
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
 #: creates it on existing databases. Migrations must stay idempotent.
-def _m9_document_imports(con) -> None:
+def _m13_document_imports(con) -> None:
     from arete.dataio.document_schema import migrate
 
     migrate(con)
@@ -393,7 +519,11 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (6, _m6_hr_reference),
     (7, _m7_threshold_measured_on),
     (8, _m8_coach_briefing_enabled),
-    (9, _m9_document_imports),
+    (9, _m9_canonical_sport_names),
+    (10, _m10_garmin_performance_columns),
+    (11, _m11_plan_adaptation),
+    (12, _m12_push_subscriptions),
+    (13, _m13_document_imports),
 ]
 
 

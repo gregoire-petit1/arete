@@ -5,23 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 
-from arete.garmin.models import ActivitySource, ActualSession
-
-_SPORT_MAP: dict[str, str] = {
-    "Run": "run",
-    "TrailRun": "trail_run",
-    "Ride": "ride",
-    "VirtualRide": "virtual_ride",
-    "Swim": "swim",
-    "Hike": "hike",
-    "Walk": "walk",
-    "WeightTraining": "weight_training",
-    "Workout": "workout",
-    "Yoga": "yoga",
-    "CrossFit": "crossfit",
-    "Rowing": "rowing",
-    "Elliptical": "elliptical",
-}
+from arete.garmin.models import ActivitySource, ActualSession, canonical_sport
 
 _RUNNING_TYPES = {"Run", "TrailRun", "VirtualRun"}
 
@@ -57,7 +41,7 @@ def strava_activity_to_actual_session(
 ) -> ActualSession:
     """Convert a raw Strava activity dict to an ActualSession."""
     strava_type = activity.get("type", "Workout")
-    sport = _SPORT_MAP.get(strava_type, strava_type.lower())
+    sport = canonical_sport(strava_type)
 
     start_dt = local_start_time(activity)
 
@@ -78,6 +62,7 @@ def strava_activity_to_actual_session(
     return ActualSession(
         date=start_dt.date(),
         sport=sport,
+        session_type=strava_type,
         duration_sec=activity["elapsed_time"],
         distance_m=activity.get("distance"),
         calories=activity.get("calories"),

@@ -15,6 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
+from arete.dataio.settings import athlete_zone_model
 from arete.garmin.fit_parser import FITParser
 from arete.garmin.matcher import SessionMatcher
 from arete.garmin.models import (
@@ -23,6 +24,7 @@ from arete.garmin.models import (
     PlannedSession,
     SessionStatus,
     SessionType,
+    canonical_sport,
 )
 from arete.garmin.repository import GarminRepository
 
@@ -70,6 +72,8 @@ class PlannedSessionResponse(BaseModel):
     prescription: dict | None = None
     provenance: list[dict] | None = None
     revision: int = 1
+    garmin_workout_id: str | None = None
+    garmin_pushed_at: datetime | None = None
 
 
 class ActualSessionResponse(BaseModel):
@@ -151,6 +155,8 @@ def _planned_to_response(session: PlannedSession) -> PlannedSessionResponse:
         status=session.status.value
         if isinstance(session.status, SessionStatus)
         else session.status,
+        garmin_workout_id=session.garmin_workout_id,
+        garmin_pushed_at=session.garmin_pushed_at,
     )
 
 
@@ -199,7 +205,7 @@ def create_planned_session(session: PlannedSessionCreate):
     """
     planned = PlannedSession(
         date=session.date,
-        sport=session.sport,
+        sport=canonical_sport(session.sport),
         session_type=session.session_type,
         target_duration_min=session.target_duration_min,
         target_distance_km=session.target_distance_km,
@@ -267,6 +273,40 @@ def delete_planned_session(session_id: int):
     return {"message": "Session deleted"}
 
 
+@router.get("/planned/{session_id}/structure")
+def get_planned_structure(session_id: int):
+    """The steps the watch would receive, or why it would receive none."""
+    from arete.services.plan_adaptation import structure_preview
+
+    try:
+        return structure_preview(session_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Séance introuvable") from None
+
+
+@router.post("/planned/{session_id}/push")
+def push_planned_session(session_id: int):
+    """Schedule the session on Garmin's calendar (the watch syncs it from there)."""
+    from arete.garmin.client import GarminClient
+    from arete.garmin.workout_structure import NotPushable
+    from arete.services.plan_adaptation import push_session
+
+    client = GarminClient()
+    if not client.has_tokens():
+        raise HTTPException(status_code=401, detail="Garmin n'est pas connecté")
+    try:
+        return push_session(client, session_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Séance introuvable") from None
+    except NotPushable as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    except Exception as e:
+        logger.warning("Garmin push failed for session %s", session_id, exc_info=True)
+        raise HTTPException(
+            status_code=502, detail=f"Garmin a refusé la séance : {e}"
+        ) from e
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # FIT Upload & Actual Sessions
 # ─────────────────────────────────────────────────────────────────────────
@@ -305,8 +345,11 @@ def upload_fit_file(
 
     content_bytes = bytes(content)
 
+    # The athlete's zones: bucketing the upload's HR and reading a planned
+    # "Z2" both need them (the default 190 bpm model misreads both).
+    zones = athlete_zone_model()
     try:
-        parser = FITParser()
+        parser = FITParser(zones=zones)
         parsed = parser.parse_stream(io.BytesIO(content_bytes))
         # Sanitize filename to prevent path traversal
         parsed.source_file = Path(file.filename).name
@@ -319,7 +362,7 @@ def upload_fit_file(
     # Convert parsed activity to ActualSession
     actual = ActualSession(
         date=parsed.start_time.date() if parsed.start_time else date.today(),
-        sport=parsed.sport or "running",
+        sport=canonical_sport(parsed.sport or "running"),
         session_type=parsed.sub_sport or parsed.infer_session_type(),
         duration_sec=parsed.duration_sec or parsed.elapsed_time_sec or 0,
         distance_m=parsed.distance_m,
@@ -348,7 +391,7 @@ def upload_fit_file(
     if auto_match:
         planned_sessions = _repo.get_potential_matches(actual)
         if planned_sessions:
-            matcher = SessionMatcher()
+            matcher = SessionMatcher(zones=zones)
             match = matcher.find_match(actual, planned_sessions)
             if match.is_matched and match.planned_session is not None:
                 planned_id = match.planned_session.id
@@ -410,7 +453,7 @@ def create_actual_session(payload: ActualSessionCreate):
     distance_m = payload.distance_km * 1000 if payload.distance_km else None
     session = ActualSession(
         date=payload.date,
-        sport=payload.sport,
+        sport=canonical_sport(payload.sport),
         session_type=payload.session_type or payload.sport,
         name=payload.name,
         duration_sec=duration_sec,

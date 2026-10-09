@@ -251,3 +251,25 @@ class TestStravaMergeIntoGarmin:
         kwargs = repo.update_actual_session_fields.call_args_list[0].kwargs
         assert kwargs["strava_activity_id"] == "1001"
         assert kwargs["name"] == "Morning Run"  # Garmin row had no name
+
+
+def test_callback_lands_on_the_connections_tab(router_client):
+    client = MagicMock()
+    client.exchange_code.return_value = {
+        "access_token": "at",
+        "refresh_token": "rt",
+        "expires_at": 9999999999,
+        "athlete": {"id": 42, "firstname": "Greg"},
+    }
+    with (
+        patch("arete.api.strava._get_strava_client", return_value=client),
+        patch("arete.api.strava._save_strava_tokens") as save,
+    ):
+        resp = router_client(router).get(
+            "/strava/callback?code=abc", follow_redirects=False
+        )
+    assert resp.status_code in (302, 307)
+    assert resp.headers["location"].endswith(
+        "/settings?tab=connections&strava=connected"
+    )
+    save.assert_called_once()

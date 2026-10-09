@@ -20,6 +20,8 @@ DEFAULT_MAX_HR = 190
 LTHR_FRACTIONS: tuple[float, float, float, float] = (0.85, 0.90, 0.95, 1.00)
 # Share of max HR opening each zone, for athletes without a tested threshold.
 MAX_HR_FRACTIONS: tuple[float, float, float, float] = (0.60, 0.70, 0.80, 0.90)
+#: Threshold HR as a share of max HR: where the two tables open Z5.
+LTHR_FROM_MAX_HR = MAX_HR_FRACTIONS[3] / LTHR_FRACTIONS[3]
 
 ZONE_NAMES: tuple[str, ...] = ("z1", "z2", "z3", "z4", "z5")
 
@@ -52,6 +54,13 @@ class ZoneModel:
         reference = max_hr if max_hr and max_hr > 0 else DEFAULT_MAX_HR
         return cls(_bounds(reference, MAX_HR_FRACTIONS), "max_hr", reference)
 
+    @property
+    def threshold_hr(self) -> int:
+        """Threshold HR: tested, or derived from max HR."""
+        if self.basis == "lthr":
+            return self.reference
+        return round(self.reference * LTHR_FROM_MAX_HR)
+
     def zone_of(self, hr: float) -> int:
         """Zone number 1-5 for one heart-rate reading."""
         for index, boundary in enumerate(self.boundaries):
@@ -73,6 +82,21 @@ class ZoneModel:
             if hr and seconds > 0:
                 totals[f"z{self.zone_of(hr)}"] += int(round(seconds))
         return totals
+
+    def target_range(self, zone: int) -> tuple[int, int]:
+        """A closed bpm range to aim at for zone 1-5 (a planned "Z2").
+
+        The outer zones are open-ended; each gets the width of its neighbour,
+        so a planned Z1 or Z5 still has a range a watch can display.
+        """
+        if not 1 <= zone <= 5:
+            raise ValueError(f"zone {zone}")
+        b = self.boundaries
+        if zone == 1:
+            return b[0] - (b[1] - b[0]), b[0] - 1
+        if zone == 5:
+            return b[3], b[3] + (b[3] - b[2])
+        return b[zone - 2], b[zone - 1] - 1
 
     def ranges(self) -> list[tuple[int, int | None]]:
         """Heart-rate span of each zone; the last one is open-ended."""

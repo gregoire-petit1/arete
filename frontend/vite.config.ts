@@ -13,10 +13,10 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.png", "apple-touch-icon.png"],
       manifest: {
-        name: "Arete - Training Assistant",
+        name: "Arete — Assistant d’entraînement",
         short_name: "Arete",
         description:
-          "Intelligent training assistant powered by AI and personal data",
+          "Assistant d’entraînement intelligent, nourri par l’IA et tes données personnelles",
         theme_color: "#0A0A0F",
         background_color: "#0A0A0F",
         display: "standalone",
@@ -42,24 +42,14 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      // A hand-written worker (src/sw.ts) so it can show Web Push notifications;
+      // it keeps the precache, SPA fallback and /api/ caching of the generated one.
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
+      injectManifest: {
         globIgnores: ["ocr/**", "**/pdf*.mjs", "**/pdf*.js"],
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
-        // API calls and the Strava OAuth callback must reach the server,
-        // never the cached app shell.
-        navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/agent/") && !url.pathname.startsWith("/api/garmin/exports"),
-            handler: "NetworkFirst",
-            options: {
-              // Past 10 s offline-ish, serve the cached answer if any.
-              networkTimeoutSeconds: 10,
-              cacheName: "api-cache",
-              expiration: { maxEntries: 50, maxAgeSeconds: 300 },
-            },
-          },
-        ],
       },
     }),
   ],

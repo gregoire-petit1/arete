@@ -17,6 +17,8 @@ export const DEFAULT_SETTINGS: LocalSettings = {
   fitness_goal: 'build',
   notifications_enabled: true,
   coach_briefing_enabled: true,
+  auto_adapt_enabled: true,
+  push_to_garmin_enabled: false,
   theme: 'dark',
   exercise_abbreviations: {},
   weekly_volume_target_kg: 20000,

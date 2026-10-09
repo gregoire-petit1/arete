@@ -100,6 +100,17 @@ class TestGarminClientData:
         client.activities(date(2026, 1, 1), date(2026, 1, 31))
         api.get_activities_by_date.assert_called_once_with("2026-01-01", "2026-01-31")
 
+    def test_training_readiness_uses_the_morning_reading(self, token_dir):
+        client, api = self._client(token_dir)
+        api.get_morning_training_readiness.return_value = {"score": 70}
+        assert client.training_readiness(date(2026, 10, 9)) == {"score": 70}
+        api.get_morning_training_readiness.assert_called_once_with("2026-10-09")
+
+    def test_race_predictions_ask_for_the_latest(self, token_dir):
+        client, api = self._client(token_dir)
+        client.race_predictions()
+        api.get_race_predictions.assert_called_once_with()
+
 
 class TestHealthMapping:
     """Raw Garmin JSON -> app.daily_metrics columns."""

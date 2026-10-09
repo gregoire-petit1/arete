@@ -1,0 +1,168 @@
+"""The plan-decision log (``app.plan_decisions``): one row per session and day."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Any
+
+import duckdb
+
+from arete.dataio.db import connect
+
+_COLUMNS = (
+    "id, date, planned_session_id, decision, reason, readiness_score, "
+    "readiness_source, acwr, original_json, adapted_json, applied_at, "
+    "reverted_at, created_at"
+)
+
+
+class AlreadyDecided(Exception):
+    """That session already has a decision for that day."""
+
+
+@dataclass(frozen=True)
+class PlanDecision:
+    id: int
+    date: date
+    planned_session_id: int
+    decision: str
+    reason: str
+    readiness_score: float | None
+    readiness_source: str | None
+    acwr: float | None
+    original: dict[str, Any] | None
+    adapted: dict[str, Any] | None
+    applied_at: datetime | None
+    reverted_at: datetime | None
+    created_at: datetime | None
+
+    def to_dict(self) -> dict[str, Any]:
+        def iso(value: date | datetime | None) -> str | None:
+            return value.isoformat() if value else None
+
+        return {
+            "id": self.id,
+            "date": self.date.isoformat(),
+            "planned_session_id": self.planned_session_id,
+            "decision": self.decision,
+            "reason": self.reason,
+            "readiness_score": self.readiness_score,
+            "readiness_source": self.readiness_source,
+            "acwr": self.acwr,
+            "original": self.original,
+            "adapted": self.adapted,
+            "applied_at": iso(self.applied_at),
+            "reverted_at": iso(self.reverted_at),
+            "created_at": iso(self.created_at),
+        }
+
+
+def _loads(raw: str | None) -> dict[str, Any] | None:
+    return json.loads(raw) if raw else None
+
+
+def _from_row(row: tuple) -> PlanDecision:
+    return PlanDecision(
+        id=row[0],
+        date=row[1],
+        planned_session_id=row[2],
+        decision=row[3],
+        reason=row[4],
+        readiness_score=row[5],
+        readiness_source=row[6],
+        acwr=row[7],
+        original=_loads(row[8]),
+        adapted=_loads(row[9]),
+        applied_at=row[10],
+        reverted_at=row[11],
+        created_at=row[12],
+    )
+
+
+class PlanDecisionRepository:
+    """CRUD over ``app.plan_decisions``. One connection per method."""
+
+    def create(
+        self,
+        *,
+        day: date,
+        planned_session_id: int,
+        decision: str,
+        reason: str,
+        readiness_score: float | None,
+        readiness_source: str | None,
+        acwr: float | None,
+        original: dict[str, Any],
+        adapted: dict[str, Any] | None,
+        user_id: int = 1,
+    ) -> PlanDecision:
+        """Claim the day's decision for that session; raises ``AlreadyDecided``."""
+        con = connect()
+        try:
+            row = con.execute(
+                f"""
+                INSERT INTO app.plan_decisions
+                    (user_id, date, planned_session_id, decision, reason,
+                     readiness_score, readiness_source, acwr, original_json,
+                     adapted_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING {_COLUMNS}
+                """,
+                [
+                    user_id,
+                    day,
+                    planned_session_id,
+                    decision,
+                    reason,
+                    readiness_score,
+                    readiness_source,
+                    acwr,
+                    json.dumps(original, ensure_ascii=False, default=str),
+                    json.dumps(adapted, ensure_ascii=False) if adapted else None,
+                ],
+            ).fetchone()
+        except duckdb.ConstraintException as e:
+            raise AlreadyDecided(f"session {planned_session_id} on {day}") from e
+        finally:
+            con.close()
+        if row is None:  # pragma: no cover - RETURNING always yields the row
+            raise RuntimeError("Failed to insert plan decision")
+        return _from_row(row)
+
+    def get(self, decision_id: int) -> PlanDecision | None:
+        con = connect()
+        try:
+            row = con.execute(
+                f"SELECT {_COLUMNS} FROM app.plan_decisions WHERE id = ?",
+                [decision_id],
+            ).fetchone()
+        finally:
+            con.close()
+        return _from_row(row) if row else None
+
+    def list_for_day(self, day: date, user_id: int = 1) -> list[PlanDecision]:
+        con = connect()
+        try:
+            rows = con.execute(
+                f"SELECT {_COLUMNS} FROM app.plan_decisions "
+                "WHERE user_id = ? AND date = ? ORDER BY id",
+                [user_id, day],
+            ).fetchall()
+        finally:
+            con.close()
+        return [_from_row(r) for r in rows]
+
+    def mark(self, decision_id: int, column: str) -> None:
+        """Stamp ``applied_at`` or ``reverted_at`` with now."""
+        if column not in ("applied_at", "reverted_at"):
+            raise ValueError(column)
+        con = connect()
+        try:
+            con.execute(
+                f"UPDATE app.plan_decisions SET {column} = ? WHERE id = ?",
+                [datetime.now(), decision_id],
+            )
+        finally:
+            con.close()

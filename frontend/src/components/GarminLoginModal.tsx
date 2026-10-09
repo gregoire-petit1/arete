@@ -106,7 +106,7 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className={FIELD}
-                placeholder="your@email.com"
+                placeholder="toi@exemple.fr"
                 autoComplete="username"
                 autoFocus
               />
@@ -148,10 +148,10 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
 
       <div className="mt-6 flex gap-3 justify-end">
         <Button variant="ghost" onClick={handleClose}>
-          [CANCEL]
+          [ANNULER]
         </Button>
         <Button type="submit" disabled={incomplete} loading={loginMutation.isPending}>
-          {loginMutation.isPending ? 'VERIFYING...' : needsMfa ? '[VERIFY]' : '[CONNECT]'}
+          {loginMutation.isPending ? 'VÉRIFICATION…' : needsMfa ? '[VÉRIFIER]' : '[CONNECTER]'}
         </Button>
       </div>
       </form>

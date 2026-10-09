@@ -705,3 +705,11 @@ class TestLedgerTools:
     def test_the_filesystem_only_reads(self):
         # Writes go through append_journal: dated, deduplicated, bounded.
         assert set(self._tools()) == {"read_file", "ls", "glob", "grep"}
+
+
+def test_settings_page_data_has_no_identity_fields():
+    from arete.services.pages import get_page_data
+
+    settings = get_page_data("settings")["settings"]
+    assert "email" not in settings and "display_name" not in settings
+    assert "lthr" in settings  # the coaching fields stay

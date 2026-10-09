@@ -31,6 +31,7 @@ def _resolve_tool(request) -> BaseTool | ToolMessage | None:
     if getattr(context, "document_import_pending", False) and name in {
         "create_planned_session",
         "update_planned_status",
+        "update_planned_session",
         "delete_planned_session",
         "save_workout",
     }:

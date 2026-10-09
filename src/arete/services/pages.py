@@ -33,6 +33,7 @@ def _dashboard() -> dict[str, Any]:
     from arete.services.analytics import list_sessions
     from arete.services.coaching_repository import BriefingRepository
     from arete.services.metrics import get_player_stats
+    from arete.services.plan_repository import PlanDecisionRepository
     from arete.services.planning import _session_to_dict
 
     today = date.today()
@@ -45,11 +46,22 @@ def _dashboard() -> dict[str, Any]:
         "planned_today": [_without_nulls(_session_to_dict(s)) for s in planned],
         "done_today": [
             s
-            for s in list_sessions(limit=5)["sessions"]
+            for s in list_sessions(limit=5, for_model=True)["sessions"]
             if s["date"] == today.isoformat()
         ],
         "strength_today": _strength_sessions(start_date=today, end_date=today),
         "briefing_today": briefing.text if briefing else None,
+        # What the morning's readiness did to the plan, and why: "why did my
+        # session change?" is answered from the page.
+        "plan_decisions_today": [
+            {
+                "planned_session_id": d.planned_session_id,
+                "decision": d.decision,
+                "reason": d.reason,
+                "reverted": d.reverted_at is not None,
+            }
+            for d in PlanDecisionRepository().list_for_day(today)
+        ],
     }
 
 
@@ -117,7 +129,7 @@ def _log() -> dict[str, Any]:
     from arete.services.analytics import list_sessions
 
     return {
-        "recent_sessions": list_sessions(limit=20, offset=0),
+        "recent_sessions": list_sessions(limit=20, offset=0, for_model=True),
         "recent_strength_sessions": _strength_sessions(limit=10),
     }
 
@@ -125,7 +137,13 @@ def _log() -> dict[str, Any]:
 def _settings() -> dict[str, Any]:
     from arete.services.settings import get_settings
 
-    return {"settings": get_settings().model_dump(mode="json")}
+    # Identity stays out of the prompt: the coach has no use for it, and the
+    # page data goes to the model provider (and to LangSmith when tracing).
+    return {
+        "settings": get_settings().model_dump(
+            mode="json", exclude={"email", "display_name"}
+        )
+    }
 
 
 _PAGE_FETCHERS = {

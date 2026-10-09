@@ -75,8 +75,8 @@ def test_a_database_behind_runs_its_migrations(tmp_path, monkeypatch):
     assert latest == init_duckdb.MIGRATIONS[-1][0]
 
 
-def test_document_migration_preserves_version_eight_planning(tmp_path, monkeypatch):
-    path = tmp_path / "version-eight.duckdb"
+def test_document_migration_preserves_version_twelve_planning(tmp_path, monkeypatch):
+    path = tmp_path / "version-twelve.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
     init_duckdb.main()
     with duckdb.connect(str(path)) as con:
@@ -93,7 +93,7 @@ def test_document_migration_preserves_version_eight_planning(tmp_path, monkeypat
             "garmin_exports",
         ):
             con.execute(f"DROP TABLE app.{table}")
-        con.execute("DELETE FROM app.schema_version WHERE version=9")
+        con.execute("DELETE FROM app.schema_version WHERE version=13")
     init_duckdb.main()
     with duckdb.connect(str(path)) as con:
         row = con.execute(
@@ -103,3 +103,58 @@ def test_document_migration_preserves_version_eight_planning(tmp_path, monkeypat
         assert con.execute("SELECT used_bytes FROM app.document_quota").fetchone() == (
             0,
         )
+
+
+def test_sport_names_are_canonicalised_once(tmp_path, monkeypatch):
+    path = tmp_path / "sports.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = duckdb.connect(str(path))
+    con.execute("DELETE FROM app.schema_version WHERE version >= 9")
+    for i, sport in enumerate(("run", "Ride", "walk", "running", "TrailRun"), 1):
+        con.execute(
+            "INSERT INTO app.actual_sessions (id, user_id, date, sport, duration_sec, source)"
+            " VALUES (?, 1, DATE '2026-10-01', ?, 3600, 'manual')",
+            [i, sport],
+        )
+    con.execute(
+        "INSERT INTO app.planned_sessions (id, user_id, date, sport, session_type)"
+        " VALUES (1, 1, DATE '2026-10-01', 'run', 'endurance')"
+    )
+    con.close()
+
+    init_duckdb.main()
+    init_duckdb.main()  # second run must be a no-op
+
+    con = duckdb.connect(str(path), read_only=True)
+    actual = [
+        r[0]
+        for r in con.execute(
+            "SELECT sport FROM app.actual_sessions ORDER BY id"
+        ).fetchall()
+    ]
+    (planned,) = con.execute("SELECT sport FROM app.planned_sessions").fetchone()
+    (latest,) = con.execute("SELECT MAX(version) FROM app.schema_version").fetchone()
+    con.close()
+    assert actual == ["running", "cycling", "walking", "running", "running"]
+    assert planned == "running"
+    assert latest == init_duckdb.MIGRATIONS[-1][0]
+
+
+def test_m10_adds_performance_columns_to_a_legacy_table(tmp_path, monkeypatch):
+    path = tmp_path / "perf.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = duckdb.connect(str(path))
+    for name in init_duckdb.GARMIN_PERFORMANCE_COLUMNS:
+        con.execute(f"ALTER TABLE app.daily_metrics DROP COLUMN {name}")
+    con.execute("DELETE FROM app.schema_version WHERE version >= 10")
+    con.close()
+
+    init_duckdb.main()
+    init_duckdb.main()
+
+    con = duckdb.connect(str(path), read_only=True)
+    cols = {r[0] for r in con.execute("DESCRIBE app.daily_metrics").fetchall()}
+    con.close()
+    assert set(init_duckdb.GARMIN_PERFORMANCE_COLUMNS) <= cols

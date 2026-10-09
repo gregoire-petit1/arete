@@ -171,12 +171,16 @@ def _payload(session_id: int) -> tuple[dict, date, str, int]:
 
     with db_connection() as con:
         row = con.execute(
-            "SELECT description,sport,prescription,date,revision FROM app.planned_sessions WHERE id=?",
+            "SELECT description,sport,prescription,date,revision,garmin_workout_id,garmin_schedule_id FROM app.planned_sessions WHERE id=?",
             [session_id],
         ).fetchone()
     if not row or not row[2]:
         raise DocumentError(
             "Cette séance n’a pas de prescription structurée exportable."
+        )
+    if row[5] or row[6]:
+        raise DocumentError(
+            "Cette séance a déjà un export Garmin dans le parcours quotidien."
         )
     settings = get_user_settings() or {}
     ranges = (
@@ -601,6 +605,14 @@ def update_session(
     prescription: Prescription,
 ) -> None:
     with transaction() as con:
+        current = con.execute(
+            "SELECT prescription,garmin_workout_id,garmin_schedule_id FROM app.planned_sessions WHERE id=?",
+            [session_id],
+        ).fetchone()
+        # Keep the two export owners disjoint: a daily session may already be
+        # uploading, even before its remote IDs have been saved locally.
+        if current and (not current[0] or current[1] or current[2]):
+            raise DocumentError("Cette séance utilise le parcours Garmin quotidien.")
         state = _get(con, session_id)
         if state and state["state"] in {"working", "uncertain", "conflict"}:
             raise DocumentError("Vérifie l’export Garmin avant de modifier la séance.")

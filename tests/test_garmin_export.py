@@ -321,3 +321,75 @@ def test_reconciliation_fences_the_previous_worker(planned):
     with pytest.raises(DocumentError, match="réservation"):
         exchange.call("POST", service.WORKOUT, {})
     assert exchange.client.calls == []
+
+
+def test_reviewed_prescription_bypasses_daily_adaptation_and_push(planned, monkeypatch):
+    from arete.garmin.workout_structure import NotPushable
+    from arete.services import plan_adaptation
+
+    monkeypatch.setattr(plan_adaptation, "auto_adapt_enabled", lambda: True)
+    monkeypatch.setattr(
+        plan_adaptation, "get_user_settings", lambda: {"push_to_garmin_enabled": True}
+    )
+    assert plan_adaptation.adapt_today(date(2027, 1, 12)) == []
+    garmin = Garmin()
+    assert (
+        plan_adaptation.push_today(garmin, date(2027, 1, 12))
+        == "0 sent, 1 not pushable, 0 failed"
+    )
+    with pytest.raises(NotPushable, match="prescription validée"):
+        plan_adaptation.push_session(garmin, planned)
+    assert garmin.calls == []
+    assert not plan_adaptation.structure_preview(planned)["pushable"]
+
+
+def test_coach_move_marks_export_dirty_without_rewriting_prescription(planned):
+    from arete.services import planning
+
+    garmin = Garmin()
+    service.export(planned, client=garmin)
+    result = json.loads(planning.update_planned_session(planned, date_str="2027-01-13"))
+    assert result["updated"]
+    session = GarminRepository().get_planned_session(planned)
+    assert session.date == date(2027, 1, 13)
+    assert session.revision == 2
+    assert service.statuses()[0]["state"] == "dirty"
+    result = json.loads(
+        planning.update_planned_session(planned, target_duration_min=40)
+    )
+    assert "prescription" in result["error"]
+    assert (
+        GarminRepository()
+        .get_planned_session(planned)
+        .prescription["steps"][0]["value"]
+        == 1800
+    )
+
+
+def test_daily_session_cannot_switch_export_owner_during_upload(planned):
+    with db_connection() as con:
+        con.execute(
+            "UPDATE app.planned_sessions SET prescription=NULL WHERE id=?", [planned]
+        )
+    with pytest.raises(DocumentError, match="parcours Garmin quotidien"):
+        service.update_session(
+            planned,
+            1,
+            date(2027, 1, 12),
+            "Test",
+            Prescription(
+                steps=[Step(kind="effort", duration_kind="seconds", value=1800)]
+            ),
+        )
+
+
+def test_existing_daily_export_cannot_create_second_garmin_copy(planned):
+    with db_connection() as con:
+        con.execute(
+            "UPDATE app.planned_sessions SET garmin_workout_id='100' WHERE id=?",
+            [planned],
+        )
+    garmin = Garmin()
+    with pytest.raises(DocumentError, match="déjà un export"):
+        service.export(planned, client=garmin)
+    assert garmin.calls == []

@@ -129,7 +129,7 @@ failures. Live model evaluations remain opt-in.
 
 Conversation messages remain browser-owned. Document originals, extracted blocks,
 import drafts and outbound Garmin operation records are deliberately durable in
-DuckDB/MotherDuck (migration 9). `services/documents.py` and `services/imports.py`
+DuckDB/MotherDuck (migration 13). `services/documents.py` and `services/imports.py`
 own these lifecycles. API chat hydration builds an invocation-local StateBackend
 view at `/attachments/`; the context builder receives only a bounded manifest.
 The readonly filesystem composes that view with the existing ledger backend.

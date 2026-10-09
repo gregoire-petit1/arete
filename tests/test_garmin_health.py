@@ -220,6 +220,17 @@ class TestGarminHealthApi:
             82,
             "garmin",
             "2026-06-01 10:00:00",
+            68,
+            "MODERATE",
+            "RECOVERED",
+            "PRODUCTIVE_1",
+            55.4,
+            1188,
+            2470,
+            5460,
+            11520,
+            6800,
+            72,
         )
         resp = client.get("/garmin/health/daily?date=2026-06-01")
         assert resp.status_code == 200
@@ -228,6 +239,9 @@ class TestGarminHealthApi:
         assert data["sleep_duration_sec"] == 28800
         assert data["body_battery_high"] == 95
         assert data["readiness_score"] == 82
+        assert data["training_readiness_score"] == 68
+        assert data["race_10k_sec"] == 2470
+        assert data["hill_score"] == 72
 
     @patch("arete.dataio.db.connect")
     def test_range_endpoint(self, mock_connect, client):
@@ -260,3 +274,102 @@ class TestDailyMetricsTable:
         body = resp.json()
         assert body["hrv_last_night"] == 60
         assert body["sleep_score"] == 82
+
+
+class TestGarminTrainingMetrics:
+    """Garmin's own readiness and fitness metrics, as the API is expected to ship them."""
+
+    def _client(self):
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
+        client.hrv.return_value = {}
+        client.sleep.return_value = {}
+        client.stress.return_value = {}
+        client.body_battery.return_value = []
+        client.steps.return_value = []
+        client.resting_hr.return_value = {}
+        client.training_readiness.return_value = {
+            "score": 68,
+            "level": "MODERATE",
+            "feedbackShort": "RECOVERED",
+        }
+        client.training_status.return_value = {
+            "mostRecentTrainingStatus": {
+                "latestTrainingStatusData": {
+                    "3442978530": {
+                        "trainingStatus": 7,
+                        "trainingStatusFeedbackPhrase": "PRODUCTIVE_1",
+                    }
+                }
+            }
+        }
+        client.max_metrics.return_value = [
+            {"generic": {"vo2MaxPreciseValue": 55.4, "vo2MaxValue": 55}}
+        ]
+        client.race_predictions.return_value = {
+            "time5K": 1188,
+            "time10K": 2470,
+            "timeHalfMarathon": 5460,
+            "timeMarathon": 11520,
+        }
+        client.endurance_score.return_value = {"overallScore": 6800}
+        client.hill_score.return_value = {"overallScore": 72}
+        return client
+
+    def test_gather_metrics_maps_training_readiness_and_predictions(self):
+        from datetime import date
+
+        from arete.garmin.health_sync import _gather_metrics
+
+        metrics = _gather_metrics(self._client(), date(2026, 10, 9))
+        assert metrics["training_readiness_score"] == 68
+        assert metrics["training_readiness_level"] == "MODERATE"
+        assert metrics["training_status"] == "PRODUCTIVE_1"
+        assert metrics["vo2max_run"] == 55.4
+        assert (metrics["race_5k_sec"], metrics["race_marathon_sec"]) == (1188, 11520)
+        assert (metrics["endurance_score"], metrics["hill_score"]) == (6800, 72)
+
+    def test_range_sync_fetches_performance_only_for_the_last_day(self):
+        from datetime import date
+        from unittest.mock import patch
+
+        from arete.garmin import health_sync
+
+        client = self._client()
+        with (
+            patch.object(health_sync, "GarminClient", return_value=client),
+            patch.object(health_sync, "_upsert_daily_metrics"),
+        ):
+            health_sync.sync_range(date(2026, 10, 6), date(2026, 10, 9))
+        assert client.training_readiness.call_count == 4
+        assert client.race_predictions.call_count == 1
+
+    def test_a_failing_performance_endpoint_keeps_the_other_fields(self):
+        from datetime import date
+
+        from arete.garmin.health_sync import _gather_metrics
+
+        client = self._client()
+        client.race_predictions.side_effect = RuntimeError("404")
+        metrics = _gather_metrics(client, date(2026, 10, 9))
+        assert "race_10k_sec" not in metrics
+        assert metrics["hill_score"] == 72 and metrics["training_readiness_score"] == 68
+
+
+def test_race_predictions_also_read_the_list_form():
+    from datetime import date
+    from unittest.mock import MagicMock
+
+    from arete.garmin.health_sync import _fetch_performance
+
+    client = MagicMock()
+    client.race_predictions.return_value = [
+        {
+            "time5K": 1200,
+            "time10K": 2500,
+            "timeHalfMarathon": 5500,
+            "timeMarathon": 11600,
+        }
+    ]
+    assert _fetch_performance(client, date(2026, 10, 9))["race_10k_sec"] == 2500
