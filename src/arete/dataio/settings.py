@@ -39,6 +39,9 @@ def _settings_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
         # Appended last: the column arrives with migration 8, so a row read
         # from a database that has not migrated yet is simply shorter.
         "coach_briefing_enabled": row[16] if len(row) > 16 else True,
+        # Migration 11: the morning adaptation and its Garmin push.
+        "auto_adapt_enabled": row[17] if len(row) > 17 else True,
+        "push_to_garmin_enabled": row[18] if len(row) > 18 else False,
     }
 
 
@@ -52,7 +55,8 @@ def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
                    rest_day_preference, fatigue_threshold, fitness_goal,
                    notifications_enabled, theme, exercise_abbreviations,
                    weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
-                   lthr_measured_on, coach_briefing_enabled
+                   lthr_measured_on, coach_briefing_enabled,
+                   auto_adapt_enabled, push_to_garmin_enabled
             FROM app.user_settings
             WHERE user_id = ?
             """,
@@ -82,6 +86,8 @@ def upsert_user_settings(
     threshold_pace_sec_km: int | None = None,
     lthr_measured_on: date | None = None,
     coach_briefing_enabled: bool = True,
+    auto_adapt_enabled: bool = True,
+    push_to_garmin_enabled: bool = False,
 ) -> dict[str, Any]:
     """Create or update user settings."""
     import json as _json
@@ -99,13 +105,15 @@ def upsert_user_settings(
                 notifications_enabled = ?, theme = ?, exercise_abbreviations = ?,
                 weekly_volume_target_kg = ?, lthr = ?, max_hr = ?,
                 threshold_pace_sec_km = ?, lthr_measured_on = ?,
-                coach_briefing_enabled = ?, updated_at = CURRENT_TIMESTAMP
+                coach_briefing_enabled = ?, auto_adapt_enabled = ?,
+                push_to_garmin_enabled = ?, updated_at = CURRENT_TIMESTAMP
             WHERE user_id = ?
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
                       notifications_enabled, theme, exercise_abbreviations,
                       weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
-                      lthr_measured_on, coach_briefing_enabled
+                      lthr_measured_on, coach_briefing_enabled,
+                   auto_adapt_enabled, push_to_garmin_enabled
             """,
             [
                 display_name,
@@ -124,6 +132,8 @@ def upsert_user_settings(
                 threshold_pace_sec_km,
                 lthr_measured_on,
                 coach_briefing_enabled,
+                auto_adapt_enabled,
+                push_to_garmin_enabled,
                 user_id,
             ],
         ).fetchone()
@@ -139,14 +149,16 @@ def upsert_user_settings(
                 rest_day_preference, fatigue_threshold, fitness_goal,
                 notifications_enabled, theme, exercise_abbreviations,
                 weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
-                lthr_measured_on, coach_briefing_enabled
+                lthr_measured_on, coach_briefing_enabled,
+                   auto_adapt_enabled, push_to_garmin_enabled
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
                       notifications_enabled, theme, exercise_abbreviations,
                       weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
-                      lthr_measured_on, coach_briefing_enabled
+                      lthr_measured_on, coach_briefing_enabled,
+                   auto_adapt_enabled, push_to_garmin_enabled
             """,
             [
                 user_id,
@@ -166,6 +178,8 @@ def upsert_user_settings(
                 threshold_pace_sec_km,
                 lthr_measured_on,
                 coach_briefing_enabled,
+                auto_adapt_enabled,
+                push_to_garmin_enabled,
             ],
         ).fetchone()
         if row is None:

@@ -145,6 +145,10 @@ class PlannedSession:
     source: str = "manual"  # 'manual', 'llm', 'coach'
     status: SessionStatus = SessionStatus.PENDING
     created_at: datetime | None = None
+    structure_json: str | None = None  # explicit workout steps, see workout_structure
+    garmin_workout_id: str | None = None  # the copy scheduled on Garmin's calendar
+    garmin_schedule_id: str | None = None
+    garmin_pushed_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for DB insertion."""
