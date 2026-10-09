@@ -124,6 +124,12 @@ def get_workload_metrics(
     return service.get_workload_metrics(days=days)
 
 
+@router.get("/paces")
+def get_paces():
+    """Daniels VDOT, training paces (s/km) and race equivalents (s)."""
+    return service.get_paces()
+
+
 @router.get("/fitness", response_model=FitnessMetricsOut)
 def get_fitness_metrics(
     days: int = Query(42, ge=14, le=120, description="Days to analyze"),
