@@ -203,6 +203,22 @@ class Config:
         return _env("CRON_SECRET", "") or ""
 
     @property
+    def slack_signing_secret(self) -> str:
+        return _env("SLACK_SIGNING_SECRET", "") or ""
+
+    @property
+    def slack_bot_token(self) -> str:
+        return _env("SLACK_BOT_TOKEN", "") or ""
+
+    @property
+    def slack_team_id(self) -> str:
+        return _env("SLACK_TEAM_ID", "") or ""
+
+    @property
+    def slack_user_id(self) -> str:
+        return _env("SLACK_USER_ID", "") or ""
+
+    @property
     def web_push_vapid_public_key(self) -> str:
         """VAPID public key (base64url) the browser subscribes with; empty = no push."""
         return _env("WEB_PUSH_VAPID_PUBLIC_KEY", "") or ""

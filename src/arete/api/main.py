@@ -25,6 +25,7 @@ from arete.api.metrics import router as metrics_router
 from arete.api.notifications import router as notifications_router
 from arete.api.plan import router as plan_router
 from arete.api.settings import router as settings_router
+from arete.api.slack import router as slack_router
 from arete.api.strava import router as strava_router
 from arete.api.strength import router as strength_router
 from arete.config import config
@@ -164,5 +165,6 @@ for router in (
     notifications_router,
     goals_router,
     athlete_facts_router,
+    slack_router,
 ):
     app.include_router(router)

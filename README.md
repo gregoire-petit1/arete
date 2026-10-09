@@ -41,6 +41,9 @@ Docker and Vercel share one MotherDuck database (`ARETE_DB=md:arete`, token `MOT
 
 ## Configuration
 
+The coach is also available as an optional private Slack app, hosted by the same
+Vercel backend. See [Slack setup and execution guarantees](docs/slack.md).
+
 All settings come from environment variables (see `.env.example`):
 
 | Variable | Purpose |

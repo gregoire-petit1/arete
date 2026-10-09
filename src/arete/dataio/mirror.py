@@ -139,6 +139,11 @@ class MirrorMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        # Slack has a three-second receipt deadline. Its attached background task
+        # owns hydrate/flush so database latency cannot delay that receipt.
+        if scope.get("path") == "/slack/events":
+            await self.app(scope, receive, send)
+            return
         if scope["type"] != "http" or not config.is_remote_db:
             await self.app(scope, receive, send)
             return

@@ -389,6 +389,18 @@ CREATE TABLE IF NOT EXISTS app.push_subscriptions (
     created_at       TIMESTAMP DEFAULT now(),
     last_success_at  TIMESTAMP
 );
+
+-- Slack owns conversation text. These rows prevent write replay.
+CREATE TABLE IF NOT EXISTS app.slack_deliveries (
+    event_key VARCHAR PRIMARY KEY,
+    status VARCHAR NOT NULL,
+    updated_at TIMESTAMP DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS app.slack_execution (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    event_key VARCHAR
+);
+INSERT INTO app.slack_execution (id) VALUES (1) ON CONFLICT DO NOTHING;
 """
 
 
@@ -578,6 +590,12 @@ def _m13_document_imports(con) -> None:
     migrate(con)
 
 
+def _m17_slack_deliveries(con) -> None:
+    """Durable deduplication is required across concurrent Vercel instances."""
+    start = DDL.index("CREATE TABLE IF NOT EXISTS app.slack_deliveries")
+    con.execute(DDL[start:])
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -595,6 +613,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (14, _m14_goals),
     (15, _m15_athlete_facts),
     (16, _m16_weekly_reviews),
+    (17, _m17_slack_deliveries),
 ]
 
 
