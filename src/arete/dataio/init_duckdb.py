@@ -381,6 +381,19 @@ CREATE TABLE IF NOT EXISTS app.weekly_reviews (
     UNIQUE (user_id, week_start)
 );
 
+CREATE SEQUENCE IF NOT EXISTS app.users_seq START 1;
+
+-- Signed-in accounts (Clerk): athlete_id links an account to its data
+CREATE TABLE IF NOT EXISTS app.users (
+    id              INTEGER PRIMARY KEY DEFAULT nextval('app.users_seq'),
+    clerk_user_id   VARCHAR NOT NULL UNIQUE,
+    email           VARCHAR NOT NULL,
+    name            VARCHAR,
+    athlete_id      INTEGER,                   -- NULL until an athlete is attached
+    created_at      TIMESTAMP DEFAULT now(),
+    last_seen_at    TIMESTAMP DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS app.push_subscriptions (
     endpoint         VARCHAR PRIMARY KEY,
     p256dh           VARCHAR NOT NULL,
@@ -568,6 +581,12 @@ def _m16_weekly_reviews(con) -> None:
     con.execute(DDL[start : DDL.index(");", DDL.index("app.weekly_reviews (")) + 2])
 
 
+def _m17_users(con) -> None:
+    """Signed-in accounts, and which one is the athlete."""
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.users_seq")
+    con.execute(DDL[start : DDL.index(");", DDL.index("app.users (")) + 2])
+
+
 #: Append-only. A database at the last version skips the DDL entirely on boot
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
@@ -595,6 +614,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (14, _m14_goals),
     (15, _m15_athlete_facts),
     (16, _m16_weekly_reviews),
+    (17, _m17_users),
 ]
 
 

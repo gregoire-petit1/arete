@@ -151,3 +151,16 @@ export dirty without transmitting it. See [conversational workouts](conversation
 for UI, limits and verification.
 Only `GarminClient` touches the remote service. See [document imports](document-imports.md)
 for resource bounds, frontend worker assets, unsupported conversions and acceptance.
+
+## Identity
+
+`api/auth.py` owns who is calling: a pure ASGI middleware (like the mirror's,
+so the coach's stream is not buffered) and the `/auth/config` and `/auth/me`
+routes. Off by default; with `ARETE_AUTH=clerk` every non-public request
+carries a Clerk session token or the instance's API key, verified in a worker
+thread. `services/users.py` owns the accounts table and the one rule that
+attaches an account to the athlete: the owner's e-mail. Services never import
+`arete.api.auth`; the athlete's data stays `user_id = 1`, so nothing below the
+boundary changed. `services/google_tokens.py` reads the signed-in user's Google
+token from Clerk for integrations that need it (Calendar), and
+`services/oauth_state.py` signs the Strava OAuth state the callback demands.

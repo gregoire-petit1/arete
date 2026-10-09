@@ -15,6 +15,8 @@ from arete.api.agent import router as agent_router
 from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
 from arete.api.athlete_facts import router as athlete_facts_router
+from arete.api.auth import AuthMiddleware, auth_misconfigured
+from arete.api.auth import router as auth_router
 from arete.api.documents import router as documents_router
 from arete.api.garmin import router as garmin_router
 from arete.api.garmin_export import router as garmin_export_router
@@ -59,6 +61,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         logger.info("Database schema initialized")
     except Exception as e:
         logger.warning("Database init failed (non-fatal): %s", e)
+    problem = auth_misconfigured()
+    if problem:
+        # Fail closed, loudly: every request will answer 503 until fixed.
+        logger.error("ARETE_AUTH=clerk but %s", problem)
     task = scheduler.start()
     try:
         yield
@@ -73,6 +79,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Arete API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(MirrorMiddleware)
+# Added last, so it runs first: a refused request never reaches the mirror.
+app.add_middleware(AuthMiddleware)
 
 
 @app.exception_handler(duckdb.TransactionException)
@@ -148,6 +156,7 @@ def cron_daily_sync(authorization: str | None = Header(default=None)):
 
 
 for router in (
+    auth_router,
     settings_router,
     metrics_router,
     garmin_router,

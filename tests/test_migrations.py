@@ -158,3 +158,21 @@ def test_m10_adds_performance_columns_to_a_legacy_table(tmp_path, monkeypatch):
     cols = {r[0] for r in con.execute("DESCRIBE app.daily_metrics").fetchall()}
     con.close()
     assert set(init_duckdb.GARMIN_PERFORMANCE_COLUMNS) <= cols
+
+
+def test_m17_creates_the_users_table_once(tmp_path, monkeypatch):
+    path = tmp_path / "users.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = duckdb.connect(str(path))
+    con.execute("DROP TABLE app.users")
+    con.execute("DELETE FROM app.schema_version WHERE version >= 17")
+    con.close()
+    init_duckdb.main()
+    init_duckdb.main()
+    con = duckdb.connect(str(path), read_only=True)
+    cols = {r[0] for r in con.execute("DESCRIBE app.users").fetchall()}
+    (latest,) = con.execute("SELECT MAX(version) FROM app.schema_version").fetchone()
+    con.close()
+    assert {"clerk_user_id", "email", "athlete_id"} <= cols
+    assert latest == init_duckdb.MIGRATIONS[-1][0]

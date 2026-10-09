@@ -217,6 +217,45 @@ class Config:
         """Contact the push services can reach (``mailto:`` or https URL)."""
         return _env("WEB_PUSH_SUBJECT", "mailto:admin@localhost") or ""
 
+    # --- authentication ----------------------------------------------------
+    @property
+    def auth_provider(self) -> str:
+        """``clerk`` makes every API route require a signed-in user; empty
+        (the default) leaves the API open, as a self-hosted instance behind
+        its own network or Vercel Authentication runs it."""
+        return (_env("ARETE_AUTH", "") or "").strip().lower()
+
+    @property
+    def clerk_secret_key(self) -> str:
+        return _env("CLERK_SECRET_KEY", "") or ""
+
+    @property
+    def clerk_publishable_key(self) -> str:
+        """The Marketplace provisions it under the Next.js name; both are read."""
+        return (
+            _env("CLERK_PUBLISHABLE_KEY")
+            or _env("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "")
+            or ""
+        )
+
+    @property
+    def auth_origins(self) -> tuple[str, ...]:
+        """Browser origins allowed to hold a session (the token's ``azp``);
+        empty = not checked, which Vercel preview URLs need."""
+        raw = _env("ARETE_AUTH_ORIGINS", "") or ""
+        return tuple(o.strip().rstrip("/") for o in raw.split(",") if o.strip())
+
+    @property
+    def owner_email(self) -> str | None:
+        """The account that is the athlete; other sign-ins get no data."""
+        value = (_env("ARETE_OWNER_EMAIL", "") or "").strip().lower()
+        return value or None
+
+    @property
+    def api_key(self) -> str:
+        """A long-lived key for scripts and the MCP server, acting as the owner."""
+        return _env("ARETE_API_KEY", "") or ""
+
     @property
     def log_level(self) -> str:
         return (_env("ARETE_LOG_LEVEL", "INFO") or "INFO").upper()

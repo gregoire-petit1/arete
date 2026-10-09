@@ -83,6 +83,8 @@ def test_booting_the_app_leaves_the_heavy_stacks_out(tmp_path):
         "rapidfuzz",
         "pywebpush",
         "aiohttp",
+        "clerk_backend_api",
+        "jwt",
     ]
     code = (
         "import sys, arete.api.main; "
