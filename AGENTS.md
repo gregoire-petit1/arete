@@ -27,7 +27,6 @@ Read [docs/architecture.md](docs/architecture.md) before changing the coaching s
   Capability instructions stay beside their declaration. Loading is not authorization.
 - `agent/tools/` validates/adapts model arguments and calls domain services. It must
   not import HTTP handlers, select models or implement domain workflows.
-- `agent/nodes/` contains program-imposed steps, including follow-up generation.
   `agent/middlewares/` only adapts framework interception/completion hooks to the
   actual policy or operation. Do not hide a second runtime in middleware.
 - `agent/backends/` adapts Deep Agents filesystem permissions and operations.
@@ -63,10 +62,9 @@ responsibility a testable owner. Do not create empty architectural scaffolding.
   a provider router. Budget system text, schemas, history, page data and output.
 - Async model clients belong to the server event loop. Sync API/scheduler work uses
   AnyIO workers and `invoke_agent_sync`; never add a fresh `asyncio.run()` per job.
-- `AutoSuggestionMiddleware` delegates optional completion work to its injected
-  generator. Failure must preserve the answer. Suggestions are metadata, not user
-  intent, until clicked. Keep the HTTP, SSE, parser and browser-storage contracts
-  aligned when adding event fields.
+- Follow-up suggestions are fixed page-aware lists in the browser; no model
+  request runs after an answer. Keep the HTTP, SSE, parser and browser-storage
+  contracts aligned when adding event fields.
 - Preserve optional LangSmith tracing across async invocation and stream closure.
   Forward callbacks to dynamically executed tools and retain thread metadata. The
   context builder owns bounded journal injection and the current chat date.

@@ -19,7 +19,6 @@ PROFILES: dict[ProfileId, AgentProfile] = {
         training_writes=True,
         page_context=True,
         journal_tools=True,
-        suggestions=True,
     ),
     # Missions get their facts in the message and answer in one request:
     # no tool is bound, the server reads the data and files the journal.

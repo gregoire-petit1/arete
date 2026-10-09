@@ -82,7 +82,6 @@ class ChatMessageOut(BaseModel):
 
 class ChatResponse(BaseModel):
     message: ChatMessageOut
-    suggestions: list[str] = Field(default_factory=list)
 
 
 def _to_langchain(role: str, content: str) -> LangchainMessage:
@@ -158,7 +157,6 @@ async def chat(body: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=502, detail="Agent returned no messages")
     final = messages[-1]
     return ChatResponse(
-        suggestions=result.get("suggestions", []),
         message=ChatMessageOut(
             role="assistant",
             content=final.text() if hasattr(final, "text") else str(final.content),

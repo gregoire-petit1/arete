@@ -37,7 +37,7 @@ class StreamProjection:
             return (
                 [data]
                 if isinstance(data, dict)
-                and data.get("type") in ("tool_start", "tool_end", "suggestions")
+                and data.get("type") in ("tool_start", "tool_end")
                 else []
             )
         if kind == "messages":

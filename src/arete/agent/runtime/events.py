@@ -32,11 +32,6 @@ class ToolCompleted(TypedDict):
     elapsed_ms: int
 
 
-class FollowupsGenerated(TypedDict):
-    type: Literal["suggestions"]
-    suggestions: list[str]
-
-
 def preview(value: Any) -> Preview:
     text = (
         value

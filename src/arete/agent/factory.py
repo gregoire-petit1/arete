@@ -29,11 +29,7 @@ def build_agent(
     context_tokens: int,
     output_tokens: int,
     filesystem: AgentMiddleware[Any, Any, Any],
-    suggestions: AgentMiddleware[Any, Any, Any] | None = None,
 ):
-    assert profile.suggestions == (suggestions is not None), (
-        "Suggestion dependency mismatch"
-    )
     middleware = [ProfilePolicyMiddleware(profile.id), *execution_limits()]
     if profile.page_context:
         middleware.append(ToolEventMiddleware())
@@ -47,8 +43,6 @@ def build_agent(
         )
     )
     middleware.append(ModelTelemetryMiddleware())
-    if suggestions is not None:
-        middleware.append(suggestions)
     return create_agent(
         model,
         tools=[

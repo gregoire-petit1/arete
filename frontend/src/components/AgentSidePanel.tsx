@@ -10,6 +10,7 @@ import {
   Plus,
   History,
   ChevronDown,
+  RotateCcw,
   Square,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -21,6 +22,7 @@ import {
   type ToolPart,
 } from '@/lib/agentStream';
 import { useCoachThreads } from '@/hooks/useCoachThreads';
+import { followUps, starters } from '@/lib/coachPrompts';
 import { ThreadHistory } from './agent/ThreadHistory';
 import { AgentMarkdown } from './agent/AgentMarkdown';
 import { ToolActivity } from './agent/ToolActivity';
@@ -32,11 +34,28 @@ const PAGE_LABELS: Record<string, string> = {
   log: 'Carnet',
   settings: 'Paramètres',
 };
-const SUGGESTIONS = [
-  'Que peux-tu faire pour moi ?',
-  'Analyse ma forme du moment',
-  'Aide-moi à planifier ma semaine',
-];
+/** On a phone, Enter inserts a new line: the keyboard has no Shift to hold. */
+const touchKeyboard = () =>
+  typeof window !== 'undefined' &&
+  window.matchMedia?.('(pointer: coarse)').matches === true;
+
+/** Seconds since the answer started: a free model can take 30 s, say so. */
+function useElapsedSeconds(running: boolean): number {
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    if (!running) return;
+    const started = Date.now();
+    const timer = setInterval(
+      () => setSeconds(Math.floor((Date.now() - started) / 1000)),
+      1000
+    );
+    return () => {
+      clearInterval(timer);
+      setSeconds(0);
+    };
+  }, [running]);
+  return seconds;
+}
 
 /** Keep model turns in order, with independent tool groups between them. */
 const MessageSurfaces = memo(function MessageSurfaces({
@@ -97,6 +116,8 @@ export function AgentSidePanel({
   const messages = active.messages;
   const streaming = runningId === active.id;
   const busy = runningId !== null;
+  const elapsed = useElapsedSeconds(streaming);
+  const asked = messages.filter((m) => m.role === 'user').map((m) => m.content);
   const [showHistory, setShowHistory] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [following, setFollowing] = useState(true);
@@ -294,7 +315,7 @@ export function AgentSidePanel({
                   consulte les données utiles.
                 </p>
                 <div className="mt-6 space-y-2">
-                  {SUGGESTIONS.map((prompt) => (
+                  {starters(panelContext.page).map((prompt) => (
                     <button
                       key={prompt}
                       onClick={() => send(prompt)}
@@ -329,10 +350,19 @@ export function AgentSidePanel({
                         <Bot className="size-3.5 text-neon-cyan/70" /> ARETE
                       </div>
                       <MessageSurfaces message={message} />
+                      {i === messages.length - 1 && !busy && !message.pending && (
+                        <button
+                          onClick={() => coach.retry() && followLatest()}
+                          className="mt-3 inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary"
+                        >
+                          <RotateCcw className="size-3" />
+                          {message.error || message.interrupted ? 'Réessayer' : 'Regénérer'}
+                        </button>
+                      )}
                       {i === messages.length - 1 && !busy && !message.pending &&
-                        !message.error && !message.interrupted && !!message.suggestions?.length && (
+                        !message.error && !message.interrupted && (
                         <div aria-label="Suggestions de suivi" className="mt-4 flex flex-wrap gap-2">
-                          {message.suggestions.map((prompt) => (
+                          {followUps(panelContext.page, asked).map((prompt) => (
                             <button
                               key={prompt}
                               onClick={() => send(prompt)}
@@ -356,6 +386,7 @@ export function AgentSidePanel({
                             : message.content
                               ? 'Rédaction…'
                               : 'Le coach réfléchit…'}
+                          {elapsed >= 3 && ` ${elapsed} s`}
                         </div>
                       )}
                     </div>
@@ -392,7 +423,8 @@ export function AgentSidePanel({
                   if (
                     e.key === 'Enter' &&
                     !e.shiftKey &&
-                    !e.nativeEvent.isComposing
+                    !e.nativeEvent.isComposing &&
+                    !touchKeyboard()
                   ) {
                     e.preventDefault();
                     send();
@@ -421,7 +453,9 @@ export function AgentSidePanel({
               )}
             </div>
             <p className="mt-2 text-center text-[10px] text-text-muted">
-              Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne
+              {touchKeyboard()
+                ? 'Touche Envoyer pour envoyer'
+                : 'Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne'}
             </p>
           </footer>
         </>

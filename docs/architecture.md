@@ -15,7 +15,6 @@ arete/
 │   ├── models/              Deployment envelope, route selection, provider adapter
 │   ├── capabilities/        One catalog, discovery and execution resolution
 │   ├── tools/               Model schemas and domain-service adapters
-│   ├── nodes/               Optional follow-up generation after an answer
 │   ├── middlewares/         Framework interception/completion hooks
 │   ├── backends/            Deep Agents memory filesystem adapter and permissions
 │   ├── profiles/            Declarative chat, briefing and feedback configurations
@@ -31,15 +30,15 @@ reuses them. Business code imports neither the HTTP routes nor agent frameworks.
 
 ## Composition and execution
 
-`coaching.py` resolves configuration and supplies concrete models, memory adapter,
-compactor and suggestion generator to the factory. Graph creation is serialized
+`coaching.py` resolves configuration and supplies the concrete model and memory
+adapter to the factory. Graph creation is serialized
 on first access and cached once per profile. Only this composition root may
 import the factory. The runtime receives an already-compiled graph; it never
 compiles another agent. Briefing and feedback services receive typed callbacks
 rather than reaching back into the factory.
 
 The browser sends human/assistant history. `runtime/state.py` owns invocation
-messages, loaded capabilities and suggestion results. `runtime/context.py` owns
+messages and loaded capabilities. `runtime/context.py` owns
 server-selected profile, request metadata, deadline and concurrency gate. Clients,
 semaphores and credentials do not enter conversation state.
 
@@ -98,16 +97,13 @@ long thread, since nothing persists the summary between requests.
 
 ## Completion, transport and observability
 
-`AutoSuggestionMiddleware` is a completion-hook adapter. Its injected generator
-runs once after a successful chat answer, without tools: at most three French
-questions, 120 characters each, 512 output tokens, eight seconds, zero retries.
-It skips oversized exchanges and insufficient remaining time; errors are logged
-without replacing the answer. Suggestions are optional, stored with the browser
-message, and only become user intent when clicked.
+Follow-up suggestions are the browser's: fixed, page-aware lists
+(`frontend/src/lib/coachPrompts.ts`), so `done` follows the last token and no
+auxiliary model request runs after an answer. Generating them cost one request
+per turn and held `done` for up to eight seconds.
 
-Runtime tool/suggestion events are projected into the existing SSE protocol by
-`api/agent_streaming.py`. The non-streaming endpoint adds an optional `suggestions`
-list. Auxiliary generation cannot overwrite the main answer. Optional LangSmith tracing remains invocation-scoped, including stream
+Runtime tool events are projected into the existing SSE protocol by
+`api/agent_streaming.py`. Optional LangSmith tracing remains invocation-scoped, including stream
 cancellation cleanup, dynamic tool spans and browser thread IDs. Provider usage logs
 retain reported cache/input/output details and model timing without logging the
 athlete's prompts. Opt-in LangSmith traces include full inputs, outputs and tool
@@ -115,8 +111,8 @@ results, as described in the README. Missing usage remains unknown, not zero.
 Each invocation also logs one `Agent run:` line (`RunStats` on the run context):
 model calls, tool calls, model time, time to first token and served models.
 
-These bounds are not a cumulative token/spend quota: SDK retries and
-suggestions have their own limits and share the run deadline. Arete has no delegated
+These bounds are not a cumulative token/spend quota: SDK retries have their own
+limit and share the run deadline. Arete has no delegated
 children to budget; a provider-side fallback stays within one model call. No database or browser-store migration is
 required.
 
