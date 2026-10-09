@@ -57,6 +57,73 @@ export const metricsApi = {
 
   getPlayerStats: () =>
     fetchAPI<import("@/types").PlayerStats>("/metrics/player-stats"),
+
+  /** Daniels VDOT, training paces and race equivalents, or why there are none. */
+  getPaces: () => fetchAPI<import("@/types").TrainingPaces>("/metrics/paces"),
+};
+
+// ========================= //
+// RACE GOALS API            //
+// ========================= //
+
+export const goalsApi = {
+  list: (includePast = false) =>
+    fetchAPI<import("@/types").Goal[]>(`/goals?include_past=${includePast}`),
+
+  /** The next active race, or null. */
+  next: () => fetchAPI<import("@/types").Goal | null>("/goals/next"),
+
+  create: (goal: import("@/types").GoalCreate) =>
+    fetchAPI<import("@/types").Goal>("/goals", {
+      method: "POST",
+      body: JSON.stringify(goal),
+    }),
+
+  /** Also deletes the goal's future generated sessions. */
+  remove: (id: number) => fetchAPI<void>(`/goals/${id}`, { method: "DELETE" }),
+
+  previewPlan: (id: number) =>
+    fetchAPI<import("@/types").PlanPreview>(`/goals/${id}/plan/preview`, {
+      method: "POST",
+    }),
+
+  /** Writes the plan; days already holding another session are skipped. */
+  writePlan: (id: number) =>
+    fetchAPI<import("@/types").PlanWriteResult>(`/goals/${id}/plan`, {
+      method: "POST",
+    }),
+
+  deletePlan: (id: number) =>
+    fetchAPI<{ deleted: number }>(`/goals/${id}/plan`, { method: "DELETE" }),
+
+  getProjection: (id: number) =>
+    fetchAPI<import("@/types").GoalProjection>(`/goals/${id}/projection`),
+};
+
+// ========================= //
+// ATHLETE FACTS API         //
+// ========================= //
+
+export const athleteFactsApi = {
+  list: () => fetchAPI<import("@/types").AthleteFact[]>("/athlete-facts"),
+
+  create: (fact: { kind: import("@/types").FactKind; text: string; since?: string }) =>
+    fetchAPI<import("@/types").AthleteFact>("/athlete-facts", {
+      method: "POST",
+      body: JSON.stringify(fact),
+    }),
+
+  update: (
+    id: number,
+    patch: Partial<Pick<import("@/types").AthleteFact, "kind" | "text" | "status" | "since">>
+  ) =>
+    fetchAPI<import("@/types").AthleteFact>(`/athlete-facts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+
+  remove: (id: number) =>
+    fetchAPI<void>(`/athlete-facts/${id}`, { method: "DELETE" }),
 };
 
 // ========================= //
@@ -474,6 +541,21 @@ export const planApi = {
   revert: (decisionId: number) =>
     fetchAPI<import("@/types").PlanDecision>(`/plan/decisions/${decisionId}/revert`, {
       method: "POST",
+    }),
+
+  /** Last week's review, or null when it was not written yet. */
+  getReview: () => fetchAPI<import("@/types").WeeklyReview | null>("/plan/review"),
+
+  /** Written once per week; `refresh` writes it again. May wait for the coach (~60 s). */
+  writeReview: (refresh = false) =>
+    fetchAPI<import("@/types").WeeklyReview>(`/plan/review?refresh=${refresh}`, {
+      method: "POST",
+    }),
+
+  applyReview: (reviewId: number, indices: number[]) =>
+    fetchAPI<import("@/types").ReviewApplyResult>(`/plan/review/${reviewId}/apply`, {
+      method: "POST",
+      body: JSON.stringify({ indices }),
     }),
 };
 
