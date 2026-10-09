@@ -118,13 +118,29 @@ def preview(goal_id: int, today: date | None = None) -> dict[str, Any]:
     }
 
 
-def _delete_future(con, goal_id: int, start: date) -> int:
-    rows = con.execute(
-        "DELETE FROM app.planned_sessions WHERE goal_id = ? AND status = 'pending' "
-        "AND date >= ? RETURNING id",
-        [goal_id, start],
-    ).fetchall()
-    return len(rows)
+def _delete_future(goal_id: int, start: date) -> int:
+    """Delete the goal's sessions still to do from ``start``, through the
+    repository so a Garmin export follows the deletion; one it refuses (an
+    export still in progress) stays."""
+    con = connect()
+    try:
+        ids = [
+            r[0]
+            for r in con.execute(
+                "SELECT id FROM app.planned_sessions WHERE goal_id = ? "
+                "AND status = 'pending' AND date >= ?",
+                [goal_id, start],
+            ).fetchall()
+        ]
+    finally:
+        con.close()
+    repo, deleted = GarminRepository(), 0
+    for session_id in ids:
+        try:
+            deleted += bool(repo.delete_planned_session(session_id))
+        except ValueError:
+            continue
+    return deleted
 
 
 def apply(goal_id: int, today: date | None = None) -> dict[str, Any]:
@@ -132,9 +148,9 @@ def apply(goal_id: int, today: date | None = None) -> dict[str, Any]:
     goal = _goal_or_raise(goal_id)
     inputs = plan_inputs(goal, today)
     weeks = generate_plan(inputs)
+    replaced = _delete_future(goal.id, inputs.start)
     con = connect()
     try:
-        replaced = _delete_future(con, goal.id, inputs.start)
         taken = {
             r[0]
             for r in con.execute(
@@ -179,11 +195,7 @@ def apply(goal_id: int, today: date | None = None) -> dict[str, Any]:
 def remove(goal_id: int, today: date | None = None) -> int:
     """Delete the goal's generated sessions still to come; how many."""
     _goal_or_raise(goal_id)
-    con = connect()
-    try:
-        return _delete_future(con, goal_id, (today or date.today()) + timedelta(days=1))
-    finally:
-        con.close()
+    return _delete_future(goal_id, (today or date.today()) + timedelta(days=1))
 
 
 # --------------------------------------------------------------------------- #

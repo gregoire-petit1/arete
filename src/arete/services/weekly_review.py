@@ -131,11 +131,13 @@ def _before(s: PlannedSession) -> dict[str, Any]:
 
 def propose(facts: WeekFacts, upcoming: list[PlannedSession]) -> list[Proposal]:
     """Changes for the sessions still to come; pure, at most three."""
+    # Imported prescriptions were reviewed step by step: the rules leave them be.
     todo = [
         s
         for s in upcoming
         if s.id is not None
         and s.status in (SessionStatus.PENDING, SessionStatus.MODIFIED)
+        and s.prescription is None
     ]
     out: list[Proposal] = []
 
@@ -390,7 +392,11 @@ def apply_review(review_id: int, indices: list[int]) -> dict[str, Any]:
         if change.get("status") != "skipped":
             change["status"] = SessionStatus.MODIFIED.value
         change["garmin_pushed_at"] = None  # a copy on the watch no longer matches
-        repo.update_planned_session_fields(session.id or 0, **change)
+        try:
+            repo.update_planned_session_fields(session.id or 0, **change)
+        except ValueError:  # an export in progress or a reviewed prescription
+            stale.append(proposal["index"])
+            continue
         applied.append(proposal["index"])
     if applied:
         con = connect()

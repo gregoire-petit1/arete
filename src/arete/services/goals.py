@@ -151,13 +151,13 @@ def update_goal(goal_id: int, **fields: Any) -> Goal | None:
 
 def delete_goal(goal_id: int) -> bool:
     """Delete the goal and the sessions its plan generated that are still to do."""
+    from arete.services.plan_builder import _delete_future
+
+    if get_goal(goal_id) is None:
+        return False
+    _delete_future(goal_id, date.today())
     con = connect()
     try:
-        con.execute(
-            "DELETE FROM app.planned_sessions WHERE goal_id = ? AND status = 'pending' "
-            "AND date >= CURRENT_DATE",
-            [goal_id],
-        )
         con.execute(
             "UPDATE app.planned_sessions SET goal_id = NULL WHERE goal_id = ?",
             [goal_id],

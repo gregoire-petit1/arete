@@ -145,3 +145,10 @@ def test_the_scheduler_reviews_on_mondays_only():
         )
         assert scheduler.write_weekly_review(date(2026, 10, 12)) == "agent, 0 proposals"
     notify.assert_called_once_with("Bilan de la semaine", "Semaine tenue.", "/planning")
+
+
+def test_reviewed_prescriptions_are_left_alone():
+    imported = _session(9, SessionType.INTERVALS, 50, 2)
+    imported.prescription = {"version": 1, "steps": []}
+    proposals = wr.propose(_facts(acwr=1.45), [imported])
+    assert proposals == []
