@@ -4,10 +4,53 @@ from datetime import date, timedelta
 from typing import Any
 
 
-def _dashboard() -> dict[str, Any]:
-    from arete.services.metrics import get_player_stats
+def _strength_sessions(**filters: Any) -> list[dict[str, Any]]:
+    """Strength sessions as the Log lists them: no per-exercise detail."""
+    from arete.strength.repository import StrengthRepository
 
-    return {"player_stats": get_player_stats().model_dump(mode="json")}
+    return [
+        _without_nulls(
+            {
+                "date": s.date.isoformat(),
+                "name": s.name,
+                "program": s.program,
+                "duration_min": s.duration_min,
+                "overall_rpe": s.overall_rpe,
+                "notes": s.notes,
+            }
+        )
+        for s in StrengthRepository().list_sessions(**filters)
+    ]
+
+
+def _dashboard() -> dict[str, Any]:
+    """What the Dashboard shows: the bars, today's plan and sessions, the briefing.
+
+    The read used to stop at the bars, so "what do I do today?" asked from the
+    Dashboard needed another tool call to find the plan on screen.
+    """
+    from arete.garmin.repository import GarminRepository
+    from arete.services.analytics import list_sessions
+    from arete.services.coaching_repository import BriefingRepository
+    from arete.services.metrics import get_player_stats
+    from arete.services.planning import _session_to_dict
+
+    today = date.today()
+    planned = GarminRepository().list_planned_sessions(
+        start_date=today, end_date=today, status=None, limit=10
+    )
+    briefing = BriefingRepository().get_for_day(today)
+    return {
+        "player_stats": get_player_stats().model_dump(mode="json"),
+        "planned_today": [_without_nulls(_session_to_dict(s)) for s in planned],
+        "done_today": [
+            s
+            for s in list_sessions(limit=5)["sessions"]
+            if s["date"] == today.isoformat()
+        ],
+        "strength_today": _strength_sessions(start_date=today, end_date=today),
+        "briefing_today": briefing.text if briefing else None,
+    }
 
 
 def _analytics() -> dict[str, Any]:
@@ -70,9 +113,13 @@ def _planning() -> dict[str, Any]:
 
 
 def _log() -> dict[str, Any]:
+    """Both tabs of the Log: cardio sessions and strength sessions."""
     from arete.services.analytics import list_sessions
 
-    return {"recent_sessions": list_sessions(limit=20, offset=0)}
+    return {
+        "recent_sessions": list_sessions(limit=20, offset=0),
+        "recent_strength_sessions": _strength_sessions(limit=10),
+    }
 
 
 def _settings() -> dict[str, Any]:

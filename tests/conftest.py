@@ -55,3 +55,17 @@ def router_client() -> Callable[[APIRouter], TestClient]:
         return TestClient(app)
 
     return make
+
+
+@pytest.fixture
+def progressive_chat(monkeypatch):
+    """Chat with on-demand toolkit loading, as before it preloaded everything.
+
+    No shipped profile loads toolkits on demand any more, but the machinery
+    (load before execute, per-run isolation) stays and stays tested.
+    """
+    from dataclasses import replace
+
+    from arete.agent.profiles.catalog import PROFILES
+
+    monkeypatch.setitem(PROFILES, "chat", replace(PROFILES["chat"], preloaded=()))

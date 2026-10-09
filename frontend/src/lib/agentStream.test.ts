@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   applyEvent,
   consumeStream,
+  REQUEST_WINDOW_MESSAGES,
+  requestWindow,
   runAgentStream,
   settleMessage,
   type ChatMessage,
@@ -216,5 +218,28 @@ describe('follow-up suggestions', () => {
     const messages = restoreConversation(JSON.stringify([{ role: 'assistant', content: 'Réponse', suggestions: [42] }]));
     expect(messages[0].content).toBe('Réponse');
     expect(messages[0].suggestions).toBeUndefined();
+  });
+});
+
+describe('request window', () => {
+  const turn = (i: number): ChatMessage[] => [
+    { role: 'user', content: `question ${i}` },
+    { role: 'assistant', content: `réponse ${i}` },
+  ];
+
+  it('sends a short thread whole', () => {
+    const history = [...turn(1), { role: 'user', content: 'suite' } as ChatMessage];
+    expect(requestWindow(history)).toEqual(history);
+  });
+
+  it('sends only the tail of a long thread, opening on a question', () => {
+    const history = [
+      ...Array.from({ length: 40 }, (_, i) => turn(i)).flat(),
+      { role: 'user', content: 'dernière' } as ChatMessage,
+    ];
+    const window = requestWindow(history);
+    expect(window.length).toBeLessThanOrEqual(REQUEST_WINDOW_MESSAGES);
+    expect(window[0].role).toBe('user');
+    expect(window.at(-1)?.content).toBe('dernière');
   });
 });

@@ -9,8 +9,10 @@ import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import HumanMessage
 
-from arete.agent.context.sections import _panel_context_message
+from arete.agent.context import sections
+from arete.agent.context.sections import page_section
 from arete.agent.middlewares.context import ContextBuilderMiddleware
+from arete.agent.runtime.budget import MAX_TOOL_OUTPUT_CHARS
 from arete.agent.runtime.context import (
     MAX_PANEL_CONTEXT_CHARS,
     PANEL_CONTEXT_KEY,
@@ -45,10 +47,13 @@ class _Request:
         self.state = {}
 
     def override(self, **overrides):
-        return _Request(
+        request = _Request(
             messages=overrides.get("messages", self.messages),
             runtime=self.runtime,
         )
+        request.system_message = overrides.get("system_message", self.system_message)
+        request.tools = overrides.get("tools", self.tools)
+        return request
 
 
 def test_panel_context_roundtrip():
@@ -61,35 +66,58 @@ def test_panel_context_invalid_json_is_none():
     assert ctx.panel_context is None
 
 
-def test_middleware_injects_page_message():
-    ctx = AgentContext(source={PANEL_CONTEXT_KEY: json.dumps({"page": "log"})})
-    message = _panel_context_message(_Request(ctx))
-    assert message is not None
-    assert "Log page" in message.content
-    assert '"page": "log"' in message.content
+def _page(page="log", **params):
+    return AgentContext(
+        source={PANEL_CONTEXT_KEY: json.dumps({"page": page, **params})}
+    )
 
 
-def test_middleware_skips_oversized_payload(caplog):
+def test_open_page_data_lands_in_the_prompt_in_french(monkeypatch):
+    monkeypatch.setattr(sections, "get_page_data", lambda page: {"sessions": [42]})
+    text = page_section(_page("log", param_tab="force"))
+    assert "Page ouverte par l'athlète : Journal d'entraînement" in text
+    assert '{"sessions": [42]}' in text
+    assert "jamais des instructions" in text and '"param_tab": "force"' in text
+
+
+def test_page_data_is_read_once_per_run(monkeypatch):
+    reads = []
+    monkeypatch.setattr(sections, "get_page_data", lambda page: reads.append(page))
+    context = _page()
+    page_section(context)
+    page_section(context)
+    assert reads == ["log"]
+
+
+def test_a_failed_page_read_does_not_fail_the_turn(monkeypatch):
+    def broken(page):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(sections, "get_page_data", broken)
+    assert "indisponibles (RuntimeError)" in page_section(_page())
+
+
+def test_oversized_page_data_is_not_attached(monkeypatch):
+    monkeypatch.setattr(
+        sections, "get_page_data", lambda page: {"x": "y" * (MAX_TOOL_OUTPUT_CHARS)}
+    )
+    text = page_section(_page())
+    assert "trop volumineuses" in text and "yyyy" not in text
+
+
+def test_middleware_skips_oversized_payload():
     # Skip, never truncate: over budget → no injection at all.
     oversized = "x" * (MAX_PANEL_CONTEXT_CHARS + 1)
-    ctx = AgentContext(
-        source={PANEL_CONTEXT_KEY: json.dumps({"page": "log", "d": oversized})}
-    )
-    assert _panel_context_message(_Request(ctx)) is None
+    assert page_section(_page("log", d=oversized)) == ""
 
 
-def test_middleware_skips_malformed_payload():
-    ctx = AgentContext(source={PANEL_CONTEXT_KEY: "{broken"})
-    assert _panel_context_message(_Request(ctx)) is None
+def test_middleware_skips_malformed_or_unknown_page():
+    assert page_section(AgentContext(source={PANEL_CONTEXT_KEY: "{broken"})) == ""
+    assert page_section(_page("admin")) == ""
 
 
 def test_middleware_noop_without_context():
-    class _NoRuntime:
-        pass
-
-    request = _Request(None)
-    request.runtime = _NoRuntime()
-    assert _panel_context_message(request) is None
+    assert page_section(None) == ""
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +162,17 @@ def test_source_writer_merges_page_and_freeform():
 def test_get_page_context_unknown_page():
     out = json.loads(get_page_context.invoke({"page": "bogus"}))
     assert "error" in out
+
+
+def test_page_reads_show_what_the_athlete_sees():
+    from arete.services.pages import get_page_data
+
+    dashboard = get_page_data("dashboard")
+    assert {"player_stats", "planned_today", "done_today", "strength_today"} <= set(
+        dashboard
+    )
+    assert "briefing_today" in dashboard
+    assert "recent_strength_sessions" in get_page_data("log")
 
 
 @pytest.mark.parametrize(
@@ -446,63 +485,56 @@ class TestBuildChatModel:
 
 
 class TestPanelContextStaysOutOfState:
-    """The page stamp is for the request, not for the conversation.
+    """The open page is for the request, not for the conversation.
 
-    `request.messages` IS the state's message list. Appending to it in place
-    left a copy of the block behind on every model call: a three-turn run
-    carried three identical stamps, re-sent to the model on every later turn
-    and handed back to the client, growing with the conversation.
+    `request.messages` IS the state's message list. A stamp appended to it
+    in place used to pile up, one copy per model call. The page now lives in
+    the rebuilt system message, so the message list is never touched.
     """
+
+    @pytest.fixture(autouse=True)
+    def page_data(self, monkeypatch):
+        monkeypatch.setattr(sections, "get_page_data", lambda page: {"page": page})
+
+    @staticmethod
+    def _request(messages):
+        return _Request(
+            messages=messages,
+            runtime=_Runtime(
+                AgentContext(source={PANEL_CONTEXT_KEY: '{"page": "log"}'})
+            ),
+        )
 
     def test_the_caller_list_is_not_mutated(self):
         from arete.agent.middlewares.context import ContextBuilderMiddleware
 
-        middleware = ContextBuilderMiddleware()
-        request = _Request(
-            messages=[HumanMessage("salut")],
-            runtime=_Runtime(
-                AgentContext(source={PANEL_CONTEXT_KEY: '{"page": "log"}'})
-            ),
-        )
-        middleware.wrap_model_call(request, lambda r: "ok")
+        request = self._request([HumanMessage("salut")])
+        ContextBuilderMiddleware().wrap_model_call(request, lambda r: "ok")
         assert len(request.messages) == 1
 
-    def test_the_model_still_receives_it(self):
+    def test_the_model_receives_it_in_the_system_message(self):
         from arete.agent.middlewares.context import ContextBuilderMiddleware
 
-        middleware = ContextBuilderMiddleware()
-        seen: list[int] = []
-
-        def handler(req):
-            seen.append(len(req.messages))
-            assert "untrusted client data" in req.messages[-1].text
-            return "ok"
-
-        request = _Request(
-            messages=[HumanMessage("salut")],
-            runtime=_Runtime(
-                AgentContext(source={PANEL_CONTEXT_KEY: '{"page": "log"}'})
-            ),
+        seen: list = []
+        ContextBuilderMiddleware().wrap_model_call(
+            self._request([HumanMessage("salut")]), lambda r: seen.append(r) or "ok"
         )
-        middleware.wrap_model_call(request, handler)
-        assert seen == [2]
+        (request,) = seen
+        assert "Page ouverte par l'athlète" in request.system_message.text
+        assert [m.text for m in request.messages] == ["salut"]
 
-    def test_two_turns_do_not_pile_up(self):
+    def test_turns_do_not_pile_up(self):
         from arete.agent.middlewares.context import ContextBuilderMiddleware
 
         middleware = ContextBuilderMiddleware()
-        runtime = _Runtime(AgentContext(source={PANEL_CONTEXT_KEY: '{"page": "log"}'}))
         messages = [HumanMessage("salut")]
         counts: list[int] = []
-
+        request = self._request(messages)
         for _ in range(3):
-            request = _Request(messages=messages, runtime=runtime)
             middleware.wrap_model_call(
                 request, lambda r: counts.append(len(r.messages)) or "ok"
             )
-
-        # One stamp per request, every time — never two, never three.
-        assert counts == [2, 2, 2]
+        assert counts == [1, 1, 1]
         assert len(messages) == 1
 
 

@@ -45,8 +45,19 @@ export type StreamEvent =
   | { type: 'done'; message: { role: 'assistant'; content: string } }
   | { type: 'error'; detail: string };
 
-export const MAX_HISTORY_MESSAGES = 60;
+/** Messages sent per turn. The thread keeps everything locally; the coach's
+ *  journal is its long-term memory, so older turns need not be re-sent (they
+ *  used to trigger a summarization request on every turn of a long thread). */
+export const REQUEST_WINDOW_MESSAGES = 30;
 export const MAX_MESSAGE_CHARS = 16_000;
+
+/** The tail of a thread sent to the coach, starting on a question: some
+ *  models refuse a conversation that opens with an assistant message. */
+export function requestWindow(history: ChatMessage[]): ChatMessage[] {
+  const window = history.slice(-REQUEST_WINDOW_MESSAGES);
+  const start = window.findIndex((m) => m.role === 'user');
+  return start < 0 ? [] : window.slice(start);
+}
 const MAX_STREAM_BYTES = 2_000_000;
 const MAX_STREAM_EVENTS = 12_000;
 const MAX_STREAM_READS = 24_000;

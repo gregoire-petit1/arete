@@ -179,20 +179,19 @@ def test_a_records_question_reaches_the_records_tool():
 
 
 # ---------------------------------------------------------------------------
-# Toolkits: found, loaded, then used — in that order
+# Toolkits: preloaded for chat, so used without a loading round
 # ---------------------------------------------------------------------------
 
 
-def test_comparing_two_windows_loads_analytics_and_asks_twice():
+def test_comparing_two_windows_asks_twice_without_loading():
     run = ask("Compare ma charge sur 7 jours et sur 28 jours.")
-    assert run.called("load_toolkit"), f"never loaded a toolkit: {run}"
+    assert not run.called("load_toolkit", "search_toolkits"), str(run)
     assert run.called("get_workload"), str(run)
-    assert run.order("load_toolkit", "get_workload"), f"used before loading: {run}"
     # The whole point of the toolkit: one window is not a comparison.
     assert run.count("get_workload") >= 2, f"only one window read: {run}"
 
 
-def test_planning_is_loaded_before_a_session_is_created():
+def test_a_session_is_planned_when_asked():
     """Unambiguous on purpose: this case is about tool choice, not manners.
 
     Asked without "tout de suite", the agent reasonably answers "let me look
@@ -206,7 +205,6 @@ def test_planning_is_loaded_before_a_session_is_created():
         page="planning",
     )
     assert run.called("create_planned_session"), f"nothing planned: {run}"
-    assert run.order("load_toolkit", "create_planned_session"), str(run)
 
 
 def test_a_capability_that_does_not_exist_is_not_invented():

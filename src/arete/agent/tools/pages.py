@@ -1,9 +1,8 @@
 """The page-source tool: data behind each frontend page, as plain functions.
 
-``get_page_context(page)`` is the "get source" surface of the sidepanel: the
-agent calls it with the page the user is viewing (stamped in panel_context)
-and receives the same JSON the React page renders. Pure reads over the
-existing repositories/features — no LLM, no writes.
+The open page's data is already in the system prompt (``context.sections``);
+``get_page_context(page)`` reads another page, through the same
+``services.pages`` reads. Pure reads — no LLM, no writes.
 """
 
 from __future__ import annotations
@@ -22,10 +21,10 @@ from arete.services.pages import get_page_data
 
 @tool
 def get_page_context(page: str) -> str:
-    """Read the data behind an Arete app page: dashboard, planning, analytics,
-    log or settings. Returns the same JSON the page renders — call this before
-    answering questions about the athlete's training, and again when the page
-    changes. Read-only."""
+    """Read the data behind an Arete app page other than the one open, whose
+    data is already in the prompt: dashboard, planning, analytics, log or
+    settings. Fixed windows; use the analytics tools for a chosen period.
+    Read-only."""
     if page not in PANEL_PAGES:
         return json.dumps(
             {"error": f"Unknown page '{page}'. Valid pages: {sorted(PANEL_PAGES)}"}

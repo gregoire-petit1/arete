@@ -11,7 +11,7 @@ arete/
 ├── agent/
 │   ├── factory.py           Compile explicit dependencies into one graph
 │   ├── runtime/             Invocation context, conversation state, policy, limits, events
-│   ├── context/             Ordered sections, request accounting and compaction policy
+│   ├── context/             Ordered sections, open-page data and request accounting
 │   ├── models/              Deployment envelope, route selection, provider adapter
 │   ├── capabilities/        One catalog, discovery and execution resolution
 │   ├── tools/               Model schemas and domain-service adapters
@@ -62,25 +62,32 @@ Discovery, binding, policy checks and structural tests consume the same catalog.
 Tools call services; they do not import HTTP handlers. New tools are unavailable
 to background missions until explicitly classified as read-only.
 
-Chat can load analytics, planning and strength capabilities. Briefings preload
-read-only analytics. Feedback receives session evidence and memory only. Both
+Chat preloads analytics, planning and strength capabilities: loading one cost a
+model request per turn, and requests are the free tier's budget. Briefings preload
+read-only analytics. The on-demand loading machinery (catalog, `load_toolkit`,
+load-before-execute) stays for profiles that do not preload. Feedback receives session evidence and memory only. Both
 background profiles can maintain the ledger but cannot mutate training data.
 Model-generated loaded state and client page metadata cannot change these policies.
 
 The context builder combines the harness/filesystem contribution, mission
-instructions, the current date for chat, capability catalog, loaded instructions,
-a bounded journal excerpt, history and untrusted page data. The journal is read
-again for each model call, so writes within a turn are visible on the next call;
-older entries remain accessible through filesystem tools. Contributions do not mutate stored messages. Compaction follows assembly;
-a final guard counts messages, system text and tool schemas, reserves 4,096 output
-tokens and a safety margin, and rejects requests that still exceed the envelope.
+instructions, the current date for chat, the catalog of toolkits still loadable,
+loaded instructions, a bounded journal excerpt and, for chat, the open page: its
+data read by the server once per run (`context/sections.py`, through
+`services/pages.py`) and its URL parameters labelled as untrusted client data. A
+question about the screen therefore needs no tool call. The journal is read again
+for each model call, so writes within a turn are visible on the next call; older
+entries remain accessible through filesystem tools. Contributions do not mutate
+stored messages. A final guard counts messages, system text and tool schemas,
+reserves 4,096 output tokens and a safety margin, and rejects requests that still
+exceed the envelope.
 
 `LLM_CONTEXT_TOKENS` declares the deployment window (default 65,536, minimum 8,192).
 Set it to the actual server/model limit. It is a configured constraint, not a claim
-about a dynamically routed provider. Counting is approximate. The compaction
-trigger is at most 40,000 tokens and shrinks with the configured window. Raw evicted
-history remains in `data/agent/transcripts`; coaching memory stays in
-`data/agent/memory`.
+about a dynamically routed provider. Counting is approximate. There is no
+server-side compaction: the browser sends the last 30 messages of a thread (it
+keeps the whole thread locally) and the journal in `data/agent/memory` is the
+long-term memory. Summarizing per request cost a model request on every turn of a
+long thread, since nothing persists the summary between requests.
 
 ## Completion, transport and observability
 
@@ -101,7 +108,7 @@ results, as described in the README. Missing usage remains unknown, not zero.
 Each invocation also logs one `Agent run:` line (`RunStats` on the run context):
 model calls, tool calls, model time, time to first token and served models.
 
-These bounds are not a cumulative token/spend quota: SDK retries, compaction and
+These bounds are not a cumulative token/spend quota: SDK retries and
 suggestions have their own limits and share the run deadline. Arete has no delegated
 children to budget; a provider-side fallback stays within one model call. No database or browser-store migration is
 required.

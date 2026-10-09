@@ -4,8 +4,8 @@ import { invalidateAfterSession } from '@/lib/queryKeys';
 import type { PanelPageContext } from '@/lib/pageContext';
 import {
   applyEvent,
-  MAX_HISTORY_MESSAGES,
   MAX_MESSAGE_CHARS,
+  requestWindow,
   runAgentStream,
   settleMessage,
   type ChatMessage,
@@ -104,18 +104,12 @@ export function useCoachThreads(context: PanelPageContext) {
     const content = prompt.trim();
     const activeRuns = runRef.current ? 1 : 0;
     if (!content || activeRuns >= MAX_ACTIVE_RUNS) return false;
-    const history: ChatMessage[] = [
+    const history = requestWindow([
       ...active.messages.filter(
         (m) => m.content.trim() && !m.error && !m.interrupted
       ),
       { role: 'user', content },
-    ];
-    if (history.length > MAX_HISTORY_MESSAGES) {
-      setError(
-        'Ce fil a atteint sa limite. Crée une nouvelle conversation pour continuer.'
-      );
-      return false;
-    }
+    ]);
     if (history.some((m) => m.content.length > MAX_MESSAGE_CHARS)) {
       setError(
         'Un message dépasse 16 000 caractères. Raccourcis-le ou crée une nouvelle conversation.'

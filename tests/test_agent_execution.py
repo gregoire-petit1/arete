@@ -70,6 +70,7 @@ def test_background_cannot_load_or_execute_training_writes(
     assert all(m.status == "error" for m in result["messages"] if m.type == "tool")
 
 
+@pytest.mark.usefixtures("progressive_chat")
 def test_unloaded_tool_is_rejected_before_execution():
     graph = create_agent(
         Model(messages=iter([call("list_planned", {}), AIMessage(content="Fin.")])),
@@ -100,6 +101,24 @@ def test_briefing_has_analytics_without_loading():
     )
     assert "get_workload" in seen[0]
     assert "save_workout" not in seen[0]
+
+
+def test_chat_binds_its_toolkits_without_a_loading_round():
+    seen = []
+
+    class Capture(Model):
+        def bind_tools(self, tools, **kwargs):
+            seen.append({t.name for t in tools})
+            return self
+
+    graph = create_agent(
+        Capture(messages=iter([AIMessage(content="Fin.")])),
+        middleware=[ToolkitMiddleware(), ContextBuilderMiddleware()],
+        context_schema=AgentContext,
+    )
+    graph.invoke({"messages": [HumanMessage("ma forme ?")]}, context=AgentContext())
+    assert {"get_workload", "list_planned", "read_workout"} <= seen[0]
+    assert not {"load_toolkit", "search_toolkits"} & seen[0]
 
 
 def test_model_budget_stops_loop():

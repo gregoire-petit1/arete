@@ -124,6 +124,7 @@ def test_tool_exception_emits_failure_and_propagates(async_mode):
     assert events[-1]["id"] == "t"
 
 
+@pytest.mark.usefixtures("progressive_chat")
 @pytest.mark.parametrize("async_mode", [False, True])
 def test_system_skill_catalog_and_loaded_instructions_reach_every_model_call(
     monkeypatch, tmp_path, async_mode
@@ -189,8 +190,11 @@ def test_system_skill_catalog_and_loaded_instructions_reach_every_model_call(
     for prompt in seen:
         assert SYSTEM_SKILL in prompt
         assert prompt.count("Skills disponibles") == 1
-        for tk in CAPABILITIES.values():
-            assert tk.description in prompt
+    # The catalog lists what is left to load, never what already is.
+    for tk in CAPABILITIES.values():
+        assert tk.description in seen[0]
+    assert CAPABILITIES["analytics"].description not in seen[1]
+    assert CAPABILITIES["planning"].description in seen[1]
     assert all("read_file" in tools for tools in bound_tools)
     assert CAPABILITIES["analytics"].instructions not in seen[0]
     assert CAPABILITIES["analytics"].instructions in seen[1]
