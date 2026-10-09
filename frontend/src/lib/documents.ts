@@ -1,3 +1,5 @@
+import { authFetch } from './auth';
+
 export interface SourceBlock {
   locator: string;
   text: string;
@@ -39,7 +41,7 @@ export const ACCEPTED_FILES = '.xlsx,.xls,.csv,.md,.txt,.pdf,.png,.jpg,.jpeg,.we
 
 export async function documentRequest<T>(path: string, init: RequestInit = {}, timeout = 30_000): Promise<T> {
   const signal = init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout);
-  const response = await fetch(`/api${path}`, { ...init, signal, cache: 'no-store', headers: { 'Content-Type': 'application/json', ...init.headers } });
+  const response = await authFetch(`/api${path}`, { ...init, signal, cache: 'no-store', headers: { 'Content-Type': 'application/json', ...init.headers } });
   if (!response.ok) {
     const text = await response.text();
     let detail = text;
@@ -87,7 +89,7 @@ export async function originalDocument(thread: string, doc: CoachDocument, signa
   if (!doc.size || doc.size > MAX_FILE_BYTES) throw new Error('Taille de document invalide.');
   const parts: ArrayBuffer[] = [];
   for (let position = 0; position < Math.ceil(doc.size / CHUNK_BYTES); position++) {
-    const response = await fetch(`/api${root(thread)}/documents/${doc.id}/chunks/${position}`, { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000) });
+    const response = await authFetch(`/api${root(thread)}/documents/${doc.id}/chunks/${position}`, { cache: 'no-store', signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000) });
     if (!response.ok) throw new Error('Téléchargement impossible.');
     parts.push(await response.arrayBuffer());
   }
