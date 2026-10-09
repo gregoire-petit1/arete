@@ -1,19 +1,34 @@
-import type { UserSettings } from './api';
+export const THEMES = [
+  { value: 'light', label: 'CLAIR', color: '#F4F7FA' },
+  { value: 'dark', label: 'SOMBRE', color: '#0A0A0F' },
+  { value: 'darker', label: 'PLUS SOMBRE', color: '#050508' },
+  { value: 'abyss', label: 'ABYSSE', color: '#000000' },
+] as const;
 
-export type Theme = UserSettings['theme'];
+export type Theme = (typeof THEMES)[number]['value'];
+const STORAGE_KEY = 'arete.theme.v1';
 
-export const THEME_COLORS: Record<Theme, { void: string; abyss: string; shadow: string }> = {
-  dark: { void: '#0A0A0F', abyss: '#12121A', shadow: '#1A1A24' },
-  darker: { void: '#050508', abyss: '#0A0A0F', shadow: '#12121A' },
-  abyss: { void: '#000000', abyss: '#050508', shadow: '#0A0A0F' },
-};
+export function applyTheme(theme: Theme) {
+  const selected = THEMES.find((item) => item.value === theme) ?? THEMES[1];
+  document.documentElement.dataset.theme = selected.value;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', selected.color);
+}
 
-/** Writes a theme's background colors to the CSS variables. */
-export function applyTheme(theme: Theme): void {
-  const colors = THEME_COLORS[theme];
-  const root = document.documentElement;
-  root.style.setProperty('--color-void', colors.void);
-  root.style.setProperty('--color-abyss', colors.abyss);
-  root.style.setProperty('--color-shadow', colors.shadow);
-  document.body.style.backgroundColor = colors.void;
+/** Cache only saved preferences so reloads never restore an abandoned preview. */
+export function cacheTheme(theme: Theme) {
+  try {
+    localStorage.setItem(STORAGE_KEY, theme);
+  } catch (error) {
+    console.warn('Could not cache the saved theme', error);
+  }
+}
+
+export function initializeTheme() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    applyTheme(THEMES.find((item) => item.value === saved)?.value ?? 'dark');
+  } catch (error) {
+    console.warn('Could not read the saved theme', error);
+    applyTheme('dark');
+  }
 }

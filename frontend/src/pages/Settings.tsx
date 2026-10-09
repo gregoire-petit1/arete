@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Bot, Check, Dumbbell, Palette, Save, Target, Terminal, User, Watch, X } from 'lucide-react';
@@ -46,18 +46,6 @@ export function SettingsPage() {
     queryFn: settingsApi.get,
   });
 
-  // The appearance tab previews a theme on click; leaving unsaved restores the saved one.
-  const savedTheme = useRef(savedSettings?.theme);
-  useEffect(() => {
-    savedTheme.current = savedSettings?.theme;
-  }, [savedSettings?.theme]);
-  useEffect(
-    () => () => {
-      if (savedTheme.current) applyTheme(savedTheme.current);
-    },
-    []
-  );
-
   const [settings, setSettings] = useState<LocalSettings>(DEFAULT_SETTINGS);
 
   // Adopt fetched settings into local form state whenever the server copy changes
@@ -70,6 +58,16 @@ export function SettingsPage() {
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 
+  useLayoutEffect(() => {
+    if (!savedSettings) return;
+    applyTheme(settings.theme);
+    // Read the current cache on exit: a successful save may have changed it.
+    return () => {
+      const saved = queryClient.getQueryData<UserSettings>(['settings']);
+      if (saved) applyTheme(saved.theme);
+    };
+  }, [settings.theme, savedSettings, queryClient]);
+
   const hasChanges = useMemo(() => {
     if (!savedSettings) return false;
     const { user_id, ...saved } = savedSettings;
@@ -79,7 +77,8 @@ export function SettingsPage() {
   const saveMutation = useMutation({
     mutationFn: settingsApi.update,
     onMutate: () => setSaveStatus('saving'),
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      queryClient.setQueryData(['settings'], saved);
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
