@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import date, timedelta
 from unittest.mock import patch
 
 import pytest
 
 from arete.api.analytics import router
-from arete.features.fitness import DailyTSS
+from arete.dataio.db import connect
+from arete.dataio.queries import OverviewRow, daily_loads, daily_tss, overview_rows
+from arete.services import analytics
 
 TODAY = date.today()
 
@@ -35,29 +38,32 @@ def client(router_client):
 def stub_queries():
     """Patch every SELECT the overview makes; each test sets what it needs."""
     targets = {
-        "volume_rows": [],
-        "zone_rows": [],
-        "sport_totals": [],
-        "pace_rows": [],
+        "overview_rows": [],
         "drift_rows": [],
-        "efficiency_rows": [],
         "daily_metrics_range": [],
         "earliest_session_date": None,
-        "training_loads": [],
     }
     patches = {
         name: patch(f"arete.services.analytics.{name}", return_value=value)
         for name, value in targets.items()
     }
     mocks = {name: p.start() for name, p in patches.items()}
-    with (
-        patch("arete.services.analytics.db_connection"),
-        patch("arete.services.analytics.tss_history", return_value=[]) as tss,
-    ):
-        mocks["tss_history"] = tss
+    with patch("arete.services.analytics.db_connection"):
         yield mocks
     for p in patches.values():
         p.stop()
+
+
+def _row(day: date, sport: str = "running", duration_sec: int = 3600, **kw):
+    fields = {
+        "distance_m": None,
+        "hr_zones_json": None,
+        "avg_pace_sec_km": None,
+        "avg_hr": None,
+        "rpe": None,
+        "tss": 0.0,
+    }
+    return OverviewRow(day, sport, duration_sec, **(fields | kw))
 
 
 class TestOverview:
@@ -84,28 +90,29 @@ class TestOverview:
         assert data["prev_start"] is None
 
     def test_volume_card_uses_sessions(self, client, stub_queries):
-        stub_queries["volume_rows"].return_value = [
-            (TODAY - timedelta(days=1), "running", 3600, 12000.0),
-            (TODAY - timedelta(days=40), "running", 3600, 8000.0),
+        stub_queries["overview_rows"].return_value = [
+            _row(TODAY - timedelta(days=40), distance_m=8000.0),
+            _row(TODAY - timedelta(days=1), distance_m=12000.0),
         ]
         card = client.get("/analytics/overview?period=30d").json()["cards"]["volume"]
         assert card["headline"]["value"] == 12.0
         assert card["headline"]["previous"] == 8.0
         assert len(card["series"]) == 30
 
-    def test_pmc_card_uses_tss_history_with_warmup(self, client, stub_queries):
-        stub_queries["tss_history"].return_value = [
-            DailyTSS(date=TODAY - timedelta(days=i), tss=60.0)
-            for i in range(60, -1, -1)
+    def test_pmc_card_reads_sessions_from_the_warmup_on(self, client, stub_queries):
+        stub_queries["overview_rows"].return_value = [
+            _row(TODAY - timedelta(days=i), tss=60.0) for i in range(60, -1, -1)
         ]
         data = client.get("/analytics/overview?period=30d").json()
-        stub_queries["tss_history"].assert_called_once_with(days=60 + 84)
+        _con, start, end = stub_queries["overview_rows"].call_args.args
+        assert (start, end) == (TODAY - timedelta(days=60 + 84), TODAY)
         assert data["cards"]["pmc"]["headline"]["value"] > 0
 
     def test_sports_card_compares_windows(self, client, stub_queries):
-        stub_queries["sport_totals"].side_effect = [
-            [("running", 6.0, 4), ("strength", 2.0, 2)],
-            [("running", 4.0, 3)],
+        stub_queries["overview_rows"].return_value = [
+            _row(TODAY - timedelta(days=40), duration_sec=4 * 3600),
+            _row(TODAY - timedelta(days=3), duration_sec=6 * 3600),
+            _row(TODAY - timedelta(days=2), "strength", duration_sec=2 * 3600),
         ]
         card = client.get("/analytics/overview?period=30d").json()["cards"]["sports"]
         assert card["headline"]["value"] == 8.0
@@ -116,6 +123,56 @@ class TestOverview:
         assert cards["volume"]["headline"]["value"] == 0.0
         assert cards["hrv"]["headline"]["value"] is None
         assert all(len(c["series"]) in (0, 7) for c in cards.values())
+
+    def test_overview_costs_four_statements_on_one_cursor(
+        self, client, monkeypatch, statement_log
+    ):
+        real = analytics.db_connection
+
+        @contextmanager
+        def counting_connection(*args, **kwargs):
+            with real(*args, **kwargs) as con:
+                yield statement_log.wrap(con)
+
+        monkeypatch.setattr(analytics, "db_connection", counting_connection)
+        assert client.get("/analytics/overview?period=30d").status_code == 200
+        assert len(statement_log) == 4
+
+
+class TestOverviewSeries:
+    """The Python slices of the wide read equal the SQL series they replace."""
+
+    @pytest.fixture
+    def seeded(self):
+        con = connect()
+        con.execute("DELETE FROM app.actual_sessions WHERE source = 'test'")
+        for day, duration, rpe, hr in (
+            (date(2029, 3, 1), 3600, 6, None),
+            (date(2029, 3, 1), 1830, None, 150),
+            (date(2029, 3, 4), 2400, None, None),
+        ):
+            con.execute(
+                "INSERT INTO app.actual_sessions "
+                "(user_id, date, sport, duration_sec, rpe, avg_hr, source) "
+                "VALUES (1, ?, 'run', ?, ?, ?, 'test')",
+                [day, duration, rpe, hr],
+            )
+        yield con, date(2029, 2, 27), date(2029, 3, 5)
+        con.execute("DELETE FROM app.actual_sessions WHERE source = 'test'")
+        con.close()
+
+    def test_daily_tss_matches_the_sql_series(self, seeded):
+        con, start, end = seeded
+        rows = overview_rows(con, start, end)
+        expected = daily_tss(con, start, end)
+        got = analytics._daily_tss(rows, start, end)
+        assert [t.date for t in got] == [t.date for t in expected]
+        assert [t.tss for t in got] == pytest.approx([t.tss for t in expected])
+
+    def test_daily_loads_match_the_sql_series(self, seeded):
+        con, start, end = seeded
+        rows = overview_rows(con, start, end)
+        assert analytics._daily_loads(rows, start, end) == daily_loads(con, start, end)
 
 
 class TestRecords:

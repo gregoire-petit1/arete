@@ -9,29 +9,26 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date
+from collections.abc import Sequence
+from datetime import date, timedelta
 
 from arete.dataio.db import connect, db_connection
 from arete.dataio.queries import (
     RUNNING_SPORTS,
     SPORT_GROUPS,
+    OverviewRow,
     best_effort_rows,
     daily_metrics_range,
     drift_rows,
     earliest_session_date,
-    efficiency_rows,
-    pace_rows,
-    sport_totals,
-    training_loads,
-    tss_history,
-    volume_rows,
-    zone_rows,
+    overview_rows,
 )
 from arete.dataio.settings import athlete_zone_model
 from arete.features import overview as ov
-from arete.features.fitness import ctl_atl_series
+from arete.features.fitness import DailyTSS, ctl_atl_series
 from arete.features.periods import PeriodWindow, resolve_period
 from arete.features.workload import (
+    DailyLoad,
     calculate_acute_load,
     calculate_acwr,
     calculate_chronic_load,
@@ -79,12 +76,6 @@ ACWR_ZONE_FR = {
 MIN_DRIFT_DURATION_SEC = 40 * 60
 
 
-def _window(period: str) -> PeriodWindow:
-    with db_connection() as con:
-        earliest = earliest_session_date(con)
-    return resolve_period(period, date.today(), earliest)
-
-
 def _fetch_start(window: PeriodWindow) -> date:
     """First day to query: the previous window when there is one."""
     return window.prev_start or window.start
@@ -93,9 +84,54 @@ def _fetch_start(window: PeriodWindow) -> date:
 ACWR_HISTORY_DAYS = 28
 
 
-def _acwr(target: date) -> tuple[float | None, str | None]:
+def _days(start: date, end: date) -> list[date]:
+    return [start + timedelta(days=i) for i in range((end - start).days + 1)]
+
+
+def _between(rows: Sequence[OverviewRow], start: date, end: date) -> list[OverviewRow]:
+    return [r for r in rows if start <= r.date <= end]
+
+
+def _sport_totals(
+    rows: Sequence[OverviewRow], start: date, end: date
+) -> list[tuple[str, float, int]]:
+    """(sport, hours, sessions) over the range, most hours first."""
+    totals: dict[str, tuple[float, int]] = {}
+    for r in _between(rows, start, end):
+        hours, count = totals.get(r.sport, (0.0, 0))
+        totals[r.sport] = (hours + r.duration_sec / 3600, count + 1)
+    ranked = sorted(totals.items(), key=lambda item: item[1][0], reverse=True)
+    return [(sport, hours, count) for sport, (hours, count) in ranked]
+
+
+def _daily_tss(rows: Sequence[OverviewRow], start: date, end: date) -> list[DailyTSS]:
+    by_date: dict[date, float] = {}
+    for r in _between(rows, start, end):
+        by_date[r.date] = by_date.get(r.date, 0.0) + r.tss
+    return [DailyTSS(date=d, tss=by_date.get(d, 0.0)) for d in _days(start, end)]
+
+
+def _daily_loads(
+    rows: Sequence[OverviewRow], start: date, end: date
+) -> list[DailyLoad]:
+    """Same series as ``queries.daily_loads``: minutes and mean RPE (5 if unset)."""
+    by_date: dict[date, list[OverviewRow]] = {}
+    for r in _between(rows, start, end):
+        by_date.setdefault(r.date, []).append(r)
+    loads = []
+    for d in _days(start, end):
+        day = by_date.get(d)
+        if not day:
+            loads.append(DailyLoad(date=d, duration_min=0, rpe=0))
+            continue
+        rpes = [r.rpe if r.rpe is not None else 5 for r in day]
+        minutes = int(sum(r.duration_sec for r in day) / 60.0)
+        loads.append(DailyLoad(date=d, duration_min=minutes, rpe=sum(rpes) / len(rpes)))
+    return loads
+
+
+def _acwr(loads: list[DailyLoad], target: date) -> tuple[float | None, str | None]:
     """Acute:chronic ratio on the last day of the window, with a French label."""
-    loads = training_loads(days=ACWR_HISTORY_DAYS, end=target)
     value = calculate_acwr(
         calculate_acute_load(loads, target), calculate_chronic_load(loads, target)
     )
@@ -105,27 +141,46 @@ def _acwr(target: date) -> tuple[float | None, str | None]:
 
 
 def get_overview(period: str = "30d"):
-    """Every analytics card for one period, with the previous one as reference."""
-    window = _window(period)
-    start = _fetch_start(window)
+    """Every analytics card for one period, with the previous one as reference.
 
+    Four statements on one cursor (the zone model reads the settings on its
+    own): the first session date, every session from the CTL warm-up on, the
+    long runs with laps, and the health metrics. The cards slice the sessions.
+    """
     with db_connection() as con:
-        sessions = volume_rows(con, start, window.end)
-        zones = zone_rows(con, start, window.end)
-        sports_cur = sport_totals(con, window.start, window.end)
-        sports_prev = (
-            sport_totals(con, window.prev_start, window.prev_end)
-            if window.prev_start and window.prev_end
-            else []
-        )
-        paces = pace_rows(con, start, window.end)
+        window = resolve_period(period, date.today(), earliest_session_date(con))
+        start = _fetch_start(window)
+        tss_days = (window.end - start).days + 1
+        tss_start = window.end - timedelta(days=tss_days + CTL_WARMUP_DAYS)
+        rows = overview_rows(con, tss_start, window.end)
         drifts = drift_rows(con, start, window.end, MIN_DRIFT_DURATION_SEC)
-        efficiency = efficiency_rows(con, start, window.end)
         health = daily_metrics_range(con, start, window.end)
 
-    tss_days = (window.end - start).days + 1
-    pmc_series = ctl_atl_series(tss_history(days=tss_days + CTL_WARMUP_DAYS))
-    acwr, acwr_zone = _acwr(window.end)
+    shown = _between(rows, start, window.end)
+    runs = [r for r in shown if r.sport in RUNNING_SPORTS]
+    sessions = [(r.date, r.sport, r.duration_sec, r.distance_m) for r in shown]
+    zones = [(r.date, r.hr_zones_json) for r in shown if r.hr_zones_json is not None]
+    sports_cur = _sport_totals(rows, window.start, window.end)
+    sports_prev = (
+        _sport_totals(rows, window.prev_start, window.prev_end)
+        if window.prev_start and window.prev_end
+        else []
+    )
+    paces = [
+        (r.date, r.avg_pace_sec_km, r.distance_m, r.duration_sec)
+        for r in runs
+        if r.avg_pace_sec_km is not None
+    ]
+    efficiency = [
+        (r.date, r.avg_hr, r.avg_pace_sec_km, r.duration_sec)
+        for r in runs
+        if r.avg_hr is not None
+        and r.avg_pace_sec_km is not None
+        and r.avg_pace_sec_km > 0
+    ]
+    pmc_series = ctl_atl_series(_daily_tss(rows, tss_start, window.end))
+    loads_start = window.end - timedelta(days=ACWR_HISTORY_DAYS)
+    acwr, acwr_zone = _acwr(_daily_loads(rows, loads_start, window.end), window.end)
 
     recovery = ov.build_recovery_cards(health, window)
     return {

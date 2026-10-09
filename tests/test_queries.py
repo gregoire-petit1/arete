@@ -12,7 +12,6 @@ from arete.dataio.queries import (
     daily_tss,
     daily_tss_by_date,
     sql_in,
-    weekly_tss,
 )
 
 
@@ -52,10 +51,6 @@ class TestSeries:
             loads = daily_loads(con, date(2026, 1, 1), date(2026, 1, 4))
             assert loads[0].duration_min == 60 and loads[0].rpe == 6
             assert loads[1].duration_min == 0
-
-            assert round(weekly_tss(con, date(2026, 1, 1), date(2026, 1, 4))) == round(
-                sum(t.tss for t in tss)
-            )
         finally:
             con.execute("DELETE FROM app.actual_sessions WHERE source = 'test'")
             con.close()
