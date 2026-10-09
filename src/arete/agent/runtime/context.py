@@ -15,9 +15,8 @@ from typing import Any, Literal
 from arete.agent.runtime.budget import MAX_TOOL_CONCURRENCY
 
 #: Key under which the API layer stamps the open-page payload in the source
-#: dict. The middleware in ``middlewares.py`` is the reader; ``api/agent.py``
-#: is the only writer (same single-writer contract as Cortex's
-#: ``agent-run-context.ts``).
+#: dict. ``agent/context/sections.py`` is the reader; ``api/agent.py`` is the
+#: only writer (same single-writer contract as Cortex's ``agent-run-context.ts``).
 PANEL_CONTEXT_KEY = "panel_context"
 
 #: Budget for one serialized panel-context payload. Over it the injection is

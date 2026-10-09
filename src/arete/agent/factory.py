@@ -18,6 +18,7 @@ from arete.agent.middlewares.policy import ProfilePolicyMiddleware
 from arete.agent.profiles.models import AgentProfile
 from arete.agent.prompts.coach import SYSTEM_SKILL
 from arete.agent.runtime.context import AgentContext
+from arete.agent.tools.journal import append_journal
 from arete.agent.tools.pages import get_page_context
 
 
@@ -50,7 +51,10 @@ def build_agent(
         middleware.append(suggestions)
     return create_agent(
         model,
-        tools=[get_page_context] if profile.page_context else [],
+        tools=[
+            *([get_page_context] if profile.page_context else []),
+            *([append_journal] if profile.journal_tools else []),
+        ],
         middleware=middleware,
         system_prompt=SYSTEM_SKILL,
         context_schema=AgentContext,

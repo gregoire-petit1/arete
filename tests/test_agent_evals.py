@@ -55,7 +55,7 @@ WRITE_TOOLS = {
     "save_workout",
 }
 
-LEDGER_WRITE_TOOLS = {"write_file", "edit_file"}
+LEDGER_WRITE_TOOLS = {"append_journal"}
 
 
 def _reason_to_skip() -> str | None:

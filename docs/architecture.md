@@ -71,7 +71,9 @@ profiles that do not preload. The briefing and the session feedback bind no tool
 session's numbers, RPE and notes) and the model answers in one request. The
 server files the feedback's ledger entry itself (`services/memory.append_entry`,
 dated heading, never twice), so neither mission can mutate training data or
-forget to write. Every profile receives the current date.
+forget to write. Every profile receives the current date. Chat writes the
+journal through one tool, `append_journal` (server-dated heading, deduplicated,
+bounded); its filesystem middleware only reads (`read_file`).
 Model-generated loaded state and client page metadata cannot change these policies.
 
 The context builder combines the harness/filesystem contribution, mission

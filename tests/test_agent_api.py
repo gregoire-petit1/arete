@@ -702,10 +702,6 @@ class TestLedgerTools:
         """
         assert "fin" in self._tools()["read_file"].description
 
-    def test_rewriting_the_journal_whole_is_warned_against(self):
-        # Read 100 lines, rewrite with an entry appended, lose the rest.
-        description = self._tools()["write_file"].description
-        assert "sessions.md" in description and "edit_file" in description
-
-    def test_appending_is_routed_to_edit_file(self):
-        assert "ajouter" in self._tools()["edit_file"].description
+    def test_the_filesystem_only_reads(self):
+        # Writes go through append_journal: dated, deduplicated, bounded.
+        assert set(self._tools()) == {"read_file"}

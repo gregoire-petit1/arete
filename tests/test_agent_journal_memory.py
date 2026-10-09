@@ -84,6 +84,16 @@ def test_cut_notes_say_where_the_rest_is(journal):
     assert "read_file" in journal_block(journal)
 
 
+def test_the_newest_notes_survive_the_cut(journal):
+    # Notes are appended: past the budget, the oldest go first, never the newest.
+    old = "".join(f"- 2026-01-{i:02d} — ancienne : {'x' * 200}\n" for i in range(1, 30))
+    (journal / "notes.md").write_text(old + "- 2026-10-09 — tendon : Achille droit\n")
+    block = journal_block(journal)
+    assert "2026-10-09 — tendon" in block
+    assert "2026-01-01" not in block
+    assert "début de notes.md" in block
+
+
 def test_an_empty_journal_adds_nothing(journal):
     assert journal_block(journal) == ""
 

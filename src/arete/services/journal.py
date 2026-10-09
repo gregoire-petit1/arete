@@ -38,7 +38,8 @@ from arete.services.memory import NOTES_LEDGER, SESSIONS_LEDGER, memory_root
 logger = logging.getLogger(__name__)
 
 #: Durable facts about the athlete. A curated list should sit well under this;
-#: past it, the head is shown and the rest is one read away.
+#: past it, the tail is shown (notes are appended, the newest last) and the
+#: beginning is one read away.
 MAX_NOTES_CHARS = 4_000
 
 #: How many of the latest session entries come with every call.
@@ -95,7 +96,10 @@ def recent_entries(text: str, count: int, max_chars: int) -> tuple[str, bool]:
 def _bounded_notes(text: str) -> tuple[str, bool]:
     if len(text) <= MAX_NOTES_CHARS:
         return text, False
-    return text[:MAX_NOTES_CHARS].rstrip(), True
+    tail = text[-MAX_NOTES_CHARS:]
+    # Start on a whole line: half a note reads as a different note.
+    newline = tail.find("\n")
+    return (tail[newline + 1 :] if newline != -1 else tail).lstrip(), True
 
 
 def journal_block(root: Path | None = None) -> str:
@@ -111,7 +115,7 @@ def journal_block(root: Path | None = None) -> str:
     parts = ["# Ton journal (chargé automatiquement, pas besoin de le relire)"]
     parts.append(f"## {NOTES_LEDGER}\n{notes or '(vide)'}")
     if notes_cut:
-        parts.append(f"(suite de {NOTES_LEDGER} non affichée: read_file pour la lire)")
+        parts.append(f"(début de {NOTES_LEDGER} non affiché: read_file pour le lire)")
     parts.append(
         f"## {SESSIONS_LEDGER} — {RECENT_SESSION_ENTRIES} dernières entrées\n"
         f"{sessions or '(vide)'}"
