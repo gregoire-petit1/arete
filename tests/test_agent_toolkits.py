@@ -46,6 +46,8 @@ def test_planning_toolkit_registered():
     assert tk.id == "planning"
     assert {t.name for t in tk.tools} == {
         "list_planned",
+        "inspect_planned_session",
+        "update_session_prescription",
         "create_planned_session",
         "update_planned_status",
         "update_planned_session",

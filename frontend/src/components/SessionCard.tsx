@@ -1,4 +1,4 @@
-import { createElement, useState } from 'react';
+import { createElement, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, RotateCcw, Trash2, Watch, X } from 'lucide-react';
 import { formatClock } from '@/lib/fr';
 import { getSportColor, getSportIconComponent } from '@/lib/sport';
@@ -118,6 +118,7 @@ export function OffPlanRow({ session, className }: { session: ActualSession; cla
 }
 
 interface SessionCardProps {
+  children?: ReactNode;
   planned: PlannedSession;
   realised: ActualSession | null;
   state: PlannedState;
@@ -145,6 +146,7 @@ export interface SessionPush {
  * and the plan becomes a collapsible reminder underneath.
  */
 export function SessionCard({
+  children,
   planned,
   realised,
   state,
@@ -309,6 +311,7 @@ export function SessionCard({
           Adhérence {Math.round(realised.adherence_score)} %
         </div>
       )}
+      {children}
     </div>
   );
 }

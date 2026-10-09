@@ -1,0 +1,61 @@
+import type { QueryClient } from '@tanstack/react-query';
+import { documentRequest, type GarminExport, type Prescription } from './documents';
+
+export interface WorkoutSession {
+  id: number; revision: number; date: string; sport: string; description: string | null;
+  status: string; summary?: string | null; prescription?: Prescription | null;
+  derived?: boolean; exportable?: boolean; reason?: string | null;
+  target_duration_min?: number | null; target_distance_km?: number | null;
+}
+export interface WorkoutView { session: WorkoutSession; export: GarminExport | null }
+export interface WorkoutUpdate extends WorkoutView {
+  type: 'workout_update'; id: string; thread_id: string | null; sequence: number;
+}
+export interface ExportBatchResult {
+  results: GarminExport[]; not_attempted: number[]; blocked?: number; error?: string;
+}
+export const workoutKey = (id: number) => ['workout', id] as const;
+export const workoutApi = {
+  inspect: (id: number) => documentRequest<WorkoutView>(`/garmin/planned/${id}/workout`),
+  export: (sessions: WorkoutSession[], deviceId: number | null) => documentRequest<ExportBatchResult>(
+    '/garmin/exports/batch', { method: 'POST', body: JSON.stringify({ session_ids: sessions.map(s => s.id), revisions: sessions.map(s => s.revision), device_id: deviceId }) }, 150_000),
+};
+function record(value: unknown): value is Record<string, unknown> { return !!value && typeof value === 'object'; }
+export function isWorkoutUpdate(value: unknown): value is WorkoutUpdate {
+  if (!record(value) || value.type !== 'workout_update' || typeof value.id !== 'string' ||
+      !(value.thread_id === null || typeof value.thread_id === 'string') ||
+      !Number.isSafeInteger(value.sequence) || Number(value.sequence) < 0 || !record(value.session)) return false;
+  const s = value.session;
+  return Number.isSafeInteger(s.id) && Number(s.id) > 0 && Number.isSafeInteger(s.revision) && Number(s.revision) > 0 &&
+    typeof s.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.date) && typeof s.sport === 'string' &&
+    typeof s.status === 'string' && (s.description === null || typeof s.description === 'string') &&
+    (s.summary === undefined || s.summary === null || (typeof s.summary === 'string' && s.summary.length <= 32_000)) &&
+    (value.export === null || (record(value.export) && value.export.session_id === s.id && typeof value.export.state === 'string' &&
+      typeof value.export.operation_id === 'string' && typeof value.export.updated_at === 'string'));
+}
+export function newerExport(current: GarminExport | null, incoming: GarminExport | null): GarminExport | null {
+  if (!incoming) return current;
+  if (current?.updated_at && incoming.updated_at && current.updated_at > incoming.updated_at) return current;
+  return incoming;
+}
+/** Server revisions and durable update times protect against stale reads and parallel tools. */
+export function mergeWorkout(previous: WorkoutView | undefined, next: WorkoutView): WorkoutView {
+  if (!previous) return next;
+  if (previous.session.revision > next.session.revision) return previous;
+  const session = previous.session.revision === next.session.revision ? { ...previous.session, ...next.session } : next.session;
+  return { session, export: newerExport(previous.export, next.export) };
+}
+export function cacheWorkout(queryClient: QueryClient, view: WorkoutView): void {
+  queryClient.setQueryData<WorkoutView>(workoutKey(view.session.id), previous => mergeWorkout(previous, view));
+}
+export const exportLabels: Record<string, string> = {
+  scheduled: 'Programmée dans Garmin Connect', transfer_requested: 'Transfert demandé · synchronise la montre',
+  working: 'Envoi vers Garmin', dirty: 'À resynchroniser', pending_removal: 'Retrait Garmin à effectuer',
+  uncertain: 'Résultat indéterminé · vérifier Garmin', conflict: 'Conflit avec Garmin Connect',
+  failed: 'Envoi non confirmé', ready: 'Vérifiée · prête à envoyer', removed: 'Retirée de Garmin Connect',
+};
+export function exportLabel(state: GarminExport | null): string {
+  if (!state) return 'Pas encore envoyée';
+  if (state.state === 'working' && ['created', 'updated', 'scheduled', 'unscheduled'].includes(state.phase ?? '')) return 'Vérification dans Garmin';
+  return exportLabels[state.state] ?? 'État à vérifier';
+}

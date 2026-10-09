@@ -87,7 +87,11 @@ const CHIP_IDLE = 'bg-abyss border-text-muted/30 text-text-muted hover:border-te
 
 export function PlanningPage() {
   const queryClient = useQueryClient();
-  const [weekOffset, setWeekOffset] = useState(0);
+  const [weekOffset, setWeekOffset] = useState(() => {
+    const day = new URLSearchParams(window.location.search).get('date');
+    if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return 0;
+    return Math.floor(Math.round((parseLocalDate(day).getTime() - parseLocalDate(getWeekStart(0)).getTime()) / 86_400_000) / 7);
+  });
   // `?new=1` (the dashboard's "Ajouter une séance") opens the form once, then leaves the URL.
   const [searchParams, setSearchParams] = useSearchParams();
   const [showNewQuest, setShowNewQuest] = useState(() => searchParams.get('new') === '1');
@@ -103,6 +107,16 @@ export function PlanningPage() {
     );
   }, [searchParams, setSearchParams]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const requestedDate = searchParams.get('date');
+  const [lastRequestedDate, setLastRequestedDate] = useState(requestedDate);
+  if (requestedDate !== lastRequestedDate) {
+    setLastRequestedDate(requestedDate);
+    if (requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
+      setWeekOffset(Math.floor(Math.round((parseLocalDate(requestedDate).getTime() - parseLocalDate(getWeekStart(0)).getTime()) / 86_400_000) / 7));
+      setSelectedDate(null);
+    }
+  }
+
   const [newQuest, setNewQuest] = useState<PlannedSessionCreate>(emptyQuest());
   const [toDelete, setToDelete] = useState<PlannedSession | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -279,8 +293,9 @@ export function PlanningPage() {
           />
         </Panel>
 
-        <Panel title="SÉANCES DE LA SEMAINE" className="mb-4 sm:mb-8" delay={0.05}>
+        <GarminExportPanel sessions={plannedQuery.data ?? []}>{workoutControls => <Panel title="SÉANCES DE LA SEMAINE" className="mb-4 sm:mb-8" delay={0.05}>
           <WeekPlanList
+            workoutControls={workoutControls}
             days={days}
             planned={plannedQuery.data || []}
             actual={weekActual}
@@ -295,9 +310,7 @@ export function PlanningPage() {
             }}
             onDelete={setToDelete}
           />
-        </Panel>
-
-        <GarminExportPanel sessions={plannedQuery.data ?? []} />
+        </Panel>}</GarminExportPanel>
 
         <Panel title="ADHÉRENCE DE LA SEMAINE" className="mb-4 sm:mb-8" delay={0.1}>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-6">

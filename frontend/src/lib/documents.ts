@@ -30,7 +30,7 @@ export interface ImportedSession {
 }
 export interface ImportItem { batch_duplicates?: number[]; session: ImportedSession; problems: string[]; ocr: boolean; sources: (Provenance & { ocr: boolean; file_name?: string })[]; duplicates: { id: number; description: string }[] }
 export interface ImportDraft { id: string; version: number; status: 'draft' | 'confirmed' | 'discarded'; sessions: ImportItem[]; session_ids: number[] }
-export interface GarminExport { session_id: number; state: string; error: string | null; deleted: boolean; workout_id: number | null; schedule_id: number | null }
+export interface GarminExport { operation_id?: string; updated_at?: string; phase?: string; session_id: number; state: string; error: string | null; deleted: boolean; workout_id: number | null; schedule_id: number | null }
 export interface GarminDevice { id: number; name: string; sports: string[]; compatibility: string; documentation: string | null }
 
 export const CHUNK_BYTES = 3 * 1024 * 1024;

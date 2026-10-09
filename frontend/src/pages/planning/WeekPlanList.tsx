@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { OffPlanRow, SessionCard } from '@/components/SessionCard';
 import { parseLocalDate } from '@/lib/dates';
 import { linkDay } from '@/lib/sessionMatch';
@@ -9,6 +10,7 @@ function dayLabel(iso: string): string {
 }
 
 export function WeekPlanList({
+  workoutControls,
   days,
   planned,
   actual,
@@ -20,6 +22,7 @@ export function WeekPlanList({
   onStatus,
   onDelete,
 }: {
+  workoutControls?: (id: number) => ReactNode;
   days: string[];
   planned: PlannedSession[];
   actual: ActualSession[];
@@ -82,7 +85,7 @@ export function WeekPlanList({
                     busy={busyId === session.id}
                     onStatus={(status) => onStatus(session.id, status)}
                     onDelete={state === 'done' ? undefined : () => onDelete(session)}
-                  />
+                  >{workoutControls?.(session.id)}</SessionCard>
                 ))}
                 {link.offPlan.map((a) => (
                   <OffPlanRow key={a.id} session={a} />

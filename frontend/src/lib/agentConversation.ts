@@ -1,3 +1,4 @@
+import { isWorkoutUpdate } from './workouts';
 import {
   settleMessage,
   type ChatMessage,
@@ -67,8 +68,10 @@ export function restoreConversation(raw: string | null): ChatMessage[] {
       if (m.content)
         parts?.push({ kind: 'text', id: `legacy-${index}`, text: m.content });
     }
+    if (m.workouts !== undefined && (!Array.isArray(m.workouts) || m.workouts.length > 50 || !m.workouts.every(isWorkoutUpdate))) throw new Error('Séances sauvegardées invalides.');
     return settleMessage(
       {
+        workouts: m.workouts,
         imports: Array.isArray(m.imports) && m.imports.length <= 50 && m.imports.every((item: { id?: unknown; version?: unknown }) => typeof item.id === 'string' && Number.isInteger(item.version)) ? m.imports : undefined,
         role: m.role,
         content: m.content,

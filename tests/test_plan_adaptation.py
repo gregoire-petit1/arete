@@ -30,7 +30,15 @@ def _facts(readiness: float | None, source: str = "garmin_training") -> RuleFact
 
 
 @pytest.fixture
-def tempo():
+def tempo(monkeypatch):
+    from arete.features.hr_zones import ZoneModel
+
+    # Isolate athlete physiology from other tests editing the shared settings row.
+    def zones():
+        return ZoneModel.from_reference(lthr=170)
+
+    monkeypatch.setattr("arete.dataio.settings.athlete_zone_model", zones)
+    monkeypatch.setattr("arete.services.plan_adaptation.athlete_zone_model", zones)
     repo = GarminRepository()
     session_id = repo.create_planned_session(
         PlannedSession(
@@ -142,23 +150,22 @@ def test_the_api_lists_adapts_and_reverts(tempo, router_client):
 def _garmin():
     from unittest.mock import MagicMock
 
-    client = MagicMock()
-    client.upload_workout.side_effect = [{"workoutId": 1}, {"workoutId": 2}]
-    client.schedule_workout.return_value = {"workoutScheduleId": 9}
+    from test_garmin_export import Garmin
+
+    client = Garmin()
+    client.has_tokens = MagicMock(return_value=True)
     return client
 
 
-def test_push_stores_the_ids_and_a_second_push_replaces_the_copy(tempo):
+def test_push_stores_ids_and_reuses_the_copy(tempo):
     client = _garmin()
     first = plan_adaptation.push_session(client, tempo)
     assert first["garmin_workout_id"] == "1"
     session = GarminRepository().get_planned_session(tempo)
     assert session is not None and session.garmin_pushed_at is not None
     plan_adaptation.push_session(client, tempo)
-    client.delete_workout.assert_called_once_with("1")
-    client.unschedule_workout.assert_called_once_with("9")
-    session = GarminRepository().get_planned_session(tempo)
-    assert session is not None and session.garmin_workout_id == "2"
+    assert len(client.workouts) == len(client.schedules) == 1
+    assert not any(method == "DELETE" for method, _, _ in client.calls)
 
 
 def test_a_strength_session_is_not_pushable():
@@ -217,5 +224,5 @@ def test_the_push_routes(tempo, router_client):
         garmin.has_tokens.return_value = True
         body = client.post(f"/garmin/planned/{tempo}/push").json()
         assert body["garmin_workout_id"] == "1"
-        garmin.upload_workout.side_effect = RuntimeError("400 Bad Request")
+        garmin.fail = "read"
         assert client.post(f"/garmin/planned/{tempo}/push").status_code == 502
