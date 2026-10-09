@@ -71,9 +71,14 @@ profiles that do not preload. The briefing and the session feedback bind no tool
 session's numbers, RPE and notes) and the model answers in one request. The
 server files the feedback's ledger entry itself (`services/memory.append_entry`,
 dated heading, never twice), so neither mission can mutate training data or
-forget to write. Every profile receives the current date. Chat writes the
-journal through one tool, `append_journal` (server-dated heading, deduplicated,
-bounded); its filesystem middleware only reads (`read_file`).
+forget to write. Every profile receives the current date. Chat adds new journal
+entries through `append_journal` (server-dated heading, deduplicated,
+bounded). Its filesystem also exposes `edit_file` for targeted corrections/removal
+and `delete` for forgetting an entire current ledger (`notes.md` or `sessions.md`).
+Archives and `/attachments/` remain read-only, with an explicit deny for every
+other write path. New entries still use `append_journal`; arbitrary file creation
+is not exposed. Appends, rotation, edits and deletion share a bounded process-local
+lock so overlapping turns in one server cannot overwrite each other's writes.
 Model-generated loaded state and client page metadata cannot change these policies.
 
 The context builder combines the harness/filesystem contribution, mission
@@ -154,7 +159,7 @@ import drafts and outbound Garmin operation records are deliberately durable in
 DuckDB/MotherDuck (migration 13). `services/documents.py` and `services/imports.py`
 own these lifecycles. API chat hydration builds an invocation-local StateBackend
 view at `/attachments/`; the context builder receives only a bounded manifest.
-The readonly filesystem composes that view with the existing ledger backend.
+The filesystem composes that read-only view with the existing ledger backend.
 The model can propose a draft but has no confirmation tool; pending imports block
 ordinary coach planning writes. Human confirmation commits selected sessions once.
 

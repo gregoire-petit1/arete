@@ -262,7 +262,14 @@ def test_statebackend_reads_documents_and_rejects_writes(
     context = AgentContext(thread_id=document_db)
     state, _ = _document_state(context)
     filesystem = build_memory_filesystem()
-    assert {t.name for t in filesystem.tools} == {"read_file", "ls", "glob", "grep"}
+    assert {t.name for t in filesystem.tools} == {
+        "read_file",
+        "ls",
+        "glob",
+        "grep",
+        "edit_file",
+        "delete",
+    }
     for tool in filesystem.tools:
         assert "anyOf" not in json.dumps(tool.args_schema.model_json_schema())
     graph = create_agent(
