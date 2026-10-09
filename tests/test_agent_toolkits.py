@@ -49,6 +49,8 @@ def test_planning_toolkit_registered():
         "create_planned_session",
         "update_planned_status",
         "delete_planned_session",
+        "prepare_import",
+        "inspect_import",
     }
     assert "planning" in tk.instructions.lower()
 

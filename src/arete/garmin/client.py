@@ -16,6 +16,7 @@ import zipfile
 from datetime import date
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import parse_qsl, urlsplit
 
 from garminconnect import Garmin
 
@@ -178,3 +179,61 @@ class GarminClient:
 
     def resting_hr(self, day: date) -> dict[str, Any] | None:
         return cast(dict[str, Any] | None, self.connect().get_rhr_day(day.isoformat()))
+
+    def workout_request(
+        self, method: str, path: str, *, timeout: float, payload: Any = None
+    ) -> Any:
+        """One HTTP request, including on auth failure; no hidden SDK replay.
+
+        The pinned SDK's normal request method refreshes tokens and retries 401s.
+        Load tokens locally and use its authenticated session/headers directly so
+        the export service's 12-request budget also bounds actual HTTP requests.
+        Refreshing an expired login stays an explicit account action.
+        """
+        if method not in {"GET", "POST", "PUT", "DELETE"}:
+            raise AssertionError("Unsupported workout operation")
+        if self._api is None:
+            if not self.has_tokens():
+                raise PermissionError(
+                    "Connecte Garmin dans les réglages avant l’export."
+                )
+            api = Garmin()
+            api.client.load(
+                str(self.token_dir)
+            )  # Local file read, no profile requests.
+            self._api = api
+        client = self._api.client
+        endpoint = urlsplit(path)
+        assert (
+            not endpoint.scheme
+            and not endpoint.netloc
+            and endpoint.path.startswith("/")
+        )
+        response = client._api_session.request(
+            method,
+            f"{client._connectapi}/{endpoint.path.lstrip('/')}",
+            headers=client.get_api_headers(),
+            params=dict(parse_qsl(endpoint.query)),
+            timeout=timeout,
+            allow_redirects=False,
+            **({"json": payload} if payload is not None else {}),
+        )
+        if response.status_code == 404:
+            raise LookupError("Objet Garmin introuvable (404).")
+        if response.status_code in {401, 403}:
+            raise PermissionError(
+                "Session Garmin expirée ou refusée. Reconnecte le compte dans les réglages avant de reprendre."
+            )
+        if not 200 <= response.status_code < 300:
+            raise RuntimeError(
+                f"Garmin HTTP {response.status_code} ; aucune nouvelle tentative automatique."
+            )
+        return response.json() if response.content else {}
+
+    def workout_devices(self) -> list[dict]:
+        return cast(
+            list[dict],
+            self.workout_request(
+                "GET", "/device-service/deviceregistration/devices", timeout=15.0
+            ),
+        )

@@ -83,6 +83,9 @@ def build_context(request: ModelRequest):
         ContextSection("capabilities", tool_instructions_suffix(loaded), "registry"),
         ContextSection("journal", journal_block(), "ledger"),
         ContextSection(
+            "attachments", context.attachment_manifest if context else "", "server"
+        ),
+        ContextSection(
             "page",
             page_section(context) if profile.page_context else "",
             "server",

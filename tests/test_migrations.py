@@ -73,3 +73,33 @@ def test_a_database_behind_runs_its_migrations(tmp_path, monkeypatch):
     (latest,) = con.execute("SELECT MAX(version) FROM app.schema_version").fetchone()
     con.close()
     assert latest == init_duckdb.MIGRATIONS[-1][0]
+
+
+def test_document_migration_preserves_version_eight_planning(tmp_path, monkeypatch):
+    path = tmp_path / "version-eight.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    with duckdb.connect(str(path)) as con:
+        con.execute(
+            "INSERT INTO app.planned_sessions (date,sport,session_type,description) VALUES ('2027-01-12','running','endurance','Existing session')"
+        )
+        for column in ("prescription", "provenance", "revision"):
+            con.execute(f"ALTER TABLE app.planned_sessions DROP COLUMN {column}")
+        for table in (
+            "document_quota",
+            "coach_documents",
+            "coach_document_chunks",
+            "coach_imports",
+            "garmin_exports",
+        ):
+            con.execute(f"DROP TABLE app.{table}")
+        con.execute("DELETE FROM app.schema_version WHERE version=9")
+    init_duckdb.main()
+    with duckdb.connect(str(path)) as con:
+        row = con.execute(
+            "SELECT description,prescription,provenance,revision FROM app.planned_sessions"
+        ).fetchone()
+        assert row == ("Existing session", None, None, 1)
+        assert con.execute("SELECT used_bytes FROM app.document_quota").fetchone() == (
+            0,
+        )

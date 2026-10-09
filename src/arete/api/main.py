@@ -6,13 +6,17 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 
+import duckdb
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 
 from arete import scheduler
 from arete.api.agent import router as agent_router
 from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
+from arete.api.documents import router as documents_router
 from arete.api.garmin import router as garmin_router
+from arete.api.garmin_export import router as garmin_export_router
 from arete.api.garmin_health import router as garmin_health_router
 from arete.api.garmin_sync import router as garmin_sync_router
 from arete.api.metrics import router as metrics_router
@@ -23,6 +27,7 @@ from arete.config import config
 from arete.dataio.db import db_connection
 from arete.dataio.init_duckdb import main as init_schema
 from arete.dataio.mirror import MirrorMiddleware
+from arete.services.documents import DocumentError
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +69,21 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="Arete API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(MirrorMiddleware)
+
+
+@app.exception_handler(duckdb.TransactionException)
+async def transaction_conflict(_request, _exc):
+    return JSONResponse(
+        status_code=409,
+        content={
+            "detail": "Une autre opération a modifié ces données. Recharge l’état avant de réessayer."
+        },
+    )
+
+
+@app.exception_handler(DocumentError)
+async def document_error(_request, exc: DocumentError):
+    return JSONResponse(status_code=409, content={"detail": str(exc)})
 
 
 @app.get("/health")
@@ -126,6 +146,7 @@ for router in (
     settings_router,
     metrics_router,
     garmin_router,
+    garmin_export_router,
     garmin_health_router,
     garmin_sync_router,
     strength_router,
@@ -133,5 +154,6 @@ for router in (
     strava_router,
     analytics_router,
     agent_router,
+    documents_router,
 ):
     app.include_router(router)

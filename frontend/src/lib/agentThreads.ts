@@ -17,6 +17,7 @@ export interface CoachThread {
   updatedAt: number;
   messages: ChatMessage[];
   draft: string;
+  attachmentIds?: string[];
 }
 export interface ThreadStore {
   version: 1;
@@ -67,7 +68,7 @@ export function addThread(
   thread = createThread()
 ): ThreadStore {
   const empty = store.threads.find(
-    (t) => !t.messages.length && !t.draft.trim()
+    (t) => !t.messages.length && !t.draft.trim() && !t.attachmentIds?.length
   );
   if (empty) return { ...store, activeId: empty.id };
   if (store.threads.length >= MAX_THREADS)
@@ -135,6 +136,7 @@ export function restoreThreads(
       draft: t.draft,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
+      attachmentIds: Array.isArray(t.attachmentIds) && t.attachmentIds.length <= 20 && t.attachmentIds.every(id => typeof id === 'string') ? t.attachmentIds : [],
       messages: restoreConversation(JSON.stringify(t.messages)),
     };
   });

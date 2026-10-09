@@ -26,6 +26,8 @@ import { followUps, starters } from '@/lib/coachPrompts';
 import { ThreadHistory } from './agent/ThreadHistory';
 import { AgentMarkdown } from './agent/AgentMarkdown';
 import { ToolActivity } from './agent/ToolActivity';
+import { DocumentAttachments, type AttachmentsHandle } from './agent/DocumentAttachments';
+import { DocumentImports } from './agent/DocumentImports';
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: 'Tableau de bord',
@@ -114,8 +116,10 @@ export function AgentSidePanel({
   const coach = useCoachThreads(panelContext);
   const { active, store, runningId } = coach;
   const messages = active.messages;
+  const attachmentsRef = useRef<AttachmentsHandle>(null);
+  const [documentsBusy, setDocumentsBusy] = useState(false);
   const streaming = runningId === active.id;
-  const busy = runningId !== null;
+  const busy = runningId !== null || documentsBusy;
   const elapsed = useElapsedSeconds(streaming);
   const asked = messages.filter((m) => m.role === 'user').map((m) => m.content);
   const [showHistory, setShowHistory] = useState(false);
@@ -163,13 +167,15 @@ export function AgentSidePanel({
     followLatest();
   };
   const send = (prompt?: string) => {
-    if (coach.send(prompt)) followLatest();
+    if (!busy && coach.send(prompt)) followLatest();
   };
 
   if (!open) return null;
   const page = PAGE_LABELS[panelContext.page] ?? panelContext.page;
   return (
     <aside
+      onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }}
+      onDrop={event => { event.preventDefault(); if (!busy) attachmentsRef.current?.upload(Array.from(event.dataTransfer.files)); }}
       id="coach-panel"
       className="coach-panel fixed right-0 z-40 flex w-full max-w-[520px] flex-col border-l border-text-muted/20 bg-abyss shadow-2xl animate-fade-in"
       role="complementary"
@@ -306,6 +312,8 @@ export function AgentSidePanel({
             }}
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6"
           >
+            <DocumentAttachments key={active.id} threadId={active.id} disabled={runningId !== null} ref={attachmentsRef} onBusy={setDocumentsBusy} onDocuments={coach.attachments} />
+            <div className="my-3"><DocumentImports key={`imports-${active.id}`} threadId={active.id} /></div>
             {!messages.length && (
               <div className="mx-auto mt-10 max-w-sm">
                 <BotMessageSquare className="mb-5 size-8 text-neon-cyan/70" />

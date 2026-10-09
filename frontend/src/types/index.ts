@@ -42,6 +42,9 @@ export interface WorkloadMetrics {
 // ========================= //
 
 export interface PlannedSession {
+  prescription?: import('@/lib/documents').Prescription | null;
+  provenance?: import('@/lib/documents').Provenance[] | null;
+  revision?: number;
   id: number;
   date: string;
   sport: string;

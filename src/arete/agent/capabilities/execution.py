@@ -27,6 +27,19 @@ def _resolve_tool(request) -> BaseTool | ToolMessage | None:
     profile = _profile(getattr(request, "runtime", None))
     found = _toolkit_tool(name)
     reason = None
+    context = getattr(getattr(request, "runtime", None), "context", None)
+    if getattr(context, "document_import_pending", False) and name in {
+        "create_planned_session",
+        "update_planned_status",
+        "delete_planned_session",
+        "save_workout",
+    }:
+        return ToolMessage(
+            content="Import documentaire non validé : prépare un aperçu avec prepare_import ; l’athlète le confirme dans l’interface.",
+            name=name,
+            tool_call_id=request.tool_call["id"],
+            status="error",
+        )
     if found is not None:
         tid, tool = found
         tk = _registry(profile).get(tid)

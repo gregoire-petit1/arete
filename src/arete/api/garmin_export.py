@@ -1,0 +1,63 @@
+"""Explicit human actions for outbound workouts; no model invocation."""
+
+from datetime import date
+
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
+
+from arete.services import garmin_export
+from arete.services.prescriptions import Prescription
+
+router = APIRouter(prefix="/garmin", tags=["workout export"])
+
+
+@router.get("/workout-devices")
+def devices():
+    return garmin_export.devices()
+
+
+@router.get("/exports")
+def statuses():
+    return garmin_export.statuses()
+
+
+class ExportIn(BaseModel):
+    device_id: int | None = Field(default=None, gt=0)
+
+
+@router.post("/planned/{session_id}/export")
+def export(session_id: int, body: ExportIn):
+    return garmin_export.export(session_id, body.device_id)
+
+
+@router.post("/exports/{session_id}/reconcile")
+def reconcile(session_id: int):
+    return garmin_export.reconcile(session_id)
+
+
+@router.post("/exports/{session_id}/remove")
+def remove(session_id: int):
+    return garmin_export.remove(session_id)
+
+
+class PrescriptionUpdate(BaseModel):
+    revision: int = Field(ge=1)
+    date: date
+    description: str = Field(min_length=1, max_length=500)
+    prescription: Prescription
+
+
+@router.put("/planned/{session_id}/prescription")
+def update(session_id: int, body: PrescriptionUpdate):
+    garmin_export.update_session(
+        session_id, body.revision, body.date, body.description, body.prescription
+    )
+    return {"updated": True}
+
+
+@router.get("/workout-exercises")
+def exercises():
+    from garminconnect.exercises import EXERCISES
+
+    assert len(EXERCISES) <= 2000
+    return EXERCISES

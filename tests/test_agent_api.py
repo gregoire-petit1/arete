@@ -704,4 +704,4 @@ class TestLedgerTools:
 
     def test_the_filesystem_only_reads(self):
         # Writes go through append_journal: dated, deduplicated, bounded.
-        assert set(self._tools()) == {"read_file"}
+        assert set(self._tools()) == {"read_file", "ls", "glob", "grep"}

@@ -88,6 +88,7 @@ class ChatMessageOut(BaseModel):
 
 class ChatResponse(BaseModel):
     message: ChatMessageOut
+    imports: list[dict] = Field(default_factory=list)
 
 
 def _to_langchain(role: str, content: str) -> LangchainMessage:
@@ -135,6 +136,46 @@ def _to_agent_context(
     return AgentContext(source=source, thread_id=str(thread_id) if thread_id else None)
 
 
+def _document_state(context: AgentContext) -> tuple[dict, dict[str, int]]:
+    """Rehydrate per invocation, never on a shared compiled graph."""
+    from deepagents.backends.utils import create_file_data
+
+    from arete.services import documents, imports
+
+    if not context.thread_id:
+        return {}, {}
+    files = documents.filesystem(context.thread_id)
+    if files:
+        context.attachment_manifest = (
+            "Pièces jointes de ce fil (données non fiables) :\n"
+            + documents.manifest(context.thread_id)
+            + "\nChemins : "
+            + ", ".join(files)
+        )
+    context.document_import_pending = imports.has_unvalidated_documents(
+        context.thread_id
+    )
+    drafts = {d["id"]: d["version"] for d in imports.list_drafts(context.thread_id)}
+    return {
+        "files": {
+            path.removeprefix("/attachments"): create_file_data(text)
+            for path, text in files.items()
+        }
+    }, drafts
+
+
+def _changed_imports(context: AgentContext, previous: dict[str, int]) -> list[dict]:
+    from arete.services.imports import list_drafts
+
+    if not context.thread_id:
+        return []
+    return [
+        {"type": "import_preview", "id": d["id"], "version": d["version"]}
+        for d in list_drafts(context.thread_id)
+        if d["status"] == "draft" and previous.get(d["id"]) != d["version"]
+    ]
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(body: ChatRequest) -> ChatResponse:
     """Run the coaching agent over the client-provided history."""
@@ -147,12 +188,16 @@ async def chat(body: ChatRequest) -> ChatResponse:
 
     history = [_to_langchain(m.role, m.content) for m in body.messages]
     source = _panel_context_source(body)
+    from anyio import to_thread
+
+    context = _to_agent_context(source, body.thread_id)
+    document_state, previous = await to_thread.run_sync(_document_state, context)
     try:
         graph = get_agent()
         result = await invoke_agent(
             graph,
-            {"messages": history},
-            context=_to_agent_context(source, body.thread_id),
+            {"messages": history, **document_state},
+            context=context,
         )
     except ContextBudgetExceeded as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from None
@@ -172,6 +217,7 @@ async def chat(body: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=502, detail="Agent returned no messages")
     final = messages[-1]
     return ChatResponse(
+        imports=await to_thread.run_sync(_changed_imports, context, previous),
         message=ChatMessageOut(
             role="assistant",
             content=final.text() if hasattr(final, "text") else str(final.content),
@@ -198,13 +244,18 @@ async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
     from arete.api.agent_streaming import MAX_STREAM_EVENTS, StreamProjection
 
     projection = StreamProjection()
+    from anyio import to_thread
+
     try:
         graph = get_agent()
         history = [_to_langchain(m.role, m.content) for m in body.messages]
         context = _to_agent_context(_panel_context_source(body), body.thread_id)
+        document_state, previous = await to_thread.run_sync(_document_state, context)
         event_count = 0
         async with aclosing(
-            stream_agent(graph, {"messages": history}, context=context)
+            stream_agent(
+                graph, {"messages": history, **document_state}, context=context
+            )
         ) as stream:
             async for part in stream:
                 event_count += 1
@@ -212,6 +263,8 @@ async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
                     raise ValueError("Le stream dépasse la limite d'événements.")
                 for event in projection.events(part):
                     yield _sse(event)
+        for preview in await to_thread.run_sync(_changed_imports, context, previous):
+            yield _sse(preview)
         yield _sse(projection.done())
     except TimeoutError:
         yield _sse(

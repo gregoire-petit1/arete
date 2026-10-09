@@ -77,6 +77,9 @@ class PlannedSession:
     source: str = "manual"  # 'manual', 'llm', 'coach'
     status: SessionStatus = SessionStatus.PENDING
     created_at: datetime | None = None
+    prescription: dict[str, Any] | None = None
+    provenance: list[dict[str, Any]] | None = None
+    revision: int = 1
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for DB insertion."""

@@ -43,13 +43,14 @@ export default defineConfig({
         ],
       },
       workbox: {
+        globIgnores: ["ocr/**", "**/pdf*.mjs", "**/pdf*.js"],
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
         // API calls and the Strava OAuth callback must reach the server,
         // never the cached app shell.
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
+            urlPattern: ({ url }) => url.pathname.startsWith("/api/") && !url.pathname.startsWith("/api/agent/") && !url.pathname.startsWith("/api/garmin/exports"),
             handler: "NetworkFirst",
             options: {
               // Past 10 s offline-ish, serve the cached answer if any.

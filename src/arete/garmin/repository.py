@@ -1,5 +1,6 @@
 """Repository for Garmin sessions database operations."""
 
+import json
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -79,7 +80,7 @@ class GarminRepository:
             """
             SELECT id, user_id, date, sport, session_type, target_duration_min,
                    target_distance_km, target_hr_zone, target_intensity,
-                   description, source, status, created_at
+                   description, source, status, created_at, prescription, provenance, revision
             FROM planned_sessions WHERE id = ?
             """,
             [session_id],
@@ -103,6 +104,9 @@ class GarminRepository:
             source=result[10],
             status=SessionStatus(result[11]) if result[11] else SessionStatus.PENDING,
             created_at=result[12],
+            prescription=json.loads(result[13]) if result[13] else None,
+            provenance=json.loads(result[14]) if result[14] else None,
+            revision=result[15],
         )
 
     def list_planned_sessions(
@@ -118,7 +122,7 @@ class GarminRepository:
         query = """
             SELECT id, user_id, date, sport, session_type, target_duration_min,
                    target_distance_km, target_hr_zone, target_intensity,
-                   description, source, status, created_at
+                   description, source, status, created_at, prescription, provenance, revision
             FROM planned_sessions WHERE 1=1
         """
         params: list = []
@@ -154,6 +158,9 @@ class GarminRepository:
                 source=row[10],
                 status=SessionStatus(row[11]) if row[11] else SessionStatus.PENDING,
                 created_at=row[12],
+                prescription=json.loads(row[13]) if row[13] else None,
+                provenance=json.loads(row[14]) if row[14] else None,
+                revision=row[15],
             )
             for row in results
         ]
@@ -173,10 +180,28 @@ class GarminRepository:
     def delete_planned_session(self, session_id: int) -> bool:
         """Delete a planned session by ID."""
         conn = self._get_connection()
-        result = conn.execute(
-            "DELETE FROM planned_sessions WHERE id = ? RETURNING id", [session_id]
-        ).fetchone()
-        conn.close()
+        try:
+            conn.execute("BEGIN TRANSACTION")
+            active = conn.execute(
+                "SELECT state FROM garmin_exports WHERE session_id=?", [session_id]
+            ).fetchone()
+            if active and active[0] in {"working", "uncertain", "conflict"}:
+                raise ValueError(
+                    "Réconcilie l’export Garmin avant de supprimer la séance."
+                )
+            conn.execute(
+                "UPDATE garmin_exports SET deleted=true,state='pending_removal',updated_at=current_timestamp WHERE session_id=? AND state<>'removed'",
+                [session_id],
+            )
+            result = conn.execute(
+                "DELETE FROM planned_sessions WHERE id = ? RETURNING id", [session_id]
+            ).fetchone()
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
         return result is not None
 
     # ─────────────────────────────────────────────────────────────────────
