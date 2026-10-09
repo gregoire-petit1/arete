@@ -31,7 +31,7 @@
 /* ========================= */
 /* TAILWIND THEME CONFIG    */
 /* ========================= */
-/* Hex values are mirrored in src/lib/chartTheme.ts for recharts (needs literals). */
+/* Charts and inline SVG reference these same tokens via src/lib/chartTheme.ts. */
 
 @theme {
   /* Colors - Solo Leveling Theme */
@@ -84,9 +84,59 @@
 /* ========================= */
 
 html {
+  color-scheme: dark;
   background-color: var(--color-void);
   color: var(--color-text-primary);
   font-family: var(--font-sans);
+}
+
+html[data-theme='darker'] {
+  --color-void: #050508;
+  --color-abyss: #0A0A0F;
+  --color-shadow: #12121A;
+}
+
+html[data-theme='abyss'] {
+  --color-void: #000000;
+  --color-abyss: #050508;
+  --color-shadow: #0A0A0F;
+}
+
+/* Darker accents keep text and chart labels readable on pale surfaces. */
+html[data-theme='light'] {
+  color-scheme: light;
+  --color-void: #F4F7FA;
+  --color-abyss: #FFFFFF;
+  --color-shadow: #E2E8F0;
+  --color-text-primary: #172B3A;
+  --color-text-secondary: #465B6B;
+  --color-text-muted: #5E6E7D;
+  --color-neon-cyan: #006B78;
+  --color-neon-purple: #7733AF;
+  --color-neon-gold: #826000;
+  --color-success-green: #137344;
+  --color-warning-orange: #A44700;
+  --color-danger-red: #C02632;
+  --color-info-blue: #245DC1;
+  --color-strava: #C73A00;
+  --color-chart-surface: #FFFFFF;
+  --color-chart-grid: #CBD5E1;
+  --color-chart-axis: #526477;
+  --color-chart-label: #5E6E7D;
+  --color-chart-text: #172B3A;
+  --color-chart-blue: #245DC1;
+  --color-chart-green: #137344;
+  --color-chart-yellow: #826000;
+  --color-chart-orange: #A44700;
+  --color-chart-red: #C02632;
+  --color-chart-grey: #5E6E7D;
+  --color-heat-0: #E2E8F0;
+  --color-heat-1: #368878;
+  --color-heat-2: #B8860B;
+  --color-heat-3: #D65B15;
+  --color-heat-4: #C02632;
+  --color-outline-dim: #94A3B8;
+  --color-outline: #64748B;
 }
 
 body {
@@ -103,9 +153,9 @@ body {
 /* ========================= */
 
 .glass-panel {
-  background: rgba(18, 18, 26, 0.7);
+  background: color-mix(in srgb, var(--color-abyss) 70%, transparent);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 240, 255, 0.15);
+  border: 1px solid color-mix(in srgb, var(--color-neon-cyan) 15%, transparent);
   border-radius: 4px;
 }
 
@@ -188,7 +238,7 @@ body {
 .coach-markdown h1, .coach-markdown h2, .coach-markdown h3, .coach-markdown h4 { margin: 1.3em 0 0.5em; font-size: 1em; font-weight: 700; line-height: 1.4; }
 .coach-markdown h1 { font-size: 1.2em; }
 .coach-markdown h2 { font-size: 1.1em; }
-.coach-markdown strong { font-weight: 700; color: #fff; }
+.coach-markdown strong { font-weight: 700; color: var(--color-text-primary); }
 .coach-markdown ul, .coach-markdown ol { margin: 0.6em 0; padding-left: 1.5em; }
 .coach-markdown ul { list-style: disc; }
 .coach-markdown ol { list-style: decimal; }

@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Check, Dumbbell, Palette, Save, Target, Terminal, User, Watch, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ErrorState, LoadingState } from '@/components';
 import { Button, Spinner } from '@/components/ui';
 import { settingsApi, type UserSettings } from '@/lib/api';
+import { applyTheme } from '@/lib/theme';
 import {
   AppearanceTab,
   CoachTab,
@@ -51,6 +52,16 @@ export function SettingsPage() {
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 
+  useLayoutEffect(() => {
+    if (!savedSettings) return;
+    applyTheme(settings.theme);
+    // Read the current cache on exit: a successful save may have changed it.
+    return () => {
+      const saved = queryClient.getQueryData<UserSettings>(['settings']);
+      if (saved) applyTheme(saved.theme);
+    };
+  }, [settings.theme, savedSettings, queryClient]);
+
   const hasChanges = useMemo(() => {
     if (!savedSettings) return false;
     const { user_id, ...saved } = savedSettings;
@@ -60,7 +71,8 @@ export function SettingsPage() {
   const saveMutation = useMutation({
     mutationFn: settingsApi.update,
     onMutate: () => setSaveStatus('saving'),
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      queryClient.setQueryData(['settings'], saved);
       queryClient.invalidateQueries({ queryKey: ['settings'] });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
@@ -107,16 +119,16 @@ export function SettingsPage() {
           )}
         </header>
 
-        <div className="flex gap-6">
-          <nav className="w-48 shrink-0 animate-fade-left">
-            <div className="space-y-1">
+        <div className="flex flex-col md:flex-row gap-6">
+          <nav className="md:w-48 shrink-0 animate-fade-left overflow-x-auto">
+            <div className="flex md:block gap-1 md:space-y-1">
               {TABS.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    'w-full flex items-center gap-3 px-4 py-3 rounded',
+                    'shrink-0 md:w-full flex items-center gap-3 px-4 py-3 rounded',
                     'text-sm font-mono transition-all text-left',
                     activeTab === tab.id
                       ? 'bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30'
@@ -130,7 +142,7 @@ export function SettingsPage() {
             </div>
           </nav>
 
-          <div key={activeTab} className="flex-1 glass-panel p-6 animate-fade-up">
+          <div key={activeTab} className="flex-1 min-w-0 glass-panel p-6 animate-fade-up">
             {activeTab === 'profile' && <ProfileTab {...tabProps} />}
             {activeTab === 'goals' && <GoalsTab {...tabProps} />}
             {activeTab === 'workout' && <WorkoutTab {...tabProps} />}

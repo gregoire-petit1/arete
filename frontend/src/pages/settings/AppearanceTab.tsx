@@ -1,12 +1,6 @@
 import { cn } from '@/lib/utils';
-import type { LocalSettings, SettingsTabProps } from './types';
-
-// Swatches mirror THEME_COLORS.void in contexts/SettingsContext.tsx
-const THEMES: { value: LocalSettings['theme']; label: string; color: string }[] = [
-  { value: 'dark', label: 'SOMBRE', color: 'bg-[#0A0A0F]' },
-  { value: 'darker', label: 'PLUS SOMBRE', color: 'bg-[#050508]' },
-  { value: 'abyss', label: 'ABYSSE', color: 'bg-[#000000]' },
-];
+import type { SettingsTabProps } from './types';
+import { THEMES } from '@/lib/theme';
 
 export function AppearanceTab({ settings, updateSetting }: SettingsTabProps) {
   return (
@@ -15,11 +9,12 @@ export function AppearanceTab({ settings, updateSetting }: SettingsTabProps) {
 
       <div>
         <label className="text-xs font-mono text-text-muted uppercase block mb-3">Thème</label>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3" role="group" aria-label="Thème">
           {THEMES.map((theme) => (
             <button
               key={theme.value}
               type="button"
+              aria-pressed={settings.theme === theme.value}
               onClick={() => updateSetting('theme', theme.value)}
               className={cn(
                 'flex flex-col items-center gap-2 p-3 rounded border transition-all',
@@ -28,11 +23,12 @@ export function AppearanceTab({ settings, updateSetting }: SettingsTabProps) {
                   : 'border-text-muted/20 hover:border-text-muted/40'
               )}
             >
-              <div className={cn('w-16 h-10 rounded', theme.color)} />
+              <div className="w-16 h-10 rounded border border-text-muted/20" style={{ backgroundColor: theme.color }} />
               <span className="text-xs font-mono text-text-muted">{theme.label}</span>
             </button>
           ))}
         </div>
+        <p className="mt-3 text-xs text-text-secondary">Aperçu immédiat. Enregistre pour conserver ce thème.</p>
       </div>
     </div>
   );

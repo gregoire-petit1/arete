@@ -19,7 +19,7 @@ class UserSettingsUpdate(BaseModel):
     fitness_goal: Literal["maintenance", "build", "peak", "recovery"] = "build"
     notifications_enabled: bool = True
     coach_briefing_enabled: bool = True
-    theme: Literal["dark", "darker", "abyss"] = "dark"
+    theme: Literal["light", "dark", "darker", "abyss"] = "dark"
     exercise_abbreviations: dict[str, str] = {}
     weekly_volume_target_kg: int = Field(ge=1000, le=200000, default=20000)
     lthr: int | None = Field(ge=100, le=220, default=None)

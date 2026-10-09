@@ -257,7 +257,7 @@ export interface UserSettings {
   fitness_goal: "maintenance" | "build" | "peak" | "recovery";
   notifications_enabled: boolean;
   coach_briefing_enabled: boolean;
-  theme: "dark" | "darker" | "abyss";
+  theme: import('./theme').Theme;
   exercise_abbreviations: Record<string, string>;
   weekly_volume_target_kg: number;
   /** Threshold heart rate: the reference the HR zones are built on. */

@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS app.user_settings (
     fitness_goal            VARCHAR DEFAULT 'build',   -- 'maintenance', 'build', 'peak', 'recovery'
     notifications_enabled   BOOLEAN DEFAULT TRUE,
     coach_briefing_enabled  BOOLEAN DEFAULT TRUE,  -- the coach writes a daily briefing
-    theme                   VARCHAR DEFAULT 'dark',    -- 'dark', 'darker', 'abyss'
+    theme                   VARCHAR DEFAULT 'dark',    -- 'light', 'dark', 'darker', 'abyss'
     exercise_abbreviations  VARCHAR DEFAULT '{}',      -- JSON: {"bp": "bench press", "ng": "neutral grip", ...}
     weekly_volume_target_kg INTEGER DEFAULT 20000,     -- strength tonnage goal per week
     lthr                    INTEGER,                   -- threshold heart rate, drives HR zones
