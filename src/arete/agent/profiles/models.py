@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-ProfileId = Literal["chat", "briefing", "feedback"]
+ProfileId = Literal["chat", "briefing", "feedback", "review"]
 
 
 @dataclass(frozen=True)

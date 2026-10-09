@@ -143,6 +143,7 @@ def cron_daily_sync(authorization: str | None = Header(default=None)):
     status = scheduler.daily_sync()
     scheduler.record_run(datetime.now())
     status["briefing"] = scheduler.write_daily_briefing()
+    status["review"] = scheduler.write_weekly_review()
     return status
 
 

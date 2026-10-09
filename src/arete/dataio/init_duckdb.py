@@ -364,6 +364,23 @@ CREATE TABLE IF NOT EXISTS app.athlete_facts (
     updated_at  TIMESTAMP DEFAULT now()
 );
 
+CREATE SEQUENCE IF NOT EXISTS app.weekly_reviews_seq START 1;
+
+-- One review per finished week: the coach's text and the rules' proposals
+CREATE TABLE IF NOT EXISTS app.weekly_reviews (
+    id              INTEGER PRIMARY KEY DEFAULT nextval('app.weekly_reviews_seq'),
+    user_id         INTEGER NOT NULL DEFAULT 1,
+    week_start      DATE NOT NULL,          -- Monday of the week reviewed
+    text            VARCHAR NOT NULL,
+    source          VARCHAR NOT NULL,       -- 'agent', 'rules'
+    facts           VARCHAR,                -- what the text was written from
+    proposals_json  VARCHAR NOT NULL,       -- changes proposed for the days ahead
+    applied_json    VARCHAR,                -- which ones the athlete applied
+    created_at      TIMESTAMP DEFAULT now(),
+    applied_at      TIMESTAMP,
+    UNIQUE (user_id, week_start)
+);
+
 CREATE TABLE IF NOT EXISTS app.push_subscriptions (
     endpoint         VARCHAR PRIMARY KEY,
     p256dh           VARCHAR NOT NULL,
@@ -545,6 +562,12 @@ def _m15_athlete_facts(con) -> None:
     con.execute(DDL[start : DDL.index(");", DDL.index("app.athlete_facts (")) + 2])
 
 
+def _m16_weekly_reviews(con) -> None:
+    """The weekly review and the plan changes it proposes."""
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.weekly_reviews_seq")
+    con.execute(DDL[start : DDL.index(");", DDL.index("app.weekly_reviews (")) + 2])
+
+
 #: Append-only. A database at the last version skips the DDL entirely on boot
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
@@ -571,6 +594,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (13, _m13_document_imports),
     (14, _m14_goals),
     (15, _m15_athlete_facts),
+    (16, _m16_weekly_reviews),
 ]
 
 
