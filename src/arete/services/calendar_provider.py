@@ -1,4 +1,4 @@
-"""Bounded HTTP adapters. Connect's wire contract follows @vercel/connect 2.4.1.
+"""Bounded HTTP adapters: Google credentials from Clerk, the Calendar API.
 
 No provider credentials are persisted or exposed to the model. A session reuses
 one short-lived token only for the current operation, so disconnects/revocations
@@ -6,10 +6,11 @@ are checked on the next operation even across separate serverless instances.
 """
 
 import json
+import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from time import monotonic
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 import httpx
 
@@ -21,6 +22,16 @@ from arete.services.calendar_models import (
     SCOPES,
     CalendarError,
 )
+from arete.services.google_tokens import (
+    GoogleToken,
+    GoogleTokenUnavailable,
+    google_access_token,
+)
+
+logger = logging.getLogger(__name__)
+
+#: The token works but lacks the calendar scopes: the browser must ask Google.
+SCOPES_MISSING = "Autorise l’accès à Google Calendar pour ce compte."
 
 
 class CalendarHTTP:
@@ -74,18 +85,24 @@ class CalendarHTTP:
             ) from exc
 
 
-class ConnectProvider:
+class ClerkProvider:
+    """Google credentials of one signed-in Arete account, held by Clerk.
+
+    Clerk stores the refresh token of the Google account the user signed in
+    with and hands out a fresh access token per operation. The calendar scopes
+    are granted incrementally from the browser (Clerk's ``reauthorize``), so
+    signing in never asks for the calendar.
+    """
+
     def __init__(
         self,
-        connector: str,
-        subject: str,
-        credential: Callable[[], str],
+        clerk_user_id: str,
+        tokens: Callable[[str], GoogleToken] = google_access_token,
         *,
         transport: httpx.BaseTransport | None = None,
     ):
-        self.connector = connector
-        self.subject = {"type": "user", "id": subject}
-        self.credential = credential
+        self.clerk_user_id = clerk_user_id
+        self.tokens = tokens
         self.transport = transport
 
     @contextmanager
@@ -98,56 +115,32 @@ class ConnectProvider:
         ) as client:
             yield CalendarHTTP(client, limit)
 
-    def connect(
-        self, http: CalendarHTTP, method: str, path: str, payload: dict
-    ) -> dict:
-        credential = self.credential()
-        if not credential:
+    def _google_token(self) -> GoogleToken:
+        try:
+            return self.tokens(self.clerk_user_id)
+        except GoogleTokenUnavailable as exc:
+            # Provider detail can contain secrets: log it, show a fixed message.
+            logger.warning("Google token unavailable: %s", exc)
             raise CalendarError(
-                "Vercel Connect non configuré : credential serveur manquant.", 503
-            )
-        return http.request(
-            method,
-            "https://api.vercel.com/v1/connect/" + path,
-            json=payload,
-            headers={"Authorization": f"Bearer {credential}"},
-        )
+                "Compte Google indisponible : reconnecte Google Calendar.", 409
+            ) from exc
 
     def token(self, http: CalendarHTTP) -> str:
-        data = self.connect(
-            http,
-            "POST",
-            "token/" + quote(self.connector, safe=""),
-            {"subject": self.subject, "scopes": SCOPES},
-        )
-        token = data.get("token")
-        if not isinstance(token, str) or not token:
-            raise CalendarError("Jeton Google manquant dans la réponse Connect.", 502)
-        return token
-
-    def authorize(self, http: CalendarHTTP, callback: str) -> str:
-        data = self.connect(
-            http,
-            "POST",
-            "authorize/" + quote(self.connector, safe=""),
-            {
-                "subject": self.subject,
-                "scopes": SCOPES,
-                "returnUrl": callback,
-                "expiresInMs": 900_000,
-            },
-        )
-        url = data.get("url", "")
-        if not isinstance(url, str) or urlparse(url).scheme != "https":
-            raise CalendarError("URL de consentement Connect invalide.", 502)
-        return url
+        if http.deadline <= monotonic():
+            raise CalendarError("Délai Calendar dépassé.", 504)
+        google = self._google_token()
+        if not google.has_scopes(tuple(SCOPES)):
+            raise CalendarError(SCOPES_MISSING, 409)
+        return google.token
 
     def revoke(self, http: CalendarHTTP) -> None:
-        self.connect(
-            http,
-            "DELETE",
-            "connectors/" + quote(self.connector, safe="") + "/tokens",
-            {"subject": self.subject},
+        """Withdraw the Google grant; the next sign-in asks basic scopes again."""
+        token = self._google_token().token
+        http.request(
+            "POST",
+            "https://oauth2.googleapis.com/revoke",
+            write=True,
+            data={"token": token},
         )
 
 

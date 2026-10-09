@@ -14,7 +14,7 @@ from contextlib import aclosing
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,7 @@ from arete.agent.runtime.context import (
     PANEL_PAGES,
     AgentContext,
 )
+from arete.api.auth import clerk_account
 from arete.services.memory import NOTES_LEDGER, SESSIONS_LEDGER, memory_root
 
 if TYPE_CHECKING:
@@ -127,7 +128,11 @@ def _panel_context_source(request: ChatRequest) -> dict[str, str]:
 
 
 def _to_agent_context(
-    source: dict[str, str], thread_id: UUID | None = None, *, suggest_reply: bool
+    source: dict[str, str],
+    thread_id: UUID | None = None,
+    *,
+    suggest_reply: bool,
+    account_id: str = "",
 ) -> AgentContext:
     """Coerce the raw source dict into the declared context schema.
 
@@ -139,6 +144,7 @@ def _to_agent_context(
         source=source,
         thread_id=str(thread_id) if thread_id else None,
         suggest_reply=suggest_reply,
+        account_id=account_id,
     )
 
 
@@ -183,7 +189,7 @@ def _changed_imports(context: AgentContext, previous: dict[str, int]) -> list[di
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(body: ChatRequest) -> ChatResponse:
+async def chat(body: ChatRequest, request: Request) -> ChatResponse:
     """Run the coaching agent over the client-provided history."""
     from arete.agent.context.builder import ContextBudgetExceeded
     from arete.agent.runtime.execution import (
@@ -196,7 +202,12 @@ async def chat(body: ChatRequest) -> ChatResponse:
     source = _panel_context_source(body)
     from anyio import to_thread
 
-    context = _to_agent_context(source, body.thread_id, suggest_reply=True)
+    context = _to_agent_context(
+        source,
+        body.thread_id,
+        suggest_reply=True,
+        account_id=clerk_account(request),
+    )
     context.document_ids = (
         tuple(str(i) for i in body.document_ids)
         if body.document_ids is not None
@@ -249,7 +260,7 @@ def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
-async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
+async def _sse_stream(body: StreamRequest, account_id: str) -> AsyncIterator[str]:
     """Messages, tool activity and failures are separate UI events."""
     from arete.agent.runtime.execution import (
         LIMIT_MESSAGE,
@@ -269,6 +280,7 @@ async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
             _panel_context_source(body),
             body.thread_id,
             suggest_reply=body.supports_suggestions,
+            account_id=account_id,
         )
         context.document_ids = (
             tuple(str(i) for i in body.document_ids)
@@ -308,11 +320,11 @@ async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
 
 
 @router.post("/chat/stream")
-async def chat_stream(body: StreamRequest) -> StreamingResponse:
+async def chat_stream(body: StreamRequest, request: Request) -> StreamingResponse:
     """Stream a run; validate page context before sending HTTP 200."""
     _panel_context_source(body)
     return StreamingResponse(
-        _sse_stream(body),
+        _sse_stream(body, clerk_account(request)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

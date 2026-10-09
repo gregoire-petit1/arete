@@ -4,7 +4,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 from types import SimpleNamespace
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qsl
 
 import httpx
 import pytest
@@ -20,8 +20,9 @@ from arete.services.calendar_models import (
     CalendarSelection,
     EventDraft,
 )
-from arete.services.calendar_provider import ConnectProvider
+from arete.services.calendar_provider import SCOPES_MISSING, ClerkProvider
 from arete.services.calendar_repository import CalendarRepository
+from arete.services.google_tokens import GoogleToken, GoogleTokenUnavailable
 
 CAL = "athlete@example.com"
 START, END = "2026-10-09T10:00:00+02:00", "2026-10-09T11:00:00+02:00"
@@ -52,25 +53,14 @@ class GoogleFake:
 
     def __call__(self, request):
         self.requests.append(request)
-        body = json.loads(request.content) if request.content else {}
+        is_json = request.headers.get("content-type") == "application/json"
+        body = json.loads(request.content) if request.content and is_json else {}
         path = request.url.path
-        if request.url.host == "api.vercel.com":
-            if "/authorize/" in path:
-                return httpx.Response(
-                    200,
-                    json={
-                        "url": "https://vercel.com/connect/consent",
-                        "request": "req",
-                        "verifier": "private",
-                    },
-                )
-            if request.method == "DELETE":
-                if self.error:
-                    return httpx.Response(self.error, json={})
-                return httpx.Response(204)
-            return httpx.Response(
-                200, json={"token": "secret-google-token", "expiresAt": 9999999999999}
-            )
+        if request.url.host == "oauth2.googleapis.com":
+            assert path == "/revoke"
+            if self.error:
+                return httpx.Response(self.error, json={})
+            return httpx.Response(200, json={})
         if self.error:
             return httpx.Response(self.error, json={})
         if "/calendarList/" in path:
@@ -152,14 +142,20 @@ def calendar(tmp_path, monkeypatch):
     fake = GoogleFake()
     repo = CalendarRepository("test")
     repo.configure(enabled=True, selection={"readable": [CAL], "writable": [CAL]})
-    provider = ConnectProvider(
-        "google/arete-test",
-        "athlete-server",
-        lambda: "oidc-secret",
-        transport=httpx.MockTransport(fake),
+    # What Clerk hands out for the signed-in account; tests swap the scopes.
+    clerk = SimpleNamespace(scopes=tuple(SCOPES), unavailable=False)
+
+    def tokens(clerk_user_id):
+        assert clerk_user_id == "user_athlete"
+        if clerk.unavailable:
+            raise GoogleTokenUnavailable("provider detail with a token in it")
+        return GoogleToken("google-access-token", clerk.scopes, None)
+
+    provider = ClerkProvider(
+        "user_athlete", tokens, transport=httpx.MockTransport(fake)
     )
     return SimpleNamespace(
-        service=CalendarService(provider, repo), fake=fake, repo=repo
+        service=CalendarService(provider, repo), fake=fake, repo=repo, clerk=clerk
     )
 
 
@@ -195,13 +191,12 @@ def test_propose_then_approve_exactly_once(calendar):
         "id": action["event_id"],
         **action["after"],
     }
-    token_request = next(r for r in calendar.fake.requests if "/token/" in r.url.path)
-    assert json.loads(token_request.content) == {
-        "subject": {"type": "user", "id": "athlete-server"},
-        "scopes": SCOPES,
-    }
+    assert all(
+        r.headers["authorization"] == "Bearer google-access-token"
+        for r in calendar.fake.requests
+    )
     with db_connection() as con:
-        assert "secret-google-token" not in str(
+        assert "google-access-token" not in str(
             con.execute("SELECT * FROM app.calendar_actions").fetchall()
         )
 
@@ -329,6 +324,26 @@ def test_disconnect_blocks_even_when_revocation_fails(calendar):
         calendar.service.events(START, END)
 
 
+def test_disconnect_revokes_the_google_grant(calendar):
+    assert calendar.service.disconnect() == {"connected": False, "revoked": True}
+    (revoke,) = [
+        r for r in calendar.fake.requests if r.url.host == "oauth2.googleapis.com"
+    ]
+    assert dict(parse_qsl(revoke.content.decode())) == {"token": "google-access-token"}
+    assert calendar.service.status()["connected"] is False
+
+
+def test_missing_scopes_or_account_never_reach_google(calendar):
+    calendar.clerk.scopes = ("openid", "email")
+    with pytest.raises(CalendarError, match=SCOPES_MISSING):
+        calendar.service.events(START, END)
+    calendar.clerk.unavailable = True
+    with pytest.raises(CalendarError) as caught:
+        calendar.service.events(START, END)
+    assert caught.value.status == 409 and "token" not in str(caught.value)
+    assert not calendar.fake.requests
+
+
 @pytest.mark.parametrize("code", [401, 403, 429, 503])
 def test_external_errors_are_not_empty_context(calendar, code):
     calendar.fake.error = code
@@ -400,44 +415,39 @@ def test_budget_expired_before_provider_call(calendar):
     assert not calendar.fake.requests
 
 
-def test_consent_is_one_shot_and_browser_bound(calendar, monkeypatch, router_client):
+def test_connect_needs_the_scopes_and_a_same_origin_request(
+    calendar, monkeypatch, router_client
+):
     import arete.api.google_calendar as api
 
-    monkeypatch.setattr(api, "get_calendar_service", lambda: calendar.service)
-    monkeypatch.setenv("FRONTEND_URL", "http://testserver")
+    calendar.repo.configure(enabled=False, selection={"readable": [], "writable": []})
+    accounts = []
+
+    def service_for(account):
+        accounts.append(account)
+        return calendar.service
+
+    monkeypatch.setattr(api, "get_calendar_service", service_for)
     client = router_client(api.router)
-    # A production callback must be HTTPS; use HTTPS with TestClient cookies.
-    monkeypatch.setenv("FRONTEND_URL", "https://testserver")
-    client.base_url = httpx.URL("https://testserver")
-    assert client.post("/google-calendar/authorize").status_code == 403
-    response = client.post(
-        "/google-calendar/authorize", headers={"X-Arete-Calendar": "1"}
-    )
-    assert response.status_code == 200
-    assert "httponly" in response.headers["set-cookie"].lower()
-    connect_request = next(
-        r for r in calendar.fake.requests if "/authorize/" in r.url.path
-    )
-    callback = json.loads(connect_request.content)["returnUrl"]
-    state = parse_qs(urlparse(callback).query)["state"][0]
-    assert client.get("/google-calendar/callback?state=wrong").status_code == 403
-    response = client.get(
-        "/google-calendar/callback", params={"state": state}, follow_redirects=False
-    )
-    assert response.status_code == 303
-    assert response.headers["location"].endswith("google_calendar=connected")
-    assert calendar.service.status()["selection"] == {"readable": [], "writable": []}
-    client.cookies.set(api.COOKIE, state)
-    response = client.get(
-        "/google-calendar/callback", params={"state": state}, follow_redirects=False
-    )
-    assert response.headers["location"].endswith("google_calendar=error")
+    headers = {"X-Arete-Calendar": "1"}
+    assert client.post("/google-calendar/connect").status_code == 403
+    calendar.clerk.scopes = ("openid", "email")
+    refused = client.post("/google-calendar/connect", headers=headers)
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == SCOPES_MISSING
+    assert calendar.service.status()["connected"] is False
+    calendar.clerk.scopes = tuple(SCOPES)
+    connected = client.post("/google-calendar/connect", headers=headers).json()
+    assert connected["connected"] is True
+    assert connected["selection"] == {"readable": [], "writable": []}
+    # Sign-in is off in this client: no Clerk account to act as.
+    assert set(accounts) == {""}
 
 
 def test_api_rejects_forged_decisions(calendar, monkeypatch, router_client):
     import arete.api.google_calendar as api
 
-    monkeypatch.setattr(api, "get_calendar_service", lambda: calendar.service)
+    monkeypatch.setattr(api, "get_calendar_service", lambda _account: calendar.service)
     client = router_client(api.router)
     action = calendar.service.propose(proposal(), "thread")
     url = f"/google-calendar/actions/{action['id']}/decision"
@@ -460,14 +470,7 @@ def test_api_rejects_forged_decisions(calendar, monkeypatch, router_client):
     assert not calendar.fake.writes
 
 
-def test_expired_consent_and_disconnect_race(calendar):
-    calendar.service.authorize(
-        "nonce", "https://arete.example/api/google-calendar/callback"
-    )
-    with db_connection() as con:
-        con.execute("UPDATE app.calendar_connections SET consent_expires = 0")
-    with pytest.raises(CalendarError, match="expiré"):
-        calendar.service.complete_consent("nonce")
+def test_disconnect_race_rejects_a_stale_revision(calendar):
     revision = calendar.repo.state()["revision"]
     calendar.service.disconnect()
     with pytest.raises(CalendarError, match="modifiée"):
@@ -478,15 +481,40 @@ def test_expired_consent_and_disconnect_race(calendar):
         )
 
 
-def test_denied_consent_cannot_be_replayed(calendar):
-    calendar.service.authorize(
-        "denied", "https://arete.example/api/google-calendar/callback"
+def test_each_signed_in_account_has_its_own_calendar(monkeypatch, tmp_path):
+    from arete.calendar import get_calendar_service
+
+    monkeypatch.delenv("ARETE_AUTH", raising=False)
+    with pytest.raises(CalendarError) as off:
+        get_calendar_service("user_a")
+    assert off.value.status == 503
+    monkeypatch.setenv("ARETE_AUTH", "clerk")
+    monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test_fake")
+    with pytest.raises(CalendarError) as nobody:
+        get_calendar_service("")
+    assert nobody.value.status == 403
+    first, second = get_calendar_service("user_a"), get_calendar_service("user_b")
+    assert first.repo.key != second.repo.key
+    assert first.provider.clerk_user_id == "user_a"
+
+
+def test_the_calendar_is_built_for_the_runs_account_only():
+    from types import SimpleNamespace as Runtime
+
+    from arete.agent.middlewares.policy import ProfilePolicyMiddleware
+    from arete.agent.runtime.context import AgentContext
+
+    built = []
+    policy = ProfilePolicyMiddleware("chat", calendar=lambda a: built.append(a) or a)
+    signed_in = AgentContext(account_id="user_a")
+    policy.before_agent({}, Runtime(context=signed_in))
+    anonymous = AgentContext()
+    policy.before_agent({}, Runtime(context=anonymous))
+    assert (signed_in.calendar, anonymous.calendar, built) == (
+        "user_a",
+        None,
+        ["user_a"],
     )
-    with pytest.raises(CalendarError, match="refusé"):
-        calendar.service.complete_consent("denied", granted=False)
-    with pytest.raises(CalendarError, match="déjà utilisé"):
-        calendar.service.complete_consent("denied")
-    assert not calendar.service.status()["connected"]
 
 
 def test_configured_calendar_is_preloaded_only_for_chat(calendar, monkeypatch):
@@ -494,10 +522,10 @@ def test_configured_calendar_is_preloaded_only_for_chat(calendar, monkeypatch):
 
     from arete import coaching
 
-    monkeypatch.setenv("GOOGLE_CALENDAR_CONNECTOR", "google/test")
-    monkeypatch.setenv("GOOGLE_CALENDAR_ACCESS_PROTECTED", "true")
+    monkeypatch.setenv("ARETE_AUTH", "clerk")
+    monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test_fake")
     with (
-        patch.object(coaching, "get_calendar_service", return_value=calendar.service),
+        patch.object(coaching, "get_calendar_service") as factory,
         patch.object(coaching, "build_chat_model"),
         patch.object(coaching, "build_agent") as build,
     ):
@@ -508,7 +536,7 @@ def test_configured_calendar_is_preloaded_only_for_chat(calendar, monkeypatch):
             if mission == "chat":
                 assert "calendar" in profile.preloaded
                 assert "calendar" in profile.capabilities
-                assert args["calendar"] is calendar.service
+                assert args["calendar"] is factory
             else:
                 assert not profile.capabilities
                 assert args["calendar"] is None
@@ -558,7 +586,9 @@ def test_calendar_tools_stream_proposal_without_writing(calendar):
             ),
         ),
         middleware=[
-            ProfilePolicyMiddleware("chat", profile=profile, calendar=calendar.service),
+            ProfilePolicyMiddleware(
+                "chat", profile=profile, calendar=lambda _account: calendar.service
+            ),
             ToolEventMiddleware(),
             ToolkitMiddleware(),
             ContextBuilderMiddleware(),
@@ -572,7 +602,7 @@ def test_calendar_tools_stream_proposal_without_writing(calendar):
         async for part in stream_agent(
             graph,
             {"messages": [HumanMessage("Planifie ma course")]},
-            context=AgentContext(thread_id="thread"),
+            context=AgentContext(thread_id="thread", account_id="user_athlete"),
         ):
             events.extend(projection.events(part))
         return events
@@ -597,3 +627,29 @@ def test_new_calendar_tables_are_migrated_on_existing_database(tmp_path, monkeyp
     repo = CalendarRepository("migrated")
     repo.configure(enabled=False, selection={"readable": [], "writable": []})
     assert repo.state()["enabled"] is False
+
+
+def test_same_host_origin_is_trusted_without_frontend_url(
+    calendar, monkeypatch, router_client
+):
+    # A preview answers on its own URL while FRONTEND_URL names production.
+    import arete.api.google_calendar as api
+
+    monkeypatch.setattr(api, "get_calendar_service", lambda _account: calendar.service)
+    monkeypatch.setenv("FRONTEND_URL", "https://arete.example")
+    client = router_client(api.router)
+    headers = {"X-Arete-Calendar": "1"}
+    own = client.post(
+        "/google-calendar/connect", headers={**headers, "Origin": "http://testserver"}
+    )
+    assert own.status_code == 200
+    configured = client.post(
+        "/google-calendar/connect",
+        headers={**headers, "Origin": "https://arete.example"},
+    )
+    assert configured.status_code == 200
+    foreign = client.post(
+        "/google-calendar/connect",
+        headers={**headers, "Origin": "https://attacker.example"},
+    )
+    assert foreign.status_code == 403

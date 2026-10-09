@@ -64,6 +64,8 @@ class AgentContext:
     resolved_profile: AgentProfile | None = field(default=None, init=False, repr=False)
     calendar: CalendarService | None = field(default=None, init=False, repr=False)
     thread_id: str | None = None
+    # Clerk user id from the verified request identity, never from the body.
+    account_id: str = ""
     document_ids: tuple[str, ...] | None = None
     # Only interactive HTTP chat requests need a next-message draft.
     suggest_reply: bool = False

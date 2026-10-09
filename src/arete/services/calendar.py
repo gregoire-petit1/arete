@@ -1,6 +1,5 @@
 """Google Calendar operations and explicit, durable user approval."""
 
-import hashlib
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -11,12 +10,13 @@ from arete.services.calendar_models import (
     MAX_CALENDARS,
     MAX_EVENTS,
     MAX_PAGES,
+    SCOPES,
     CalendarError,
     CalendarProposal,
     CalendarSelection,
     validate_window,
 )
-from arete.services.calendar_provider import ConnectProvider, GoogleCalendar
+from arete.services.calendar_provider import ClerkProvider, GoogleCalendar
 from arete.services.calendar_repository import CalendarRepository
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ def matches_snapshot(event: dict, expected: dict) -> bool:
 
 
 class CalendarService:
-    def __init__(self, provider: ConnectProvider, repository: CalendarRepository):
+    def __init__(self, provider: ClerkProvider, repository: CalendarRepository):
         self.provider, self.repo = provider, repository
 
     @contextmanager
@@ -86,29 +86,26 @@ class CalendarService:
             "configured": True,
             "connected": state["enabled"],
             "selection": state["selection"],
+            # What the browser asks Google for before calling connect().
+            "scopes": SCOPES,
         }
 
-    def authorize(self, nonce: str, callback: str) -> str:
-        self.repo.configure(enabled=False, selection={"readable": [], "writable": []})
-        with self.provider.session() as http:
-            url = self.provider.authorize(http, callback)
-        self.repo.start_consent(hashlib.sha256(nonce.encode()).hexdigest())
-        return url
+    def connect(self) -> dict:
+        """Activate access once Google granted the calendar scopes.
 
-    def complete_consent(self, nonce: str, *, granted: bool = True) -> None:
-        revision = self.repo.consume_consent(hashlib.sha256(nonce.encode()).hexdigest())
-        if revision is None:
-            raise CalendarError("Consentement expiré ou déjà utilisé.", 409)
-        if not granted:
-            raise CalendarError("Consentement Google refusé.", 409)
+        The browser asks Google first (Clerk's incremental consent); only a token
+        carrying the scopes turns access on, with an empty selection as after
+        any reconnection.
+        """
+        revision = self.repo.state()["revision"]
         with self.provider.session() as http:
-            # Connect owns OAuth/PKCE; only a successfully issued token activates access.
             self.provider.token(http)
         self.repo.configure(
             enabled=True,
             selection={"readable": [], "writable": []},
             expected_revision=revision,
         )
+        return self.status()
 
     def disconnect(self) -> dict:
         self.repo.configure(enabled=False, selection={"readable": [], "writable": []})

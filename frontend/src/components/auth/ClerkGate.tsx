@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ClerkProvider, SignIn, UserButton, useAuth } from '@clerk/react';
+import { ClerkProvider, SignIn, UserButton, useAuth, useUser } from '@clerk/react';
 import { frFR } from '@clerk/localizations/fr-FR';
 import { ErrorState } from '@/components/States';
 import { ApiError, authApi, type AuthMe } from '@/lib/api';
@@ -58,6 +58,7 @@ type Account = { status: 'error' } | { status: 'ready'; me: AuthMe };
 
 function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishableKey'>) {
   const { isLoaded, isSignedIn, sessionId, getToken, signOut } = useAuth();
+  const { user } = useUser();
   const [attempt, setAttempt] = useState(0);
   // The account answer belongs to the session and attempt it was asked for; any other is still loading.
   const key = `${sessionId ?? ''}#${attempt}`;
@@ -115,11 +116,36 @@ function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishab
     [leave]
   );
 
+  const grantGoogleScopes = useCallback(
+    async (scopes: string[], returnTo: string) => {
+      if (!user) throw new Error('Session absente : reconnecte-toi.');
+      const google = user.externalAccounts.find((a) => a.provider === 'google');
+      const pending = google
+        ? await google.reauthorize({ additionalScopes: scopes, redirectUrl: returnTo })
+        : await user.createExternalAccount({
+            strategy: 'oauth_google',
+            additionalScopes: scopes,
+            redirectUrl: returnTo,
+          });
+      const consent = pending.verification?.externalVerificationRedirectURL;
+      if (!consent) return false;
+      window.location.assign(consent.href);
+      return true;
+    },
+    [user]
+  );
+
   const current = account?.key === key ? account.value : null;
   const me = current?.status === 'ready' ? current.me : null;
   const value = useMemo<AuthState>(
-    () => ({ enabled: true, email: me?.email ?? null, isOwner: me?.is_owner ?? false, signOut: leave }),
-    [me, leave]
+    () => ({
+      enabled: true,
+      email: me?.email ?? null,
+      isOwner: me?.is_owner ?? false,
+      signOut: leave,
+      grantGoogleScopes,
+    }),
+    [me, leave, grantGoogleScopes]
   );
 
   if (!isLoaded) return <GateSpinner />;

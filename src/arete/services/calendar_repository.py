@@ -77,21 +77,6 @@ class CalendarRepository:
             else {"readable": [], "writable": []},
         }
 
-    def start_consent(self, digest: str) -> None:
-        with self.transaction() as con:
-            con.execute(
-                "UPDATE app.calendar_connections SET consent_hash = ?, consent_expires = ? WHERE connection_key = ?",
-                [digest, now() + ACTION_TTL_SECONDS, self.key],
-            )
-
-    def consume_consent(self, digest: str) -> int | None:
-        with self.transaction() as con:
-            row = con.execute(
-                "UPDATE app.calendar_connections SET consent_hash = NULL, consent_expires = NULL WHERE connection_key = ? AND consent_hash = ? AND consent_expires > ? RETURNING revision",
-                [self.key, digest, now()],
-            ).fetchone()
-        return int(row[0]) if row else None
-
     def configure(
         self, *, enabled: bool, selection: dict, expected_revision: int | None = None
     ) -> None:

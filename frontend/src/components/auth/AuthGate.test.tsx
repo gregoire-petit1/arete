@@ -28,6 +28,7 @@ vi.mock('@clerk/react', () => {
       getToken: clerk.getToken,
       signOut: clerk.signOut,
     }),
+    useUser: () => ({ user: null }),
   };
 });
 vi.mock('@clerk/localizations/fr-FR', () => ({ frFR: {} }));

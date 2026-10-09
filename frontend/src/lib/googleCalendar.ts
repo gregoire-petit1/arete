@@ -8,6 +8,8 @@ export interface CalendarStatus {
   configured: boolean;
   connected: boolean;
   selection: CalendarSelection;
+  /** Google scopes to grant before connecting; absent when not configured. */
+  scopes?: string[];
 }
 export interface GoogleCalendarInfo {
   id: string;
@@ -51,8 +53,7 @@ const mutation = (method: string, body?: unknown): RequestInit => ({
 });
 export const calendarApi = {
   status: () => fetchAPI<CalendarStatus>(`${base}/status`),
-  authorize: () =>
-    fetchAPI<{ url: string }>(`${base}/authorize`, mutation("POST")),
+  connect: () => fetchAPI<CalendarStatus>(`${base}/connect`, mutation("POST")),
   disconnect: () =>
     fetchAPI<{ connected: false; revoked: boolean; warning?: string }>(
       `${base}/disconnect`,
