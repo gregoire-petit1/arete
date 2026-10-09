@@ -33,6 +33,7 @@ class RunStats:
     """What one run cost: model requests are the scarce resource on a free tier."""
 
     model_calls: int = 0
+    suggestion_calls: int = 0
     tool_calls: int = 0
     model_ms: int = 0
     first_token_ms: int | None = None
@@ -52,6 +53,8 @@ class AgentContext:
     # Selected by the server entrypoint, never from panel_context or messages.
     profile: Literal["chat", "briefing", "feedback", "review"] = "chat"
     thread_id: str | None = None
+    # Only interactive HTTP chat requests need a next-message draft.
+    suggest_reply: bool = False
     attachment_manifest: str = ""
     document_import_pending: bool = False
     current_date: date = field(default_factory=date.today)

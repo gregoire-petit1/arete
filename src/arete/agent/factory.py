@@ -6,6 +6,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models import BaseChatModel
 
+from arete.agent.middlewares.autosuggestion import AutoSuggestionMiddleware
 from arete.agent.middlewares.capabilities import ToolkitMiddleware
 from arete.agent.middlewares.context import (
     ContextBudgetMiddleware,
@@ -29,6 +30,7 @@ def build_agent(
     context_tokens: int,
     output_tokens: int,
     filesystem: AgentMiddleware[Any, Any, Any],
+    suggestion_model: BaseChatModel | None = None,
 ):
     middleware = [ProfilePolicyMiddleware(profile.id), *execution_limits()]
     if profile.page_context:
@@ -43,6 +45,12 @@ def build_agent(
         )
     )
     middleware.append(ModelTelemetryMiddleware())
+    if profile.id == "chat" and suggestion_model is not None:
+        middleware.append(
+            AutoSuggestionMiddleware(
+                model=suggestion_model, context_tokens=context_tokens
+            )
+        )
     return create_agent(
         model,
         tools=[

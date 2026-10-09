@@ -34,6 +34,7 @@ export interface ChatMessage {
 }
 export type StreamEvent =
   | WorkoutUpdate
+  | { type: 'suggestion'; text: string }
   | { type: 'import_preview'; id: string; version: number }
   | { type: 'token'; id: string; text: string }
   | { type: 'message'; id: string; text: string }
@@ -54,6 +55,7 @@ export type StreamEvent =
  *  used to trigger a summarization request on every turn of a long thread). */
 export const REQUEST_WINDOW_MESSAGES = 30;
 export const MAX_MESSAGE_CHARS = 16_000;
+export const MAX_SUGGESTION_CHARS = 300;
 
 /** The tail of a thread sent to the coach, starting on a question: some
  *  models refuse a conversation that opens with an assistant message. */
@@ -83,6 +85,7 @@ export function parseEvent(data: string): StreamEvent {
   const e: unknown = JSON.parse(data);
   if (!record(e)) throw new Error('Événement du coach invalide.');
   if (isWorkoutUpdate(e)) return e;
+  if (e.type === 'suggestion' && typeof e.text === 'string' && e.text.trim() && e.text.length <= MAX_SUGGESTION_CHARS) return e as StreamEvent;
   if (e.type === 'import_preview' && typeof e.id === 'string' && /^[0-9a-f-]{36}$/i.test(e.id) && Number.isInteger(e.version) && Number(e.version) > 0) return e as StreamEvent;
   const identified = typeof e.id === 'string' && e.id.length > 0;
   if (
@@ -136,6 +139,8 @@ export function applyEvent(
   message: ChatMessage,
   event: StreamEvent
 ): ChatMessage {
+  // Suggestions belong to the editable draft, never to conversation history.
+  if (event.type === 'suggestion') return message;
   if (event.type === 'workout_update') {
     const current = message.workouts ?? [];
     const previous = current.find(w => w.session.id === event.session.id);

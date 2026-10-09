@@ -67,10 +67,11 @@ drafts. Threads are saved in this browser (up to 30), while the coach’s memory
 ledger remains shared across conversations. Hiding the panel or switching threads
 keeps the current response running in its original thread; one response runs at a time.
 
-Below the last answer, up to three French follow-up questions suited to the open
-page; clicking one sends it as the next message. They are fixed lists in the
-browser: no model request after an answer, and the input unlocks as soon as the
-answer ends.
+After each chat answer, the coach can propose one contextual next message directly
+in the composer. Edit it or send it yourself; it is never sent automatically and
+never overwrites typing. This costs one additional model request, bounded to five
+seconds and 512 output tokens with no SDK retries. Failure leaves the answer intact.
+Empty conversations still offer fixed questions suited to the open page.
 
 Chat, daily briefings and session feedback share a five-minute execution deadline,
 8 main model calls and 32 tool calls per run, with at most four concurrent tools.

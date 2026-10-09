@@ -67,9 +67,10 @@ responsibility a testable owner. Do not create empty architectural scaffolding.
   DDL needs a migration: boots on a current schema skip the DDL.
 - Async model clients belong to the server event loop. Sync API/scheduler work uses
   AnyIO workers and `invoke_agent_sync`; never add a fresh `asyncio.run()` per job.
-- Follow-up suggestions are fixed page-aware lists in the browser; no model
-  request runs after an answer. Keep the HTTP, SSE, parser and browser-storage
-  contracts aligned when adding event fields.
+- Empty threads use fixed page-aware starters. Interactive chat may make one bounded,
+  measured, tool-free auto-suggestion call after the answer and emit a `suggestion`
+  event for the editable draft. Never overwrite user typing or send it automatically.
+  Keep HTTP, SSE, parser and browser-storage contracts aligned.
 - Preserve optional LangSmith tracing across async invocation and stream closure.
   Forward callbacks to dynamically executed tools and retain thread metadata. The
   context builder owns bounded journal injection and the current chat date.

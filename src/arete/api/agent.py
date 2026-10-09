@@ -88,6 +88,7 @@ class ChatMessageOut(BaseModel):
 
 class ChatResponse(BaseModel):
     message: ChatMessageOut
+    suggestion: str | None = Field(default=None, max_length=300)
     imports: list[dict] = Field(default_factory=list)
 
 
@@ -133,7 +134,11 @@ def _to_agent_context(
     passed at invoke time (verified: ``request.runtime.context`` arrives as
     ``None``), so the router builds the dataclass itself.
     """
-    return AgentContext(source=source, thread_id=str(thread_id) if thread_id else None)
+    return AgentContext(
+        source=source,
+        thread_id=str(thread_id) if thread_id else None,
+        suggest_reply=True,
+    )
 
 
 def _document_state(context: AgentContext) -> tuple[dict, dict[str, int]]:
@@ -217,6 +222,7 @@ async def chat(body: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=502, detail="Agent returned no messages")
     final = messages[-1]
     return ChatResponse(
+        suggestion=result.get("suggestion"),
         imports=await to_thread.run_sync(_changed_imports, context, previous),
         message=ChatMessageOut(
             role="assistant",
