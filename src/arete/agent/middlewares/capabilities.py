@@ -30,6 +30,16 @@ class ToolkitMiddleware(AgentMiddleware):
         if stats is not None:
             stats.tool_calls += 1
 
+    @staticmethod
+    def _config(request):
+        config = dict(getattr(request.runtime, "config", None) or {})
+        # Dependencies and deadlines belong to invocation context, never model args.
+        config["configurable"] = {
+            **config.get("configurable", {}),
+            "arete_context": getattr(request.runtime, "context", None),
+        }
+        return config
+
     def wrap_tool_call(self, request, handler):
         self._count(request)
         name = str(request.tool_call.get("name", ""))
@@ -40,7 +50,7 @@ class ToolkitMiddleware(AgentMiddleware):
             return handler(request)
         result = tool.invoke(
             dict(request.tool_call.get("args") or {}),
-            config=getattr(request.runtime, "config", None),
+            config=self._config(request),
         )
         return ToolMessage(
             content=str(result), name=name, tool_call_id=request.tool_call["id"]
@@ -58,7 +68,7 @@ class ToolkitMiddleware(AgentMiddleware):
         # progress and concurrent requests to keep flowing during execution.
         result = await tool.ainvoke(
             dict(request.tool_call.get("args") or {}),
-            config=getattr(request.runtime, "config", None),
+            config=self._config(request),
         )
         return ToolMessage(
             content=str(result), name=name, tool_call_id=request.tool_call["id"]

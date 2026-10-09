@@ -4,6 +4,7 @@ Only this composition root imports the agent factory. Domain producers receive
 plain callbacks, so they remain usable and testable without an agent framework.
 """
 
+from dataclasses import replace
 from datetime import date
 from functools import lru_cache, wraps
 from threading import Lock
@@ -18,6 +19,8 @@ from arete.agent.profiles.catalog import get_profile
 from arete.agent.runtime.budget import MAX_GRAPH_STEPS
 from arete.agent.runtime.context import AgentContext
 from arete.agent.runtime.execution import invoke_agent_sync
+from arete.calendar import get_calendar_service
+from arete.config import config
 from arete.services import briefing, session_feedback
 from arete.services.coaching_repository import Briefing
 
@@ -40,6 +43,14 @@ def _serialized(factory):
 
 def _assemble(profile_id: str):
     profile = get_profile(profile_id)
+    calendar = None
+    if profile_id == "chat" and config.google_calendar_configured:
+        calendar = get_calendar_service()
+        profile = replace(
+            profile,
+            capabilities=(*profile.capabilities, "calendar"),
+            preloaded=(*profile.preloaded, "calendar"),
+        )
     route = resolve_route()
     model = build_chat_model(route=route)
     return build_agent(
@@ -48,6 +59,7 @@ def _assemble(profile_id: str):
         context_tokens=route.context_tokens,
         output_tokens=AGENT_MAX_TOKENS,
         filesystem=build_memory_filesystem(),
+        calendar=calendar,
     )
 
 

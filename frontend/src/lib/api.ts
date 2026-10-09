@@ -21,7 +21,7 @@ function parseDetail(body: string): string | null {
   }
 }
 
-async function fetchAPI<T>(
+export async function fetchAPI<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {

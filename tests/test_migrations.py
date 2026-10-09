@@ -93,7 +93,7 @@ def test_document_migration_preserves_version_twelve_planning(tmp_path, monkeypa
             "garmin_exports",
         ):
             con.execute(f"DROP TABLE app.{table}")
-        con.execute("DELETE FROM app.schema_version WHERE version=13")
+        con.execute("DELETE FROM app.schema_version WHERE version >= 13")
     init_duckdb.main()
     with duckdb.connect(str(path)) as con:
         row = con.execute(

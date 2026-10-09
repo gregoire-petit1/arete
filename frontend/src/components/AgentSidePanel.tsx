@@ -28,6 +28,7 @@ import { AgentMarkdown } from './agent/AgentMarkdown';
 import { ToolActivity } from './agent/ToolActivity';
 import { DocumentAttachments, type AttachmentsHandle } from './agent/DocumentAttachments';
 import { DocumentImports } from './agent/DocumentImports';
+import { CalendarActionCard } from './agent/CalendarActionCard';
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: 'Tableau de bord',
@@ -76,7 +77,8 @@ const MessageSurfaces = memo(function MessageSurfaces({
   for (const part of parts) {
     if (part.kind === 'text') {
       if (part.text.trim()) groups.push(part);
-    } else if (part === tools[0]) groups.push(tools);
+    } else if (part.kind === 'calendar_action') groups.push(part);
+    else if (part === tools[0]) groups.push(tools);
   }
   return (
     <>
@@ -85,6 +87,8 @@ const MessageSurfaces = memo(function MessageSurfaces({
           <ToolActivity key={`tool-${part[0].id}`} tools={part} />
         ) : part.kind === 'text' ? (
           <AgentMarkdown key={`text-${part.id}`} text={part.text} />
+        ) : part.kind === 'calendar_action' ? (
+          <CalendarActionCard key={`calendar-${part.id}`} id={part.id} />
         ) : null
       )}
       {message.error && (

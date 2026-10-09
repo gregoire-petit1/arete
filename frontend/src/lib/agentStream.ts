@@ -20,7 +20,11 @@ export interface TextPart {
   id: string;
   text: string;
 }
-export type ChatPart = ToolPart | TextPart;
+export interface CalendarActionPart {
+  kind: 'calendar_action';
+  id: string;
+}
+export type ChatPart = ToolPart | TextPart | CalendarActionPart;
 export interface ChatMessage {
   imports?: { id: string; version: number }[];
   role: 'user' | 'assistant';
@@ -32,6 +36,7 @@ export interface ChatMessage {
 }
 export type StreamEvent =
   | { type: 'import_preview'; id: string; version: number }
+  | { type: 'calendar_action'; id: string }
   | { type: 'token'; id: string; text: string }
   | { type: 'message'; id: string; text: string }
   | { type: 'tool_start'; id: string; name: string; args: Preview }
@@ -81,6 +86,11 @@ export function parseEvent(data: string): StreamEvent {
   if (!record(e)) throw new Error('Événement du coach invalide.');
   if (e.type === 'import_preview' && typeof e.id === 'string' && /^[0-9a-f-]{36}$/i.test(e.id) && Number.isInteger(e.version) && Number(e.version) > 0) return e as StreamEvent;
   const identified = typeof e.id === 'string' && e.id.length > 0;
+  if (
+    e.type === 'calendar_action' &&
+    typeof e.id === 'string' &&
+    /^[a-f0-9]{32}$/.test(e.id)
+  ) return { type: 'calendar_action', id: e.id };
   if (
     identified &&
     (e.type === 'token' || e.type === 'message') &&
@@ -137,6 +147,11 @@ export function applyEvent(
   if (event.type === 'done')
     return settleMessage({ ...message, content: event.message.content });
   const parts = [...(message.parts ?? [])];
+  if (event.type === 'calendar_action') {
+    if (!parts.some((p) => p.kind === 'calendar_action' && p.id === event.id))
+      parts.push({ kind: 'calendar_action', id: event.id });
+    return { ...message, parts };
+  }
   if (event.type === 'token' || event.type === 'message') {
     const idx = parts.findIndex((p) => p.kind === 'text' && p.id === event.id);
     const previous = idx < 0 ? undefined : parts[idx];

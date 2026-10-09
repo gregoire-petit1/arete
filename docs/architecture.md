@@ -113,8 +113,8 @@ model calls, tool calls, model time, time to first token and served models.
 
 These bounds are not a cumulative token/spend quota: SDK retries have their own
 limit and share the run deadline. Arete has no delegated
-children to budget; a provider-side fallback stays within one model call. No database or browser-store migration is
-required.
+children to budget; a provider-side fallback stays within one model call. Conversation
+history stays in browser storage; Calendar's approval registry is described below.
 
 ## Enforcement
 
@@ -141,3 +141,24 @@ lives in `garmin/workouts.py`; `services/garmin_export.py` owns explicit export,
 reconciliation and removal with durable reservations and no ambiguous write replay.
 Only `GarminClient` touches the remote service. See [document imports](document-imports.md)
 for resource bounds, frontend worker assets, unsupported conversions and acceptance.
+
+## Google Calendar
+
+When explicitly configured, the composition root adds Calendar to the chat's
+resolved capabilities/preloads and supplies its service through invocation
+context. The declarative background profiles remain tool-less. A resolved
+profile is server-owned and cannot be supplied through browser page metadata.
+
+`calendar.py` composes the provider adapter and repository without importing the
+agent stack; API endpoints use it without paying coaching cold-start costs.
+`services/calendar.py` owns permissions, bounded reads, proposals, and execution.
+The provider adapter uses Vercel Connect for credentials and Google Calendar for
+operations. Only the HTTP decision endpoint approves writes; the model has reads
+and proposal tools. The browser's approval executes the stored arguments directly.
+
+Migration 14 persists connection selections, consent hashes, and a one-shot action
+registry, not conversation history. A `calendar_action` SSE event carries only
+an action ID. Browser storage keeps that ID; cards reload the authoritative
+proposal and outcome from the API. Settings changes invalidate pending actions,
+ETags protect existing events, and ambiguous writes are never replayed.
+See [Google Calendar setup](google-calendar.md) for activation and live testing.

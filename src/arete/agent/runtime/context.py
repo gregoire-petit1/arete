@@ -10,7 +10,11 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from arete.agent.profiles.models import AgentProfile
+    from arete.services.calendar import CalendarService
 
 from arete.agent.runtime.budget import MAX_TOOL_CONCURRENCY
 
@@ -51,6 +55,8 @@ class AgentContext:
     source: dict[str, Any] = field(default_factory=dict)
     # Selected by the server entrypoint, never from panel_context or messages.
     profile: Literal["chat", "briefing", "feedback"] = "chat"
+    resolved_profile: AgentProfile | None = field(default=None, init=False, repr=False)
+    calendar: CalendarService | None = field(default=None, init=False, repr=False)
     thread_id: str | None = None
     attachment_manifest: str = ""
     document_import_pending: bool = False

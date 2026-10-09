@@ -20,6 +20,7 @@ from arete.agent.prompts.coach import SYSTEM_SKILL
 from arete.agent.runtime.context import AgentContext
 from arete.agent.tools.journal import append_journal
 from arete.agent.tools.pages import get_page_context
+from arete.services.calendar import CalendarService
 
 
 def build_agent(
@@ -29,8 +30,12 @@ def build_agent(
     context_tokens: int,
     output_tokens: int,
     filesystem: AgentMiddleware[Any, Any, Any],
+    calendar: CalendarService | None = None,
 ):
-    middleware = [ProfilePolicyMiddleware(profile.id), *execution_limits()]
+    middleware = [
+        ProfilePolicyMiddleware(profile.id, profile=profile, calendar=calendar),
+        *execution_limits(),
+    ]
     if profile.page_context:
         middleware.append(ToolEventMiddleware())
     middleware.append(ToolkitMiddleware())
