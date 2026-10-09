@@ -7,7 +7,7 @@ import { EmptyState, ErrorState, LoadingState, MuscleMap } from '@/components';
 import { Button, Modal, ModalHeader, Panel } from '@/components/ui';
 import { settingsApi, strengthApi } from '@/lib/api';
 import { CardioTab, LogSessionModal, SessionDetailModal, SessionRow, WeeklyVolumeTracker } from './log/index';
-import { invalidateAfterSession, qk } from '@/lib/queryKeys';
+import { invalidateAfterSession, qk, strengthSessionsQuery } from '@/lib/queryKeys';
 
 type Tab = 'force' | 'cardio';
 
@@ -36,8 +36,8 @@ export function LogPage() {
   });
 
   const sessionsQuery = useQuery({
-    queryKey: qk.strengthSessions(),
-    queryFn: () => strengthApi.getSessions(10),
+    ...strengthSessionsQuery,
+    select: (data) => data.slice(0, 10),
   });
 
   const deleteSessionMutation = useMutation({

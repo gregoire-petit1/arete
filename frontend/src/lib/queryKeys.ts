@@ -1,4 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
+import { strengthApi } from './api';
 
 /**
  * Every react-query key of the app, in one place.
@@ -17,8 +18,7 @@ export const qk = {
   matchSummary: (start?: string, end?: string) =>
     start ? (['matchSummary', start, end ?? start] as const) : (['matchSummary'] as const),
 
-  strengthSessions: (limit?: number) =>
-    limit ? (['strengthSessions', limit] as const) : (['strengthSessions'] as const),
+  strengthSessions: ['strengthSessions'] as const,
   strengthSession: (id: number) => ['strengthSession', id] as const,
   muscleStats: (days?: number) =>
     days ? (['muscleStats', days] as const) : (['muscleStats'] as const),
@@ -38,13 +38,22 @@ export const qk = {
   stravaStatus: ['stravaStatus'] as const,
 };
 
+/**
+ * The strength-session list Dashboard, Planning and Log share: one request,
+ * each page `select`s its slice (today, the week grid, the 10 latest).
+ */
+export const strengthSessionsQuery = {
+  queryKey: qk.strengthSessions,
+  queryFn: () => strengthApi.getSessions(200),
+};
+
 /** Everything that changes when a session is logged, uploaded, synced or matched. */
 export function invalidateAfterSession(queryClient: QueryClient): void {
   for (const key of [
     qk.planned(),
     qk.actual(),
     qk.matchSummary(),
-    qk.strengthSessions(),
+    qk.strengthSessions,
     qk.muscleStats(),
     qk.cardioSessions,
     qk.analytics,
