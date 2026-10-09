@@ -50,8 +50,8 @@ responsibility a testable owner. Do not create empty architectural scaffolding.
 - Chat preloads its toolkits and may write training data; model requests, not
   tokens, are the free tier's budget, so do not reintroduce per-turn loading or
   auxiliary calls without measuring them (`Agent run:` log line). Briefings
-  preload read-only analytics; feedback uses supplied facts and memory. Background
-  jobs can maintain the ledger but cannot alter training plans or log workouts.
+  and feedback bind no tool: the server computes their facts and files the
+  feedback's ledger entry; they cannot alter training plans or log workouts.
 - Each invocation has named call, concurrency and time limits. SDK retries and
   auxiliary calls must remain bounded. Never automatically replay a failed write
   or an entire run with an ambiguous outcome.

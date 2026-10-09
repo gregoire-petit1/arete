@@ -36,7 +36,10 @@ def build_agent(
     middleware = [ProfilePolicyMiddleware(profile.id), *execution_limits()]
     if profile.page_context:
         middleware.append(ToolEventMiddleware())
-    middleware.extend([ToolkitMiddleware(), filesystem, ContextBuilderMiddleware()])
+    middleware.append(ToolkitMiddleware())
+    if profile.journal_tools:
+        middleware.append(filesystem)
+    middleware.append(ContextBuilderMiddleware())
     middleware.append(
         ContextBudgetMiddleware(
             context_tokens=context_tokens, output_tokens=output_tokens
@@ -47,9 +50,7 @@ def build_agent(
         middleware.append(suggestions)
     return create_agent(
         model,
-        tools=[get_page_context]
-        if profile.page_context or profile.id == "briefing"
-        else [],
+        tools=[get_page_context] if profile.page_context else [],
         middleware=middleware,
         system_prompt=SYSTEM_SKILL,
         context_schema=AgentContext,

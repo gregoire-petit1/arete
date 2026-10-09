@@ -27,13 +27,6 @@ def _augment_tools(
     These reach the MODEL (schemas in the request). Execution of toolkit tools
     is handled in ``wrap_tool_call`` — the ToolNode does not know them.
     """
-    if profile == "feedback":
-        return [
-            t
-            for t in tools
-            if getattr(t, "name", "")
-            not in {"search_toolkits", "load_toolkit", "get_page_context"}
-        ]
     if _loadable(loaded, profile):
         out: list[Any] = list(tools)
         out += [t for t in META_TOOLS if t.name not in _names(out)]
@@ -75,7 +68,7 @@ def build_context(request: ModelRequest):
     )
     instructions = profile.instructions
     context = getattr(getattr(request, "runtime", None), "context", None)
-    if profile.page_context and context is not None:
+    if context is not None:
         today = context.current_date
         tomorrow = today + timedelta(days=1)
         instructions += (

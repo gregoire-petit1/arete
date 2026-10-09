@@ -5,7 +5,7 @@ import { Loader2, Plus, Sparkles } from 'lucide-react';
 import { FitDropzone } from '@/components';
 import { Button, Panel } from '@/components/ui';
 import { ManualCardioModal } from './ManualCardioModal';
-import { garminApi, tipsApi } from '@/lib/api';
+import { garminApi, tipsApi, type PostSessionFeedback } from '@/lib/api';
 import { RecentSessions } from './RecentSessions';
 import { invalidateAfterSession } from '@/lib/queryKeys';
 
@@ -19,7 +19,7 @@ interface Upload {
 export function CardioTab() {
   const queryClient = useQueryClient();
   const [recentUploads, setRecentUploads] = useState<Upload[]>([]);
-  const [feedback, setFeedback] = useState<{ feedback: string; highlights: string[] } | null>(null);
+  const [feedback, setFeedback] = useState<PostSessionFeedback | null>(null);
   const [feedbackError, setFeedbackError] = useState(false);
   // The coach reads the session before answering, which takes seconds, not
   // milliseconds. Say so rather than leaving the page looking finished.
@@ -95,7 +95,7 @@ export function CardioTab() {
           title={
             <span className="flex items-center gap-2">
               <Sparkles className="w-4 h-4" />
-              LE COACH
+              {feedback.source === 'agent' ? 'LE COACH' : 'CALCULÉ À PARTIR DE LA SÉANCE'}
             </span>
           }
           titleTone="text-neon-cyan"

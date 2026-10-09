@@ -57,7 +57,7 @@ def rules_only():
     """
     with patch(
         "arete.coaching.enrich_session_feedback",
-        side_effect=lambda text, highlights: (text, "rules"),
+        side_effect=lambda text, highlights, evidence=None: (text, "rules"),
     ):
         yield
 

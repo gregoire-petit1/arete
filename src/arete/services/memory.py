@@ -69,3 +69,39 @@ def rotate_sessions_ledger(now: date | None = None) -> Path | None:
         "Rotated %s: %d chars archived to %s", SESSIONS_LEDGER, len(head), archive.name
     )
     return archive
+
+
+def append_entry(file: str, title: str, body: str, when: date | None = None) -> bool:
+    """Append one dated entry to a ledger; False when it is already there.
+
+    The server writes the heading, so the date is never the model's guess and
+    the format never drifts. ``sessions.md`` takes ``## YYYY-MM-DD — title``
+    and a body; ``notes.md`` takes one ``- YYYY-MM-DD — title : body`` line.
+    Rotation follows every write, so the ledger stays bounded whoever writes.
+    """
+    if file not in (SESSIONS_LEDGER, NOTES_LEDGER):
+        raise ValueError(f"Unknown ledger: {file}")
+    day = (when or date.today()).isoformat()
+    title = " ".join(title.split())
+    path = memory_root() / file
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    if file == SESSIONS_LEDGER:
+        heading = f"## {day} — {title}"
+        if heading in existing.splitlines():
+            return False
+        entry = f"{heading}\n{body.strip()}\n"
+    else:
+        heading = f"- {day} — {title} :"
+        if any(line.startswith(heading) for line in existing.splitlines()):
+            return False
+        entry = f"{heading} {' '.join(body.split())}\n"
+    separator = (
+        ""
+        if not existing or existing.endswith("\n\n")
+        else ("\n" if existing.endswith("\n") else "\n\n")
+    )
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(separator + entry)
+    if file == SESSIONS_LEDGER:
+        rotate_sessions_ledger()
+    return True

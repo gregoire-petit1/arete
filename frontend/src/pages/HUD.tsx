@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Bot, Calendar, Dumbbell, Zap } from 'lucide-react';
+import { ArrowRight, Bot, Calendar, Dumbbell, Loader2, Zap } from 'lucide-react';
 import { LoadingState, MetricCard, OffPlanRow, SessionCard, strengthAsActual } from '@/components';
 import { Panel } from '@/components/ui';
 import { garminApi, garminHealthApi, metricsApi, settingsApi, strengthApi, tipsApi } from '@/lib/api';
@@ -79,7 +79,7 @@ export function DashboardPage() {
     retry: false,
   });
 
-  const { data: tip } = useQuery({
+  const { data: tip, isLoading: tipLoading } = useQuery({
     queryKey: qk.tipDaily,
     queryFn: tipsApi.getDaily,
     staleTime: 1000 * 60 * 30,
@@ -278,7 +278,13 @@ export function DashboardPage() {
           )}
         </Panel>
 
-        {/* Block 4: AI Tip */}
+        {/* Block 4: AI Tip — the first visit of the day may wait for the coach */}
+        {tipLoading && (
+          <p className="glass-panel p-4 text-sm font-mono text-text-muted flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-neon-cyan" />
+            Le coach écrit ton briefing…
+          </p>
+        )}
         {tip && (
           <section
             className={cn('glass-panel p-4 border-l-4 animate-scale-in', TIP_BORDER[tip.priority] ?? 'border-neon-cyan')}

@@ -82,7 +82,9 @@ def test_unloaded_tool_is_rejected_before_execution():
     assert message.status == "error" and "Load toolkit" in message.content
 
 
-def test_briefing_has_analytics_without_loading():
+@pytest.mark.parametrize("profile", ["briefing", "feedback"])
+def test_missions_bind_no_tool(profile):
+    """Facts in, text out: one model request, nothing to call."""
     seen = []
 
     class Capture(Model):
@@ -96,11 +98,9 @@ def test_briefing_has_analytics_without_loading():
         context_schema=AgentContext,
     )
     graph.invoke(
-        {"messages": [HumanMessage("briefing")]},
-        context=AgentContext(profile="briefing"),
+        {"messages": [HumanMessage("faits")]}, context=AgentContext(profile=profile)
     )
-    assert "get_workload" in seen[0]
-    assert "save_workout" not in seen[0]
+    assert seen in ([], [set()])
 
 
 def test_chat_binds_its_toolkits_without_a_loading_round():

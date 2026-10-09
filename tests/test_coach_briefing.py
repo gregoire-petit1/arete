@@ -323,3 +323,147 @@ class TestSessionFeedback:
             build_briefing_agent.cache_clear()
             build_feedback_agent.cache_clear()
         assert first != second
+
+
+# ---------------------------------------------------------------------------
+# One request per mission: facts in, server-filed journal
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def memory(tmp_path, monkeypatch):
+    from arete.services import memory as fs
+
+    root = tmp_path / "memory"
+    root.mkdir()
+    monkeypatch.setattr(fs, "memory_root", lambda: root)
+    return root
+
+
+class TestAppendEntry:
+    def test_the_server_writes_the_dated_heading(self, memory):
+        from arete.services.memory import append_entry
+
+        assert append_entry(
+            "sessions.md", "trail — sortie longue", "20 km", date(2026, 10, 9)
+        )
+        assert (memory / "sessions.md").read_text() == (
+            "## 2026-10-09 — trail — sortie longue\n20 km\n"
+        )
+
+    def test_the_same_entry_is_never_filed_twice(self, memory):
+        from arete.services.memory import append_entry
+
+        day = date(2026, 10, 9)
+        append_entry("sessions.md", "footing", "8 km", day)
+        assert not append_entry("sessions.md", "footing", "8 km encore", day)
+        assert (memory / "sessions.md").read_text().count("## 2026-10-09") == 1
+
+    def test_a_note_is_one_dated_line(self, memory):
+        from arete.services.memory import append_entry
+
+        append_entry(
+            "notes.md", "genou", "gêne au genou gauche\nen descente", date(2026, 10, 9)
+        )
+        assert (memory / "notes.md").read_text() == (
+            "- 2026-10-09 — genou : gêne au genou gauche en descente\n"
+        )
+
+    def test_an_unknown_ledger_is_refused(self, memory):
+        from arete.services.memory import append_entry
+
+        with pytest.raises(ValueError):
+            append_entry("other.md", "x", "y")
+
+
+class TestBriefingFacts:
+    def test_the_facts_carry_the_date_the_rules_and_today_plan(self, clean_day):
+        from arete.services.briefing import briefing_facts
+
+        planned = type(
+            "P",
+            (),
+            {
+                "session_type": type("T", (), {"value": "tempo"})(),
+                "target_duration_min": 45,
+                "target_hr_zone": "Z3",
+                "description": "3x10' tempo",
+            },
+        )()
+        with patch(
+            "arete.garmin.repository.GarminRepository.list_planned_sessions",
+            return_value=[planned],
+        ):
+            facts = briefing_facts(clean_day, "Charge équilibrée.")
+        assert "mercredi 2031-01-01" in facts
+        assert "Conseil calculé par les règles : Charge équilibrée." in facts
+        assert "tempo — 45 min — Z3 — 3x10' tempo" in facts
+
+    def test_a_failed_read_says_unavailable_instead_of_failing(self, clean_day):
+        from arete.services.briefing import briefing_facts
+
+        with patch(
+            "arete.garmin.repository.GarminRepository.list_planned_sessions",
+            side_effect=RuntimeError("db down"),
+        ):
+            facts = briefing_facts(clean_day, "x")
+        assert "Séance(s) prévue(s) aujourd'hui :\n- indisponible" in facts
+
+    def test_the_agent_receives_the_facts(self, clean_day, enabled):
+        with patch("arete.coaching.run_briefing", return_value="ok") as run:
+            generate_briefing(target_date=clean_day)
+        assert "Nous sommes mercredi 2031-01-01." in run.call_args.args[0]
+
+    def test_concurrent_first_requests_produce_once(self, clean_day, enabled):
+        from concurrent.futures import ThreadPoolExecutor
+
+        with (
+            patch("arete.coaching.run_briefing", return_value="ok") as run,
+            ThreadPoolExecutor(max_workers=3) as pool,
+        ):
+            list(
+                pool.map(
+                    lambda _: get_or_create_briefing(target_date=clean_day), range(3)
+                )
+            )
+        assert run.call_count == 1
+
+
+class TestFeedbackFiling:
+    @staticmethod
+    def _evidence():
+        from arete.services.session_feedback import SessionEvidence
+
+        return SessionEvidence(
+            date=date(2026, 10, 9), title="trail — sortie longue", rpe=7, notes="dur"
+        )
+
+    def test_the_server_files_the_session_with_the_coach_answer(self, memory):
+        from arete.coaching import enrich_session_feedback
+
+        with patch("arete.coaching.run_feedback", return_value="Belle séance.") as run:
+            text, source = enrich_session_feedback(
+                "20 km.", ["D+ 900"], self._evidence()
+            )
+        assert (text, source) == ("Belle séance.", "agent")
+        assert "RPE ressenti : 7/10" in run.call_args.args[0]
+        ledger = (memory / "sessions.md").read_text()
+        assert ledger.startswith("## 2026-10-09 — trail — sortie longue\n")
+        assert "Retour du coach : Belle séance." in ledger
+
+    def test_a_repeated_request_files_nothing_more(self, memory):
+        from arete.coaching import enrich_session_feedback
+
+        with patch("arete.coaching.run_feedback", return_value="ok"):
+            enrich_session_feedback("20 km.", [], self._evidence())
+            enrich_session_feedback("20 km.", [], self._evidence())
+        assert (memory / "sessions.md").read_text().count("## 2026-10-09") == 1
+
+    def test_a_failed_model_still_files_the_facts(self, memory):
+        from arete.coaching import enrich_session_feedback
+
+        with patch("arete.coaching.run_feedback", side_effect=RuntimeError("down")):
+            text, source = enrich_session_feedback("20 km.", [], self._evidence())
+        assert (text, source) == ("20 km.", "rules")
+        ledger = (memory / "sessions.md").read_text()
+        assert "20 km." in ledger and "Retour du coach" not in ledger

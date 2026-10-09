@@ -45,7 +45,8 @@ def test_execution_policy_is_independent_of_framework_hooks():
     assert not resolve_policy("briefing").can_execute(
         "analytics", "future_write", frozenset({"get_workload"})
     )
-    assert resolve_policy("briefing").can_execute(
+    # The briefing gets its facts in the message: it executes nothing.
+    assert not resolve_policy("briefing").can_execute(
         "analytics", "get_workload", frozenset({"get_workload"})
     )
     with pytest.raises(ValueError, match="Unknown"):
