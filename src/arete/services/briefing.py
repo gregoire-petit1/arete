@@ -66,6 +66,13 @@ def _fmt(value: float | None, pattern: str) -> str:
     return pattern.format(value) if value is not None else "indisponible"
 
 
+def _clock(seconds: int) -> str:
+    """41:10 or 1:31:05, how a race time is read."""
+    hours, rest = divmod(int(seconds), 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
 def _block(title: str, read: Callable[[], list[str]]) -> str:
     """One section of the facts; a failed read says so instead of failing."""
     try:
@@ -136,6 +143,54 @@ def briefing_facts(target_date: date, rule_text: str) -> str:
             for s in sessions
         ]
 
+    def decisions() -> list[str]:
+        from arete.services.adaptation import describe
+        from arete.services.plan_repository import PlanDecisionRepository
+
+        lines = []
+        for d in PlanDecisionRepository().list_for_day(target_date):
+            if d.reverted_at is not None:
+                lines.append(f"décision annulée par l'athlète : {d.reason}")
+                continue
+            before = d.original or {}
+            planned = describe(
+                str(before.get("session_type") or "séance"),
+                before.get("target_duration_min"),
+                before.get("target_hr_zone"),
+            )
+            verdict = {
+                "keep": "maintenue",
+                "ease": "allégée",
+                "replace_easy": "remplacée par de la récupération",
+                "rest": "remplacée par du repos",
+            }.get(d.decision, d.decision)
+            lines.append(f"{planned} : {verdict} — raison : {d.reason}")
+        return lines
+
+    def predictions() -> list[str]:
+        from arete.dataio.db import connect
+
+        con = connect()
+        try:
+            row = con.execute(
+                "SELECT race_5k_sec, race_10k_sec, race_half_sec, race_marathon_sec "
+                "FROM app.daily_metrics WHERE user_id = 1 AND date <= ? "
+                "AND race_10k_sec IS NOT NULL ORDER BY date DESC LIMIT 1",
+                [target_date],
+            ).fetchone()
+        finally:
+            con.close()
+        if not row:
+            return []
+        labels = ("5 km", "10 km", "semi", "marathon")
+        return [
+            " · ".join(
+                f"{label} {_clock(seconds)}"
+                for label, seconds in zip(labels, row, strict=True)
+                if seconds
+            )
+        ]
+
     def recent() -> list[str]:
         rows = list_sessions(limit=3)["sessions"]
         return [
@@ -166,6 +221,8 @@ def briefing_facts(target_date: date, rule_text: str) -> str:
             f"Conseil calculé par les règles : {rule_text}",
             _block("Charge, forme et récupération", load),
             _block("Séance(s) prévue(s) aujourd'hui", planned),
+            _block("Décision du coach pour aujourd'hui", decisions),
+            _block("Prédictions de course Garmin", predictions),
             _block("Dernières séances réalisées", recent),
             _block("Ton briefing d'hier", yesterday),
         ]
