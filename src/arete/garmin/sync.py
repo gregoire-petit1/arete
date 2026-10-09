@@ -207,7 +207,8 @@ def auto_match(
     candidates = [
         p
         for p in repo.get_potential_matches(session)
-        if p.status == SessionStatus.PENDING
+        # A session the daily adaptation rewrote is still the day's plan.
+        if p.status in (SessionStatus.PENDING, SessionStatus.MODIFIED)
         and p.id is not None
         and p.sport == session.sport
     ]

@@ -19,6 +19,8 @@ class UserSettingsUpdate(BaseModel):
     fitness_goal: Literal["maintenance", "build", "peak", "recovery"] = "build"
     notifications_enabled: bool = True
     coach_briefing_enabled: bool = True
+    auto_adapt_enabled: bool = True
+    push_to_garmin_enabled: bool = False
     theme: Literal["dark", "darker", "abyss"] = "dark"
     exercise_abbreviations: dict[str, str] = {}
     weekly_volume_target_kg: int = Field(ge=1000, le=200000, default=20000)
@@ -40,6 +42,8 @@ class UserSettingsOut(BaseModel):
     fitness_goal: str
     notifications_enabled: bool
     coach_briefing_enabled: bool
+    auto_adapt_enabled: bool = True
+    push_to_garmin_enabled: bool = False
     theme: str
     exercise_abbreviations: dict[str, str]
     weekly_volume_target_kg: int
@@ -89,6 +93,8 @@ def update_settings(payload: UserSettingsUpdate):
         fitness_goal=payload.fitness_goal,
         notifications_enabled=payload.notifications_enabled,
         coach_briefing_enabled=payload.coach_briefing_enabled,
+        auto_adapt_enabled=payload.auto_adapt_enabled,
+        push_to_garmin_enabled=payload.push_to_garmin_enabled,
         theme=payload.theme,
         exercise_abbreviations=payload.exercise_abbreviations,
         weekly_volume_target_kg=payload.weekly_volume_target_kg,

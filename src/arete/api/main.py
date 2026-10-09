@@ -16,6 +16,7 @@ from arete.api.garmin import router as garmin_router
 from arete.api.garmin_health import router as garmin_health_router
 from arete.api.garmin_sync import router as garmin_sync_router
 from arete.api.metrics import router as metrics_router
+from arete.api.plan import router as plan_router
 from arete.api.settings import router as settings_router
 from arete.api.strava import router as strava_router
 from arete.api.strength import router as strength_router
@@ -133,5 +134,6 @@ for router in (
     strava_router,
     analytics_router,
     agent_router,
+    plan_router,
 ):
     app.include_router(router)

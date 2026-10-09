@@ -38,7 +38,11 @@ CREATE TABLE IF NOT EXISTS app.planned_sessions (
     description     VARCHAR,                   -- workout description
     source          VARCHAR DEFAULT 'manual',  -- 'manual', 'llm', 'coach'
     status          VARCHAR DEFAULT 'pending', -- 'pending', 'completed', 'skipped', 'modified'
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    structure_json  VARCHAR,                   -- explicit workout steps (optional)
+    garmin_workout_id  VARCHAR,                -- copy scheduled on Garmin's calendar
+    garmin_schedule_id VARCHAR,
+    garmin_pushed_at   TIMESTAMP
 );
 
 -- Actual training sessions (imported from Garmin/FIT files)
@@ -192,6 +196,8 @@ CREATE TABLE IF NOT EXISTS app.user_settings (
     fitness_goal            VARCHAR DEFAULT 'build',   -- 'maintenance', 'build', 'peak', 'recovery'
     notifications_enabled   BOOLEAN DEFAULT TRUE,
     coach_briefing_enabled  BOOLEAN DEFAULT TRUE,  -- the coach writes a daily briefing
+    auto_adapt_enabled      BOOLEAN DEFAULT TRUE,  -- readiness adapts today's session
+    push_to_garmin_enabled  BOOLEAN DEFAULT FALSE, -- schedule it on Garmin's calendar
     theme                   VARCHAR DEFAULT 'dark',    -- 'dark', 'darker', 'abyss'
     exercise_abbreviations  VARCHAR DEFAULT '{}',      -- JSON: {"bp": "bench press", "ng": "neutral grip", ...}
     weekly_volume_target_kg INTEGER DEFAULT 20000,     -- strength tonnage goal per week
@@ -296,6 +302,32 @@ CREATE TABLE IF NOT EXISTS app.coach_briefings (
     error        VARCHAR,                    -- why the agent run failed, when it did
     trigger      VARCHAR NOT NULL DEFAULT 'api',    -- 'scheduler', 'api'
     created_at   TIMESTAMP DEFAULT now()
+);
+
+-- ============================================================
+-- Plan decisions: what the morning's readiness did to a planned session
+-- ============================================================
+CREATE SEQUENCE IF NOT EXISTS app.plan_decisions_seq START 1;
+
+-- One decision per planned session and day (the unique key is the "never
+-- twice" guarantee when the cron and a manual recompute race). original_json
+-- is what reverting restores.
+CREATE TABLE IF NOT EXISTS app.plan_decisions (
+    id                 INTEGER PRIMARY KEY DEFAULT nextval('app.plan_decisions_seq'),
+    user_id            INTEGER NOT NULL DEFAULT 1,
+    date               DATE NOT NULL,
+    planned_session_id INTEGER NOT NULL,
+    decision           VARCHAR NOT NULL,   -- 'keep', 'ease', 'replace_easy', 'rest'
+    reason             VARCHAR NOT NULL,
+    readiness_score    DOUBLE,
+    readiness_source   VARCHAR,            -- 'garmin_training', 'garmin', 'model'
+    acwr               DOUBLE,
+    original_json      VARCHAR,
+    adapted_json       VARCHAR,
+    applied_at         TIMESTAMP,
+    reverted_at        TIMESTAMP,
+    created_at         TIMESTAMP DEFAULT now(),
+    UNIQUE (user_id, date, planned_session_id)
 );
 """
 
@@ -423,6 +455,33 @@ def _m10_garmin_performance_columns(con) -> None:
             con.execute(f"ALTER TABLE app.daily_metrics ADD COLUMN {name} {sql_type}")
 
 
+def _m11_plan_adaptation(con) -> None:
+    """Daily adaptation: its switches, the push state, the decision log."""
+    settings = _columns(con, "user_settings")
+    for name, sql_type in (
+        ("auto_adapt_enabled", "BOOLEAN DEFAULT TRUE"),
+        ("push_to_garmin_enabled", "BOOLEAN DEFAULT FALSE"),
+    ):
+        if name not in settings:
+            con.execute(f"ALTER TABLE app.user_settings ADD COLUMN {name} {sql_type}")
+    planned = _columns(con, "planned_sessions")
+    for name, sql_type in (
+        ("structure_json", "VARCHAR"),
+        ("garmin_workout_id", "VARCHAR"),
+        ("garmin_schedule_id", "VARCHAR"),
+        ("garmin_pushed_at", "TIMESTAMP"),
+    ):
+        if name not in planned:
+            con.execute(
+                f"ALTER TABLE app.planned_sessions ADD COLUMN {name} {sql_type}"
+            )
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.plan_decisions_seq")
+    end = (
+        DDL.index(");", DDL.index("CREATE TABLE IF NOT EXISTS app.plan_decisions")) + 2
+    )
+    con.execute(DDL[start:end])
+
+
 #: Append-only. A database at the last version skips the DDL entirely on boot
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
@@ -438,6 +497,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (8, _m8_coach_briefing_enabled),
     (9, _m9_canonical_sport_names),
     (10, _m10_garmin_performance_columns),
+    (11, _m11_plan_adaptation),
 ]
 
 

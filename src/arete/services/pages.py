@@ -33,6 +33,7 @@ def _dashboard() -> dict[str, Any]:
     from arete.services.analytics import list_sessions
     from arete.services.coaching_repository import BriefingRepository
     from arete.services.metrics import get_player_stats
+    from arete.services.plan_repository import PlanDecisionRepository
     from arete.services.planning import _session_to_dict
 
     today = date.today()
@@ -50,6 +51,17 @@ def _dashboard() -> dict[str, Any]:
         ],
         "strength_today": _strength_sessions(start_date=today, end_date=today),
         "briefing_today": briefing.text if briefing else None,
+        # What the morning's readiness did to the plan, and why: "why did my
+        # session change?" is answered from the page.
+        "plan_decisions_today": [
+            {
+                "planned_session_id": d.planned_session_id,
+                "decision": d.decision,
+                "reason": d.reason,
+                "reverted": d.reverted_at is not None,
+            }
+            for d in PlanDecisionRepository().list_for_day(today)
+        ],
     }
 
 

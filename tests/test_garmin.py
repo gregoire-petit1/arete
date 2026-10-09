@@ -580,3 +580,8 @@ def test_canonical_sport():
         (None, "other"),
     ]:
         assert canonical_sport(raw) == expected, raw
+
+
+def test_update_planned_session_fields_rejects_unknown_columns():
+    with pytest.raises(ValueError, match="user_id"):
+        GarminRepository().update_planned_session_fields(1, user_id=2)
