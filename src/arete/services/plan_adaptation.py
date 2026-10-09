@@ -131,6 +131,11 @@ def adapt_today(
                 session.id, status=SessionStatus.SKIPPED, garmin_pushed_at=None
             )
         decisions.mark(decision.id, "applied_at")
+        if respect_setting and outcome.decision != Decision.KEEP:
+            # The daily run changed the plan before the athlete looked: say so.
+            from arete.services.notifications import notify
+
+            notify("Séance adaptée", outcome.reason, "/")
         logger.info(
             "Plan decision for session %s: %s (%s)",
             session.id,
