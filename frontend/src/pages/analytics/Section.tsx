@@ -19,7 +19,7 @@ export const SECTIONS: SectionDef[] = [
 /** Sticky jump bar: one click per section. */
 export function SectionNav({ active, onJump }: { active: string; onJump: (id: string) => void }) {
   return (
-    <nav className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-void/90 backdrop-blur border-b border-text-muted/10">
+    <nav className="pb-2">
       <ul className="flex gap-2 flex-wrap">
         {SECTIONS.map((s) => (
           <li key={s.id}>
@@ -45,7 +45,7 @@ export function SectionNav({ active, onJump }: { active: string; onJump: (id: st
 
 export function Section({ def, children }: { def: SectionDef; children: ReactNode }) {
   return (
-    <section id={def.id} className="scroll-mt-16 space-y-3">
+    <section id={def.id} className="space-y-3">
       <header>
         <h2 className="text-lg font-bold font-mono text-text-primary tracking-wider uppercase">{def.title}</h2>
         <p className="text-sm text-text-muted">{def.intro}</p>

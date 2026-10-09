@@ -33,7 +33,8 @@ function useActiveSection(): string {
         const visible = entries.filter((e) => e.isIntersecting);
         if (visible.length) setActive(visible[0].target.id);
       },
-      { rootMargin: '-15% 0px -70% 0px' }
+      // Below the sticky banner, which covers the top quarter of the screen
+      { rootMargin: '-30% 0px -60% 0px' }
     );
     for (const s of SECTIONS) {
       const el = document.getElementById(s.id);
@@ -49,6 +50,7 @@ function useActiveSection(): string {
 export function AnalyticsPage() {
   const [period, setPeriod] = useState<Period>('30d');
   const active = useActiveSection();
+  const banner = useRef<HTMLDivElement>(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['analytics', 'overview', period],
@@ -61,26 +63,38 @@ export function AnalyticsPage() {
   const previousLabel = PREVIOUS_LABEL[period];
   const state = { loading: isLoading, error: isError, bucket, previousLabel };
 
-  const jump = (id: string) =>
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  /** Scroll a section just below the sticky banner, whatever its height. */
+  const jump = (id: string) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const b = banner.current;
+    const offset = b ? parseFloat(getComputedStyle(b).top) + b.offsetHeight + 8 : 0;
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - offset, behavior: 'smooth' });
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold font-mono text-neon-cyan tracking-wider uppercase">Analyses</h1>
-          {data && (
-            <p className="text-xs text-text-muted font-mono mt-1">
-              Du {new Date(`${data.start}T00:00:00`).toLocaleDateString('fr-FR')} au{' '}
-              {new Date(`${data.end}T00:00:00`).toLocaleDateString('fr-FR')}
-              {data.prev_start && ` · comparé ${previousLabel}`}
-            </p>
-          )}
+      {/* Stays under the app's tab bar (57 px, desktop only) while the page scrolls */}
+      <div
+        ref={banner}
+        className="sticky top-0 md:top-[57px] z-20 -mx-4 px-4 pt-3 space-y-3 bg-void/90 backdrop-blur border-b border-text-muted/10"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-bold font-mono text-neon-cyan tracking-wider uppercase">Analyses</h1>
+            {data && (
+              <p className="text-xs text-text-muted font-mono mt-1">
+                Du {new Date(`${data.start}T00:00:00`).toLocaleDateString('fr-FR')} au{' '}
+                {new Date(`${data.end}T00:00:00`).toLocaleDateString('fr-FR')}
+                {data.prev_start && ` · comparé ${previousLabel}`}
+              </p>
+            )}
+          </div>
+          <PeriodSelector period={period} onChange={setPeriod} />
         </div>
-        <PeriodSelector period={period} onChange={setPeriod} />
-      </div>
 
-      <SectionNav active={active} onJump={jump} />
+        <SectionNav active={active} onJump={jump} />
+      </div>
 
       <Section def={SECTIONS[0]}>
         <VolumeCard card={cards?.volume} {...state} />
