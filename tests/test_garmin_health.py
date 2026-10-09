@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import patch
 
 import pytest
 
 from arete.api.garmin_health import router
+from arete.dataio.db import connect
 from arete.garmin.health_sync import _upsert_daily_metrics
-from arete.garmin.readiness import compute_readiness
+from arete.garmin.readiness import compute_readiness, fetch_window
 
 
 @pytest.fixture
@@ -139,6 +140,34 @@ class TestReadinessFormula:
             ]
             score = compute_readiness(date(2026, 6, 1))
             assert score >= 0
+
+
+class TestReadinessWindow:
+    def test_one_window_read_scores_today_and_yesterday_like_two_reads(self):
+        end = date(2031, 3, 16)
+        for i in range(16):
+            _upsert_daily_metrics(
+                {
+                    "date": end - timedelta(days=i),
+                    "hrv_last_night": 50 + i,
+                    "sleep_duration_sec": 6 * 3600 + i * 600,
+                    "body_battery_high": 60 + i,
+                    "stress_avg": 20 + (i * 7) % 15,
+                    "resting_hr": 45 + i % 4,
+                }
+            )
+        con = connect()
+        try:
+            window = fetch_window(con, end)
+            for day in (end, end - timedelta(days=1)):
+                score = compute_readiness(day)
+                assert score is not None
+                assert compute_readiness(day, window=window) == score
+        finally:
+            con.execute(
+                "DELETE FROM app.daily_metrics WHERE date >= ?", [date(2031, 1, 1)]
+            )
+            con.close()
 
 
 class TestGarminHealthApi:

@@ -370,16 +370,51 @@ class TestPlayerStatsSemantics:
     def test_level_is_a_streak_of_finished_weeks(self):
         from arete.services import metrics
 
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
         # oldest -> newest finished weeks: ok, missed, ok, ok
-        with (
-            patch("arete.services.metrics.connect") as mock_connect,
-            patch(
-                "arete.services.metrics.weekly_tss", side_effect=[400, 100, 400, 400]
-            ),
-        ):
-            mock_connect.return_value.execute.return_value.fetchone.return_value = (
-                date.today() - timedelta(days=28),
-            )
-            streak, total = metrics._week_history(300.0)
+        by_date = {
+            monday - timedelta(days=28): 400.0,
+            monday - timedelta(days=21): 100.0,
+            monday - timedelta(days=14): 400.0,
+            monday - timedelta(days=7): 400.0,
+            today: 999.0,  # the current week never counts
+        }
+        streak, total = metrics._week_history(300.0, by_date, today)
         assert streak == 2  # only the two most recent count
         assert total == 3
+
+    def test_a_week_without_sessions_breaks_the_streak(self):
+        from arete.services import metrics
+
+        today = date.today()
+        monday = today - timedelta(days=today.weekday())
+        by_date = {monday - timedelta(days=14): 400.0}  # then an empty week
+        assert metrics._week_history(300.0, by_date, today) == (0, 1)
+
+    def test_player_stats_reads_the_database_in_four_statements(self, monkeypatch):
+        from arete.dataio import db, settings
+        from arete.features import banister
+        from arete.garmin import readiness
+        from arete.services import metrics
+
+        statements: list[str] = []
+
+        class Counting:
+            def __init__(self, con):
+                self._con = con
+
+            def execute(self, sql, *args):
+                statements.append(sql)
+                return self._con.execute(sql, *args)
+
+            def __getattr__(self, name):
+                return getattr(self._con, name)
+
+        def counting_connect(*args, **kwargs):
+            return Counting(db.connect(*args, **kwargs))
+
+        for module in (metrics, settings, banister, readiness):
+            monkeypatch.setattr(module, "connect", counting_connect)
+        metrics.get_player_stats()
+        assert len(statements) == 4

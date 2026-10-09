@@ -10,6 +10,7 @@ from arete.dataio.queries import (
     SPORT_GROUPS,
     daily_loads,
     daily_tss,
+    daily_tss_by_date,
     sql_in,
     weekly_tss,
 )
@@ -58,3 +59,23 @@ class TestSeries:
         finally:
             con.execute("DELETE FROM app.actual_sessions WHERE source = 'test'")
             con.close()
+
+
+def test_daily_tss_by_date_matches_the_gap_filled_series():
+    con = connect()
+    try:
+        con.execute("DELETE FROM app.actual_sessions WHERE source = 'test'")
+        _insert(con, date(2026, 1, 1), 3600, 6)
+        _insert(con, date(2026, 1, 1), 1800, 8)
+        _insert(con, date(2026, 1, 3), 1800, None)
+
+        by_date = daily_tss_by_date(con)
+        series = daily_tss(con, date(2026, 1, 1), date(2026, 1, 4))
+        assert {t.date: t.tss for t in series if t.tss} == {
+            d: tss
+            for d, tss in by_date.items()
+            if date(2026, 1, 1) <= d <= date(2026, 1, 4)
+        }
+    finally:
+        con.execute("DELETE FROM app.actual_sessions WHERE source = 'test'")
+        con.close()
