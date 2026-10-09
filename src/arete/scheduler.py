@@ -131,9 +131,16 @@ def write_daily_briefing() -> str:
     """
     from arete.coaching import generate_briefing
     from arete.services.briefing import briefing_enabled
+    from arete.services.coaching_repository import BriefingRepository
 
     if not briefing_enabled():
         return "disabled"
+    # A briefing the dashboard asked for before the sync is rewritten: it was
+    # read off last night's missing data. One this job already wrote (a cron
+    # that fires twice) is kept: the second run would pay for the same text.
+    existing = BriefingRepository().get_for_day(date.today())
+    if existing is not None and existing.trigger == "scheduler":
+        return existing.source
     try:
         briefing = generate_briefing(trigger="scheduler")
     except Exception as e:  # noqa: BLE001 - background job must not die

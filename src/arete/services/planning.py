@@ -11,7 +11,12 @@ import json
 from datetime import date, timedelta
 from typing import Any
 
-from arete.garmin.models import PlannedSession, SessionStatus, SessionType
+from arete.garmin.models import (
+    PlannedSession,
+    SessionStatus,
+    SessionType,
+    canonical_sport,
+)
 from arete.garmin.repository import GarminRepository
 
 _MAX_LIST = 50
@@ -38,31 +43,57 @@ def _session_to_dict(s: PlannedSession) -> dict[str, Any]:
     }
 
 
+def _parse_iso(value: str, field: str) -> date | str:
+    """The date, or a tool error the model can read and correct."""
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        return json.dumps(
+            {"error": f"{field} doit être une date ISO (YYYY-MM-DD), reçu « {value} »"},
+            ensure_ascii=False,
+        )
+
+
 def list_planned(
     start_date: str = "",
     end_date: str = "",
 ) -> str:
-    """List upcoming planned training sessions.
+    """List upcoming planned training sessions, earliest first.
 
     Args:
         start_date: Optional ISO date (YYYY-MM-DD) filter start, empty = today - 7.
         end_date: Optional ISO date (YYYY-MM-DD) filter end, empty = today + 120.
     """
     start = (
-        date.fromisoformat(start_date)
+        _parse_iso(start_date, "start_date")
         if start_date
         else date.today() - timedelta(days=7)
     )
+    if isinstance(start, str):
+        return start
     end = (
-        date.fromisoformat(end_date)
+        _parse_iso(end_date, "end_date")
         if end_date
         else date.today() + timedelta(days=_HORIZON_DAYS)
     )
+    if isinstance(end, str):
+        return end
+    # Earliest first, one past the cap: a dense plan keeps this week, and the
+    # model learns where to resume instead of silently missing sessions.
     sessions = _repo().list_planned_sessions(
-        start_date=start, end_date=end, status=None, limit=_MAX_LIST
+        start_date=start, end_date=end, status=None, limit=_MAX_LIST + 1, ascending=True
     )
+    truncated = len(sessions) > _MAX_LIST
+    shown = sessions[:_MAX_LIST]
     return json.dumps(
-        {"count": len(sessions), "sessions": [_session_to_dict(s) for s in sessions]},
+        {
+            "count": len(shown),
+            "truncated": truncated,
+            "next_start_date": sessions[_MAX_LIST].date.isoformat()
+            if truncated
+            else None,
+            "sessions": [_session_to_dict(s) for s in shown],
+        },
         ensure_ascii=False,
     )
 
@@ -100,9 +131,12 @@ def create_planned_session(
     if intensity is not None and intensity not in ("easy", "moderate", "hard"):
         return json.dumps({"error": "target_intensity must be easy|moderate|hard"})
 
+    day = _parse_iso(date_str, "date_str")
+    if isinstance(day, str):
+        return day
     planned = PlannedSession(
-        date=date.fromisoformat(date_str),
-        sport=sport,
+        date=day,
+        sport=canonical_sport(sport),
         session_type=st,
         target_duration_min=target_duration_min or None,
         target_distance_km=target_distance_km or None,

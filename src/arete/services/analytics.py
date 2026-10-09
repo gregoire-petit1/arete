@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, timedelta
 
 from arete.dataio.db import connect, db_connection
@@ -26,7 +26,7 @@ from arete.dataio.queries import (
 )
 from arete.dataio.settings import athlete_zone_model
 from arete.features import overview as ov
-from arete.features.fitness import DailyTSS, ctl_atl_series
+from arete.features.fitness import DailyTSS
 from arete.features.periods import PeriodWindow, resolve_period
 from arete.features.workload import (
     DailyLoad,
@@ -35,6 +35,7 @@ from arete.features.workload import (
     calculate_chronic_load,
     get_acwr_zone,
 )
+from arete.services.metrics import fitness_series
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +64,6 @@ EFFORT_NAMES = (
 
 #: Lookup from whatever spelling the data carries to the canonical name above.
 _EFFORT_BY_KEY = {name.casefold(): name for name in EFFORT_NAMES}
-
-# Two CTL time constants of history feed the EWMA before the first displayed day
-CTL_WARMUP_DAYS = 84
 
 ACWR_ZONE_FR = {
     "undertrained": "charge basse",
@@ -149,10 +147,11 @@ def get_overview(period: str = "30d"):
     long runs with laps, and the health metrics. The cards slice the sessions.
     """
     with db_connection() as con:
-        window = resolve_period(period, date.today(), earliest_session_date(con))
+        earliest = earliest_session_date(con)
+        window = resolve_period(period, date.today(), earliest)
         start = _fetch_start(window)
-        tss_days = (window.end - start).days + 1
-        tss_start = window.end - timedelta(days=tss_days + CTL_WARMUP_DAYS)
+        # The form chart walks the whole history, as every other surface does.
+        tss_start = min(earliest or start, start)
         rows = overview_rows(con, tss_start, window.end)
         drifts = drift_rows(con, start, window.end, MIN_DRIFT_DURATION_SEC)
         health = daily_metrics_range(con, start, window.end)
@@ -189,7 +188,9 @@ def get_overview(period: str = "30d"):
         for r in runs
         if r.avg_cadence is not None
     ]
-    pmc_series = ctl_atl_series(_daily_tss(rows, tss_start, window.end))
+    pmc_series = fitness_series(
+        {t.date: t.tss for t in _daily_tss(rows, tss_start, window.end)}, window.end
+    )
     loads_start = window.end - timedelta(days=ACWR_HISTORY_DAYS)
     acwr, acwr_zone = _acwr(_daily_loads(rows, loads_start, window.end), window.end)
 
@@ -249,25 +250,27 @@ def get_records(sport: str = "running"):
 # ---------- Session CRUD ----------
 
 
-def update_session(session_id: int, rpe: int | None = None, notes: str | None = None):
-    """Update RPE and/or notes for an actual session."""
+_EDITABLE_SESSION_FIELDS = ("rpe", "notes")
+
+
+def update_session(session_id: int, fields: Mapping[str, int | str | None]):
+    """Update RPE and/or notes for an actual session.
+
+    Every given field is written, ``None`` included: that is how the athlete
+    clears an RPE. Absent fields are left alone.
+    """
+    unknown = set(fields) - set(_EDITABLE_SESSION_FIELDS)
+    if unknown:
+        raise ValueError(f"Not editable: {sorted(unknown)}")
+    columns = [name for name in _EDITABLE_SESSION_FIELDS if name in fields]
+    if not columns:
+        return {"success": True}
     con = connect(read_only=False)
     try:
-        updates = []
-        values: list = []
-        if rpe is not None:
-            updates.append("rpe = ?")
-            values.append(rpe)
-        if notes is not None:
-            updates.append("notes = ?")
-            values.append(notes)
-        if not updates:
-            return {"success": True}
-
-        values.append(session_id)
         con.execute(
-            f"UPDATE app.actual_sessions SET {', '.join(updates)} WHERE id = ?",
-            values,
+            f"UPDATE app.actual_sessions SET {', '.join(f'{c} = ?' for c in columns)}"
+            " WHERE id = ?",
+            [*(fields[c] for c in columns), session_id],
         )
         return {"success": True}
     finally:

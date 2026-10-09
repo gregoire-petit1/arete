@@ -15,9 +15,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from arete.dataio.queries import training_loads, tss_history
+from arete.dataio.queries import training_loads
 from arete.dataio.settings import athlete_zone_model, get_user_settings
-from arete.features.fitness import compute_performance_model
 from arete.features.workload import compute_workload_metrics
 from arete.garmin.repository import GarminRepository
 from arete.services.session_feedback import SessionEvidence
@@ -43,6 +42,7 @@ def generate_daily_tip(
     readiness_score: float | None,
     fatigue_threshold: int = DEFAULT_FATIGUE_THRESHOLD,
     fitness_goal: str = "build",
+    readiness_source: Literal["garmin", "model"] = "model",
 ) -> tuple[str, Literal["info", "warning", "alert"]]:
     """Rule-based daily tip, read against the athlete's own settings.
 
@@ -89,8 +89,9 @@ def generate_daily_tip(
         )
 
     if readiness_score is not None and readiness_score >= fatigue_threshold:
+        measured = "Garmin" if readiness_source == "garmin" else "estimée"
         return (
-            f"Préparation à {readiness_score:.0f}/100, au-dessus de ton seuil de "
+            f"Préparation {measured} à {readiness_score:.0f}/100, au-dessus de ton seuil de "
             f"{fatigue_threshold}. C'est le jour pour une séance dure ou un test.",
             "info",
         )
@@ -123,28 +124,30 @@ class RuleFacts:
     readiness_score: float | None
     fatigue_threshold: int
     fitness_goal: str
+    readiness_source: Literal["garmin", "model"] = "model"
+    readiness_measured_on: date | None = None
 
 
 def rule_facts(target_date: date | None = None) -> RuleFacts:
-    """ACWR over 28 days, form over 42, and the athlete's own thresholds."""
+    """ACWR over 28 days, form over the whole history, the readiness every
+    surface shows (Garmin first), and the athlete's own thresholds."""
+    from arete.services.metrics import load_form
+
     target_date = target_date or date.today()
 
     acwr: float | None = None
     try:
-        loads = training_loads(days=28)
+        loads = training_loads(days=28, end=target_date)
         if any(load.duration_min > 0 for load in loads):
             acwr = compute_workload_metrics(loads, target_date).acwr
     except Exception:
         logger.warning("Failed to compute workload metrics for tip", exc_info=True)
 
     tsb: float | None = None
-    readiness_score: float | None = None
+    readiness = None
     try:
-        tss = tss_history(days=42)
-        if any(t.tss > 0 for t in tss):
-            model = compute_performance_model(tss, target_date)
-            tsb = model.tsb
-            readiness_score = model.readiness_score
+        model, readiness = load_form(target_date)
+        tsb = model.tsb if model else None
     except Exception:
         logger.warning("Failed to compute fitness metrics for tip", exc_info=True)
 
@@ -152,11 +155,13 @@ def rule_facts(target_date: date | None = None) -> RuleFacts:
     return RuleFacts(
         acwr=acwr,
         tsb=tsb,
-        readiness_score=readiness_score,
+        readiness_score=readiness.score if readiness else None,
         fatigue_threshold=int(
             settings.get("fatigue_threshold") or DEFAULT_FATIGUE_THRESHOLD
         ),
         fitness_goal=str(settings.get("fitness_goal") or "build"),
+        readiness_source=readiness.source if readiness else "model",
+        readiness_measured_on=readiness.measured_on if readiness else None,
     )
 
 
@@ -178,6 +183,7 @@ def daily_rule_tip(
         facts.readiness_score,
         fatigue_threshold=facts.fatigue_threshold,
         fitness_goal=facts.fitness_goal,
+        readiness_source=facts.readiness_source,
     )
 
 
@@ -242,7 +248,9 @@ def _generate_strength_feedback(
         raise LookupError("Strength session not found")
     evidence = SessionEvidence(
         date=session.date if isinstance(session.date, date) else date.today(),
-        title=f"musculation — {session.name or 'séance'}",
+        # The id keeps two same-named sessions of one day apart in the journal
+        # (it files each heading once), while the same session stays one entry.
+        title=f"musculation — {session.name or 'séance'} (#{session_id})",
         rpe=session.overall_rpe,
         notes=session.notes,
     )
@@ -261,7 +269,7 @@ def _generate_strength_feedback(
 
     if not session_volume:
         return PostSessionResponse(
-            feedback="Séance enregistrée ! Continuez à vous entraîner régulièrement.",
+            feedback="Séance enregistrée ! Continue à t'entraîner régulièrement.",
             highlights=["Séance complétée"],
         ), evidence
 
@@ -289,7 +297,7 @@ def _generate_strength_feedback(
                 )
             elif delta_pct < -15:
                 highlights.append(
-                    f"Volume {label} en baisse de {abs(delta_pct):.0f}% — pensez à progresser"
+                    f"Volume {label} en baisse de {abs(delta_pct):.0f}% — pense à progresser"
                 )
         else:
             highlights.append(
@@ -328,7 +336,16 @@ def _generate_cardio_feedback(
         raise LookupError("Cardio session not found")
     evidence = SessionEvidence(
         date=session.date,
-        title=f"{session.sport or 'activité'} — {session.name or 'sans titre'}",
+        # The start time keeps two same-named sessions of one day apart in the
+        # journal (it files each heading once); the id when there is no time.
+        title=(
+            f"{session.sport or 'activité'} — {session.name or 'sans titre'} "
+            + (
+                f"({session.start_time:%H:%M})"
+                if session.start_time
+                else f"(#{session_id})"
+            )
+        ),
         rpe=session.rpe,
         notes=session.notes,
     )
@@ -354,7 +371,7 @@ def _generate_cardio_feedback(
         elif zone_num == 3:
             feedback_parts.append("Bon travail en tempo, au-dessus de l'endurance.")
         elif zone_num >= 4:
-            feedback_parts.append("Séance intense — prévoyez une récupération adaptée.")
+            feedback_parts.append("Séance intense — prévois une récupération adaptée.")
 
     # Pace feedback
     if session.avg_pace_sec_km and session.avg_pace_sec_km > 0:
@@ -371,7 +388,7 @@ def _generate_cardio_feedback(
         highlights.append(f"{session.calories} kcal dépensées")
 
     if not highlights:
-        feedback_parts.append("Continuez à vous entraîner régulièrement.")
+        feedback_parts.append("Continue à t'entraîner régulièrement.")
         highlights.append("Séance complétée")
 
     rule_feedback = " ".join(feedback_parts)

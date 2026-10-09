@@ -374,6 +374,20 @@ def _m8_coach_briefing_enabled(con) -> None:
         )
 
 
+def _m9_canonical_sport_names(con) -> None:
+    """One spelling per sport: Strava's "run" never matched a planned "running"."""
+    from arete.garmin.models import SPORT_ALIASES
+
+    for table in ("actual_sessions", "planned_sessions"):
+        if "sport" not in _columns(con, table):
+            continue
+        for alias, canonical in SPORT_ALIASES.items():
+            con.execute(
+                f"UPDATE app.{table} SET sport = ? WHERE lower(sport) = ?",
+                [canonical, alias],
+            )
+
+
 #: Append-only. A database at the last version skips the DDL entirely on boot
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
@@ -387,6 +401,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (6, _m6_hr_reference),
     (7, _m7_threshold_measured_on),
     (8, _m8_coach_briefing_enabled),
+    (9, _m9_canonical_sport_names),
 ]
 
 

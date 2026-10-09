@@ -102,19 +102,29 @@ def calculate_ctl(
     # Build TSS dict for easy lookup
     tss_dict: dict[date, float] = {d.date: d.tss for d in tss_values}
 
-    # Need at least time_constant days of history ideally
-    # Start from earliest available data
-    start_date = target_date - timedelta(days=time_constant * 2)
-
     ctl = 0.0
-    for i in range(time_constant * 2 + 1):
-        current_date = start_date + timedelta(days=i)
-        if current_date > target_date:
-            break
+    for current_date in _ewma_days(tss_dict, target_date, time_constant * 2):
         daily_tss = tss_dict.get(current_date, 0.0)
         ctl = ctl + (daily_tss - ctl) / time_constant
 
     return ctl
+
+
+def _ewma_days(
+    tss_dict: dict[date, float], target_date: date, min_days: int
+) -> list[date]:
+    """Days an EWMA walks to reach ``target_date``.
+
+    From the first day of the given history, so every caller holding the same
+    history reads the same number (the dashboard and the Analytics chart used
+    to start their averages at different days), and never fewer than
+    ``min_days`` before the target, the warm-up a short series needs.
+    """
+    start = target_date - timedelta(days=min_days)
+    earlier = [d for d in tss_dict if d < start]
+    if earlier:
+        start = min(earlier)
+    return [start + timedelta(days=i) for i in range((target_date - start).days + 1)]
 
 
 def ctl_atl_series(
@@ -155,14 +165,8 @@ def calculate_atl(
     """
     tss_dict: dict[date, float] = {d.date: d.tss for d in tss_values}
 
-    # Start from enough days before
-    start_date = target_date - timedelta(days=time_constant * 4)
-
     atl = 0.0
-    for i in range(time_constant * 4 + 1):
-        current_date = start_date + timedelta(days=i)
-        if current_date > target_date:
-            break
+    for current_date in _ewma_days(tss_dict, target_date, time_constant * 4):
         daily_tss = tss_dict.get(current_date, 0.0)
         atl = atl + (daily_tss - atl) / time_constant
 

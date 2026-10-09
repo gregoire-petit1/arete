@@ -103,13 +103,15 @@ class TestOverview:
         assert card["headline"]["previous"] == 8.0
         assert len(card["series"]) == 30
 
-    def test_pmc_card_reads_sessions_from_the_warmup_on(self, client, stub_queries):
+    def test_pmc_card_reads_sessions_from_the_first_one_on(self, client, stub_queries):
+        # The chart walks the whole history, like the dashboard and the tip.
+        stub_queries["earliest_session_date"].return_value = TODAY - timedelta(days=200)
         stub_queries["overview_rows"].return_value = [
-            _row(TODAY - timedelta(days=i), tss=60.0) for i in range(60, -1, -1)
+            _row(TODAY - timedelta(days=i), tss=60.0) for i in range(200, -1, -1)
         ]
         data = client.get("/analytics/overview?period=30d").json()
         _con, start, end = stub_queries["overview_rows"].call_args.args
-        assert (start, end) == (TODAY - timedelta(days=60 + 84), TODAY)
+        assert (start, end) == (TODAY - timedelta(days=200), TODAY)
         assert data["cards"]["pmc"]["headline"]["value"] > 0
 
     def test_sports_card_compares_windows(self, client, stub_queries):
@@ -300,6 +302,15 @@ class TestSessionUpdate:
         assert resp.status_code == 200
         assert resp.json()["success"] is True
         mock_conn.execute.assert_called_once()
+
+    @patch("arete.services.analytics.connect")
+    def test_null_rpe_clears_it(self, mock_connect, client):
+        mock_conn = mock_connect.return_value
+        resp = client.patch("/analytics/sessions/42", json={"rpe": None})
+        assert resp.status_code == 200
+        sql, params = mock_conn.execute.call_args.args
+        assert "rpe = ?" in sql and "notes" not in sql
+        assert params == [None, 42]
 
     @patch("arete.services.analytics.connect")
     def test_update_empty_body(self, mock_connect, client):

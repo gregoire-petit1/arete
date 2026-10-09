@@ -60,7 +60,7 @@ def main(
     print(f"\nFitted coefficients ({result['n_samples']} sessions, R²={result['r2']}):")
     print(f"  k1 (fitness gain)  = {result['k1']}")
     print(f"  k2 (fatigue cost)  = {result['k2']}")
-    print(f"  baseline (efficiency at rest) = {result['baseline']} bpm/(km/h)")
+    print(f"  baseline (speed per beat at rest) = {result['baseline']}")
 
     if dry_run:
         print("\nDry-run: coefficients NOT saved.")

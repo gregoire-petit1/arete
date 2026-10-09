@@ -83,27 +83,35 @@ def briefing_facts(target_date: date, rule_text: str) -> str:
     model requests and 99 s on the free tier — while the rule floor had just
     computed the same numbers. It never saw today's plan either.
     """
-    from arete.garmin.readiness import compute_readiness
     from arete.garmin.repository import GarminRepository
     from arete.services.analytics import list_sessions
     from arete.services.coaching_rules import rule_facts
 
     def load() -> list[str]:
         facts = rule_facts(target_date)
+        if facts.readiness_score is None:
+            readiness = "Préparation : indisponible"
+        elif facts.readiness_source == "garmin" and facts.readiness_measured_on:
+            night = (
+                "cette nuit"
+                if facts.readiness_measured_on == target_date
+                else f"mesure du {facts.readiness_measured_on:%d/%m}"
+            )
+            readiness = (
+                f"Préparation Garmin (VFC, sommeil, {night}) : "
+                f"{facts.readiness_score:.0f}/100"
+            )
+        else:
+            readiness = (
+                "Préparation estimée par la charge (pas de mesure Garmin récente) : "
+                f"{facts.readiness_score:.0f}/100"
+            )
         return [
             f"Charge aiguë/chronique (ACWR, sur 28 jours) : {_fmt(facts.acwr, '{:.2f}')}",
-            f"Fraîcheur (TSB, modèle sur 42 jours) : {_fmt(facts.tsb, '{:+.0f}')}",
-            "Préparation estimée par la charge : "
-            + _fmt(facts.readiness_score, "{:.0f}/100"),
+            f"Fraîcheur (TSB) : {_fmt(facts.tsb, '{:+.0f}')}",
+            readiness,
             f"Objectif de la période : {_GOALS.get(facts.fitness_goal, facts.fitness_goal)}",
         ]
-
-    def garmin() -> list[str]:
-        for offset, label in ((0, "cette nuit"), (1, "la nuit précédente")):
-            score = compute_readiness(target_date - timedelta(days=offset))
-            if score is not None:
-                return [f"Préparation Garmin (VFC, sommeil) {label} : {score}/100"]
-        return ["pas de mesure Garmin récente"]
 
     def planned() -> list[str]:
         sessions = GarminRepository().list_planned_sessions(
@@ -151,8 +159,7 @@ def briefing_facts(target_date: date, rule_text: str) -> str:
         [
             f"Nous sommes {weekday} {target_date.isoformat()}.",
             f"Conseil calculé par les règles : {rule_text}",
-            _block("Charge et forme", load),
-            _block("Récupération", garmin),
+            _block("Charge, forme et récupération", load),
             _block("Séance(s) prévue(s) aujourd'hui", planned),
             _block("Dernières séances réalisées", recent),
             _block("Ton briefing d'hier", yesterday),

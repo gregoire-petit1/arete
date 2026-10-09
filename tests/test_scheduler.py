@@ -143,11 +143,55 @@ class TestWriteDailyBriefing:
         with (
             patch("arete.services.briefing.briefing_enabled", return_value=True),
             patch(
+                "arete.services.coaching_repository.BriefingRepository.get_for_day",
+                return_value=None,
+            ),
+            patch(
                 "arete.coaching.generate_briefing",
                 side_effect=RuntimeError("boom"),
             ),
         ):
             assert scheduler.write_daily_briefing().startswith("failed:")
+
+    def _existing(self, trigger):
+        from arete.services.coaching_repository import Briefing
+
+        return Briefing(
+            id=1,
+            date=date.today(),
+            text="Déjà écrit.",
+            priority="info",
+            source="agent",
+            status="ok",
+            error=None,
+            trigger=trigger,
+            created_at=None,
+        )
+
+    def test_a_second_scheduler_run_keeps_its_briefing(self):
+        with (
+            patch("arete.services.briefing.briefing_enabled", return_value=True),
+            patch(
+                "arete.services.coaching_repository.BriefingRepository.get_for_day",
+                return_value=self._existing("scheduler"),
+            ),
+            patch("arete.coaching.generate_briefing") as generate,
+        ):
+            assert scheduler.write_daily_briefing() == "agent"
+        generate.assert_not_called()
+
+    def test_a_briefing_written_before_the_sync_is_rewritten(self):
+        fresh = self._existing("scheduler")
+        with (
+            patch("arete.services.briefing.briefing_enabled", return_value=True),
+            patch(
+                "arete.services.coaching_repository.BriefingRepository.get_for_day",
+                return_value=self._existing("api"),
+            ),
+            patch("arete.coaching.generate_briefing", return_value=fresh) as generate,
+        ):
+            scheduler.write_daily_briefing()
+        generate.assert_called_once_with(trigger="scheduler")
 
 
 class TestStart:

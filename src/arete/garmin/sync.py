@@ -22,7 +22,12 @@ from arete.features.hr_zones import ZoneModel, samples_from_laps
 from arete.garmin.client import GarminAuthError, GarminClient
 from arete.garmin.fit_parser import FITParser
 from arete.garmin.matcher import SessionMatcher
-from arete.garmin.models import ActivitySource, ActualSession, SessionStatus
+from arete.garmin.models import (
+    ActivitySource,
+    ActualSession,
+    SessionStatus,
+    canonical_sport,
+)
 from arete.garmin.repository import GarminRepository
 from arete.garmin.threshold import refresh_threshold
 from arete.strava.merge import garmin_takeover
@@ -140,21 +145,7 @@ class GarminActivity:
 
     def _map_activity_type(self) -> str:
         """Map Garmin activity type to Arete sport type."""
-        type_mapping = {
-            "running": "running",
-            "trail_running": "running",
-            "treadmill_running": "running",
-            "cycling": "cycling",
-            "indoor_cycling": "cycling",
-            "mountain_biking": "cycling",
-            "swimming": "swimming",
-            "open_water_swimming": "swimming",
-            "lap_swimming": "swimming",
-            "strength_training": "strength",
-            "walking": "walking",
-            "hiking": "hiking",
-        }
-        return type_mapping.get(self.activity_type, "other")
+        return canonical_sport(self.activity_type)
 
 
 FOOT_SPORTS_FOR_PACE = {"running", "walking", "hiking"}
@@ -204,7 +195,10 @@ def zones_from_laps(laps_json: str | None, zones: ZoneModel) -> str | None:
 
 
 def auto_match(
-    repo: GarminRepository, actual_id: int, session: ActualSession
+    repo: GarminRepository,
+    actual_id: int,
+    session: ActualSession,
+    zones: ZoneModel | None = None,
 ) -> int | None:
     """Link an actual session to the best pending planned session of the same day(s).
 
@@ -219,7 +213,8 @@ def auto_match(
     ]
     if not candidates:
         return None
-    match = SessionMatcher().find_match(session, candidates)
+    matcher = SessionMatcher(zones=zones or athlete_zone_model())
+    match = matcher.find_match(session, candidates)
     if (
         not match.is_matched
         or match.planned_session is None
@@ -397,12 +392,11 @@ class GarminSyncClient:
 
         # Default to syncing from last activity
         if start_date is None:
-            last_activity = self._get_last_synced_activity()
-            if last_activity:
-                start_date = last_activity.date
-            else:
-                # First sync: get last 30 days
-                start_date = date.today() - timedelta(days=30)
+            # From the newest Garmin activity (not of any source: a newer Strava
+            # or manual row would skip Garmin activities never fetched), or the
+            # last 30 days on a first sync.
+            last_day, _ = self.repository.last_garmin_import()
+            start_date = last_day or date.today() - timedelta(days=30)
 
         end_date = end_date or date.today()
 
@@ -442,9 +436,15 @@ class GarminSyncClient:
                             twin.id, **garmin_takeover(session)
                         )
                         result.activities_merged += 1
+                        if twin.planned_session_id is None and auto_match(
+                            self.repository, twin.id, session, self.zones
+                        ):
+                            result.activities_matched += 1
                     else:
-                        self.repository.create_actual_session(session)
+                        actual_id = self.repository.create_actual_session(session)
                         result.activities_synced += 1
+                        if auto_match(self.repository, actual_id, session, self.zones):
+                            result.activities_matched += 1
                     result.last_activity_date = activity.start_time.date()
 
                     logger.info(
@@ -469,11 +469,6 @@ class GarminSyncClient:
             logger.error(f"Sync failed: {e}")
 
         return result
-
-    def _get_last_synced_activity(self) -> ActualSession | None:
-        """Get the most recent synced activity."""
-        sessions = self.repository.list_actual_sessions(limit=1)
-        return sessions[0] if sessions else None
 
     def _is_already_synced(self, activity_id: int) -> bool:
         """Check if activity is already in database."""
@@ -548,7 +543,7 @@ class GarminSyncClient:
             if (
                 session.planned_session_id is None
                 and session.id is not None
-                and auto_match(self.repository, session.id, session)
+                and auto_match(self.repository, session.id, session, self.zones)
             ):
                 matched += 1
             fields: dict[str, Any] = {}

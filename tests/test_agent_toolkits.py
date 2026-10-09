@@ -483,3 +483,53 @@ def test_full_graph_async_path_executes_toolkit_tools():
     assert len(contents) == 2
     assert '"loaded": true' in contents[0]
     assert '"created": true' in contents[1]
+
+
+def test_list_planned_is_chronological_and_reports_truncation(monkeypatch):
+    from arete.agent.tools.planning import (
+        create_planned_session,
+        delete_planned_session,
+        list_planned,
+    )
+    from arete.services import planning
+
+    monkeypatch.setattr(planning, "_MAX_LIST", 2)
+    base = date.today() + timedelta(days=500)
+    days = [(base + timedelta(days=i)).isoformat() for i in (2, 0, 1)]
+    ids = [
+        json.loads(
+            create_planned_session.invoke({"date_str": d, "session_type": "endurance"})
+        )["session"]["id"]
+        for d in days
+    ]
+    try:
+        listing = json.loads(
+            list_planned.invoke(
+                {
+                    "start_date": base.isoformat(),
+                    "end_date": (base + timedelta(days=2)).isoformat(),
+                }
+            )
+        )
+        assert [s["date"] for s in listing["sessions"]] == [
+            base.isoformat(),
+            (base + timedelta(days=1)).isoformat(),
+        ]
+        assert listing["truncated"] is True
+        assert listing["next_start_date"] == (base + timedelta(days=2)).isoformat()
+    finally:
+        for session_id in ids:
+            delete_planned_session.invoke({"session_id": session_id})
+
+
+def test_bad_dates_are_tool_errors_not_exceptions():
+    from arete.agent.tools.planning import create_planned_session, list_planned
+
+    listing = json.loads(list_planned.invoke({"start_date": "jeudi prochain"}))
+    assert "start_date" in listing["error"] and "YYYY-MM-DD" in listing["error"]
+    created = json.loads(
+        create_planned_session.invoke(
+            {"date_str": "2026-13-40", "session_type": "endurance"}
+        )
+    )
+    assert "date_str" in created["error"]

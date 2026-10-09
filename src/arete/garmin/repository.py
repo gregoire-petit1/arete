@@ -111,8 +111,13 @@ class GarminRepository:
         end_date: date | None = None,
         status: SessionStatus | None = None,
         limit: int = 50,
+        ascending: bool = False,
     ) -> list[PlannedSession]:
-        """List planned sessions with optional date filter."""
+        """List planned sessions with optional date filter.
+
+        Newest first by default (the HTTP list); ``ascending`` returns the
+        earliest first, so a limit keeps the sessions closest to the start.
+        """
         conn = self._get_connection()
 
         query = """
@@ -133,7 +138,8 @@ class GarminRepository:
             query += " AND status = ?"
             params.append(status.value)
 
-        query += " ORDER BY date DESC LIMIT ?"
+        order = "ASC" if ascending else "DESC"
+        query += f" ORDER BY date {order}, id {order} LIMIT ?"
         params.append(limit)
 
         results = conn.execute(query, params).fetchall()
@@ -531,6 +537,23 @@ class GarminRepository:
         result = conn.execute("SELECT COUNT(*) FROM actual_sessions").fetchone()
         conn.close()
         return int(result[0]) if result else 0
+
+    def last_garmin_import(self) -> tuple[date | None, datetime | None]:
+        """(date of the newest Garmin activity, when it was imported).
+
+        Garmin rows only: a newer Strava or manual session must not move the
+        next Garmin sync's start past activities it has not fetched yet.
+        """
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT MAX(date), MAX(created_at) FROM actual_sessions "
+                "WHERE source = ?",
+                [ActivitySource.GARMIN_CONNECT.value],
+            ).fetchone()
+        finally:
+            conn.close()
+        return (row[0], row[1]) if row else (None, None)
 
     # ─────────────────────────────────────────────────────────────────────
     # Matching Operations

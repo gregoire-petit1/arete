@@ -399,6 +399,35 @@ class TestBriefingFacts:
         assert "Conseil calculé par les règles : Charge équilibrée." in facts
         assert "tempo — 45 min — Z3 — 3x10' tempo" in facts
 
+    def test_one_readiness_line_names_its_source(self, clean_day):
+        from arete.services.briefing import briefing_facts
+        from arete.services.coaching_rules import RuleFacts
+
+        def facts_with(source, measured_on):
+            return RuleFacts(
+                acwr=1.0,
+                tsb=-3.0,
+                readiness_score=71.0,
+                fatigue_threshold=85,
+                fitness_goal="build",
+                readiness_source=source,
+                readiness_measured_on=measured_on,
+            )
+
+        with patch(
+            "arete.services.coaching_rules.rule_facts",
+            return_value=facts_with("garmin", clean_day),
+        ):
+            garmin = briefing_facts(clean_day, "x")
+        with patch(
+            "arete.services.coaching_rules.rule_facts",
+            return_value=facts_with("model", None),
+        ):
+            model = briefing_facts(clean_day, "x")
+        assert "Préparation Garmin (VFC, sommeil, cette nuit) : 71/100" in garmin
+        assert "Préparation estimée par la charge" in model
+        assert garmin.count("Préparation") == 1
+
     def test_a_failed_read_says_unavailable_instead_of_failing(self, clean_day):
         from arete.services.briefing import briefing_facts
 
