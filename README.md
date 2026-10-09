@@ -130,6 +130,25 @@ it a list; OpenRouter accepts three models at most. Each run logs one
 `Agent run:` line with its model calls, tool calls, time to first token and the
 models that actually answered.
 
+## Your own assistant on your data (MCP)
+
+`scripts/arete_mcp.py` is a read-only MCP server over the HTTP API: overview,
+form, sessions, health, plan, race goals with their projection, paces, the
+coach's facts and the weekly review. A stronger assistant you already use
+(Claude, ChatGPT…) can then analyse the same data as the in-app coach, at no
+cost to the app. Only GET requests; Strava sessions and records stay out.
+
+```bash
+claude mcp add arete \
+  --env ARETE_API_URL=https://<your-deployment>.vercel.app/api \
+  --env ARETE_API_BYPASS=<Protection Bypass for Automation secret> \
+  -- uv run --directory /path/to/arete --extra mcp python scripts/arete_mcp.py
+```
+
+`ARETE_API_URL` defaults to a local `make dev` (`http://127.0.0.1:8000`). Behind
+Vercel Authentication, create a bypass secret in Settings → Deployment
+Protection and keep it out of the repository.
+
 ## Project layout
 
 ```

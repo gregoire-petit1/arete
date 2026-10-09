@@ -41,6 +41,20 @@ export const qk = {
   /** Watch steps of a planned session; changes whenever the session is adapted. */
   plannedStructure: (id?: number) =>
     id == null ? (['plannedStructure'] as const) : (['plannedStructure', id] as const),
+  /** Last week's review and its proposals. */
+  weeklyReview: ['weeklyReview'] as const,
+
+  /** Race goals: invalidating `goals` refreshes the list, the next race and projections. */
+  goals: ['goals'] as const,
+  goalList: ['goals', 'list'] as const,
+  nextGoal: ['goals', 'next'] as const,
+  goalProjection: (id?: number) =>
+    id == null ? (['goals', 'projection'] as const) : (['goals', 'projection', id] as const),
+  /** The plan a goal would get; a POST that writes nothing. */
+  planPreview: (id: number) => ['goals', 'preview', id] as const,
+  paces: ['paces'] as const,
+  athleteFacts: ['athleteFacts'] as const,
+
   vapidKey: ['vapidPublicKey'] as const,
   /** This device's Web Push state (lib/push.ts), not a server answer. */
   pushState: ['pushState'] as const,
@@ -72,6 +86,7 @@ export function invalidateAfterSession(queryClient: QueryClient): void {
     qk.workload,
     qk.planToday,
     qk.plannedStructure(),
+    qk.goalProjection(),
   ]) {
     queryClient.invalidateQueries({ queryKey: key });
   }

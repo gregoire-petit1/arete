@@ -50,7 +50,7 @@ class AgentContext:
 
     source: dict[str, Any] = field(default_factory=dict)
     # Selected by the server entrypoint, never from panel_context or messages.
-    profile: Literal["chat", "briefing", "feedback"] = "chat"
+    profile: Literal["chat", "briefing", "feedback", "review"] = "chat"
     thread_id: str | None = None
     attachment_manifest: str = ""
     document_import_pending: bool = False

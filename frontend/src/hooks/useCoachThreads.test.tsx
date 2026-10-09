@@ -290,3 +290,27 @@ it('refetches the visible planning window as soon as a session is created', asyn
     runs[0].resolve();
   });
 });
+
+it('refreshes the athlete facts after the coach remembers one', async () => {
+  queryClient.setQueryData(qk.athleteFacts, []);
+  queryClient.setQueryData(qk.planned(), []);
+  const { result } = renderHook(() => useCoachThreads(context), { wrapper });
+  act(() => {
+    result.current.send('J’ai mal au tendon d’Achille');
+  });
+  act(() => {
+    runs[0].emit({
+      type: 'tool_end',
+      id: 'fact',
+      name: 'remember_fact',
+      status: 'done',
+      output: { text: '{}', truncated: false },
+      elapsed_ms: 5,
+    });
+  });
+  expect(queryClient.getQueryState(qk.athleteFacts)?.isInvalidated).toBe(true);
+  expect(queryClient.getQueryState(qk.planned())?.isInvalidated).toBe(false);
+  await act(async () => {
+    runs[0].resolve();
+  });
+});

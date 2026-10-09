@@ -12,6 +12,8 @@ import { cn } from '@/lib/utils';
 import type { PlannedSession } from '@/types';
 import { WeekPlanList } from './planning/WeekPlanList';
 import { GarminExportPanel } from './planning/GarminExportPanel';
+import { GoalProjectionPanel } from './planning/GoalProjectionPanel';
+import { WeeklyReviewPanel } from './planning/WeeklyReviewPanel';
 
 // Session types per sport category
 const CARDIO_SESSION_TYPES = [
@@ -351,6 +353,9 @@ export function PlanningPage() {
             </div>
           </div>
         </Panel>
+
+        <WeeklyReviewPanel />
+        <GoalProjectionPanel />
       </div>
 
       <Modal open={showNewQuest} onClose={() => setShowNewQuest(false)} className="max-w-md p-4 sm:p-6">

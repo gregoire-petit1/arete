@@ -6,6 +6,7 @@ import { garminApi, notificationsApi } from '@/lib/api';
 import { currentState, subscribeDevice, unsubscribeDevice, type PushState } from '@/lib/push';
 import { qk } from '@/lib/queryKeys';
 import type { SettingsTabProps } from './types';
+import { AthleteFactsPanel } from './AthleteFactsPanel';
 
 interface LedgerFile {
   name: string;
@@ -240,6 +241,7 @@ export function CoachTab({ settings, updateSetting }: SettingsTabProps) {
       {briefingSwitch}
       <AdaptationPanel settings={settings} updateSetting={updateSetting} />
       <NotificationsPanel settings={settings} updateSetting={updateSetting} />
+      <AthleteFactsPanel />
       <div className="flex items-center justify-between">
         <p className="text-sm text-text-muted">
           Le coach tient son journal en markdown dans <code>data/agent/memory/</code>. Lecture seule.

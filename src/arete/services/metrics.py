@@ -538,3 +538,52 @@ def get_recommendations(
         workload_status=workload_out,
         fitness_status=fitness_out,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Running paces from the athlete's VDOT
+# --------------------------------------------------------------------------- #
+def current_vdot(con=None) -> tuple[float, str] | None:
+    """(VDOT, source): Garmin's latest 10K prediction, else the threshold pace."""
+    from arete.features.running import vdot_from_race, vdot_from_threshold_pace
+
+    own = con is None
+    con = con or connect()
+    try:
+        row = con.execute(
+            "SELECT race_10k_sec FROM app.daily_metrics WHERE user_id = 1 "
+            "AND race_10k_sec IS NOT NULL ORDER BY date DESC LIMIT 1"
+        ).fetchone()
+    finally:
+        if own:
+            con.close()
+    if row and row[0]:
+        return vdot_from_race(10_000, row[0]), "garmin_prediction"
+    pace = (get_user_settings(user_id=1) or {}).get("threshold_pace_sec_km")
+    if pace:
+        return vdot_from_threshold_pace(int(pace)), "threshold_pace"
+    return None
+
+
+def get_paces() -> dict:
+    """Daniels training paces and race equivalents, or why there are none."""
+    from arete.features.running import race_equivalents, training_paces
+
+    found = current_vdot()
+    if found is None:
+        return {
+            "vdot": None,
+            "source": None,
+            "paces": None,
+            "equivalents": None,
+            "reason": "Ni prédiction de course Garmin ni allure au seuil : "
+            "synchronise Garmin ou renseigne ton allure au seuil.",
+        }
+    vdot, source = found
+    return {
+        "vdot": round(vdot, 1),
+        "source": source,
+        "paces": training_paces(vdot).to_dict(),
+        "equivalents": race_equivalents(vdot),
+        "reason": None,
+    }

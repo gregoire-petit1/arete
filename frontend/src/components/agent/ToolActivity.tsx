@@ -12,6 +12,7 @@ const LABELS: Record<string, string> = {
   get_page_context: 'Lecture de la page',
   read_file: 'Lecture de la mémoire',
   append_journal: 'Note dans le journal',
+  remember_fact: 'Mémorisation d’un fait',
   search_toolkits: 'Recherche de capacités',
   load_toolkit: 'Chargement des outils',
   get_workload: 'Analyse de la charge',
