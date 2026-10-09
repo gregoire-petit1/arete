@@ -35,7 +35,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 #: before signing in, OAuth callbacks (their own state), the cron (its own
 #: secret) and the API schema (no data in it).
 PUBLIC_PATHS = frozenset(
-    {"/health", "/auth/config", "/strava/callback", "/cron/daily-sync", "/openapi.json"}
+    {
+        "/health",
+        "/auth/config",
+        "/strava/callback",
+        "/google-calendar/callback",
+        "/cron/daily-sync",
+        "/openapi.json",
+    }
 )
 PUBLIC_PREFIXES = ("/docs", "/redoc")
 #: Where a signed-in account goes before it has an athlete.

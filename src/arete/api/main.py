@@ -23,6 +23,7 @@ from arete.api.garmin_export import router as garmin_export_router
 from arete.api.garmin_health import router as garmin_health_router
 from arete.api.garmin_sync import router as garmin_sync_router
 from arete.api.goals import router as goals_router
+from arete.api.google_calendar import router as google_calendar_router
 from arete.api.metrics import router as metrics_router
 from arete.api.notifications import router as notifications_router
 from arete.api.plan import router as plan_router
@@ -166,6 +167,7 @@ for router in (
     strength_router,
     ai_tips_router,
     strava_router,
+    google_calendar_router,
     analytics_router,
     agent_router,
     documents_router,

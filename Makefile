@@ -71,6 +71,7 @@ typecheck: .venv ## mypy
 	uv run mypy src/arete
 
 check: lint typecheck test ## Everything CI runs, frontend build included
+	node --test scripts/openwiki/transport.test.mjs
 	npm --prefix frontend test
 	npm --prefix frontend run build
 

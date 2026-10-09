@@ -9,25 +9,29 @@ from langchain_core.tools import BaseTool
 from arete.agent.capabilities.models import Toolkit
 from arete.agent.capabilities.registry import CAPABILITIES
 from arete.agent.runtime.context import AgentContext
-from arete.agent.runtime.policy import resolve_policy
+from arete.agent.runtime.policy import ProfileSpec, resolve_policy
 
 
-def _profile(runtime: Any) -> str:
+def _profile(runtime: Any) -> ProfileSpec:
     context = getattr(runtime, "context", None)
-    return context.profile if isinstance(context, AgentContext) else "chat"
+    return (
+        (context.resolved_profile or context.profile)
+        if isinstance(context, AgentContext)
+        else "chat"
+    )
 
 
-def _registry(profile: str) -> dict[str, Toolkit]:
+def _registry(profile: ProfileSpec) -> dict[str, Toolkit]:
     policy = resolve_policy(profile)
     return {tid: CAPABILITIES[tid] for tid in policy.profile.capabilities}
 
 
-def _available_tools(tk: Toolkit, profile: str) -> list[BaseTool]:
+def _available_tools(tk: Toolkit, profile: ProfileSpec) -> list[BaseTool]:
     policy = resolve_policy(profile)
     return [t for t in tk.tools if policy.can_execute(tk.id, t.name, tk.read_tools)]
 
 
-def _loaded(state: Any, profile: str) -> list[str]:
+def _loaded(state: Any, profile: ProfileSpec) -> list[str]:
     # The briefing always needs analytics: avoid search/load model round trips.
     initial = list(resolve_policy(profile).profile.preloaded)
     return [
@@ -57,7 +61,7 @@ def tool_instructions_suffix(loaded: list[str]) -> str:
     )
 
 
-def _catalog(hint: str, profile: str = "chat") -> str:
+def _catalog(hint: str, profile: ProfileSpec = "chat") -> str:
     """The whole catalog, for a query that matched nothing."""
     return json.dumps(
         {
@@ -82,7 +86,9 @@ def _fold(text: str) -> str:
     return "".join(c for c in decomposed if not unicodedata.combining(c))
 
 
-def _search_toolkits(query: str, loaded: list[str], profile: str = "chat") -> str:
+def _search_toolkits(
+    query: str, loaded: list[str], profile: ProfileSpec = "chat"
+) -> str:
     """Find toolkits matching a capability query.
 
     Token-based: every query token (>= 4 chars, stemmed-lite by stripping the

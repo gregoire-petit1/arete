@@ -9,6 +9,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 MAX_TOOL_PREVIEW_CHARS = 2_000
+MAX_SUGGESTION_CHARS = 300
 
 
 class Preview(TypedDict):

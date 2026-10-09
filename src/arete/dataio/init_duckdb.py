@@ -581,7 +581,7 @@ def _m16_weekly_reviews(con) -> None:
     con.execute(DDL[start : DDL.index(");", DDL.index("app.weekly_reviews (")) + 2])
 
 
-def _m17_users(con) -> None:
+def _m18_users(con) -> None:
     """Signed-in accounts, and which one is the athlete."""
     start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.users_seq")
     con.execute(DDL[start : DDL.index(");", DDL.index("app.users (")) + 2])
@@ -595,6 +595,14 @@ def _m13_document_imports(con) -> None:
     from arete.dataio.document_schema import migrate
 
     migrate(con)
+
+
+def _m17_google_calendar(con) -> None:
+    from arete.services.calendar_repository import CALENDAR_DDL
+
+    for statement in CALENDAR_DDL.strip().split(";"):
+        if statement.strip():
+            con.execute(statement)
 
 
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
@@ -614,7 +622,8 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (14, _m14_goals),
     (15, _m15_athlete_facts),
     (16, _m16_weekly_reviews),
-    (17, _m17_users),
+    (17, _m17_google_calendar),
+    (18, _m18_users),
 ]
 
 

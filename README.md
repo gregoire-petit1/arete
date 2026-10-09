@@ -67,10 +67,11 @@ drafts. Threads are saved in this browser (up to 30), while the coach’s memory
 ledger remains shared across conversations. Hiding the panel or switching threads
 keeps the current response running in its original thread; one response runs at a time.
 
-Below the last answer, up to three French follow-up questions suited to the open
-page; clicking one sends it as the next message. They are fixed lists in the
-browser: no model request after an answer, and the input unlocks as soon as the
-answer ends.
+After each chat answer, the coach can propose one contextual next message directly
+in the composer. Edit it or send it yourself; it is never sent automatically and
+never overwrites typing. This costs one additional model request, bounded to five
+seconds and 512 output tokens with no SDK retries. Failure leaves the answer intact.
+Empty conversations still offer fixed questions suited to the open page.
 
 Chat, daily briefings and session feedback share a five-minute execution deadline,
 8 main model calls and 32 tool calls per run, with at most four concurrent tools.
@@ -224,6 +225,52 @@ Start coding sessions with [AGENTS.md](AGENTS.md) (shared instructions) or
 [CLAUDE.md](CLAUDE.md) (Claude entrypoint). The [architecture guide](docs/architecture.md)
 explains ownership, allowed dependencies, profiles and runtime limits. Changes to
 these boundaries must update the guide and the dependency tests together.
+
+### Automated repository wiki
+
+[OpenWiki](https://docs.langchain.com/oss/openwiki/automate-updates) maintains
+generated reference documentation and source-grounded claims in `openwiki/`.
+The [workflow](.github/workflows/openwiki-update.yml) runs daily at 05:23 UTC or
+manually from **Actions → OpenWiki Update → Run workflow**, always against `main`.
+It creates the initial wiki automatically; [the brief](openwiki/INSTRUCTIONS.md)
+defines its scope. Existing guides in `docs/` remain manually maintained.
+
+Add `OPENROUTER_API_KEY` as a **repository Actions secret** (Settings → Secrets
+and variables → Actions). Enable **Allow GitHub Actions to create and approve
+pull requests** in Settings → Actions → General. The workflow uses the built-in
+`GITHUB_TOKEN` to maintain one `openwiki/update` PR and arms auto-merge; `main`
+must require the existing CI checks. Review the generated documentation and
+select **Approve workflows to run** in the PR merge box: GitHub gates CI for
+[PRs created with `GITHUB_TOKEN`](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+Inference uses only [`openrouter/free`](https://openrouter.ai/openrouter/free),
+with 8,192 output tokens per request and one page worker. The CI-only
+[HTTP transport](scripts/openwiki/transport.mjs) spaces inference attempts at least
+6 seconds apart (10/minute), with at most 4 attempts per request and 120 HTTP
+attempts per run. It retries 408/429/500/502/503/504 and network failures (and
+preserves OpenWiki's specific transient provider-404 handling), with
+30/60/120-second backoff plus jitter (at least 60 seconds for a 429), honoring
+`Retry-After` and `X-RateLimit-Reset`. Each attempt, including its response body,
+has a 120-second timeout. A cooldown over 3 minutes, a 23-minute HTTP run budget,
+permanent errors or exhausted daily quota stops generation explicitly. Terminal
+errors also stop SDK retries, so retry counts do not multiply. Only inference is
+retried; tool execution and the whole agent run are never replayed by this wrapper.
+
+The generation step allows 25 minutes and the job 35 minutes. Free-model capacity,
+context windows and account-wide quotas still vary: this cannot guarantee a
+successful run, especially when other applications share the account. Failures
+publish no partial documentation PR and never switch to a paid model. OpenWiki's
+page checkpoints are cached against the exact source commit, allowing a later
+scheduled or manual run to resume completed pages; an evicted cache starts fresh.
+The job summary and HTTP attempt logs explain failures without logging prompts
+or credentials. OpenWiki 0.7.1 exposes no OpenRouter temperature setting.
+Timestamp-only updates do not open a PR.
+Installation resolves dependencies published before 2026-10-07 UTC, immediately
+after OpenWiki 0.7.1's release, to avoid a newer AWS SDK dependency that references
+an unpublished package version. Update this cutoff with the OpenWiki version and
+verify a clean install before shipping either change.
+
+### Checks
 
 ```bash
 uv run ruff check src tests && uv run ruff format --check src tests

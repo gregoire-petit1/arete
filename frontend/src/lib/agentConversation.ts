@@ -31,6 +31,8 @@ export function restoreConversation(raw: string | null): ChatMessage[] {
         if (!p || typeof p.id !== 'string')
           throw new Error('Activité sauvegardée invalide.');
         if (p.kind === 'text' && typeof p.text === 'string') return p;
+        if (p.kind === 'calendar_action' && /^[a-f0-9]{32}$/.test(p.id))
+          return { kind: 'calendar_action', id: p.id };
         if (
           p.kind === 'tool' &&
           typeof p.name === 'string' &&
