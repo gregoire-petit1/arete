@@ -23,6 +23,7 @@ from arete.dataio.queries import (
     drift_rows,
     earliest_session_date,
     overview_rows,
+    sql_in,
 )
 from arete.dataio.settings import athlete_zone_model
 from arete.features import overview as ov
@@ -277,15 +278,24 @@ def update_session(session_id: int, fields: Mapping[str, int | str | None]):
         con.close()
 
 
-def list_sessions(limit: int = 20, offset: int = 0):
-    """List recent actual sessions (for Log page)."""
+#: Sources whose rows never reach a language model. Strava's API agreement
+#: forbids using its data in AI applications (inference included, per its
+#: 2026 API policy): sessions imported from Strava stay out of the coach's
+#: inputs. Sessions Garmin took over (source garmin_connect) are Garmin's.
+MODEL_EXCLUDED_SOURCES: tuple[str, ...] = ("strava",)
+
+
+def list_sessions(limit: int = 20, offset: int = 0, *, for_model: bool = False):
+    """List recent actual sessions (Log page; ``for_model`` for the coach)."""
+    excluded = MODEL_EXCLUDED_SOURCES if for_model else ()
     with db_connection() as con:
         rows = con.execute(
-            """
+            f"""
             SELECT id, date, sport, name, duration_sec, distance_m,
                    avg_hr, avg_pace_sec_km, rpe, notes, source, calories
             FROM app.actual_sessions
             WHERE user_id = 1
+              {f"AND source NOT IN ({sql_in(excluded)})" if excluded else ""}
             ORDER BY date DESC, id DESC
             LIMIT ? OFFSET ?
             """,

@@ -46,7 +46,7 @@ def _dashboard() -> dict[str, Any]:
         "planned_today": [_without_nulls(_session_to_dict(s)) for s in planned],
         "done_today": [
             s
-            for s in list_sessions(limit=5)["sessions"]
+            for s in list_sessions(limit=5, for_model=True)["sessions"]
             if s["date"] == today.isoformat()
         ],
         "strength_today": _strength_sessions(start_date=today, end_date=today),
@@ -129,7 +129,7 @@ def _log() -> dict[str, Any]:
     from arete.services.analytics import list_sessions
 
     return {
-        "recent_sessions": list_sessions(limit=20, offset=0),
+        "recent_sessions": list_sessions(limit=20, offset=0, for_model=True),
         "recent_strength_sessions": _strength_sessions(limit=10),
     }
 

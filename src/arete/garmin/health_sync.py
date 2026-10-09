@@ -197,6 +197,8 @@ def _fetch_performance(client: GarminClient, target_date: date) -> dict[str, Any
         metrics["training_status"] = _training_status_phrase(status)
     metrics["vo2max_run"] = _vo2max(raw.get("VO2max"))
     races = raw.get("race predictions")
+    if isinstance(races, list):  # the dated form answers a list of days
+        races = races[-1] if races else None
     if isinstance(races, dict):
         metrics["race_5k_sec"] = _int(races.get("time5K"))
         metrics["race_10k_sec"] = _int(races.get("time10K"))
