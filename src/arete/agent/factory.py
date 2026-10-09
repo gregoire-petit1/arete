@@ -47,7 +47,11 @@ def build_agent(
     middleware.append(ToolkitMiddleware())
     if profile.journal_tools:
         middleware.append(filesystem)
-    middleware.append(ContextBuilderMiddleware())
+    middleware.append(
+        ContextBuilderMiddleware(
+            context_tokens=context_tokens, output_tokens=output_tokens
+        )
+    )
     middleware.append(
         ContextBudgetMiddleware(
             context_tokens=context_tokens, output_tokens=output_tokens

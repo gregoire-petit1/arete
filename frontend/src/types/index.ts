@@ -550,6 +550,10 @@ export interface AthleteFact {
   since: string;
   status: "active" | "resolved";
   source: "coach" | "athlete";
+  evidence: "explicit" | "hypothesis" | "legacy";
+  revision: number;
+  source_ref: string;
+  valid_until: string | null;
   updated_at: string | null;
 }
 

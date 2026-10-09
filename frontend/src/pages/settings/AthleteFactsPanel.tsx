@@ -17,15 +17,17 @@ interface FactActions {
   onSave: (fact: AthleteFact, text: string) => void;
   onToggle: (fact: AthleteFact) => void;
   onDelete: (fact: AthleteFact) => void;
+  onConfirm: (fact: AthleteFact) => void;
 }
 
-function FactRow({ fact, busyId, onSave, onToggle, onDelete }: FactActions & { fact: AthleteFact }) {
-  const [draft, setDraft] = useState<string | null>(null);
+function FactRow({ fact, busyId, onSave, onToggle, onDelete, onConfirm }: FactActions & { fact: AthleteFact }) {
+  const [showHistory, setShowHistory] = useState(false);
+  const [draft, setDraft] = useState<{ text: string; revision: number } | null>(null);
   const resolved = fact.status === 'resolved';
   const busy = busyId === fact.id;
   const save = () => {
-    const text = draft?.trim();
-    if (text && text !== fact.text) onSave(fact, text);
+    const text = draft?.text.trim();
+    if (text && text !== fact.text && draft) onSave({ ...fact, revision: draft.revision }, text);
     setDraft(null);
   };
 
@@ -49,6 +51,8 @@ function FactRow({ fact, busyId, onSave, onToggle, onDelete }: FactActions & { f
         >
           {fact.source === 'coach' ? 'coach' : 'toi'}
         </span>
+        <span className="text-text-muted">{fact.evidence === 'explicit' ? 'déclaration explicite' : fact.evidence === 'hypothesis' ? 'hypothèse à confirmer' : 'provenance indéterminée'}</span>
+        {fact.valid_until && <span className="text-text-muted">jusqu’au {parseLocalDate(fact.valid_until).toLocaleDateString('fr-FR')}</span>}
         {resolved && <span className="text-text-muted">résolu</span>}
       </div>
       {draft === null ? (
@@ -65,8 +69,8 @@ function FactRow({ fact, busyId, onSave, onToggle, onDelete }: FactActions & { f
             autoFocus
             aria-label="Texte du fait"
             maxLength={MAX_TEXT}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            value={draft.text}
+            onChange={(e) => setDraft({ ...draft, text: e.target.value })}
             className="text-sm"
           />
           <Button type="submit" size="sm" aria-label="Enregistrer le fait">
@@ -77,9 +81,14 @@ function FactRow({ fact, busyId, onSave, onToggle, onDelete }: FactActions & { f
           </Button>
         </form>
       )}
-      <div className="flex justify-end gap-2">
+      {fact.source_ref && <p className="text-xs text-text-muted break-words">Source : {fact.source_ref}</p>}
+      <div className="flex flex-wrap justify-end gap-2">
+        {fact.evidence !== 'explicit' && !resolved && (
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => onConfirm(fact)}>Confirmer</Button>
+        )}
+        <Button variant="ghost" size="sm" onClick={() => setShowHistory(!showHistory)}>Historique</Button>
         {draft === null && (
-          <Button variant="ghost" size="sm" disabled={busy} onClick={() => setDraft(fact.text)}>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => setDraft({ text: fact.text, revision: fact.revision })}>
             <Pencil className="size-3.5" /> Modifier
           </Button>
         )}
@@ -90,8 +99,18 @@ function FactRow({ fact, busyId, onSave, onToggle, onDelete }: FactActions & { f
           <Trash2 className="size-3.5" />
         </Button>
       </div>
+      {showHistory && <FactHistory factId={fact.id} revision={fact.revision} />}
     </li>
   );
+}
+
+function FactHistory({ factId, revision }: { factId: number; revision: number }) {
+  const history = useQuery({ queryKey: [...qk.athleteFacts, factId, 'history', revision], queryFn: () => athleteFactsApi.history(factId) });
+  if (history.isPending) return <p className="text-xs text-text-muted">Chargement de l’historique…</p>;
+  if (history.isError) return <p className="text-xs text-danger-red">{readableError(history.error)}</p>;
+  return <ol className="text-xs text-text-muted space-y-2" aria-label="Historique du fait">{history.data.map((item) => (
+    <li key={item.revision}>Version {item.revision} — {item.updated_at ? new Date(item.updated_at).toLocaleString('fr-FR') : item.since} : {item.text} ({item.status === 'resolved' ? 'résolu' : 'actif'}, {item.evidence === 'explicit' ? 'déclaration' : item.evidence === 'hypothesis' ? 'hypothèse' : 'provenance indéterminée'})</li>
+  ))}</ol>;
 }
 
 /** Active facts first, then resolved ones, dimmed; server order within each. */
@@ -113,10 +132,12 @@ function AddFactForm() {
   const queryClient = useQueryClient();
   const [kind, setKind] = useState<FactKind>('injury');
   const [text, setText] = useState('');
+  const [validUntil, setValidUntil] = useState('');
   const add = useMutation({
-    mutationFn: (fact: { kind: FactKind; text: string }) => athleteFactsApi.create(fact),
+    mutationFn: (fact: { kind: FactKind; text: string; valid_until?: string }) => athleteFactsApi.create(fact),
     onSuccess: () => {
       setText('');
+      setValidUntil('');
       queryClient.invalidateQueries({ queryKey: qk.athleteFacts });
     },
   });
@@ -124,7 +145,7 @@ function AddFactForm() {
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (text.trim()) add.mutate({ kind, text: text.trim() });
+        if (text.trim()) add.mutate({ kind, text: text.trim(), ...(validUntil ? { valid_until: validUntil } : {}) });
       }}
       className="space-y-2 border-t border-text-muted/10 pt-3"
     >
@@ -153,6 +174,9 @@ function AddFactForm() {
           Ajouter
         </Button>
       </div>
+      <label className="block text-xs text-text-muted">Fin de validité (facultative, pour une exception temporaire)
+        <Input type="date" aria-label="Fin de validité" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
+      </label>
       {add.isError && <p className="text-xs text-danger-red">{readableError(add.error)}</p>}
     </form>
   );
@@ -174,7 +198,7 @@ export function AthleteFactsPanel() {
       athleteFactsApi.update(id, patch),
     ...settle,
   });
-  const remove = useMutation({ mutationFn: (id: number) => athleteFactsApi.remove(id), ...settle });
+  const remove = useMutation({ mutationFn: (fact: AthleteFact) => athleteFactsApi.remove(fact.id, fact.revision), ...settle });
   const error = update.error ?? remove.error;
 
   return (
@@ -188,7 +212,7 @@ export function AthleteFactsPanel() {
       <div className="space-y-3">
         <p className="text-xs text-text-muted">
           Blessures, contraintes et préférences que le coach garde en tête à chaque échange. Il en ajoute
-          quand tu lui en parles ; tu peux les corriger ici.
+          quand tu lui en parles ; tu peux les corriger ici. Les hypothèses restent séparées de tes déclarations. Confirmer indique que le fait est exact ; supprimer efface aussi son historique.
         </p>
         {facts.isLoading && <p className="text-sm text-text-muted">Chargement…</p>}
         {facts.isError && <p className="text-sm text-danger-red">Faits indisponibles.</p>}
@@ -199,15 +223,19 @@ export function AthleteFactsPanel() {
             busyId={busyId}
             onSave={(fact, text) => {
               setBusyId(fact.id);
-              update.mutate({ id: fact.id, patch: { text } });
+              update.mutate({ id: fact.id, patch: { text, expected_revision: fact.revision } });
             }}
             onToggle={(fact) => {
               setBusyId(fact.id);
-              update.mutate({ id: fact.id, patch: { status: fact.status === 'active' ? 'resolved' : 'active' } });
+              update.mutate({ id: fact.id, patch: { status: fact.status === 'active' ? 'resolved' : 'active', expected_revision: fact.revision } });
+            }}
+            onConfirm={(fact) => {
+              setBusyId(fact.id);
+              update.mutate({ id: fact.id, patch: { evidence: 'explicit', expected_revision: fact.revision } });
             }}
             onDelete={(fact) => {
               setBusyId(fact.id);
-              remove.mutate(fact.id);
+              remove.mutate(fact);
             }}
           />
         )}

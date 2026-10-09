@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import duckdb
+import pytest
 
 from arete.dataio import init_duckdb
 
@@ -176,3 +177,58 @@ def test_m18_creates_the_users_table_once(tmp_path, monkeypatch):
     con.close()
     assert {"clerk_user_id", "email", "athlete_id"} <= cols
     assert latest == init_duckdb.MIGRATIONS[-1][0]
+
+
+@pytest.mark.parametrize("version_19", ["gamification", "personal_memory"])
+def test_memory_upgrade_accepts_both_version_19_histories(
+    tmp_path, monkeypatch, version_19
+):
+    path = tmp_path / "version-nineteen.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    with monkeypatch.context() as old:
+        old.setattr(
+            init_duckdb,
+            "MIGRATIONS",
+            [(v, fn) for v, fn in init_duckdb.MIGRATIONS if v <= 18],
+        )
+        init_duckdb.main()
+    with duckdb.connect(str(path)) as con:
+        con.execute(
+            "INSERT INTO app.athlete_facts(kind, text, since) VALUES ('constraint', 'Pas de mercredi', DATE '2026-10-01')"
+        )
+        if version_19 == "gamification":
+            from arete.dataio.game_schema import migrate
+
+            migrate(con)
+            con.execute(
+                "UPDATE app.game_profile SET enabled=true, version=3 WHERE id=1"
+            )
+            expected_evidence = "legacy"
+        else:
+            from arete.dataio.memory_schema import migrate
+
+            migrate(con)
+            con.execute(
+                "UPDATE app.athlete_facts SET evidence='explicit', source_ref='Déclaration athlète'"
+            )
+            expected_evidence = "explicit"
+        con.execute("INSERT INTO app.schema_version(version) VALUES (19)")
+    init_duckdb.main()
+    init_duckdb.main()
+    with duckdb.connect(str(path), read_only=True) as con:
+        assert con.execute(
+            "SELECT text, evidence, revision FROM app.athlete_facts"
+        ).fetchone() == ("Pas de mercredi", expected_evidence, 1)
+        assert con.execute(
+            "SELECT count(*) FROM app.athlete_fact_revisions"
+        ).fetchone() == (0,)
+        expected_game = (True, 3) if version_19 == "gamification" else (False, 0)
+        assert (
+            con.execute(
+                "SELECT enabled, version FROM app.game_profile WHERE id=1"
+            ).fetchone()
+            == expected_game
+        )
+        assert con.execute(
+            "SELECT max(version) FROM app.schema_version"
+        ).fetchone() == (20,)

@@ -611,6 +611,15 @@ def _m19_gamification(con) -> None:
     migrate(con)
 
 
+def _m20_personal_memory(con) -> None:
+    from arete.dataio.memory_schema import migrate
+
+    # This branch previously used version 19 for memory. Idempotent game DDL
+    # also upgrades those local/preview databases without resetting game state.
+    _m19_gamification(con)
+    migrate(con)
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -631,6 +640,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (17, _m17_google_calendar),
     (18, _m18_users),
     (19, _m19_gamification),
+    (20, _m20_personal_memory),
 ]
 
 
