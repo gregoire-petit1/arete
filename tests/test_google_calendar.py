@@ -592,7 +592,7 @@ def test_new_calendar_tables_are_migrated_on_existing_database(tmp_path, monkeyp
     with db_connection() as con:
         con.execute("DROP TABLE app.calendar_actions")
         con.execute("DROP TABLE app.calendar_connections")
-        con.execute("DELETE FROM app.schema_version WHERE version = 17")
+        con.execute("DELETE FROM app.schema_version WHERE version >= 17")
     init_db()
     repo = CalendarRepository("migrated")
     repo.configure(enabled=False, selection={"readable": [], "writable": []})

@@ -15,6 +15,8 @@ Environment:
                         (default http://127.0.0.1:8000, a local `make dev`)
     ARETE_API_BYPASS    Vercel "Protection Bypass for Automation" secret, when
                         the deployment is behind Vercel Authentication
+    ARETE_API_KEY       the instance's API key, when sign-in is enforced
+                        (ARETE_AUTH=clerk): the server treats it as the athlete
 
 Claude Code: claude mcp add arete --env ARETE_API_URL=... --env ARETE_API_BYPASS=... \
     -- uv run --directory /path/to/arete --extra mcp python scripts/arete_mcp.py
@@ -44,9 +46,12 @@ class AreteApi:
         self,
         base_url: str,
         bypass: str | None = None,
+        api_key: str | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         headers = {"x-vercel-protection-bypass": bypass} if bypass else {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             headers=headers,
@@ -187,6 +192,7 @@ def main() -> int:
     api = AreteApi(
         os.environ.get("ARETE_API_URL", DEFAULT_URL),
         os.environ.get("ARETE_API_BYPASS") or None,
+        api_key=os.environ.get("ARETE_API_KEY") or None,
     )
     build_server(api).run("stdio")
     return 0

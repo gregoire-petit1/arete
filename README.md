@@ -37,7 +37,7 @@ make docker    # copies .env.example to .env if missing (compose reads env_file 
 # frontend: http://localhost:3080   backend: http://localhost:8001 (8000 is often taken)
 ```
 
-Docker and Vercel share one MotherDuck database (`ARETE_DB=md:arete`, token `MOTHERDUCK_TOKEN` from `vercel env pull`); files that are not the database (Garmin tokens, coach memory) stay in the repo's `./data`, bind-mounted at `/app/data`, and are mirrored into it (`dataio/mirror.py`). `make dev` keeps the local `data/arete.duckdb` file unless `ARETE_DB` says otherwise. The daily sync runs on Vercel Cron at 08:00 UTC (`GET /api/cron/daily-sync`, `CRON_SECRET`), after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up. `ARETE_AUTO_SYNC_HOUR` still arms the in-process scheduler for a backend that stays up without Vercel. The compose file sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
+Docker and Vercel share one MotherDuck database (`ARETE_DB=md:arete`; the token `MOTHERDUCK_TOKEN` comes from motherduck.com → Settings → Access tokens, the Vercel copy is sensitive and cannot be pulled); files that are not the database (Garmin tokens, coach memory) stay in the repo's `./data`, bind-mounted at `/app/data`, and are mirrored into it (`dataio/mirror.py`). `make dev` keeps the local `data/arete.duckdb` file unless `ARETE_DB` says otherwise. The daily sync runs on Vercel Cron at 08:00 UTC (`GET /api/cron/daily-sync`, `CRON_SECRET`), after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up. `ARETE_AUTO_SYNC_HOUR` still arms the in-process scheduler for a backend that stays up without Vercel. The compose file sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
 
 ## Configuration
 
@@ -148,7 +148,8 @@ claude mcp add arete \
 
 `ARETE_API_URL` defaults to a local `make dev` (`http://127.0.0.1:8000`). Behind
 Vercel Authentication, create a bypass secret in Settings → Deployment
-Protection and keep it out of the repository.
+Protection and keep it out of the repository. With sign-in enforced, add
+`--env ARETE_API_KEY=<the instance's API key>`.
 
 ## Project layout
 
@@ -192,9 +193,31 @@ Interactive docs at `/docs`. Routers and their prefixes:
 | `/tips` | `daily` (GET), `post-session` (POST) |
 | `/agent` | `chat` (POST), `chat/stream` (POST, SSE), `memory` (GET, the coach's ledger) |
 
-## Single-user by design
+## Who can use it
 
-Arete assumes one athlete: `user_id = 1` everywhere, no authentication on the API, Strava tokens stored in DuckDB and Garmin session tokens on disk in clear text. Run it on your own machine or behind something that authenticates (VPN, reverse proxy with auth). Do not expose port 8000 to the internet as is.
+Out of the box Arete is one athlete with no sign-in: `user_id = 1` everywhere,
+Strava tokens in DuckDB and Garmin session tokens on disk in clear text. Run it
+on your own machine or behind something that authenticates (VPN, reverse proxy,
+Vercel Authentication). Do not expose it to the internet as is.
+
+To require a Google (or other) sign-in, provision Clerk from the Vercel
+Marketplace (`vercel integration add clerk`), which sets `CLERK_SECRET_KEY` and
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, then:
+
+| Variable | Purpose |
+| --- | --- |
+| `ARETE_AUTH=clerk` | Enforce sign-in: every API route except `/health`, `/auth/config`, the Strava callback, the cron and the schema needs a Clerk session token |
+| `ARETE_OWNER_EMAIL` | The address that is the athlete; comma-separated when you sign in with several accounts. Any other account can sign up but sees a waiting page: attaching more athletes is not done yet |
+| `ARETE_API_KEY` | Long-lived key for scripts and the MCP server (`Authorization: Bearer`), treated as the athlete |
+| `ARETE_AUTH_ORIGINS` | Optional comma-separated browser origins allowed to hold a session (the token's `azp`); leave unset for Vercel previews |
+
+Turn it on in Preview first, sign in there, then in Production. Once the app
+signs users in, Vercel Authentication can be switched off for Production so the
+installed PWA no longer asks for a Vercel login; keep it on for Previews. With
+Google as the sign-in method, the user's Google token (and the Calendar scopes
+configured in the Clerk dashboard) is available server-side through
+`services/google_tokens.py`: one consent at sign-in, nothing of Google's stored
+in Arete.
 
 ## Development
 

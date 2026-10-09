@@ -31,6 +31,7 @@ def _api(seen: list[httpx.Request]):
     return arete_mcp.AreteApi(
         "https://arete.example/api",
         bypass="s3cret",
+        api_key="arete-key",
         transport=httpx.MockTransport(handler),
     )
 
@@ -42,6 +43,7 @@ def test_every_tool_only_reads():
         fn(api)
     assert seen and all(r.method == "GET" for r in seen)
     assert all(r.headers["x-vercel-protection-bypass"] == "s3cret" for r in seen)
+    assert all(r.headers["authorization"] == "Bearer arete-key" for r in seen)
 
 
 def test_sessions_leave_strava_out_and_are_bounded():

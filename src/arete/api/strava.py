@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import time
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,7 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from arete.config import config
+from arete.services import oauth_state
 
 if TYPE_CHECKING:
     from arete.strava.client import StravaClient
@@ -19,6 +21,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/strava", tags=["strava"])
+
+#: Signs the OAuth state. Without a configured secret (local runs) a
+#: per-process one is used: a restart invalidates an authorization in flight.
+_PROCESS_SECRET = secrets.token_hex(32)
+
+
+def _state_secret() -> str:
+    return config.clerk_secret_key or config.cron_secret or _PROCESS_SECRET
 
 
 # ---------------------------------------------------------------------------
@@ -156,12 +166,21 @@ def authorize():
         raise HTTPException(
             status_code=500, detail="Strava env vars not configured"
         ) from None
-    return {"url": client.get_authorize_url()}
+    return {"url": client.get_authorize_url(state=oauth_state.issue(_state_secret()))}
 
 
 @router.get("/callback")
-def callback(code: str, scope: str = ""):
-    """Exchange authorization code for tokens and store them."""
+def callback(code: str, state: str = "", scope: str = ""):
+    """Exchange authorization code for tokens and store them.
+
+    The state issued by ``/authorize`` is what proves this round trip started
+    here: the callback itself carries no session of ours.
+    """
+    if not oauth_state.verify(_state_secret(), state):
+        raise HTTPException(
+            status_code=400,
+            detail="État OAuth invalide ou expiré : relance la connexion Strava.",
+        )
     client = _get_strava_client()
     token_data = client.exchange_code(code)
 

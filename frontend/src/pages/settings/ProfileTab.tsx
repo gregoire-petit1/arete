@@ -1,7 +1,10 @@
-import { Field, Input, Select } from '@/components/ui';
+import { Field, Input, Panel, Select } from '@/components/ui';
+import { useAuthState } from '@/components/auth/authState';
+import { SignOutButton } from '@/components/auth/SignOutButton';
 import type { SettingsTabProps } from './types';
 
 export function ProfileTab({ settings, updateSetting }: SettingsTabProps) {
+  const auth = useAuthState();
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-sans text-text-primary mb-4">PROFIL</h2>
@@ -32,6 +35,17 @@ export function ProfileTab({ settings, updateSetting }: SettingsTabProps) {
           </Select>
         </Field>
       </div>
+
+      {auth.enabled && (
+        <Panel variant="inset" title="Compte">
+          <div className="space-y-3">
+            <p className="text-sm font-mono text-text-secondary">
+              Connecté en tant que <span className="text-text-primary">{auth.email}</span>
+            </p>
+            <SignOutButton signOut={auth.signOut} />
+          </div>
+        </Panel>
+      )}
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell, BookOpen, Brain, RefreshCw, Sunrise, Wand2 } from 'lucide-react';
 import { Panel, Button } from '@/components/ui';
 import { garminApi, notificationsApi } from '@/lib/api';
+import { authFetch } from '@/lib/auth';
 import { currentState, subscribeDevice, unsubscribeDevice, type PushState } from '@/lib/push';
 import { qk } from '@/lib/queryKeys';
 import type { SettingsTabProps } from './types';
@@ -209,7 +210,7 @@ export function CoachTab({ settings, updateSetting }: SettingsTabProps) {
   const { data, isLoading, isError, refetch, isRefetching } = useQuery({
     queryKey: ['agentMemory'],
     queryFn: async (): Promise<LedgerResponse> => {
-      const response = await fetch('/api/agent/memory');
+      const response = await authFetch('/api/agent/memory');
       if (!response.ok) throw new Error(`API Error ${response.status}`);
       return response.json();
     },

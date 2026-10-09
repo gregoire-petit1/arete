@@ -1,4 +1,5 @@
 import { isWorkoutUpdate, type WorkoutUpdate } from './workouts';
+import { authFetch } from './auth';
 import { readableError } from './utils';
 import type { PanelPageContext } from './pageContext';
 
@@ -273,7 +274,7 @@ export async function runAgentStream(
   const panel_context: Record<string, string> = { page: context.page };
   for (const [key, value] of Object.entries(context.params))
     panel_context[`param_${key}`] = value;
-  const response = await fetch('/api/agent/chat/stream', {
+  const response = await authFetch('/api/agent/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
