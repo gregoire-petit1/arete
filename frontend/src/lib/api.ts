@@ -1,5 +1,26 @@
 const API_BASE = "/api";
 
+/** A non-2xx answer; `detail` is FastAPI's message (French) when it sent one. */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly detail: string | null;
+
+  constructor(status: number, body: string) {
+    super(`API Error ${status}: ${body}`);
+    this.status = status;
+    this.detail = parseDetail(body);
+  }
+}
+
+function parseDetail(body: string): string | null {
+  try {
+    const detail = (JSON.parse(body) as { detail?: unknown }).detail;
+    return typeof detail === "string" ? detail : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchAPI<T>(
   endpoint: string,
   options?: RequestInit
@@ -13,10 +34,13 @@ async function fetchAPI<T>(
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`API Error ${response.status}: ${error}`);
+    throw new ApiError(response.status, await response.text());
   }
 
+  // 204 No Content (subscription routes): there is no body to parse.
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return response.json();
 }
 
@@ -117,6 +141,16 @@ export const garminApi = {
     fetchAPI<import("@/types").PlannedSession>(`/garmin/planned/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    }),
+
+  /** Lazy: only asked for today's sessions, when Garmin is connected. */
+  getStructure: (id: number) =>
+    fetchAPI<import("@/types").WorkoutStructure>(`/garmin/planned/${id}/structure`),
+
+  /** Schedules the session on the Garmin calendar; the watch takes it at its next phone sync. */
+  pushToWatch: (id: number) =>
+    fetchAPI<import("@/types").GarminPushResult>(`/garmin/planned/${id}/push`, {
+      method: "POST",
     }),
 
   getSummary: (startDate?: string, endDate?: string) => {
@@ -257,6 +291,10 @@ export interface UserSettings {
   fitness_goal: "maintenance" | "build" | "peak" | "recovery";
   notifications_enabled: boolean;
   coach_briefing_enabled: boolean;
+  /** The morning sync adapts today's sessions to readiness and load. */
+  auto_adapt_enabled: boolean;
+  /** The morning sync sends today's cardio sessions to the Garmin calendar. */
+  push_to_garmin_enabled: boolean;
   theme: "dark" | "darker" | "abyss";
   exercise_abbreviations: Record<string, string>;
   weekly_volume_target_kg: number;
@@ -387,6 +425,9 @@ export const garminHealthApi = {
       stress_max: number | null;
       steps: number | null;
       readiness_score: number | null;
+      /** Garmin's own morning Training Readiness (0-100). */
+      training_readiness_score: number | null;
+      training_readiness_level: string | null;
     }>(`/garmin/health/daily?date=${date}`),
 
   getRange: (start: string, end: string) =>
@@ -417,4 +458,54 @@ export const settingsApi = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+};
+
+// ========================= //
+// DAILY PLAN API            //
+// ========================= //
+
+export const planApi = {
+  getToday: () => fetchAPI<import("@/types").PlanToday>("/plan/today"),
+
+  /** Recomputes now, whatever the auto-adapt setting; idempotent per session per day. */
+  adaptNow: () =>
+    fetchAPI<import("@/types").PlanToday>("/plan/today/adapt", { method: "POST" }),
+
+  revert: (decisionId: number) =>
+    fetchAPI<import("@/types").PlanDecision>(`/plan/decisions/${decisionId}/revert`, {
+      method: "POST",
+    }),
+};
+
+// ========================= //
+// WEB PUSH API              //
+// ========================= //
+
+export interface PushSubscriptionBody {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+
+export const notificationsApi = {
+  /** `key` is null when the server has no VAPID keys configured. */
+  getVapidPublicKey: () =>
+    fetchAPI<{ key: string | null }>("/notifications/vapid-public-key"),
+
+  subscribe: (subscription: PushSubscriptionBody) =>
+    fetchAPI<unknown>("/notifications/subscription", {
+      method: "POST",
+      body: JSON.stringify(subscription),
+    }),
+
+  unsubscribe: (endpoint: string) =>
+    fetchAPI<unknown>("/notifications/subscription", {
+      method: "DELETE",
+      body: JSON.stringify({ endpoint }),
+    }),
+
+  sendTest: () =>
+    fetchAPI<{ sent: number; dropped: number; skipped_reason: string | null }>(
+      "/notifications/test",
+      { method: "POST" }
+    ),
 };

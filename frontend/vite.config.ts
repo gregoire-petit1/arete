@@ -42,23 +42,13 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
+      // A hand-written worker (src/sw.ts) so it can show Web Push notifications;
+      // it keeps the precache, SPA fallback and /api/ caching of the generated one.
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
+      injectManifest: {
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
-        // API calls and the Strava OAuth callback must reach the server,
-        // never the cached app shell.
-        navigateFallbackDenylist: [/^\/api\//],
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
-            handler: "NetworkFirst",
-            options: {
-              // Past 10 s offline-ish, serve the cached answer if any.
-              networkTimeoutSeconds: 10,
-              cacheName: "api-cache",
-              expiration: { maxEntries: 50, maxAgeSeconds: 300 },
-            },
-          },
-        ],
       },
     }),
   ],

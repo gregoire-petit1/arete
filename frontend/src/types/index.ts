@@ -33,7 +33,7 @@ export interface FitnessMetrics {
   form_zone: FormZone;
   readiness_score: number;
   readiness_level: ReadinessLevel;
-  readiness_source: "garmin" | "model";
+  readiness_source: "garmin_training" | "garmin" | "model";
   readiness_measured_on: string | null;
   ramp_rate: number | null;
   days_analyzed: number;
@@ -68,6 +68,54 @@ export interface PlannedSession {
   description: string | null;
   source: string;
   status: "pending" | "completed" | "skipped" | "modified";
+  /** Garmin calendar copy of the session, set once it was sent to Garmin. */
+  garmin_workout_id: string | null;
+  garmin_pushed_at: string | null;
+}
+
+// ========================= //
+// DAILY ADAPTATION          //
+// ========================= //
+
+export type PlanDecisionKind = "keep" | "ease" | "replace_easy" | "rest";
+
+/** The morning rule engine's verdict on one planned session (GET /plan/today). */
+export interface PlanDecision {
+  id: number;
+  date: string;
+  planned_session_id: number;
+  decision: PlanDecisionKind;
+  /** French sentence with the figure that justifies the decision. */
+  reason: string;
+  readiness_score: number | null;
+  readiness_source: "garmin_training" | "garmin" | "model";
+  acwr: number | null;
+  original: Record<string, unknown> | null;
+  adapted: Record<string, unknown> | null;
+  applied_at: string | null;
+  reverted_at: string | null;
+  created_at: string | null;
+}
+
+export interface PlanToday {
+  date: string;
+  decisions: PlanDecision[];
+}
+
+/** Whether a planned session can be sent to Garmin, and the steps it would carry. */
+export interface WorkoutStructure {
+  pushable: boolean;
+  /** e.g. "10' Z2 · 4×(3' Z5 / 2' Z1) · 10' Z1". */
+  text: string | null;
+  estimated_min: number | null;
+  /** French sentence when not pushable. */
+  reason: string | null;
+}
+
+export interface GarminPushResult {
+  garmin_workout_id: string;
+  garmin_schedule_id: string | null;
+  garmin_pushed_at: string;
 }
 
 export interface ActualSession {
