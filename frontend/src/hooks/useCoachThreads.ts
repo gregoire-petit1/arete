@@ -32,7 +32,7 @@ const SESSION_WRITE_TOOLS = new Set([
   'save_workout',
 ]);
 
-export function useCoachThreads(context: PanelPageContext) {
+export function useCoachThreads(context: PanelPageContext, selectedDocuments = false) {
   const queryClient = useQueryClient();
   const [initial] = useState(loadThreads);
   const [store, setStore] = useState(initial.store);
@@ -114,12 +114,18 @@ export function useCoachThreads(context: PanelPageContext) {
     const activeRuns = runRef.current ? 1 : 0;
     if (!content || activeRuns >= MAX_ACTIVE_RUNS) return false;
     const retrying = keep < active.messages.length;
+    const attachmentIds = selectedDocuments ? (retrying ? active.messages[keep]?.attachmentIds ?? [] : active.attachmentIds ?? []) : undefined;
     const history = requestWindow([
       ...active.messages.slice(0, keep).filter(
         (m) => m.content.trim() && !m.error && !m.interrupted
       ),
-      { role: 'user', content },
+      { role: 'user', content, attachmentIds },
     ]);
+    const documentIds = selectedDocuments ? [...new Set(history.flatMap(m => m.attachmentIds ?? []))] : undefined;
+    if (documentIds && documentIds.length > 20) {
+      setError('Cette demande référence plus de 20 documents. Ouvre une nouvelle conversation.');
+      return false;
+    }
     if (history.some((m) => m.content.length > MAX_MESSAGE_CHARS)) {
       setError(
         'Un message dépasse 16 000 caractères. Raccourcis-le ou crée une nouvelle conversation.'
@@ -137,10 +143,11 @@ export function useCoachThreads(context: PanelPageContext) {
         ...t,
         title: t.messages.length ? t.title : titleFromMessage(content),
         draft: retrying ? t.draft : '',
+        attachmentIds: selectedDocuments && !retrying ? [] : t.attachmentIds,
         updatedAt: Date.now(),
         messages: [
           ...t.messages.slice(0, keep),
-          { role: 'user', content },
+          { role: 'user', content, attachmentIds },
           { role: 'assistant', content: '', parts: [], pending: true },
         ],
       }))
@@ -177,7 +184,8 @@ export function useCoachThreads(context: PanelPageContext) {
           invalidateAfterSession(queryClient);
       },
       controller.signal,
-      threadId
+      threadId,
+      documentIds
     )
       .catch((err: unknown) =>
         patchAnswer((m) =>

@@ -1,3 +1,4 @@
+import { PlayerSummary } from '@/components/PlayerSummary';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -26,7 +27,9 @@ export function LogPage() {
   const setActiveTab = (tab: Tab) => setSearchParams(tab === 'force' ? {} : { tab }, { replace: true });
   const [toDelete, setToDelete] = useState<number | null>(null);
   const [showNewSession, setShowNewSession] = useState(false);
-  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
+  const sessionParam = searchParams.get('session');
+  const selectedSessionId = sessionParam && /^\d+$/.test(sessionParam) && Number.isSafeInteger(Number(sessionParam)) ? Number(sessionParam) : null;
+  const setSelectedSessionId = (id: number | null) => setSearchParams(previous => { const next = new URLSearchParams(previous); if (id === null) next.delete('session'); else next.set('session', String(id)); return next; });
 
   const { data: settings } = useQuery({ queryKey: qk.settings, queryFn: settingsApi.get });
 
@@ -70,6 +73,7 @@ export function LogPage() {
           )}
         </header>
 
+        <PlayerSummary />
         <div className="flex gap-1 mb-6">
           {TABS.map((tab) => (
             <button

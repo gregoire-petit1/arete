@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { ErrorState, LoadingState } from '@/components';
 import { Button, Spinner } from '@/components/ui';
 import { settingsApi, type UserSettings } from '@/lib/api';
+import { GamificationTab } from './settings/GamificationTab';
 import { applyTheme } from '@/lib/theme';
 import {
   AppearanceTab,
@@ -25,6 +26,7 @@ const TABS = [
   { id: 'workout', label: 'NOTATION', icon: Dumbbell },
   { id: 'connections', label: 'CONNEXIONS', icon: Watch },
   { id: 'coach', label: 'COACH', icon: Bot },
+  { id: 'gamification', label: 'GAMIFICATION', icon: Target },
   { id: 'appearance', label: 'APPARENCE', icon: Palette },
   { id: 'system', label: 'SYSTÈME', icon: Terminal },
 ] as const;
@@ -155,6 +157,7 @@ export function SettingsPage() {
             {activeTab === 'workout' && <WorkoutTab {...tabProps} />}
             {activeTab === 'connections' && <ConnectionsTab />}
             {activeTab === 'coach' && <CoachTab {...tabProps} />}
+            {activeTab === 'gamification' && <GamificationTab />}
             {activeTab === 'appearance' && <AppearanceTab {...tabProps} />}
             {activeTab === 'system' && <SystemTab />}
           </div>

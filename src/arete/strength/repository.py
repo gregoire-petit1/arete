@@ -319,39 +319,55 @@ class StrengthRepository:
 
     def create_session(self, session: StrengthSession) -> int:
         """Create a new strength session."""
+        from arete.dataio.game_events import capture
+
         conn = self._get_connection()
-        result = conn.execute(
-            """
-            INSERT INTO app.strength_sessions (
-                user_id, date, name, program, duration_min,
-                overall_rpe, fatigue_level, sleep_quality, notes, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id
-            """,
-            [
-                session.user_id,
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            result = conn.execute(
+                """
+                INSERT INTO app.strength_sessions (
+                    user_id, date, name, program, duration_min,
+                    overall_rpe, fatigue_level, sleep_quality, notes, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+                """,
+                [
+                    session.user_id,
+                    session.date,
+                    session.name,
+                    session.program,
+                    session.duration_min,
+                    session.overall_rpe,
+                    session.fatigue_level,
+                    session.sleep_quality,
+                    session.notes,
+                    datetime.now(),
+                ],
+            ).fetchone()
+            if result is None:
+                raise RuntimeError("Failed to insert session")
+            session_id: int = result[0]
+
+            # Create exercises and sets
+            for ex in session.exercises:
+                ex.session_id = session_id
+                self._create_session_exercise(conn, ex)
+
+            capture(
+                conn,
+                f"strength:{session_id}",
                 session.date,
-                session.name,
-                session.program,
-                session.duration_min,
-                session.overall_rpe,
-                session.fatigue_level,
-                session.sleep_quality,
-                session.notes,
-                datetime.now(),
-            ],
-        ).fetchone()
-        if result is None:
-            raise RuntimeError("Failed to insert session")
-        session_id: int = result[0]
-
-        # Create exercises and sets
-        for ex in session.exercises:
-            ex.session_id = session_id
-            self._create_session_exercise(conn, ex)
-
-        conn.close()
-        return session_id
+                session.name or "Force",
+                any(s.reps > 0 for e in session.exercises for s in e.sets),
+            )
+            conn.execute("COMMIT")
+            return session_id
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
     def _create_session_exercise(
         self, conn: duckdb.DuckDBPyConnection, exercise: SessionExercise
@@ -516,30 +532,41 @@ class StrengthRepository:
     def delete_session(self, session_id: int) -> bool:
         """Delete a strength session and all related data."""
         conn = self._get_connection()
-
-        # Delete sets first (cascade)
-        conn.execute(
-            """
-            DELETE FROM app.exercise_sets
-            WHERE session_exercise_id IN (
-                SELECT id FROM app.session_exercises WHERE session_id = ?
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            # Delete sets first (cascade)
+            conn.execute(
+                """
+                DELETE FROM app.exercise_sets
+                WHERE session_exercise_id IN (
+                    SELECT id FROM app.session_exercises WHERE session_id = ?
+                )
+                """,
+                [session_id],
             )
-            """,
-            [session_id],
-        )
 
-        # Delete session exercises
-        conn.execute(
-            "DELETE FROM app.session_exercises WHERE session_id = ?", [session_id]
-        )
+            # Delete session exercises
+            conn.execute(
+                "DELETE FROM app.session_exercises WHERE session_id = ?", [session_id]
+            )
 
-        # Delete session
-        result = conn.execute(
-            "DELETE FROM app.strength_sessions WHERE id = ? RETURNING id", [session_id]
-        ).fetchone()
+            # Delete session
+            result = conn.execute(
+                "DELETE FROM app.strength_sessions WHERE id = ? RETURNING id",
+                [session_id],
+            ).fetchone()
 
-        conn.close()
-        return result is not None
+            conn.execute(
+                "UPDATE app.game_events SET eligible=false,reason='removed',processed=false WHERE source_key=?",
+                [f"strength:{session_id}"],
+            )
+            conn.execute("COMMIT")
+            return result is not None
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
     # ─────────────────────────────────────────────────────────────────────
     # Statistics
@@ -764,21 +791,30 @@ class StrengthRepository:
         """Link a strength session to a Garmin activity."""
         conn = self._get_connection()
 
-        # Check if session exists
-        result = conn.execute(
-            "SELECT id FROM app.strength_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
-
-        if not result:
+        # Link and invalidation are one commit so a crash cannot leave stale rewards.
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            result = conn.execute(
+                "SELECT id FROM app.strength_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if not result:
+                conn.execute("ROLLBACK")
+                return False
+            conn.execute(
+                "UPDATE app.strength_sessions SET actual_session_id = ? WHERE id = ?",
+                (garmin_id, session_id),
+            )
+            conn.execute(
+                "UPDATE app.game_events SET processed=false WHERE source_key=? OR source_key=?",
+                [f"strength:{session_id}", f"actual:{garmin_id}"],
+            )
+            conn.execute("COMMIT")
+            return True
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
             conn.close()
-            return False
-
-        conn.execute(
-            "UPDATE app.strength_sessions SET actual_session_id = ? WHERE id = ?",
-            (garmin_id, session_id),
-        )
-        conn.close()
-        return True
 
 
 _SESSION_COLUMNS = """id, user_id, date, name, program, duration_min,

@@ -24,6 +24,8 @@ export function pageFromPath(pathname: string): string {
       return 'analytics';
     case 'log':
       return 'log';
+    case 'profile':
+      return 'profile';
     case 'settings':
       return 'settings';
     default:

@@ -12,7 +12,7 @@ const RECORD_SPORTS = [
 type RecordSport = (typeof RECORD_SPORTS)[number]['value'];
 
 /** All-time bests, independent of the selected period. */
-export function RecordsCard() {
+export function RecordsCard({ onOpen }: { onOpen?: (id: number) => void } = {}) {
   const [sport, setSport] = useState<RecordSport>('running');
   const { data, isLoading, isError } = useQuery({
     queryKey: ['analytics', 'records', sport],
@@ -67,7 +67,7 @@ export function RecordsCard() {
             {records.map((r) => (
               <tr key={r.name} className="border-t border-text-muted/10">
                 <td className="py-1.5 font-mono text-text-secondary">{r.name}</td>
-                <td className="py-1.5 text-right font-mono text-text-primary tabular-nums">{r.time_display}</td>
+                <td className="py-1.5 text-right font-mono text-text-primary tabular-nums">{onOpen && r.activity_id ? <button className="min-h-11 text-neon-cyan underline underline-offset-4" aria-label={`Voir la séance du record ${r.name}`} onClick={() => onOpen(r.activity_id!)}>{r.time_display}</button> : r.time_display}</td>
                 <td className="py-1.5 text-right font-mono text-text-muted tabular-nums" title={r.activity_name}>
                   {new Date(`${r.date}T00:00:00`).toLocaleDateString('fr-FR', {
                     day: 'numeric',

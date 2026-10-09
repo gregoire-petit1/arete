@@ -176,7 +176,7 @@ def test_page_reads_show_what_the_athlete_sees():
 
 
 @pytest.mark.parametrize(
-    "page", ["dashboard", "analytics", "planning", "log", "settings"]
+    "page", ["dashboard", "analytics", "planning", "log", "settings", "profile"]
 )
 def test_get_page_context_all_pages_parse(page):
     out = json.loads(get_page_context.invoke({"page": page}))
@@ -713,3 +713,11 @@ def test_settings_page_data_has_no_identity_fields():
     settings = get_page_data("settings")["settings"]
     assert "email" not in settings and "display_name" not in settings
     assert "lthr" in settings  # the coaching fields stay
+
+
+def test_every_supported_page_can_be_injected_without_a_model_call(monkeypatch):
+    from arete.agent.runtime.context import PANEL_PAGES
+
+    monkeypatch.setattr(sections, "get_page_data", lambda page: {"page": page})
+    for page in sorted(PANEL_PAGES):
+        assert "Page ouverte par l'athlète" in page_section(_page(page))

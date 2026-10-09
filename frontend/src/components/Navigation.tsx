@@ -10,6 +10,9 @@ import {
   PanelRightClose,
   Settings,
 } from 'lucide-react';
+import { useGamePreference } from '@/lib/gamification';
+import { ChironPortrait } from './ChironPortrait';
+import { User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
@@ -33,6 +36,11 @@ export function Navigation({
   agentBusy: boolean;
   onToggleAgent: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
+  const { data: preference } = useGamePreference();
+  const rpg = preference?.enabled === true;
+  const profile = { path: '/profile', label: 'Profil', icon: User };
+  const desktopItems = rpg ? [...navItems.slice(0, 4), profile, navItems[4]] : navItems;
+  const mobileItems = rpg ? [...navItems.slice(0, 4), profile] : navItems;
   return (
     <>
       {/* Desktop top nav — hidden on mobile */}
@@ -49,7 +57,7 @@ export function Navigation({
             </div>
 
             <div className="flex items-center gap-1">
-              {navItems.map((item) => (
+              {desktopItems.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}
@@ -88,9 +96,9 @@ export function Navigation({
               ) : agentOpen ? (
                 <PanelRightClose className="size-4" />
               ) : (
-                <Bot className="size-4" />
+                rpg ? <ChironPortrait size={24} /> : <Bot className="size-4" />
               )}
-              <span>Coach</span>
+              <span>{rpg ? 'Chiron' : 'Coach'}</span>
             </button>
           </div>
         </div>
@@ -103,7 +111,7 @@ export function Navigation({
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="flex items-center justify-around h-16 px-2">
-          {navItems.map((item) => (
+          {mobileItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
@@ -157,9 +165,9 @@ export function Navigation({
             ) : agentOpen ? (
               <PanelRightClose className="size-5" />
             ) : (
-              <Bot className="size-5" />
+              rpg ? <ChironPortrait size={24} /> : <Bot className="size-5" />
             )}
-            <span className="text-[9px] font-mono">Coach</span>
+            <span className="text-[9px] font-mono">{rpg ? 'Chiron' : 'Coach'}</span>
           </button>
         </div>
       </nav>

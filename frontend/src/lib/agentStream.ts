@@ -22,6 +22,7 @@ export interface TextPart {
 }
 export type ChatPart = ToolPart | TextPart;
 export interface ChatMessage {
+  attachmentIds?: string[];
   imports?: { id: string; version: number }[];
   role: 'user' | 'assistant';
   content: string;
@@ -230,7 +231,8 @@ export async function runAgentStream(
   context: PanelPageContext,
   onEvent: (event: StreamEvent) => void,
   signal: AbortSignal,
-  threadId: string
+  threadId: string,
+  documentIds?: string[]
 ): Promise<void> {
   const panel_context: Record<string, string> = { page: context.page };
   for (const [key, value] of Object.entries(context.params))
@@ -241,6 +243,7 @@ export async function runAgentStream(
     body: JSON.stringify({
       messages: history.map(({ role, content }) => ({ role, content })),
       thread_id: threadId,
+      ...(documentIds !== undefined ? { document_ids: documentIds } : {}),
       panel_context,
     }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]),

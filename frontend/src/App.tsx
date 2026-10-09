@@ -7,6 +7,7 @@ import { SettingsProvider } from '@/contexts';
 import { DashboardPage, PlanningPage, LogPage, SettingsPage } from '@/pages';
 
 // recharts is most of the bundle and only the Analytics page draws charts.
+const ProfilePage = lazy(() => import('@/pages/Profile').then(m => ({ default: m.ProfilePage })));
 const AnalyticsPage = lazy(() =>
   import('@/pages/Analytics').then((m) => ({ default: m.AnalyticsPage })),
 );
@@ -61,6 +62,7 @@ function App() {
                     }
                   />
                   <Route path="/log" element={<LogPage />} />
+                  <Route path="/profile" element={<Suspense fallback={null}><ProfilePage /></Suspense>} />
                   <Route path="/settings" element={<SettingsPage />} />
                   {/* Legacy redirects */}
                   <Route

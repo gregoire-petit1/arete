@@ -25,7 +25,9 @@ MAX_PANEL_CONTEXT_CHARS = 64_000
 
 #: Route names the frontend can send. Anything else is rejected at the API
 #: boundary so ``get_page_context`` can never be called with junk.
-PANEL_PAGES = frozenset({"dashboard", "planning", "analytics", "log", "settings"})
+PANEL_PAGES = frozenset(
+    {"dashboard", "planning", "analytics", "log", "settings", "profile"}
+)
 
 
 @dataclass
@@ -52,6 +54,7 @@ class AgentContext:
     # Selected by the server entrypoint, never from panel_context or messages.
     profile: Literal["chat", "briefing", "feedback"] = "chat"
     thread_id: str | None = None
+    document_ids: tuple[str, ...] | None = None
     attachment_manifest: str = ""
     document_import_pending: bool = False
     current_date: date = field(default_factory=date.today)

@@ -20,6 +20,11 @@ def _env(name: str, default: str | None = None) -> str | None:
 
 
 class Config:
+    @property
+    def gamification_available(self) -> bool:
+        """Deployment kill switch; the athlete still has to opt in."""
+        return (_env("GAMIFICATION_ENABLED", "true") or "").lower() == "true"
+
     # --- storage -----------------------------------------------------------
     @property
     def db_target(self) -> str:

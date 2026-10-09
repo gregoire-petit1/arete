@@ -2,8 +2,9 @@
 
 from datetime import date
 from typing import Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from arete.dataio import settings as repo
 
@@ -21,7 +22,9 @@ class UserSettingsUpdate(BaseModel):
     coach_briefing_enabled: bool = True
     auto_adapt_enabled: bool = True
     push_to_garmin_enabled: bool = False
-    theme: Literal["light", "dark", "darker", "abyss"] = "dark"
+    theme: Literal["light", "dark", "darker", "abyss", "performance", "odyssey"] = (
+        "dark"
+    )
     exercise_abbreviations: dict[str, str] = {}
     weekly_volume_target_kg: int = Field(ge=1000, le=200000, default=20000)
     lthr: int | None = Field(ge=100, le=220, default=None)
@@ -29,6 +32,16 @@ class UserSettingsUpdate(BaseModel):
     threshold_pace_sec_km: int | None = Field(ge=120, le=900, default=None)
     # Set by the Garmin sync; sent back untouched by the settings form.
     lthr_measured_on: date | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        # Invalid zones would make activity capture and weekly settlement fail.
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("Fuseau horaire inconnu.") from exc
+        return value
 
 
 class UserSettingsOut(BaseModel):

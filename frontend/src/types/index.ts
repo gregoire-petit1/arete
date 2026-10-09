@@ -392,6 +392,7 @@ export interface SportSlice {
 }
 
 export interface PersonalRecord {
+  activity_id?: number;
   name: string;
   time_sec: number;
   time_display: string;

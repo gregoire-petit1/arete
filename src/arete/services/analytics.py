@@ -225,7 +225,7 @@ def get_records(sport: str = "running"):
         rows = best_effort_rows(con, sports)
 
     bests: dict[str, dict] = {}
-    for efforts_json, row_date, activity_name in rows:
+    for efforts_json, row_date, activity_name, activity_id in rows:
         efforts = (
             json.loads(efforts_json) if isinstance(efforts_json, str) else efforts_json
         )
@@ -243,6 +243,7 @@ def get_records(sport: str = "running"):
                     "time_display": ov.format_hms(elapsed),
                     "date": str(row_date),
                     "activity_name": activity_name or "",
+                    "activity_id": activity_id,
                 }
 
     return {"records": [bests[n] for n in EFFORT_NAMES if n in bests]}
@@ -322,3 +323,31 @@ def list_sessions(limit: int = 20, offset: int = 0, *, for_model: bool = False):
             }
         )
     return {"sessions": sessions}
+
+
+def get_session(session_id: int) -> dict | None:
+    """Exact source of a personal record; never match an activity by its title."""
+    with db_connection() as con:
+        row = con.execute(
+            "SELECT id,date,name,sport,duration_sec,distance_m,avg_hr,hr_zones_json,source FROM app.actual_sessions WHERE id=? AND user_id=1",
+            [session_id],
+        ).fetchone()
+    if row is None:
+        return None
+    return dict(
+        zip(
+            (
+                "id",
+                "date",
+                "name",
+                "sport",
+                "duration_sec",
+                "distance_m",
+                "avg_hr",
+                "hr_zones_json",
+                "source",
+            ),
+            row,
+            strict=True,
+        )
+    )

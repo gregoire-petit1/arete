@@ -146,7 +146,30 @@ def _settings() -> dict[str, Any]:
     }
 
 
+def _profile() -> dict[str, Any]:
+    from arete.services.gamification import snapshot
+
+    state = snapshot()
+    # The ledger and identity are deliberately not sent to the model.
+    return {
+        "player": {
+            key: state[key]
+            for key in (
+                "enabled",
+                "level",
+                "rank",
+                "xp",
+                "shards",
+                "sessions",
+                "equipped",
+                "week",
+            )
+        }
+    }
+
+
 _PAGE_FETCHERS = {
+    "profile": _profile,
     "dashboard": _dashboard,
     "analytics": _analytics,
     "planning": _planning,
@@ -156,4 +179,11 @@ _PAGE_FETCHERS = {
 
 
 def get_page_data(page: str) -> dict[str, Any]:
-    return _PAGE_FETCHERS[page]()
+    from arete.services.gamification import preference
+
+    result = _PAGE_FETCHERS[page]()
+    if preference()["enabled"]:
+        result["coach_identity"] = (
+            "Chiron — Coach Arete. Mentor grec calme et exigeant, distinct du personnage joueur. Explique les faits sans inventer de récompenses."
+        )
+    return result

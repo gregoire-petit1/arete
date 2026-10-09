@@ -1,3 +1,5 @@
+import { PlayerSummary } from '@/components/PlayerSummary';
+import { useGamePreference } from '@/lib/gamification';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Bot, Calendar, Dumbbell, Loader2, Zap } from 'lucide-react';
@@ -98,6 +100,7 @@ function TodaySession({
 }
 
 export function DashboardPage() {
+  const game = useGamePreference();
   const queryClient = useQueryClient();
   const today = toLocalISODate();
 
@@ -248,6 +251,7 @@ export function DashboardPage() {
         {/* Block 2: Player Status */}
         <Panel className="p-4" delay={0.1}>
           <SectionHeader icon={<Dumbbell className="w-4 h-4 text-neon-gold" />} title="ÉTAT DU JOUEUR" />
+          <PlayerSummary />
 
           {statsError ? (
             <p className="text-xs font-mono text-danger-red mb-4">
@@ -262,7 +266,7 @@ export function DashboardPage() {
                 {[
                   { stat: playerStats.hp, color: 'bg-danger-red', tag: 'HP' },
                   { stat: playerStats.mp, color: 'bg-neon-cyan', tag: 'MP' },
-                  { stat: playerStats.xp, color: 'bg-neon-gold', tag: 'XP' },
+                  { stat: playerStats.xp, color: 'bg-neon-gold', tag: game.data?.enabled ? 'TSS' : 'XP' },
                 ].map(({ stat, color, tag }) => (
                   <div key={tag} title={stat.detail ?? undefined}>
                     <div className="flex items-center gap-3">

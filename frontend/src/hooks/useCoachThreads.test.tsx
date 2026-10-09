@@ -13,6 +13,7 @@ const runs = vi.hoisted(
     [] as {
       history: ChatMessage[];
       threadId: string;
+      documentIds?: string[];
       emit: (e: StreamEvent) => void;
       resolve: () => void;
       reject: (e: Error) => void;
@@ -22,9 +23,9 @@ const runs = vi.hoisted(
 vi.mock('@/lib/agentStream', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/agentStream')>()),
   runAgentStream: vi.fn(
-    (history, _context, emit, signal, threadId) =>
+    (history, _context, emit, signal, threadId, documentIds) =>
       new Promise<void>((resolve, reject) => {
-        runs.push({ history, emit, resolve, reject, signal, threadId });
+        runs.push({ history, emit, resolve, reject, signal, threadId, documentIds });
         signal.addEventListener(
           'abort',
           () => reject(new DOMException('Stopped', 'AbortError')),
@@ -289,4 +290,33 @@ it('refetches the visible planning window as soon as a session is created', asyn
   await act(async () => {
     runs[0].resolve();
   });
+});
+
+
+it('snapshots selected documents per message and preserves them for retry across thread changes', async () => {
+  const { result } = renderHook(() => useCoachThreads(context, true), { wrapper });
+  const first = result.current.active.id;
+  act(() => result.current.attachments(['document-a']));
+  act(() => { result.current.send('Programme A'); });
+  expect(runs[0].documentIds).toEqual(['document-a']);
+  expect(result.current.active.attachmentIds).toEqual([]);
+  expect(result.current.active.messages[0].attachmentIds).toEqual(['document-a']);
+  act(() => result.current.create());
+  act(() => result.current.attachments(['document-b']));
+  await act(async () => { runs[0].reject(new Error('Réseau indisponible')); });
+  expect(result.current.active.attachmentIds).toEqual(['document-b']);
+  act(() => result.current.select(first));
+  act(() => { result.current.retry(); });
+  expect(runs[1].documentIds).toEqual(['document-a']);
+  await act(async () => { runs[1].resolve(); });
+});
+
+it('refuses an over-limit document request before clearing the draft', () => {
+  const { result } = renderHook(() => useCoachThreads(context, true), { wrapper });
+  act(() => result.current.attachments(Array.from({ length: 21 }, (_, i) => `doc-${i}`)));
+  act(() => result.current.draft('À conserver'));
+  act(() => { expect(result.current.send()).toBe(false); });
+  expect(runs).toHaveLength(0);
+  expect(result.current.active.draft).toBe('À conserver');
+  expect(result.current.error).toContain('20 documents');
 });

@@ -510,6 +510,12 @@ def _m13_document_imports(con) -> None:
     migrate(con)
 
 
+def _m14_gamification(con) -> None:
+    from arete.dataio.game_schema import migrate
+
+    migrate(con)
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -524,6 +530,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (11, _m11_plan_adaptation),
     (12, _m12_push_subscriptions),
     (13, _m13_document_imports),
+    (14, _m14_gamification),
 ]
 
 

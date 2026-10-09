@@ -284,76 +284,96 @@ class GarminRepository:
         Returns:
             ID of created session
         """
-        conn = self._get_connection()
+        from arete.dataio.game_events import capture
 
-        result = conn.execute(
-            """
-            INSERT INTO actual_sessions (
-                planned_session_id, user_id, date, sport, session_type,
-                duration_sec, distance_m, calories, avg_hr, max_hr,
-                hr_zones_json, avg_pace_sec_km, avg_speed_mps, max_speed_mps,
-                ascent_m, descent_m, start_lat, start_lon,
-                avg_cadence, max_cadence, avg_vertical_oscillation,
-                avg_ground_contact_time, avg_stride_length,
-                source, source_file, garmin_activity_id,
-                adherence_score, intensity_deviation, start_time, created_at,
-                name, notes, rpe, workout_type, moving_time_sec,
-                suffer_score, laps_json, splits_json, best_efforts_json,
-                avg_watts, weighted_avg_watts, device_name
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id
-            """,
-            [
-                session.planned_session_id,
-                session.user_id or 1,
+        conn = self._get_connection()
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            result = conn.execute(
+                """
+                INSERT INTO actual_sessions (
+                    planned_session_id, user_id, date, sport, session_type,
+                    duration_sec, distance_m, calories, avg_hr, max_hr,
+                    hr_zones_json, avg_pace_sec_km, avg_speed_mps, max_speed_mps,
+                    ascent_m, descent_m, start_lat, start_lon,
+                    avg_cadence, max_cadence, avg_vertical_oscillation,
+                    avg_ground_contact_time, avg_stride_length,
+                    source, source_file, garmin_activity_id,
+                    adherence_score, intensity_deviation, start_time, created_at,
+                    name, notes, rpe, workout_type, moving_time_sec,
+                    suffer_score, laps_json, splits_json, best_efforts_json,
+                    avg_watts, weighted_avg_watts, device_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+                """,
+                [
+                    session.planned_session_id,
+                    session.user_id or 1,
+                    session.date,
+                    session.sport,
+                    session.session_type,
+                    session.duration_sec,
+                    session.distance_m,
+                    session.calories,
+                    session.avg_hr,
+                    session.max_hr,
+                    session.hr_zones_json,
+                    session.avg_pace_sec_km,
+                    session.avg_speed_mps,
+                    session.max_speed_mps,
+                    session.ascent_m,
+                    session.descent_m,
+                    session.start_lat,
+                    session.start_lon,
+                    session.avg_cadence,
+                    session.max_cadence,
+                    session.avg_vertical_oscillation,
+                    session.avg_ground_contact_time,
+                    session.avg_stride_length,
+                    session.source.value
+                    if isinstance(session.source, ActivitySource)
+                    else session.source,
+                    session.source_file,
+                    session.garmin_activity_id,
+                    session.adherence_score,
+                    session.intensity_deviation,
+                    session.start_time,
+                    datetime.now(),
+                    session.name,
+                    session.notes,
+                    session.rpe,
+                    session.workout_type,
+                    session.moving_time_sec,
+                    session.suffer_score,
+                    session.laps_json,
+                    session.splits_json,
+                    session.best_efforts_json,
+                    session.avg_watts,
+                    session.weighted_avg_watts,
+                    session.device_name,
+                ],
+            ).fetchone()
+            if result is None:
+                raise RuntimeError("Failed to insert actual session")
+            capture(
+                conn,
+                f"actual:{result[0]}",
                 session.date,
-                session.sport,
-                session.session_type,
-                session.duration_sec,
-                session.distance_m,
-                session.calories,
-                session.avg_hr,
-                session.max_hr,
-                session.hr_zones_json,
-                session.avg_pace_sec_km,
-                session.avg_speed_mps,
-                session.max_speed_mps,
-                session.ascent_m,
-                session.descent_m,
-                session.start_lat,
-                session.start_lon,
-                session.avg_cadence,
-                session.max_cadence,
-                session.avg_vertical_oscillation,
-                session.avg_ground_contact_time,
-                session.avg_stride_length,
-                session.source.value
-                if isinstance(session.source, ActivitySource)
-                else session.source,
-                session.source_file,
-                session.garmin_activity_id,
-                session.adherence_score,
-                session.intensity_deviation,
-                session.start_time,
-                datetime.now(),
-                session.name,
-                session.notes,
-                session.rpe,
-                session.workout_type,
-                session.moving_time_sec,
-                session.suffer_score,
-                session.laps_json,
-                session.splits_json,
-                session.best_efforts_json,
-                session.avg_watts,
-                session.weighted_avg_watts,
-                session.device_name,
-            ],
-        ).fetchone()
-        conn.close()
-        if result is None:
-            raise RuntimeError("Failed to insert actual session")
-        return int(result[0])
+                session.name or session.sport,
+                session.duration_sec > 0,
+                started=session.start_time,
+                canonical=f"garmin:{session.garmin_activity_id}"
+                if session.garmin_activity_id
+                else (f"file:{session.source_file}" if session.source_file else None),
+                manual=str(session.source) in {"manual", "ActivitySource.MANUAL"},
+            )
+            conn.execute("COMMIT")
+            return int(result[0])
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
     def get_actual_session(self, session_id: int) -> ActualSession | None:
         """Get an actual session by ID."""
@@ -611,11 +631,22 @@ class GarminRepository:
     def delete_actual_session(self, session_id: int) -> bool:
         """Delete an actual session by ID."""
         conn = self._get_connection()
-        result = conn.execute(
-            "DELETE FROM actual_sessions WHERE id = ? RETURNING id", [session_id]
-        ).fetchone()
-        conn.close()
-        return result is not None
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            result = conn.execute(
+                "DELETE FROM actual_sessions WHERE id = ? RETURNING id", [session_id]
+            ).fetchone()
+            conn.execute(
+                "UPDATE app.game_events SET eligible=false,reason='removed',processed=false WHERE source_key=?",
+                [f"actual:{session_id}"],
+            )
+            conn.execute("COMMIT")
+            return result is not None
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
     def count_actual_sessions(self) -> int:
         """Return total count of actual sessions (efficient query)."""

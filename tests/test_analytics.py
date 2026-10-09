@@ -207,8 +207,14 @@ class TestRecords:
                 '{"name": "5K", "elapsed_time": 1250}]',
                 date(2026, 5, 1),
                 "Morning Run",
+                101,
             ),
-            ('[{"name": "1K", "elapsed_time": 234}]', date(2026, 4, 20), "Fast Run"),
+            (
+                '[{"name": "1K", "elapsed_time": 234}]',
+                date(2026, 4, 20),
+                "Fast Run",
+                101,
+            ),
         ]
         records = client.get("/analytics/records?sport=running").json()["records"]
         one_k = next(r for r in records if r["name"] == "1K")
@@ -231,6 +237,7 @@ class TestRecords:
                 '{"name": "marathon", "elapsed_time": 13769}]',
                 date(2026, 5, 1),
                 "Ultra",
+                101,
             )
         ]
         records = client.get("/analytics/records").json()["records"]
@@ -248,6 +255,7 @@ class TestRecords:
                 '{"name": "Half-Marathon", "elapsed_time": 6795}]',
                 date(2026, 5, 1),
                 "Long one",
+                101,
             )
         ]
         records = client.get("/analytics/records").json()["records"]
@@ -268,6 +276,7 @@ class TestRecords:
                 '{"name": "5K", "elapsed_time": 1272}]',
                 date(2026, 5, 1),
                 "Track",
+                101,
             )
         ]
         records = client.get("/analytics/records").json()["records"]
@@ -281,6 +290,7 @@ class TestRecords:
                 '[{"name": "Half-Marathon", "elapsed_time": 5535}]',
                 date(2026, 5, 1),
                 "Semi",
+                101,
             )
         ]
         record = client.get("/analytics/records").json()["records"][0]

@@ -15,6 +15,7 @@ from arete.api.agent import router as agent_router
 from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
 from arete.api.documents import router as documents_router
+from arete.api.gamification import router as gamification_router
 from arete.api.garmin import router as garmin_router
 from arete.api.garmin_export import router as garmin_export_router
 from arete.api.garmin_health import router as garmin_health_router
@@ -145,6 +146,7 @@ def cron_daily_sync(authorization: str | None = Header(default=None)):
 
 
 for router in (
+    gamification_router,
     settings_router,
     metrics_router,
     garmin_router,
