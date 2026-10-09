@@ -300,6 +300,35 @@ class TestGarminRepository:
         # Cleanup
         repo.delete_actual_session(session_id)
 
+    def test_list_without_blobs_leaves_only_the_json_detail_out(self, repo):
+        day = date(2031, 5, 4)
+        session_id = repo.create_actual_session(
+            ActualSession(
+                date=day,
+                sport="running",
+                duration_sec=1800,
+                avg_hr=150,
+                laps_json="[]",
+                splits_json="[]",
+                best_efforts_json="[]",
+                source=ActivitySource.FIT_FILE,
+            )
+        )
+        try:
+            [full] = repo.list_actual_sessions(start_date=day, end_date=day)
+            [lean] = repo.list_actual_sessions(
+                start_date=day, end_date=day, include_blobs=False
+            )
+            assert full.laps_json == "[]"
+            assert (lean.laps_json, lean.splits_json, lean.best_efforts_json) == (
+                None,
+                None,
+                None,
+            )
+            assert lean.avg_hr == 150 and lean.id == session_id
+        finally:
+            repo.delete_actual_session(session_id)
+
     def test_match_actual_to_planned(self, repo):
         """Test matching actual session to planned session."""
         # Create planned session

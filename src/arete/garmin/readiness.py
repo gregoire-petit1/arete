@@ -14,7 +14,10 @@ falls back to fixed thresholds and returns 50 (neutral).
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from datetime import date, timedelta
+
+import duckdb
 
 from arete.dataio.db import connect
 
@@ -26,6 +29,13 @@ SLEEP_WEIGHT = 0.30
 BB_WEIGHT = 0.30
 SLEEP_TARGET_SEC = 8 * 3600  # 8h default target
 BASELINE_DAYS = 14
+_DAY_FIELDS = (
+    "hrv_last_night",
+    "sleep_duration_sec",
+    "body_battery_high",
+    "stress_avg",
+    "resting_hr",
+)
 
 
 def _fetch_day_metrics(target_date: date) -> dict | None:
@@ -45,13 +55,7 @@ def _fetch_day_metrics(target_date: date) -> dict | None:
         con.close()
     if not row:
         return None
-    return {
-        "hrv_last_night": row[0],
-        "sleep_duration_sec": row[1],
-        "body_battery_high": row[2],
-        "stress_avg": row[3],
-        "resting_hr": row[4],
-    }
+    return dict(zip(_DAY_FIELDS, row, strict=True))
 
 
 def _fetch_baseline(target_date: date, days: int = BASELINE_DAYS) -> dict | None:
@@ -72,6 +76,11 @@ def _fetch_baseline(target_date: date, days: int = BASELINE_DAYS) -> dict | None
         ).fetchall()
     finally:
         con.close()
+    return _baseline_stats(rows)
+
+
+def _baseline_stats(rows: Sequence[tuple]) -> dict | None:
+    """Mean + stddev per metric over (hrv, sleep, bb, stress, rhr) rows."""
     if len(rows) < 5:
         return None
 
@@ -92,16 +101,54 @@ def _fetch_baseline(target_date: date, days: int = BASELINE_DAYS) -> dict | None
     }
 
 
-def compute_readiness(target_date: date) -> int | None:
+def fetch_window(
+    con: duckdb.DuckDBPyConnection, end: date, days: int = BASELINE_DAYS + 1
+) -> list[tuple]:
+    """(date, hrv, sleep, bb, stress, rhr) rows from ``end - days`` to ``end``.
+
+    The default covers ``end`` and the day before, each with its baseline.
+    """
+    return con.execute(
+        """
+        SELECT date, hrv_last_night, sleep_duration_sec, body_battery_high,
+               stress_avg, resting_hr
+        FROM app.daily_metrics
+        WHERE user_id = 1 AND date >= ? AND date <= ?
+        """,
+        [end - timedelta(days=days), end],
+    ).fetchall()
+
+
+def readiness_from_rows(target_date: date, rows: Sequence[tuple]) -> int | None:
+    """``compute_readiness`` over rows already read by ``fetch_window``."""
+    day_row = next((r[1:] for r in rows if r[0] == target_date), None)
+    start = target_date - timedelta(days=BASELINE_DAYS)
+    baseline_rows = [
+        r[1:] for r in rows if start <= r[0] < target_date and r[1] is not None
+    ]
+    day = dict(zip(_DAY_FIELDS, day_row, strict=True)) if day_row else None
+    return _score(day, _baseline_stats(baseline_rows))
+
+
+def compute_readiness(
+    target_date: date, *, window: Sequence[tuple] | None = None
+) -> int | None:
     """Compute readiness score (0-100) for the given date.
 
-    Returns None if no data for that day.
+    Returns None if no data for that day. ``window`` (rows from
+    ``fetch_window``) spares the two reads.
     """
+    if window is not None:
+        return readiness_from_rows(target_date, window)
     day = _fetch_day_metrics(target_date)
     if not day or day.get("hrv_last_night") is None:
-        return None  # cold start: need at least HRV
+        return None
+    return _score(day, _fetch_baseline(target_date))
 
-    baseline = _fetch_baseline(target_date)
+
+def _score(day: dict | None, baseline: dict | None) -> int | None:
+    if not day or day.get("hrv_last_night") is None:
+        return None  # cold start: need at least HRV
 
     # Sub-score: HRV (0-1, higher is better)
     hrv = day["hrv_last_night"]

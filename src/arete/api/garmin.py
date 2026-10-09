@@ -434,6 +434,7 @@ def list_actual_sessions(
         end_date=end_date,
         unmatched_only=unmatched_only,
         limit=limit,
+        include_blobs=False,
     )
     return [_actual_to_response(s) for s in sessions]
 

@@ -9,9 +9,11 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from arete.dataio.db import connect
-from arete.dataio.queries import training_loads, tss_history, weekly_tss
+from arete.dataio.queries import daily_tss_by_date, training_loads, tss_history
 from arete.dataio.settings import get_user_settings
 from arete.features.fitness import (
+    DailyTSS,
+    PerformanceModel,
     compute_performance_model,
 )
 from arete.features.recommendations import (
@@ -22,11 +24,12 @@ from arete.features.workload import (
     ACWRZone,
     compute_workload_metrics,
 )
-from arete.garmin.readiness import compute_readiness
+from arete.garmin.readiness import compute_readiness, fetch_window
 
 logger = logging.getLogger(__name__)
 TSS_PER_SESSION = 50.0
 READINESS_LOOKBACK_DAYS = 1
+FORM_HISTORY_DAYS = 42
 
 
 class WorkloadMetricsOut(BaseModel):
@@ -106,28 +109,24 @@ def _weekly_goal_tss(settings: dict) -> float:
     return sessions * TSS_PER_SESSION
 
 
-def _week_history(goal_tss: float) -> tuple[int, int]:
+def _week_history(
+    goal_tss: float, by_date: dict[date, float], today: date
+) -> tuple[int, int]:
     """(consecutive finished weeks at goal, all-time count of such weeks)."""
-    con = connect()
-    try:
-        today = date.today()
-        current_monday = today - timedelta(days=today.weekday())
-        row = con.execute(
-            "SELECT MIN(date) FROM app.actual_sessions WHERE user_id = 1"
-        ).fetchone()
-        if not row or not row[0]:
-            return 0, 0
+    if not by_date:
+        return 0, 0
+    weekly: dict[date, float] = {}
+    for day, tss in by_date.items():
+        monday = day - timedelta(days=day.weekday())
+        weekly[monday] = weekly.get(monday, 0.0) + tss
 
-        earliest = row[0]
-        week_start = earliest - timedelta(days=earliest.weekday())
-        reached: list[bool] = []
-        while week_start < current_monday:
-            reached.append(
-                weekly_tss(con, week_start, week_start + timedelta(days=6)) >= goal_tss
-            )
-            week_start += timedelta(days=7)
-    finally:
-        con.close()
+    current_monday = today - timedelta(days=today.weekday())
+    earliest = min(by_date)
+    week_start = earliest - timedelta(days=earliest.weekday())
+    reached: list[bool] = []
+    while week_start < current_monday:
+        reached.append(weekly.get(week_start, 0.0) >= goal_tss)
+        week_start += timedelta(days=7)
 
     streak = 0
     for ok in reversed(reached):  # most recent finished week first
@@ -137,12 +136,12 @@ def _week_history(goal_tss: float) -> tuple[int, int]:
     return streak, sum(reached)
 
 
-def _recovery_bar(today: date) -> StatBar:
+def _recovery_bar(today: date, window: list[tuple], model: PerformanceModel) -> StatBar:
     """HP: Garmin's readiness for today, yesterday's if the night is not in yet,
     and the CTL/ATL model only when Garmin has nothing recent."""
     for offset in range(READINESS_LOOKBACK_DAYS + 1):
         day = today - timedelta(days=offset)
-        score = compute_readiness(day)
+        score = compute_readiness(day, window=window)
         if score is None:
             continue
         detail = (
@@ -158,7 +157,6 @@ def _recovery_bar(today: date) -> StatBar:
             source="garmin" if offset == 0 else "garmin_previous",
         )
 
-    model = compute_performance_model(tss_history(days=42), today)
     return StatBar(
         current=round(model.readiness_score, 1),
         max=100,
@@ -176,17 +174,29 @@ def get_player_stats():
     - MP = form: TSB mapped from -30..+30 onto 0..100
     - XP = this week's TSS against the goal derived from Settings
     - Level = consecutive finished weeks at or above that goal
+
+    Four statements: settings, the readiness window, the daily TSS series
+    (whole history, ~one row per training day) and the Banister coefficients.
     """
     today = date.today()
     settings = get_user_settings(user_id=1) or {}
     goal_tss = _weekly_goal_tss(settings)
 
+    con = connect()
+    try:
+        window = fetch_window(con, today)
+        by_date = daily_tss_by_date(con)
+    finally:
+        con.close()
+
+    days = (today - timedelta(days=n) for n in range(FORM_HISTORY_DAYS, -1, -1))
+    history = [DailyTSS(date=d, tss=by_date.get(d, 0.0)) for d in days]
+    model = compute_performance_model(history, today)
+
     # --- HP: recovery ---
-    hp = _recovery_bar(today)
+    hp = _recovery_bar(today, window, model)
 
     # --- MP: form (TSB) ---
-    history = tss_history(days=42)
-    model = compute_performance_model(history, today)
     tsb = model.tsb
     mp_current = round(max(0.0, min(100.0, (tsb + 30) * (100 / 60))), 1)
     mp = StatBar(
@@ -199,11 +209,7 @@ def get_player_stats():
 
     # --- XP: this week's load ---
     monday = today - timedelta(days=today.weekday())
-    con = connect()
-    try:
-        xp_current = round(weekly_tss(con, monday, today), 1)
-    finally:
-        con.close()
+    xp_current = round(sum(t for d, t in by_date.items() if monday <= d <= today), 1)
     goal_sessions = int(settings.get("weekly_training_goal") or 6)
     xp = StatBar(
         current=xp_current,
@@ -213,7 +219,7 @@ def get_player_stats():
         source="model",
     )
 
-    streak, total_weeks = _week_history(goal_tss)
+    streak, total_weeks = _week_history(goal_tss, by_date, today)
     return PlayerStats(
         hp=hp,
         mp=mp,

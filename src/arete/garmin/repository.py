@@ -345,11 +345,22 @@ class GarminRepository:
         end_date: date | None = None,
         unmatched_only: bool = False,
         limit: int = 50,
+        include_blobs: bool = True,
     ) -> list[ActualSession]:
-        """List actual sessions with optional filters."""
+        """List actual sessions with optional filters.
+
+        ``include_blobs=False`` leaves the laps, splits and best-efforts JSON
+        as None: lists shown to the athlete never read them, and they are
+        most of a row's bytes.
+        """
         conn = self._get_connection()
 
-        query = """
+        blobs = (
+            "laps_json, splits_json, best_efforts_json"
+            if include_blobs
+            else "NULL, NULL, NULL"
+        )
+        query = f"""
             SELECT id, planned_session_id, user_id, date, sport, session_type,
                    duration_sec, distance_m, calories, avg_hr, max_hr,
                    hr_zones_json, avg_pace_sec_km, avg_speed_mps, max_speed_mps,
@@ -359,7 +370,7 @@ class GarminRepository:
                    source, source_file, garmin_activity_id,
                    adherence_score, intensity_deviation, start_time, created_at,
                    name, notes, rpe, workout_type, moving_time_sec,
-                   suffer_score, laps_json, splits_json, best_efforts_json,
+                   suffer_score, {blobs},
                    avg_watts, weighted_avg_watts, device_name, strava_activity_id
             FROM actual_sessions WHERE 1=1
         """

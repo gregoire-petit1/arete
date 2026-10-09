@@ -347,20 +347,15 @@ def list_sessions(
     program: str | None = None,
     limit: int = Query(50, ge=1, le=200),
 ):
-    """List strength sessions."""
+    """List strength sessions with the details their summary stats need."""
     sessions = _repo.list_sessions(
-        start_date=start_date, end_date=end_date, program=program, limit=limit
+        start_date=start_date,
+        end_date=end_date,
+        program=program,
+        limit=limit,
+        include_details=True,
     )
-
-    # We need to fetch full details for summary stats
-    result = []
-    for s in sessions:
-        if s.id is None:
-            continue
-        full_session = _repo.get_session(s.id)
-        if full_session:
-            result.append(_session_to_summary_response(full_session))
-    return result
+    return [_session_to_summary_response(s) for s in sessions]
 
 
 @router.get("/sessions/{session_id}", response_model=StrengthSessionDetailResponse)
@@ -419,7 +414,7 @@ def get_garmin_candidates(session_id: int):
     end = session.date + timedelta(days=1)
 
     actual_sessions = GarminRepository().list_actual_sessions(
-        start_date=start, end_date=end, limit=200
+        start_date=start, end_date=end, limit=200, include_blobs=False
     )
 
     # Filter to strength activities
@@ -452,7 +447,7 @@ def _cardio_muscle_activity(
     from arete.garmin.repository import GarminRepository
 
     sessions = GarminRepository().list_actual_sessions(
-        start_date=start_date, end_date=end_date, limit=1000
+        start_date=start_date, end_date=end_date, limit=1000, include_blobs=False
     )
 
     volume: dict[str, float] = {}

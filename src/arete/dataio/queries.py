@@ -123,6 +123,22 @@ def weekly_tss(
     return float(row[0]) if row else 0.0
 
 
+def daily_tss_by_date(
+    con: duckdb.DuckDBPyConnection, user_id: int = 1
+) -> dict[date, float]:
+    """TSS per day over the whole history, days without sessions absent."""
+    rows = con.execute(
+        f"""
+        SELECT date, SUM({TSS_EXPR})
+        FROM app.actual_sessions
+        WHERE user_id = ?
+        GROUP BY date
+        """,
+        [user_id],
+    ).fetchall()
+    return {row[0]: float(row[1]) for row in rows}
+
+
 # Convenience wrappers for callers without a connection at hand.
 def tss_history(days: int, end: date | None = None) -> list[DailyTSS]:
     end = end or date.today()
