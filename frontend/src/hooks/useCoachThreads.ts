@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { documentsApi } from '@/lib/documents';
-import { invalidateAfterSession } from '@/lib/queryKeys';
+import { invalidateAfterSession, qk } from '@/lib/queryKeys';
 import type { PanelPageContext } from '@/lib/pageContext';
 import {
   applyEvent,
@@ -31,6 +31,7 @@ const SESSION_WRITE_TOOLS = new Set([
   'delete_planned_session',
   'save_workout',
 ]);
+const FACT_WRITE_TOOLS = new Set(['remember_fact']);
 
 export function useCoachThreads(context: PanelPageContext) {
   const queryClient = useQueryClient();
@@ -169,12 +170,11 @@ export function useCoachThreads(context: PanelPageContext) {
         if (event.type === 'import_preview' || event.type === 'done') void queryClient.invalidateQueries({ queryKey: ['coach-imports', threadId] });
         // Refresh when the write completes, even if the final answer fails or
         // the athlete has switched threads while this run was in flight.
-        if (
-          event.type === 'tool_end' &&
-          event.status === 'done' &&
-          SESSION_WRITE_TOOLS.has(event.name)
-        )
-          invalidateAfterSession(queryClient);
+        if (event.type === 'tool_end' && event.status === 'done') {
+          if (SESSION_WRITE_TOOLS.has(event.name)) invalidateAfterSession(queryClient);
+          if (FACT_WRITE_TOOLS.has(event.name))
+            void queryClient.invalidateQueries({ queryKey: qk.athleteFacts });
+        }
       },
       controller.signal,
       threadId

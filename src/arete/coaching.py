@@ -21,7 +21,7 @@ from arete.agent.runtime.context import AgentContext
 from arete.agent.runtime.execution import invoke_agent_sync
 from arete.calendar import get_calendar_service
 from arete.config import config
-from arete.services import briefing, session_feedback
+from arete.services import briefing, session_feedback, weekly_review
 from arete.services.coaching_repository import Briefing
 
 AGENT_RECURSION_LIMIT = MAX_GRAPH_STEPS
@@ -81,6 +81,12 @@ def build_feedback_agent():
     return _assemble("feedback")
 
 
+@_serialized
+@lru_cache(maxsize=1)
+def build_review_agent():
+    return _assemble("review")
+
+
 def _run_mission(graph, profile: str, message: str, max_chars: int) -> str:
     result = invoke_agent_sync(
         graph,
@@ -110,6 +116,16 @@ def run_feedback(facts: str) -> str:
     return _run_mission(
         build_feedback_agent(), "feedback", facts, session_feedback.MAX_FEEDBACK_CHARS
     )
+
+
+def run_review(facts: str) -> str:
+    return _run_mission(
+        build_review_agent(), "review", facts, weekly_review.MAX_REVIEW_CHARS
+    )
+
+
+def generate_weekly_review(*, refresh: bool = False) -> weekly_review.Review:
+    return weekly_review.generate_review(run_review, refresh=refresh)
 
 
 def generate_briefing(

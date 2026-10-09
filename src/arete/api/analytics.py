@@ -30,5 +30,6 @@ def update_session(session_id: int, body: SessionUpdate):
 
 
 @router.get("/sessions")
-def list_sessions(limit: int = 20, offset: int = 0):
-    return service.list_sessions(limit=limit, offset=offset)
+def list_sessions(limit: int = 20, offset: int = 0, for_model: bool = False):
+    """Recent sessions; ``for_model`` leaves out Strava's, for an AI client."""
+    return service.list_sessions(limit=limit, offset=offset, for_model=for_model)

@@ -2,6 +2,8 @@ import { cn } from '@/lib/utils';
 import type { UserSettings } from '@/lib/api';
 import { Field, Input } from '@/components/ui';
 import type { SettingsTabProps } from './types';
+import { RaceGoalsPanel } from './RaceGoalsPanel';
+import { TrainingPacesPanel } from './TrainingPacesPanel';
 
 /** "4:17" from 257 seconds per kilometre. */
 function paceToText(seconds: number | null): string {
@@ -43,6 +45,8 @@ export function GoalsTab({ settings, updateSetting }: SettingsTabProps) {
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-sans text-text-primary mb-4">OBJECTIFS</h2>
+
+      <RaceGoalsPanel />
 
       <div className="space-y-6">
         <div>
@@ -156,6 +160,8 @@ export function GoalsTab({ settings, updateSetting }: SettingsTabProps) {
             « Recalculer » dans l'onglet Système.
           </p>
         </div>
+
+        <TrainingPacesPanel />
 
         <Field
           label="Seuil de préparation (%)"

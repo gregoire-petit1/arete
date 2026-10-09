@@ -1,0 +1,172 @@
+import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ClipboardCheck, Loader2, RefreshCw } from 'lucide-react';
+import { Button, Panel } from '@/components/ui';
+import { planApi } from '@/lib/api';
+import { parseLocalDate } from '@/lib/dates';
+import { invalidateAfterSession, qk } from '@/lib/queryKeys';
+import { cn, readableError } from '@/lib/utils';
+import type { ReviewProposal, WeeklyReview } from '@/types';
+
+const STALE_TEXT = 'Séance modifiée depuis : proposition ignorée';
+
+const dayLabel = (iso: string) =>
+  parseLocalDate(iso).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+
+/** Proposals with a checkbox each; applied ones are checked, locked and marked. */
+export function ReviewProposals({
+  proposals,
+  applied,
+  stale,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  proposals: ReviewProposal[];
+  applied: number[];
+  stale: number[];
+  selected: number[];
+  disabled?: boolean;
+  onToggle: (index: number) => void;
+}) {
+  return (
+    <ul className="space-y-2">
+      {proposals.map((p) => {
+        const done = applied.includes(p.index);
+        return (
+          <li key={p.index} className={cn('rounded border border-text-muted/20 p-3', done && 'opacity-60')}>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="accent-neon-cyan mt-1"
+                checked={done || selected.includes(p.index)}
+                disabled={done || disabled}
+                onChange={() => onToggle(p.index)}
+              />
+              <span className="min-w-0 space-y-0.5">
+                <span className="block text-xs font-mono text-text-muted">
+                  {dayLabel(p.date)} · <span className="text-text-primary">{p.session}</span>
+                  {done && <span className="ml-2 text-success-green">Appliquée</span>}
+                </span>
+                <span className="block text-sm text-text-secondary">{p.reason}</span>
+                {stale.includes(p.index) && (
+                  <span className="block text-xs text-warning-orange">{STALE_TEXT}</span>
+                )}
+              </span>
+            </label>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function ReviewBody({ review, refreshing }: { review: WeeklyReview; refreshing: boolean }) {
+  const queryClient = useQueryClient();
+  const [stale, setStale] = useState<number[]>([]);
+  // Every proposal still open is ticked until the athlete changes the selection.
+  const [picked, setPicked] = useState<number[] | null>(null);
+  const open = review.proposals
+    .map((p) => p.index)
+    .filter((i) => !review.applied.includes(i) && !stale.includes(i));
+  const selected = (picked ?? open).filter((i) => open.includes(i));
+
+  const apply = useMutation({
+    mutationFn: (indices: number[]) => planApi.applyReview(review.id, indices),
+    onSuccess: (result) => {
+      setStale((prev) => [...new Set([...prev, ...result.stale])]);
+      setPicked(null);
+      invalidateAfterSession(queryClient);
+      queryClient.invalidateQueries({ queryKey: qk.weeklyReview });
+    },
+  });
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] font-mono text-text-muted">
+        Semaine du {parseLocalDate(review.week_start).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}
+        {' · '}
+        {review.source === 'agent' ? 'Le coach' : 'Calculé'}
+      </p>
+      <p className="text-sm text-text-primary whitespace-pre-line leading-relaxed">{review.text}</p>
+      {review.proposals.length > 0 && (
+        <>
+          <ReviewProposals
+            proposals={review.proposals}
+            applied={review.applied}
+            stale={stale}
+            selected={selected}
+            disabled={apply.isPending || refreshing}
+            onToggle={(index) =>
+              setPicked(selected.includes(index) ? selected.filter((i) => i !== index) : [...selected, index])
+            }
+          />
+          {apply.isError && <p className="text-xs text-danger-red">{readableError(apply.error)}</p>}
+          {open.length > 0 && (
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                loading={apply.isPending}
+                disabled={selected.length === 0 || refreshing}
+                onClick={() => apply.mutate(selected)}
+              >
+                Appliquer
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Last week's review: written on demand (the coach may take a minute), applied by choice. */
+export function WeeklyReviewPanel() {
+  const queryClient = useQueryClient();
+  const review = useQuery({ queryKey: qk.weeklyReview, queryFn: planApi.getReview });
+  const write = useMutation({
+    mutationFn: (refresh: boolean) => planApi.writeReview(refresh),
+    onSuccess: (written) => queryClient.setQueryData(qk.weeklyReview, written),
+  });
+
+  return (
+    <Panel
+      className="mb-4 sm:mb-8"
+      delay={0.1}
+      title={
+        <span className="flex items-center gap-2">
+          <ClipboardCheck className="size-4 text-neon-purple" /> Bilan de la semaine
+        </span>
+      }
+    >
+      {review.isLoading && <p className="text-sm text-text-muted">Chargement du bilan…</p>}
+      {review.isError && <p className="text-sm text-danger-red">Bilan indisponible.</p>}
+      {write.isPending && (
+        <p role="status" className="mb-3 flex items-center gap-2 text-sm text-text-muted">
+          <Loader2 className="size-4 animate-spin text-neon-purple" />
+          Le coach fait le bilan de la semaine passée… cela peut prendre une minute.
+        </p>
+      )}
+      {write.isError && <p className="mb-3 text-xs text-danger-red">{readableError(write.error)}</p>}
+
+      {review.data === null && !write.isPending && (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-text-muted">Pas encore de bilan pour la semaine passée.</p>
+          <Button variant="purple" size="sm" onClick={() => write.mutate(false)}>
+            Faire le bilan
+          </Button>
+        </div>
+      )}
+      {review.data && (
+        <>
+          <ReviewBody key={review.data.id} review={review.data} refreshing={write.isPending} />
+          <div className="mt-3 flex justify-end">
+            <Button variant="ghost" size="sm" disabled={write.isPending} onClick={() => write.mutate(true)}>
+              <RefreshCw className="size-3.5" /> Refaire le bilan
+            </Button>
+          </div>
+        </>
+      )}
+    </Panel>
+  );
+}

@@ -152,6 +152,7 @@ class PlannedSession:
     garmin_workout_id: str | None = None  # the copy scheduled on Garmin's calendar
     garmin_schedule_id: str | None = None
     garmin_pushed_at: datetime | None = None
+    goal_id: int | None = None  # set when a goal's plan generated it
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for DB insertion."""

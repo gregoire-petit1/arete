@@ -54,7 +54,7 @@ class AgentContext:
 
     source: dict[str, Any] = field(default_factory=dict)
     # Selected by the server entrypoint, never from panel_context or messages.
-    profile: Literal["chat", "briefing", "feedback"] = "chat"
+    profile: Literal["chat", "briefing", "feedback", "review"] = "chat"
     resolved_profile: AgentProfile | None = field(default=None, init=False, repr=False)
     calendar: CalendarService | None = field(default=None, init=False, repr=False)
     thread_id: str | None = None

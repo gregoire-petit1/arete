@@ -156,7 +156,7 @@ The provider adapter uses Vercel Connect for credentials and Google Calendar for
 operations. Only the HTTP decision endpoint approves writes; the model has reads
 and proposal tools. The browser's approval executes the stored arguments directly.
 
-Migration 14 persists connection selections, consent hashes, and a one-shot action
+Migration 17 persists connection selections, consent hashes, and a one-shot action
 registry, not conversation history. A `calendar_action` SSE event carries only
 an action ID. Browser storage keeps that ID; cards reload the authoritative
 proposal and outcome from the API. Settings changes invalidate pending actions,

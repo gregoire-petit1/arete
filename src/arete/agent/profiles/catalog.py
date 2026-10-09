@@ -4,6 +4,7 @@ from arete.agent.profiles.models import AgentProfile, ProfileId
 from arete.agent.prompts.briefing import BRIEFING_PROMPT
 from arete.agent.prompts.coach import CHAT_INSTRUCTIONS
 from arete.agent.prompts.session_feedback import FEEDBACK_PROMPT
+from arete.agent.prompts.weekly_review import REVIEW_PROMPT
 
 PROFILES: dict[ProfileId, AgentProfile] = {
     "chat": AgentProfile(
@@ -24,6 +25,7 @@ PROFILES: dict[ProfileId, AgentProfile] = {
     # no tool is bound, the server reads the data and files the journal.
     "briefing": AgentProfile("briefing", "arete_briefing", BRIEFING_PROMPT, ()),
     "feedback": AgentProfile("feedback", "arete_session_feedback", FEEDBACK_PROMPT, ()),
+    "review": AgentProfile("review", "arete_weekly_review", REVIEW_PROMPT, ()),
 }
 
 

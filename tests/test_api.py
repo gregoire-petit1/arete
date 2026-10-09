@@ -44,11 +44,16 @@ class TestCronDailySync:
         monkeypatch.setattr(scheduler, "daily_sync", lambda: {"garmin": "ok"})
         monkeypatch.setattr(scheduler, "record_run", recorded.append)
         monkeypatch.setattr(scheduler, "write_daily_briefing", lambda: "rules")
+        monkeypatch.setattr(scheduler, "write_weekly_review", lambda: "not monday")
         response = client.get(
             "/cron/daily-sync", headers={"Authorization": "Bearer right"}
         )
         assert response.status_code == 200
-        assert response.json() == {"garmin": "ok", "briefing": "rules"}
+        assert response.json() == {
+            "garmin": "ok",
+            "briefing": "rules",
+            "review": "not monday",
+        }
         assert len(recorded) == 1
 
 

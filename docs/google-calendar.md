@@ -12,9 +12,11 @@ credentials never enter model context or browser storage.
 2. Create a **development-only** Google connector:
    `vercel connect create google --name arete-calendar-dev`.
    Follow the CLI's Google OAuth setup; if a Google Cloud client is requested,
-   enable Calendar API, configure the consent audience, and register the redirect
-   URI supplied by Connect. Arete's return URL is not Google's OAuth callback.
-   Keep the client secret in Connect.
+   enable Calendar API, configure the consent audience, and register Connect's
+   redirect URI `https://connect.vercel.com/callback` on a **Web application**
+   client. Arete's return URL is not Google's OAuth callback. Keep the client
+   secret in Connect. The connector has no default scopes: a manual
+   `vercel connect token` must pass `--scopes`; Arete sends them on each request.
 3. Allow the connector only in the project's Development environment. Request:
    `https://www.googleapis.com/auth/calendar.calendarlist.readonly`,
    `https://www.googleapis.com/auth/calendar.events`, and
@@ -79,7 +81,7 @@ days, 500 events/intervals and 10 pages; overflow is an error, not partial conte
 Tool results use the existing 32,000-character limit and complete-request context
 budget. No auxiliary model calls or automatic follow-up generation are added.
 
-Migration 14 adds connection preferences, a hashed expiring consent transaction,
+Migration 17 adds connection preferences, a hashed expiring consent transaction,
 and proposed actions with outcomes. No Google access/refresh token is stored in
 DuckDB. Each proposal is bounded to 10,000 characters and at most 100 live pending
 proposals exist per connection. Actions older than 30 days are removed when a new
