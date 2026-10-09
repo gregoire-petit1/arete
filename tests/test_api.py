@@ -14,6 +14,13 @@ class TestHealth:
         assert data["status"] == "ok"
         assert "database" in data
 
+    def test_health_reports_the_schema_version(self, client: TestClient):
+        from arete.dataio.init_duckdb import MIGRATIONS
+
+        data = client.get("/health").json()
+        assert data["database"] == "connected"
+        assert data["schema_version"] == MIGRATIONS[-1][0]
+
 
 class TestCronDailySync:
     """Vercel Cron triggers the daily sync through /cron/daily-sync."""

@@ -25,7 +25,6 @@ export function SystemTab() {
   const { data: syncStatus, isLoading: syncLoading, refetch: refetchSync } = useQuery({
     queryKey: ['syncStatus'],
     queryFn: garminApi.getSyncStatus,
-    refetchInterval: 30000,
     retry: false,
   });
 

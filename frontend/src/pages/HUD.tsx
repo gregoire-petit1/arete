@@ -64,13 +64,11 @@ export function DashboardPage() {
   } = useQuery({
     queryKey: qk.playerStats,
     queryFn: metricsApi.getPlayerStats,
-    refetchInterval: 60000,
   });
 
   const { data: fitness } = useQuery({
     queryKey: qk.fitness,
     queryFn: metricsApi.getFitness,
-    refetchInterval: 60000,
   });
 
   const { data: workload } = useQuery({ queryKey: qk.workload, queryFn: metricsApi.getWorkload });
@@ -78,7 +76,6 @@ export function DashboardPage() {
   const { data: healthData } = useQuery({
     queryKey: qk.healthDaily(today),
     queryFn: () => garminHealthApi.getDaily(today),
-    refetchInterval: 60000,
     retry: false,
   });
 

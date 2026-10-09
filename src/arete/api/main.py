@@ -61,15 +61,23 @@ app.add_middleware(MirrorMiddleware)
 
 @app.get("/health")
 def health():
-    """Health check endpoint with database status."""
+    """Health check endpoint with database status.
+
+    Reads a real table rather than ``SELECT 1``, which DuckDB answers locally:
+    the probe must reach (and so keep awake) the remote database.
+    """
     db_status = "connected"
+    schema_version = None
     try:
         with db_connection() as con:
-            con.execute("SELECT 1").fetchone()
+            row = con.execute(
+                "SELECT COALESCE(MAX(version), 0) FROM app.schema_version"
+            ).fetchone()
+            schema_version = row[0] if row else None
     except Exception as e:
         logger.warning("DuckDB health check failed: %s", e)
         db_status = "disconnected"
-    return {"status": "ok", "database": db_status}
+    return {"status": "ok", "database": db_status, "schema_version": schema_version}
 
 
 @app.get("/sync/status")
