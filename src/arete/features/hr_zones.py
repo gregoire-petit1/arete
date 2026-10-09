@@ -83,6 +83,21 @@ class ZoneModel:
                 totals[f"z{self.zone_of(hr)}"] += int(round(seconds))
         return totals
 
+    def target_range(self, zone: int) -> tuple[int, int]:
+        """A closed bpm range to aim at for zone 1-5 (a planned "Z2").
+
+        The outer zones are open-ended; each gets the width of its neighbour,
+        so a planned Z1 or Z5 still has a range a watch can display.
+        """
+        if not 1 <= zone <= 5:
+            raise ValueError(f"zone {zone}")
+        b = self.boundaries
+        if zone == 1:
+            return b[0] - (b[1] - b[0]), b[0] - 1
+        if zone == 5:
+            return b[3], b[3] + (b[3] - b[2])
+        return b[zone - 2], b[zone - 1] - 1
+
     def ranges(self) -> list[tuple[int, int | None]]:
         """Heart-rate span of each zone; the last one is open-ended."""
         low = 0

@@ -137,3 +137,85 @@ def test_the_api_lists_adapts_and_reverts(tempo, router_client):
     assert client.post(f"/plan/decisions/{decision_id}/revert").status_code == 200
     assert client.post(f"/plan/decisions/{decision_id}/revert").status_code == 409
     assert client.post("/plan/decisions/999999/revert").status_code == 404
+
+
+def _garmin():
+    from unittest.mock import MagicMock
+
+    client = MagicMock()
+    client.upload_workout.side_effect = [{"workoutId": 1}, {"workoutId": 2}]
+    client.schedule_workout.return_value = {"workoutScheduleId": 9}
+    return client
+
+
+def test_push_stores_the_ids_and_a_second_push_replaces_the_copy(tempo):
+    client = _garmin()
+    first = plan_adaptation.push_session(client, tempo)
+    assert first["garmin_workout_id"] == "1"
+    session = GarminRepository().get_planned_session(tempo)
+    assert session is not None and session.garmin_pushed_at is not None
+    plan_adaptation.push_session(client, tempo)
+    client.delete_workout.assert_called_once_with("1")
+    client.unschedule_workout.assert_called_once_with("9")
+    session = GarminRepository().get_planned_session(tempo)
+    assert session is not None and session.garmin_workout_id == "2"
+
+
+def test_a_strength_session_is_not_pushable():
+    from arete.garmin.workout_structure import NotPushable
+
+    repo = GarminRepository()
+    session_id = repo.create_planned_session(
+        PlannedSession(
+            date=DAY,
+            sport="strength",
+            session_type=SessionType.STRENGTH,
+            target_duration_min=60,
+        )
+    )
+    try:
+        with pytest.raises(NotPushable):
+            plan_adaptation.push_session(_garmin(), session_id)
+        assert plan_adaptation.structure_preview(session_id)["pushable"] is False
+    finally:
+        repo.delete_planned_session(session_id)
+
+
+def test_the_daily_push_sends_once_and_only_when_enabled(tempo):
+    client = _garmin()
+    with patch(
+        "arete.services.plan_adaptation.get_user_settings",
+        return_value={"push_to_garmin_enabled": False},
+    ):
+        assert plan_adaptation.push_today(client, DAY) == "disabled"
+    with patch(
+        "arete.services.plan_adaptation.get_user_settings",
+        return_value={"push_to_garmin_enabled": True},
+    ):
+        assert plan_adaptation.push_today(client, DAY).startswith("1 sent")
+        assert plan_adaptation.push_today(client, DAY).startswith("0 sent")
+
+
+def test_an_adaptation_after_a_push_marks_the_copy_stale(tempo):
+    plan_adaptation.push_session(_garmin(), tempo)
+    _adapt(70.0)
+    session = GarminRepository().get_planned_session(tempo)
+    assert session is not None
+    assert session.garmin_pushed_at is None and session.garmin_workout_id == "1"
+
+
+def test_the_push_routes(tempo, router_client):
+    from arete.api.garmin import router
+
+    client = router_client(router)
+    preview = client.get(f"/garmin/planned/{tempo}/structure").json()
+    assert preview["pushable"] is True and "Z4" in preview["text"]
+    garmin = _garmin()
+    garmin.has_tokens.return_value = False
+    with patch("arete.garmin.client.GarminClient", return_value=garmin):
+        assert client.post(f"/garmin/planned/{tempo}/push").status_code == 401
+        garmin.has_tokens.return_value = True
+        body = client.post(f"/garmin/planned/{tempo}/push").json()
+        assert body["garmin_workout_id"] == "1"
+        garmin.upload_workout.side_effect = RuntimeError("400 Bad Request")
+        assert client.post(f"/garmin/planned/{tempo}/push").status_code == 502
