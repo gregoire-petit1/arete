@@ -107,8 +107,11 @@ do not add tests that merely repeat an implementation. Live model evaluations in
   Docker stack (`ARETE_DB=md:arete`). Read it through the HTTP API rather than
   scripts. A local DuckDB file (`make dev`, tests) allows one writer: a script that
   opens it while a backend runs makes the API answer 500.
-- Deploy previews with `vercel deploy --archive=tgz`: `.vercelignore` is an
-  allowlist, and loose uploads hit Vercel's 5000-file daily quota.
+- A pull request gets its preview from the CI `preview` job once the checks pass,
+  built from the branch merged into main and linked in a PR comment; Vercel's Git
+  integration deploys `main` only. By hand, use `vercel deploy --archive=tgz`:
+  `.vercelignore` is an allowlist, and loose uploads hit Vercel's 5000-file daily
+  quota.
 - `data/`, Garmin tokens, FIT files, `PROG_*.md` and `.context/` stay untracked.
   Secrets live in `.env`; use `.env.example` to discover configuration names.
 - UI text is French. Code, comments and commit messages are English.

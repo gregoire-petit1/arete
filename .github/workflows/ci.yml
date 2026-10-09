@@ -68,3 +68,44 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  # Previews deploy here, once every check above is green, instead of on
+  # each push from Vercel's Git integration (`git.deploymentEnabled` in
+  # vercel.json keeps that for main only). A pull_request run checks out
+  # the merge of the branch into main, so the preview is what merging would
+  # ship; a conflicting branch has no merge commit, no run, no preview.
+  preview:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    needs: [test, typecheck, frontend]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm install --global vercel@63.1.0
+      - name: Deploy the preview
+        id: deploy
+        run: |
+          url=$(vercel deploy --archive=tgz --yes --token "$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Link the preview on the pull request
+        run: |
+          gh pr comment "$PR" --edit-last --create-if-none --body \
+            "Preview de ${SHA::7} (branche fusionnée dans main) : $URL"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          URL: ${{ steps.deploy.outputs.url }}
