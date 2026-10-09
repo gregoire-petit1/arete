@@ -42,7 +42,10 @@ jobs:
 
       - name: Install OpenWiki
         timeout-minutes: 5
-        run: npm install --global openwiki@0.7.1
+        # Resolve dependencies as of this OpenWiki release: newer AWS SDK
+        # packages currently require credential-provider-env versions absent
+        # from npm. Advance the cutoff only after a clean installation test.
+        run: npm install --global --before=2026-10-07T00:00:00Z openwiki@0.7.1
 
       - name: Update the wiki
         timeout-minutes: 25
