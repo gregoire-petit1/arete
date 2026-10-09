@@ -59,41 +59,63 @@ def test_unchanged_files_are_not_written_again(store, tmp_path, monkeypatch):
     root = _use_data_dir(monkeypatch, tmp_path / "data")
     mirror.hydrate()
     root.mkdir()
-    (root / "misses.jsonl").write_text("a\n")
+    (root / "dictation_misses.jsonl").write_text("a\n")
     mirror.flush()
     assert mirror.flush() == 0
 
 
 def test_stale_copy_does_not_overwrite_another_instance(store, tmp_path, monkeypatch):
     root = _use_data_dir(monkeypatch, tmp_path / "data")
-    root.mkdir()
-    (root / "notes.md").write_text("v1")
+    (root / "agent/memory").mkdir(parents=True)
+    (root / "agent/memory/notes.md").write_text("v1")
     mirror.hydrate()
     mirror.flush()
     with store() as con:  # another instance stores v2 meanwhile
-        con.execute("UPDATE app.files SET content = 'v2' WHERE path = 'notes.md'")
+        con.execute(
+            "UPDATE app.files SET content = 'v2' WHERE path = 'agent/memory/notes.md'"
+        )
     assert mirror.flush() == 0
-    assert _stored(store) == {"notes.md": b"v2"}
+    assert _stored(store) == {"agent/memory/notes.md": b"v2"}
 
 
 def test_deleted_files_are_removed(store, tmp_path, monkeypatch):
     root = _use_data_dir(monkeypatch, tmp_path / "data")
     root.mkdir()
-    (root / "sessions.md").write_text("old")
+    (root / "last_daily_sync.json").write_text("{}")
     mirror.hydrate()
     mirror.flush()
-    (root / "sessions.md").unlink()
+    (root / "last_daily_sync.json").unlink()
     assert mirror.flush() == 1
     assert _stored(store) == {}
 
 
-def test_fit_files_stay_out(store, tmp_path, monkeypatch):
+def test_a_file_outside_the_list_is_neither_hashed_nor_stored(
+    store, tmp_path, monkeypatch
+):
     root = _use_data_dir(monkeypatch, tmp_path / "data")
     mirror.hydrate()
     config.fit_dir.mkdir(parents=True)
     (config.fit_dir / "1.fit").write_bytes(b"\x00")
+    (root / "arete.duckdb").write_bytes(b"\x00")
+    hashed: list[bytes] = []
+    monkeypatch.setattr(mirror, "_digest", lambda data: hashed.append(data) or "")
     assert mirror.flush() == 0
-    assert root.exists()
+    assert hashed == []
+    assert _stored(store) == {}
+
+
+def test_hydrate_leaves_foreign_rows_on_the_server(store, tmp_path, monkeypatch):
+    root = _use_data_dir(monkeypatch, tmp_path / "data")
+    with store() as con:
+        con.execute(mirror.DDL)
+        con.execute(
+            "INSERT INTO app.files (path, content) VALUES "
+            "('arete.duckdb', 'big'), ('garmin_tokens/garmin_tokens.json', '{}')"
+        )
+    assert mirror.hydrate() == 1
+    assert not (root / "arete.duckdb").exists()
+    mirror.flush()
+    assert set(_stored(store)) == {"arete.duckdb", "garmin_tokens/garmin_tokens.json"}
 
 
 def test_middleware_is_inert_on_a_local_database(monkeypatch):

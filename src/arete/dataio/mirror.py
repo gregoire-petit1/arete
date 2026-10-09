@@ -1,14 +1,16 @@
 """Keep the data directory in the database when the database is remote.
 
 On Vercel only ``/tmp`` is writable and it dies with the instance, yet the
-Garmin tokens, the coach's memory and transcripts, and the dictation misses
-must outlive it. Code keeps writing plain files under ``config.data_dir``;
-this module copies them into ``app.files`` after each request and back onto
-disk the first time an instance serves one.
+Garmin tokens, the coach's memory, the dictation misses and the daily sync
+marker must outlive it. Code keeps writing plain files under
+``config.data_dir``; this module copies them into ``app.files`` after each
+request and back onto disk the first time an instance serves one.
 
 An instance only writes back the files it changed itself (compared with what
 it last read or wrote), so two instances do not overwrite each other's work
-with stale copies. FIT files are left out: large, and re-downloadable.
+with stale copies. Only the paths listed below are mirrored: anything else in
+the data directory (FIT files, a local database file, plans) is neither read
+nor hashed, and foreign rows already in ``app.files`` stay on the server.
 """
 
 from __future__ import annotations
@@ -28,7 +30,13 @@ from arete.dataio.db import connect
 
 logger = logging.getLogger(__name__)
 
-EXCLUDED_DIRS = frozenset({"fit_files"})
+MIRRORED_DIRS = ("garmin_tokens", "agent/memory")
+MIRRORED_FILES = ("dictation_misses.jsonl", "last_daily_sync.json")
+
+_MIRRORED_PREDICATE = " OR ".join(
+    [f"starts_with(path, '{directory}/')" for directory in MIRRORED_DIRS]
+    + [f"path IN ({', '.join(repr(name) for name in MIRRORED_FILES)})"]
+)
 
 DDL = """
 CREATE SCHEMA IF NOT EXISTS app;
@@ -50,12 +58,13 @@ def _digest(data: bytes) -> str:
 
 
 def _local_files(root: Path) -> Iterator[tuple[str, Path]]:
-    if not root.is_dir():
-        return
-    for path in root.rglob("*"):
-        relative = path.relative_to(root)
-        if path.is_file() and relative.parts[0] not in EXCLUDED_DIRS:
-            yield relative.as_posix(), path
+    for name in MIRRORED_FILES:
+        if (root / name).is_file():
+            yield name, root / name
+    for directory in MIRRORED_DIRS:
+        for path in (root / directory).rglob("*"):
+            if path.is_file():
+                yield path.relative_to(root).as_posix(), path
 
 
 def hydrate() -> int:
@@ -67,13 +76,16 @@ def hydrate() -> int:
         root = config.data_dir
         with closing(connect()) as con:
             con.execute(DDL)
-            rows = con.execute("SELECT path, content FROM app.files").fetchall()
+            rows = con.execute(
+                f"SELECT path, content FROM app.files WHERE {_MIRRORED_PREDICATE}"
+            ).fetchall()
         for relative, content in rows:
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
             _known[relative] = _digest(content)
         _hydrated = True
+        logger.info("Hydrated %d files from the database", len(rows))
         return len(rows)
 
 
