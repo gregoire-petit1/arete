@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import date, timedelta
+from typing import NamedTuple
 
 import duckdb
 
@@ -108,21 +109,6 @@ def daily_loads(
     ]
 
 
-def weekly_tss(
-    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
-) -> float:
-    """Total TSS between two dates (inclusive)."""
-    row = con.execute(
-        f"""
-        SELECT COALESCE(SUM({TSS_EXPR}), 0)
-        FROM app.actual_sessions
-        WHERE date >= ? AND date <= ? AND user_id = ?
-        """,
-        [start, end, user_id],
-    ).fetchone()
-    return float(row[0]) if row else 0.0
-
-
 def daily_tss_by_date(
     con: duckdb.DuckDBPyConnection, user_id: int = 1
 ) -> dict[date, float]:
@@ -200,70 +186,35 @@ def earliest_session_date(
 
 
 # --------------------------------------------------------------------------- #
-# Analytics overview: one SELECT per card, all over the same [start, end]
+# Analytics overview: one wide SELECT, the cards slice it in Python
 # --------------------------------------------------------------------------- #
-def volume_rows(
+class OverviewRow(NamedTuple):
+    date: date
+    sport: str
+    duration_sec: int  # 0 when unknown
+    distance_m: float | None
+    hr_zones_json: str | None
+    avg_pace_sec_km: int | None
+    avg_hr: int | None
+    rpe: int | None
+    tss: float
+
+
+def overview_rows(
     con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
-) -> list[tuple[date, str, int, float | None]]:
-    """(date, sport, duration_sec, distance_m) for every session in the range."""
-    return con.execute(
-        """
-        SELECT date, sport, COALESCE(duration_sec, 0), distance_m
-        FROM app.actual_sessions
-        WHERE date >= ? AND date <= ? AND user_id = ?
-        ORDER BY date ASC
-        """,
-        [start, end, user_id],
-    ).fetchall()
-
-
-def zone_rows(
-    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
-) -> list[tuple[date, str]]:
-    """(date, hr_zones_json) for sessions that recorded heart-rate zones."""
-    return con.execute(
-        """
-        SELECT date, hr_zones_json
-        FROM app.actual_sessions
-        WHERE date >= ? AND date <= ? AND user_id = ?
-          AND hr_zones_json IS NOT NULL
-        ORDER BY date ASC
-        """,
-        [start, end, user_id],
-    ).fetchall()
-
-
-def sport_totals(
-    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
-) -> list[tuple[str, float, int]]:
-    """(sport, hours, sessions) aggregated over the range."""
-    return con.execute(
-        """
-        SELECT sport, SUM(COALESCE(duration_sec, 0)) / 3600.0, COUNT(*)
-        FROM app.actual_sessions
-        WHERE date >= ? AND date <= ? AND user_id = ?
-        GROUP BY sport
-        ORDER BY 2 DESC
-        """,
-        [start, end, user_id],
-    ).fetchall()
-
-
-def pace_rows(
-    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
-) -> list[tuple[date, int, float | None, int]]:
-    """(date, avg_pace_sec_km, distance_m, duration_sec) for runs with a pace."""
-    return con.execute(
+) -> list[OverviewRow]:
+    """Every session in the range with the columns the overview cards read."""
+    rows = con.execute(
         f"""
-        SELECT date, avg_pace_sec_km, distance_m, COALESCE(duration_sec, 0)
+        SELECT date, sport, COALESCE(duration_sec, 0), distance_m, hr_zones_json,
+               avg_pace_sec_km, avg_hr, rpe, {TSS_EXPR}
         FROM app.actual_sessions
         WHERE date >= ? AND date <= ? AND user_id = ?
-          AND sport IN ({sql_in(RUNNING_SPORTS)})
-          AND avg_pace_sec_km IS NOT NULL
-        ORDER BY date ASC
+        ORDER BY date ASC, id ASC
         """,
         [start, end, user_id],
     ).fetchall()
+    return [OverviewRow(*row) for row in rows]
 
 
 def drift_rows(
@@ -286,25 +237,6 @@ def drift_rows(
         ORDER BY date ASC
         """,
         [start, end, user_id, min_duration_sec],
-    ).fetchall()
-
-
-def efficiency_rows(
-    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
-) -> list[tuple[date, float, float, int]]:
-    """(date, avg_hr, avg_pace_sec_km, duration_sec) for runs with HR and pace."""
-    return con.execute(
-        f"""
-        SELECT date, avg_hr, avg_pace_sec_km, COALESCE(duration_sec, 0)
-        FROM app.actual_sessions
-        WHERE date >= ? AND date <= ? AND user_id = ?
-          AND sport IN ({sql_in(RUNNING_SPORTS)})
-          AND avg_hr IS NOT NULL
-          AND avg_pace_sec_km IS NOT NULL
-          AND avg_pace_sec_km > 0
-        ORDER BY date ASC
-        """,
-        [start, end, user_id],
     ).fetchall()
 
 

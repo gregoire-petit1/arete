@@ -372,6 +372,12 @@ class TestGarminRepository:
         assert "adherence_rate" in summary
         assert {"planned_due", "completed", "skipped"} <= set(summary)
 
+    def test_summary_costs_two_statements(self, repo, statement_log):
+        connect = repo._get_connection
+        repo._get_connection = lambda: statement_log.wrap(connect())
+        repo.get_matches_summary(date.today() - timedelta(days=7), date.today())
+        assert len(statement_log) == 2
+
     def test_summary_counts_only_due_sessions(self, repo):
         """Future planned sessions do not lower the adherence rate; past pending ones are skipped."""
         from datetime import date as _date
@@ -506,3 +512,22 @@ class TestGarminIntegration:
         repo.delete_actual_session(actual_id)
         for pid in planned_ids:
             repo.delete_planned_session(pid)
+
+
+def test_fit_upload_parses_off_the_event_loop(router_client):
+    import asyncio
+    from unittest.mock import patch
+
+    from arete.api.garmin import router
+
+    def no_running_loop(*_args, **_kwargs):
+        with pytest.raises(RuntimeError):
+            asyncio.get_running_loop()  # a worker thread has none
+        raise ValueError("not a FIT file")
+
+    with patch("arete.api.garmin.FITParser.parse_stream", side_effect=no_running_loop):
+        resp = router_client(router).post(
+            "/garmin/upload-fit",
+            files={"file": ("a.fit", b"x", "application/octet-stream")},
+        )
+    assert resp.status_code == 400

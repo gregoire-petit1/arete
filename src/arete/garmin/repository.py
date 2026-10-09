@@ -563,39 +563,31 @@ class GarminRepository:
         """
         today = date.today()
         end_due = min(end, today) if end else today
+        due = "date <= ?" + (" AND date >= ?" if start else "")
+        due_params: list = [end_due] + ([start] if start else [])
         conn = self._get_connection()
         try:
-
-            def count(sql: str, params: list) -> int:
-                row = conn.execute(sql, params).fetchone()
-                return int(row[0]) if row else 0
-
-            due_where = "date <= ?" + (" AND date >= ?" if start else "")
-            due_params: list = [end_due] + ([start] if start else [])
-            planned_due = count(
-                f"SELECT COUNT(*) FROM planned_sessions WHERE {due_where}", due_params
-            )
-            completed = count(
-                f"SELECT COUNT(*) FROM planned_sessions WHERE {due_where} AND status = 'completed'",
+            planned_due, completed, skipped, total_planned = conn.execute(
+                f"""
+                SELECT COUNT(*) FILTER (WHERE {due}),
+                       COUNT(*) FILTER (WHERE {due} AND status = 'completed'),
+                       COUNT(*) FILTER (
+                           WHERE {due} AND status = 'pending' AND date < ?
+                       ),
+                       COUNT(*)
+                FROM planned_sessions
+                """,
+                [*due_params, *due_params, *due_params, today],
+            ).fetchone() or (0, 0, 0, 0)
+            total_actual, total_matched, total_unmatched = conn.execute(
+                f"""
+                SELECT COUNT(*),
+                       COUNT(*) FILTER (WHERE planned_session_id IS NOT NULL),
+                       COUNT(*) FILTER (WHERE planned_session_id IS NULL AND {due})
+                FROM actual_sessions
+                """,
                 due_params,
-            )
-            skipped = count(
-                f"SELECT COUNT(*) FROM planned_sessions WHERE {due_where} AND status = 'pending' AND date < ?",
-                [*due_params, today],
-            )
-            total_planned = count("SELECT COUNT(*) FROM planned_sessions", [])
-            total_actual = count("SELECT COUNT(*) FROM actual_sessions", [])
-            total_matched = count(
-                "SELECT COUNT(*) FROM actual_sessions WHERE planned_session_id IS NOT NULL",
-                [],
-            )
-            unmatched_where = "planned_session_id IS NULL AND date <= ?" + (
-                " AND date >= ?" if start else ""
-            )
-            total_unmatched = count(
-                f"SELECT COUNT(*) FROM actual_sessions WHERE {unmatched_where}",
-                due_params,
-            )
+            ).fetchone() or (0, 0, 0)
         finally:
             conn.close()
 

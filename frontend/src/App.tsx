@@ -1,16 +1,15 @@
-import { useCallback, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useRef, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Navigation, ErrorBoundary } from '@/components';
 import { AgentSidePanel } from '@/components/AgentSidePanel';
 import { SettingsProvider } from '@/contexts';
-import {
-  DashboardPage,
-  PlanningPage,
-  AnalyticsPage,
-  LogPage,
-  SettingsPage,
-} from '@/pages';
+import { DashboardPage, PlanningPage, LogPage, SettingsPage } from '@/pages';
+
+// recharts is most of the bundle and only the Analytics page draws charts.
+const AnalyticsPage = lazy(() =>
+  import('@/pages/Analytics').then((m) => ({ default: m.AnalyticsPage })),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,7 +52,14 @@ function App() {
                 <Routes>
                   <Route path="/" element={<DashboardPage />} />
                   <Route path="/planning" element={<PlanningPage />} />
-                  <Route path="/analytics" element={<AnalyticsPage />} />
+                  <Route
+                    path="/analytics"
+                    element={
+                      <Suspense fallback={null}>
+                        <AnalyticsPage />
+                      </Suspense>
+                    }
+                  />
                   <Route path="/log" element={<LogPage />} />
                   <Route path="/settings" element={<SettingsPage />} />
                   {/* Legacy redirects */}

@@ -3,11 +3,11 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Bot, Calendar, Dumbbell, Loader2, Zap } from 'lucide-react';
 import { LoadingState, MetricCard, OffPlanRow, SessionCard, strengthAsActual } from '@/components';
 import { Panel } from '@/components/ui';
-import { garminApi, garminHealthApi, metricsApi, settingsApi, strengthApi, tipsApi } from '@/lib/api';
+import { garminApi, garminHealthApi, metricsApi, settingsApi, tipsApi } from '@/lib/api';
 import { formatHoursMinutes } from '@/lib/fr';
 import { cn, getZoneColor } from '@/lib/utils';
 import { toLocalISODate } from '@/lib/dates';
-import { qk } from '@/lib/queryKeys';
+import { qk, strengthSessionsQuery } from '@/lib/queryKeys';
 import { linkDay } from '@/lib/sessionMatch';
 
 /** Readiness / stress traffic lights as Tailwind classes (theme colors).
@@ -50,8 +50,7 @@ export function DashboardPage() {
     queryFn: () => garminApi.getActual(today, today),
   });
   const { data: todayStrength } = useQuery({
-    queryKey: qk.strengthSessions(20),
-    queryFn: () => strengthApi.getSessions(20),
+    ...strengthSessionsQuery,
     select: (data) => data.filter((s) => s.date === today).map(strengthAsActual),
   });
   const todayLink = linkDay(today, allPlanned ?? [], [...(todayActual ?? []), ...(todayStrength ?? [])], today);

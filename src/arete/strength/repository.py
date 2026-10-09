@@ -586,17 +586,10 @@ class StrengthRepository:
             for row in results
         ]
 
-    def get_muscle_activity(
-        self,
-        start_date: date | None = None,
-        end_date: date | None = None,
-        secondary_weight: float = 0.5,
-    ) -> tuple[dict[str, float], dict[str, float], dict[str, date]]:
-        """Volume, working sets and last training day per stored muscle id.
-
-        Secondary muscles count for half the volume and half a set, the way the
-        heat map has always weighted them.
-        """
+    def muscle_set_rows(
+        self, start_date: date | None = None, end_date: date | None = None
+    ) -> list[tuple]:
+        """(date, primary muscle, secondary JSON, reps, kg) per working set."""
         conn = self._get_connection()
         query = """
             SELECT ss.date, e.primary_muscle, e.secondary_muscles_json,
@@ -617,32 +610,7 @@ class StrengthRepository:
 
         rows = conn.execute(query, params).fetchall()
         conn.close()
-
-        volume: dict[str, float] = {}
-        sets: dict[str, float] = {}
-        last: dict[str, date] = {}
-
-        def credit(muscle: str, day: date, kg: float, weight: float) -> None:
-            if not muscle:
-                return
-            volume[muscle] = volume.get(muscle, 0.0) + kg * weight
-            sets[muscle] = sets.get(muscle, 0.0) + weight
-            seen = last.get(muscle)
-            if seen is None or day > seen:
-                last[muscle] = day
-
-        for session_date, primary, secondary_json, reps, weight_kg in rows:
-            day = (
-                session_date
-                if isinstance(session_date, date)
-                else date.fromisoformat(str(session_date)[:10])
-            )
-            set_volume = (reps or 0) * (weight_kg or 0)
-            credit(primary, day, set_volume, 1.0)
-            for muscle in _parse_secondary(secondary_json):
-                credit(muscle, day, set_volume, secondary_weight)
-
-        return volume, sets, last
+        return rows
 
     def get_volume_by_muscle(
         self,
@@ -877,6 +845,47 @@ def _set_from_row(session_exercise_id: int, row: tuple) -> ExerciseSet:
         is_failure=row[9],
         notes=row[10],
     )
+
+
+def muscle_activity(
+    rows: list[tuple],
+    start_date: date,
+    end_date: date,
+    secondary_weight: float = 0.5,
+) -> tuple[dict[str, float], dict[str, float], dict[str, date]]:
+    """Volume, working sets and last training day per stored muscle id.
+
+    ``rows`` come from ``muscle_set_rows``; only those dated within
+    [start_date, end_date] count. Secondary muscles count for half the volume
+    and half a set, the way the heat map has always weighted them.
+    """
+    volume: dict[str, float] = {}
+    sets: dict[str, float] = {}
+    last: dict[str, date] = {}
+
+    def credit(muscle: str, day: date, kg: float, weight: float) -> None:
+        if not muscle:
+            return
+        volume[muscle] = volume.get(muscle, 0.0) + kg * weight
+        sets[muscle] = sets.get(muscle, 0.0) + weight
+        seen = last.get(muscle)
+        if seen is None or day > seen:
+            last[muscle] = day
+
+    for session_date, primary, secondary_json, reps, weight_kg in rows:
+        day = (
+            session_date
+            if isinstance(session_date, date)
+            else date.fromisoformat(str(session_date)[:10])
+        )
+        if not start_date <= day <= end_date:
+            continue
+        set_volume = (reps or 0) * (weight_kg or 0)
+        credit(primary, day, set_volume, 1.0)
+        for muscle in _parse_secondary(secondary_json):
+            credit(muscle, day, set_volume, secondary_weight)
+
+    return volume, sets, last
 
 
 def _parse_secondary(raw) -> list[str]:

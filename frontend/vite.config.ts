@@ -44,11 +44,16 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
+        // API calls and the Strava OAuth callback must reach the server,
+        // never the cached app shell.
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
             handler: "NetworkFirst",
             options: {
+              // Past 10 s offline-ish, serve the cached answer if any.
+              networkTimeoutSeconds: 10,
               cacheName: "api-cache",
               expiration: { maxEntries: 50, maxAgeSeconds: 300 },
             },

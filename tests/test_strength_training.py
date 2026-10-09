@@ -356,25 +356,14 @@ class TestStrengthRepository:
         assert listed == [strength_repo.get_session(i) for i in reversed(ids)]
         assert all(len(s.exercises) == 2 for s in listed)
 
-    def test_list_with_details_costs_three_statements(self, strength_repo):
+    def test_list_with_details_costs_three_statements(
+        self, strength_repo, statement_log
+    ):
         self._seed_sessions(strength_repo, 3)
-        statements: list[str] = []
         connect = strength_repo._get_connection
-
-        class Counting:
-            def __init__(self, con):
-                self._con = con
-
-            def execute(self, sql, *args):
-                statements.append(sql)
-                return self._con.execute(sql, *args)
-
-            def __getattr__(self, name):
-                return getattr(self._con, name)
-
-        strength_repo._get_connection = lambda: Counting(connect())
+        strength_repo._get_connection = lambda: statement_log.wrap(connect())
         strength_repo.list_sessions(start_date=date(2030, 1, 1), include_details=True)
-        assert len(statements) == 3
+        assert len(statement_log) == 3
 
     def test_exercise_history(self, strength_repo):
         """Test getting exercise history."""

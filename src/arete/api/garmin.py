@@ -264,7 +264,7 @@ def delete_planned_session(session_id: int):
 
 
 @router.post("/upload-fit", response_model=FITUploadResponse)
-async def upload_fit_file(
+def upload_fit_file(
     file: UploadFile = File(..., description="FIT file from Garmin device"),
     auto_match: bool = Query(
         True, description="Automatically match to planned session"
@@ -273,7 +273,9 @@ async def upload_fit_file(
     """Upload a FIT file and parse the activity.
 
     The activity is saved to the database and optionally matched
-    to a planned session based on date and activity type.
+    to a planned session based on date and activity type. A plain ``def``:
+    the FIT parse and the writes run in a worker thread, not on the event
+    loop every other request shares.
     """
     import io
     from pathlib import Path
@@ -286,7 +288,7 @@ async def upload_fit_file(
     content = bytearray()
     total_size = 0
 
-    while chunk := await file.read(8192):
+    while chunk := file.file.read(8192):
         total_size += len(chunk)
         if total_size > MAX_FIT_SIZE:
             raise HTTPException(status_code=413, detail="FIT file too large (max 10MB)")

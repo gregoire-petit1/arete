@@ -3,9 +3,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
 import { AdherenceBar, CalendarWeek, ErrorState, LoadingState, strengthAsActual } from '@/components';
 import { Button, Field, Input, Modal, ModalHeader, Panel, Textarea } from '@/components/ui';
-import { garminApi, settingsApi, strengthApi, type PlannedSessionCreate } from '@/lib/api';
+import { garminApi, settingsApi, type PlannedSessionCreate } from '@/lib/api';
 import { toLocalISODate } from '@/lib/dates';
-import { qk } from '@/lib/queryKeys';
+import { qk, strengthSessionsQuery } from '@/lib/queryKeys';
 import { weekStats } from '@/lib/sessionMatch';
 import { cn } from '@/lib/utils';
 import type { PlannedSession } from '@/types';
@@ -117,10 +117,7 @@ export function PlanningPage() {
     queryKey: qk.actual(weekStart, weekEnd),
     queryFn: () => garminApi.getActual(weekStart, weekEnd),
   });
-  const strengthQuery = useQuery({
-    queryKey: qk.strengthSessions(200),
-    queryFn: () => strengthApi.getSessions(200),
-  });
+  const strengthQuery = useQuery(strengthSessionsQuery);
   const { data: settings } = useQuery({ queryKey: qk.settings, queryFn: settingsApi.get });
 
   const afterChange = useCallback(() => {
