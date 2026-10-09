@@ -54,6 +54,7 @@ jobs:
 
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -68,6 +69,14 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failures
+          path: .context/browser-results
+          include-hidden-files: true
 
   # Previews deploy here, once every check above is green, instead of on
   # each push from Vercel's Git integration (`git.deploymentEnabled` in
@@ -80,6 +89,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     needs: [test, typecheck, frontend]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: write

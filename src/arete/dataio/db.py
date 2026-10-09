@@ -142,3 +142,16 @@ def db_connection(read_only: bool = False) -> Iterator[duckdb.DuckDBPyConnection
         yield con
     finally:
         con.close()
+
+
+@contextmanager
+def transaction() -> Iterator[duckdb.DuckDBPyConnection]:
+    """Do not replay transactions: their callers own idempotency decisions."""
+    with db_connection() as con:
+        con.execute("BEGIN TRANSACTION")
+        try:
+            yield con
+            con.execute("COMMIT")
+        except BaseException:
+            con.execute("ROLLBACK")
+            raise

@@ -10,17 +10,38 @@ interface ModalProps {
   children: ReactNode;
   /** Extra classes for the panel (width, max height...). */
   className?: string;
+  padded?: boolean;
+  label?: string;
 }
 
 /**
  * Overlay + glass panel with CSS enter/exit transitions.
  * Stays mounted for EXIT_MS after `open` turns false so the exit animation plays.
  */
-export function Modal({ open, onClose, children, className }: ModalProps) {
+export function Modal({ open, onClose, children, className, padded = true, label }: ModalProps) {
   // Selecting text inside the panel and releasing outside it used to close the
   // modal: the click lands on the overlay. Only a press that *starts* on the
   // overlay counts.
   const pressedOnOverlay = useRef(false);
+  const dialog = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open || !dialog.current) return;
+    const panel = dialog.current;
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusable = () => Array.from(panel.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, iframe, [tabindex="0"]')).filter(node => node.getClientRects().length > 0);
+    if (!panel.contains(document.activeElement)) (focusable()[0] ?? panel).focus();
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first) { event.preventDefault(); panel.focus(); }
+      else if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    panel.addEventListener('keydown', trap);
+    return () => { panel.removeEventListener('keydown', trap); if (previous?.isConnected) previous.focus(); };
+  }, [open]);
   // "Adjust state when a prop changes" pattern: detect the open -> closed edge during render.
   const [prevOpen, setPrevOpen] = useState(open);
   const [exiting, setExiting] = useState(false);
@@ -38,10 +59,15 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      const modals = document.querySelectorAll('[role="dialog"]');
+      if (e.key === 'Escape' && modals[modals.length - 1] === dialog.current) {
+        e.preventDefault();
+        e.stopImmediatePropagation(); // Escape closes this preview, not its parent coach.
+        onClose();
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [open, onClose]);
 
   if (!open && !exiting) return null;
@@ -62,10 +88,14 @@ export function Modal({ open, onClose, children, className }: ModalProps) {
       }}
     >
       <div
+        ref={dialog}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
+        aria-label={label}
         className={cn(
-          'glass-panel p-6 w-full',
+          'glass-panel w-full',
+          padded && 'p-6',
           closing ? 'animate-scale-out' : 'animate-scale-in',
           className
         )}

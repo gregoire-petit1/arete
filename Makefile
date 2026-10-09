@@ -15,7 +15,7 @@ FRONTEND_PORT ?= 5173
 BACKEND_CMD  = .venv/bin/uvicorn arete.api.main:app --app-dir src \
 	--host 127.0.0.1 --port $(BACKEND_PORT) --reload --reload-dir src
 # --strictPort: fail on a taken port instead of silently moving to another one.
-FRONTEND_CMD = cd frontend && VITE_API_TARGET=http://127.0.0.1:$(BACKEND_PORT) \
+FRONTEND_CMD = cd frontend && node scripts/prepare-ocr.mjs && VITE_API_TARGET=http://127.0.0.1:$(BACKEND_PORT) \
 	exec ./node_modules/.bin/vite --port $(FRONTEND_PORT) --strictPort
 
 .DEFAULT_GOAL := help

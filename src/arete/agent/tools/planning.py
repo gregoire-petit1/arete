@@ -2,6 +2,7 @@
 
 from langchain_core.tools import BaseTool, tool
 
+from arete.agent.tools.imports import inspect_import, prepare_import
 from arete.services import planning as service
 
 
@@ -116,4 +117,6 @@ PLANNING_TOOLS: list[BaseTool] = [
     update_planned_status,
     update_planned_session,
     delete_planned_session,
+    prepare_import,
+    inspect_import,
 ]

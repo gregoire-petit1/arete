@@ -22,6 +22,7 @@ export interface TextPart {
 }
 export type ChatPart = ToolPart | TextPart;
 export interface ChatMessage {
+  imports?: { id: string; version: number }[];
   role: 'user' | 'assistant';
   content: string;
   parts?: ChatPart[];
@@ -30,6 +31,7 @@ export interface ChatMessage {
   pending?: boolean;
 }
 export type StreamEvent =
+  | { type: 'import_preview'; id: string; version: number }
   | { type: 'token'; id: string; text: string }
   | { type: 'message'; id: string; text: string }
   | { type: 'tool_start'; id: string; name: string; args: Preview }
@@ -77,6 +79,7 @@ function isPreview(value: unknown): value is Preview {
 export function parseEvent(data: string): StreamEvent {
   const e: unknown = JSON.parse(data);
   if (!record(e)) throw new Error('Événement du coach invalide.');
+  if (e.type === 'import_preview' && typeof e.id === 'string' && /^[0-9a-f-]{36}$/i.test(e.id) && Number.isInteger(e.version) && Number(e.version) > 0) return e as StreamEvent;
   const identified = typeof e.id === 'string' && e.id.length > 0;
   if (
     identified &&
@@ -129,6 +132,7 @@ export function applyEvent(
   message: ChatMessage,
   event: StreamEvent
 ): ChatMessage {
+  if (event.type === 'import_preview') return { ...message, imports: [...(message.imports ?? []).filter(item => item.id !== event.id), { id: event.id, version: event.version }] };
   if (event.type === 'error') return settleMessage(message, event.detail);
   if (event.type === 'done')
     return settleMessage({ ...message, content: event.message.content });

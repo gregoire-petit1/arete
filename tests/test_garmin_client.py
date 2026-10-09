@@ -175,3 +175,33 @@ class TestHealthMapping:
         result = health_sync.sync_day(date(2026, 6, 1), GarminClient(tmp_path / "none"))
         assert result.success is False
         assert "No Garmin tokens" in (result.error or "")
+
+
+@pytest.mark.parametrize(
+    "status,exception",
+    [(401, PermissionError), (404, LookupError), (503, RuntimeError)],
+)
+def test_export_transport_never_refreshes_or_replays_writes(
+    token_dir, status, exception
+):
+    token_dir.mkdir()
+    (token_dir / TOKEN_FILE).write_text("{}")
+    with patch("arete.garmin.client.Garmin") as factory:
+        api = factory.return_value
+        api.client._connectapi = "https://connectapi.garmin.com"
+        api.client._api_session.request.return_value.status_code = status
+        with pytest.raises(exception):
+            GarminClient(token_dir).workout_request(
+                "POST",
+                "/workout-service/workout",
+                timeout=7.0,
+                payload={"workoutName": "test"},
+            )
+        api.login.assert_not_called()
+        api.client.load.assert_called_once_with(str(token_dir))
+        api.client._api_session.request.assert_called_once()
+        assert (
+            api.client._api_session.request.call_args.kwargs["allow_redirects"] is False
+        )
+        assert api.client._api_session.request.call_args.kwargs["timeout"] == 7.0
+        api.client.request.assert_not_called()
