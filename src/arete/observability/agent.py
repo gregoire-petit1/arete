@@ -1,16 +1,27 @@
 """Normalize provider usage for structured logs, without claiming missing usage is zero."""
 
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+_REPEATED = re.compile(r"(.+?)\1+")
+
+
+def _model_name(raw: str) -> str:
+    """A streamed answer merges its chunks' metadata, strings included, so the
+    name arrives repeated once per chunk carrying it ("x:freex:free")."""
+    repeated = _REPEATED.fullmatch(raw)
+    return repeated.group(1) if repeated else raw
 
 
 def served_models(response: Any) -> list[str]:
     """Models the provider actually used; a router or fallback list may differ
     from the configured name."""
     return [
-        name
+        _model_name(name)
         for m in getattr(response, "result", [])
         if (name := (getattr(m, "response_metadata", None) or {}).get("model_name"))
     ]
