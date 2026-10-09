@@ -428,6 +428,59 @@ class TestBriefingFacts:
         assert "Préparation estimée par la charge" in model
         assert garmin.count("Préparation") == 1
 
+    def test_the_facts_carry_the_decision_and_its_reason(self, clean_day):
+        from arete.services.briefing import briefing_facts
+        from arete.services.plan_repository import PlanDecision
+
+        decision = PlanDecision(
+            id=1,
+            date=clean_day,
+            planned_session_id=7,
+            decision="ease",
+            reason="Préparation Garmin 68/100 : la séance tempo 45 min Z4 est allégée.",
+            readiness_score=68.0,
+            readiness_source="garmin_training",
+            acwr=1.0,
+            original={
+                "session_type": "tempo",
+                "target_duration_min": 45,
+                "target_hr_zone": "Z4",
+            },
+            adapted={"session_type": "endurance"},
+            applied_at=None,
+            reverted_at=None,
+            created_at=None,
+        )
+        with patch(
+            "arete.services.plan_repository.PlanDecisionRepository.list_for_day",
+            return_value=[decision],
+        ):
+            facts = briefing_facts(clean_day, "x")
+        assert "Décision du coach pour aujourd'hui :" in facts
+        assert "tempo 45 min Z4 : allégée — raison : Préparation Garmin 68/100" in facts
+        from coach_text_checks import RAW_FIELDS
+
+        assert not any(field in facts for field in RAW_FIELDS)
+
+    def test_no_decision_reads_aucune(self, clean_day):
+        from arete.services.briefing import briefing_facts
+
+        with patch(
+            "arete.services.plan_repository.PlanDecisionRepository.list_for_day",
+            return_value=[],
+        ):
+            facts = briefing_facts(clean_day, "x")
+        assert "Décision du coach pour aujourd'hui :\n- aucune" in facts
+
+    def test_race_times_read_like_a_clock(self):
+        from arete.services.briefing import _clock
+
+        assert (_clock(1188), _clock(2470), _clock(5465)) == (
+            "19:48",
+            "41:10",
+            "1:31:05",
+        )
+
     def test_a_failed_read_says_unavailable_instead_of_failing(self, clean_day):
         from arete.services.briefing import briefing_facts
 

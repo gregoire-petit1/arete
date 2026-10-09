@@ -12,7 +12,9 @@ briefing d'hier.
 Le briefing: 2 à 3 phrases. Cite les chiffres qui le justifient en français \
 courant ("sur 28 jours"), jamais un nom de champ. Termine par ce que \
 l'athlète fait aujourd'hui, concrètement, en t'appuyant sur la séance prévue \
-s'il y en a une. Pas de préambule, pas de liste, pas de formule creuse type \
+s'il y en a une. Si les faits contiennent une décision du jour (séance \
+maintenue, allégée, remplacée ou repos), explique-la en une phrase avec le \
+chiffre qui la justifie et ne la contredis pas. Pas de préambule, pas de liste, pas de formule creuse type \
 "pense à bien récupérer".
 
 Ta réponse est le briefing seul, rien d'autre."""
