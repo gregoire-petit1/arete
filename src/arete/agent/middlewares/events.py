@@ -1,12 +1,9 @@
-"""Runtime context + tool-event middlewares.
+"""Tool-event middleware.
 
-- ``RuntimeContextMiddleware``: inject the open page at the request tail
-  (port of Cortex's ``RuntimeContextMiddleware._panel_context_message``,
-  INTAI-1589). Malformed or over-budget payloads are SKIPPED with a warning,
-  never truncated.
-- ``ToolEventMiddleware``: emit ``tool_start`` / ``tool_end`` custom stream
-  events (``langgraph.config.get_stream_writer``) so the UI can show live
-  tool progress; consumed with ``stream_mode="custom"``.
+``ToolEventMiddleware`` emits ``tool_start`` / ``tool_end`` custom stream
+events (``langgraph.config.get_stream_writer``) so the UI can show live tool
+progress; consumed with ``stream_mode="custom"``. The open page is context,
+contributed by ``agent/context/sections.py``.
 """
 
 from __future__ import annotations

@@ -7,9 +7,7 @@ from arete.agent.tools.strength import STRENGTH_TOOLS
 
 ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé. Règles:
 - Pour une période précise ou une comparaison, appelle les outils avec des `days` différents plutôt que de raisonner sur le bloc de la page.
-- L'ACWR exige 28 jours d'historique; quand il manque, ne l'invente pas.
-- Le `name` d'une séance est ce qui a été lancé sur la montre, pas ce qui a été fait: crois les chiffres, `notes` et `rpe`.
-- Cite chaque valeur avec la période sur laquelle tu la lis."""
+- L'ACWR exige 28 jours d'historique; quand il manque, ne l'invente pas."""
 
 
 PLANNING_INSTRUCTIONS = """Toolkit `planning` chargé. Règles:
@@ -70,11 +68,8 @@ CAPABILITIES: dict[str, Toolkit] = {
 def validate_registry() -> None:
     names = {"search_toolkits", "load_toolkit"} | {
         "get_page_context",
-        "ls",
         "read_file",
-        "write_file",
-        "edit_file",
-        "delete",
+        "append_journal",
     }
     for tid, tk in CAPABILITIES.items():
         assert tid == tk.id, f"Toolkit id mismatch: {tid}"

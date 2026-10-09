@@ -11,10 +11,7 @@ import type { Preview, ToolPart } from '@/lib/agentStream';
 const LABELS: Record<string, string> = {
   get_page_context: 'Lecture de la page',
   read_file: 'Lecture de la mémoire',
-  write_file: 'Écriture dans le journal',
-  edit_file: 'Mise à jour du journal',
-  delete: 'Suppression dans la mémoire',
-  ls: 'Consultation de la mémoire',
+  append_journal: 'Note dans le journal',
   search_toolkits: 'Recherche de capacités',
   load_toolkit: 'Chargement des outils',
   get_workload: 'Analyse de la charge',
