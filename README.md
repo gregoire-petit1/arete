@@ -227,6 +227,10 @@ context windows and quotas vary; failures stop the job without publishing partia
 results or switching to a paid model. OpenWiki 0.7.1 exposes no OpenRouter
 temperature, per-request timeout or total-request-budget setting; the workflow
 bounds wall time, not total requests. Timestamp-only updates do not open a PR.
+Installation resolves dependencies published before 2026-10-07 UTC, immediately
+after OpenWiki 0.7.1's release, to avoid a newer AWS SDK dependency that references
+an unpublished package version. Update this cutoff with the OpenWiki version and
+verify a clean install before shipping either change.
 
 ### Checks
 
