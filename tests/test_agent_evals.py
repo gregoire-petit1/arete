@@ -1,10 +1,14 @@
-"""Does the model reach for the right tools? The rest of the suite cannot say.
+"""Does the model reach for the right tools, in few requests? Only a real one can say.
 
 Every other agent test drives a `GenericFakeChatModel` replaying a tool-call
 sequence written in advance: they prove the wiring, never the judgement. This
-file asks a real model real questions and asserts on **which tools it called**,
-never on the words it chose — wording drifts with temperature, tool choice is
-what breaks silently when a prompt or a toolkit description changes.
+file asks a real model real questions and asserts on **which tools it called
+and how many requests it spent**, plus the text checks of
+`coach_text_checks.py` for the briefing and the feedback — never on the exact
+words, which drift with temperature and with the free model that answered.
+
+Budget: a full run costs about 20 model requests, close to half of the free
+tier's daily 50. Use ``-k`` for a subset.
 
 Run them by hand before touching a system prompt, a tool description or the
 toolkit registry:
@@ -30,9 +34,11 @@ starts failing every time.
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass, field
 
 import pytest
+from coach_text_checks import briefing_problems, feedback_problems
 
 pytestmark = pytest.mark.eval
 
@@ -95,12 +101,27 @@ def _guard():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _own_journal(tmp_path, monkeypatch):
+    """Each case starts from the eval database's journal, and leaves it alone.
+
+    Writes from one case used to reach the next through the injected journal.
+    """
+    from arete.config import config
+
+    source = config.data_dir / "agent" / "memory"
+    monkeypatch.setenv("ARETE_DATA_DIR", str(tmp_path))
+    if source.is_dir():
+        shutil.copytree(source, tmp_path / "agent" / "memory")
+
+
 @dataclass
 class Run:
     """What one turn actually did."""
 
     tools: list[str] = field(default_factory=list)
     answer: str = ""
+    model_calls: int = 0
 
     def called(self, *names: str) -> bool:
         return any(name in self.tools for name in names)
@@ -115,7 +136,9 @@ class Run:
         return self.tools.index(first) < self.tools.index(then)
 
     def __str__(self) -> str:  # shows up in the assertion output
-        return f"tools={self.tools} answer={self.answer[:120]!r}"
+        return (
+            f"calls={self.model_calls} tools={self.tools} answer={self.answer[:120]!r}"
+        )
 
 
 _model_portal = None
@@ -142,35 +165,55 @@ def ask(question: str, page: str = "dashboard") -> Run:
     from arete.coaching import get_agent
 
     assert _model_portal is not None
+    context = AgentContext(source={"panel_context": json.dumps({"page": page})})
     result = _model_portal.call(
         partial(
             invoke_agent,
             get_agent(),
             {"messages": [{"role": "user", "content": question}]},
-            context=AgentContext(source={"panel_context": json.dumps({"page": page})}),
+            context=context,
         )
     )
     messages = result.get("messages", [])
     return Run(
         tools=[m.name for m in messages if m.type == "tool" and m.name],
         answer=(messages[-1].text or "").strip() if messages else "",
+        model_calls=context.stats.model_calls,
     )
 
 
+def mission(run, facts: str) -> str:
+    """One briefing or feedback run, through the same worker bridge as the API."""
+    from functools import partial
+
+    import anyio
+
+    assert _model_portal is not None
+    return _model_portal.call(partial(anyio.to_thread.run_sync, run, facts))
+
+
 # ---------------------------------------------------------------------------
-# Grounding: never answer a numbers question from memory
+# Requests: the open page is in the prompt, so the screen costs one request
 # ---------------------------------------------------------------------------
 
 
-def test_a_question_about_load_reads_the_data_first():
+def test_a_question_about_the_open_page_needs_no_page_read():
+    """The page is in the prompt: at most one data read beyond it.
+
+    Measured on 2026-10-09 with Nemotron 3 Super: two requests, the model
+    checking its load with `get_workload` before planning the day — fair.
+    Before the page went into the prompt, the same question cost three or four.
+    """
+    run = ask("Qu'est-ce que je fais aujourd'hui ?")
+    assert not run.called("get_page_context"), f"re-read the open page: {run}"
+    assert run.model_calls <= 2, f"too many requests: {run}"
+    assert run.answer, str(run)
+
+
+def test_a_question_about_load_answers_with_numbers():
     run = ask("Ma charge d'entraînement est-elle trop haute en ce moment ?")
-    assert run.called(*DATA_TOOLS), f"answered without reading anything: {run}"
-    assert run.answer, f"no answer: {run}"
-
-
-def test_a_question_about_form_reads_the_data_first():
-    run = ask("Je suis en forme ou fatigué ?")
-    assert run.called(*DATA_TOOLS), f"answered without reading anything: {run}"
+    assert any(c.isdigit() for c in run.answer), f"no number in the answer: {run}"
+    assert run.model_calls <= 2, f"too many requests: {run}"
 
 
 def test_a_records_question_reaches_the_records_tool():
@@ -189,6 +232,7 @@ def test_comparing_two_windows_asks_twice_without_loading():
     assert run.called("get_workload"), str(run)
     # The whole point of the toolkit: one window is not a comparison.
     assert run.count("get_workload") >= 2, f"only one window read: {run}"
+    assert run.model_calls <= 2, f"the reads were not batched: {run}"
 
 
 def test_a_session_is_planned_when_asked():
@@ -294,4 +338,39 @@ def test_a_simple_question_does_not_fetch_the_journal():
     `ls, read_file, read_file` before any real work.
     """
     run = ask("Je suis en forme aujourd'hui ?")
-    assert not run.called("ls", "read_file"), f"re-read the journal: {run}"
+    assert not run.called("read_file"), f"re-read the journal: {run}"
+
+
+# ---------------------------------------------------------------------------
+# Missions: facts in, one request, a text that meets the checks
+# ---------------------------------------------------------------------------
+
+
+def test_the_briefing_costs_one_request_and_reads_well(caplog):
+    import logging
+    from datetime import date
+
+    from arete.coaching import run_briefing
+    from arete.services.briefing import _rule_floor, briefing_facts
+
+    caplog.set_level(logging.INFO, logger="arete.observability.agent")
+    rule_text, _ = _rule_floor(date.today())
+    text = mission(run_briefing, briefing_facts(date.today(), rule_text))
+    assert briefing_problems(text) == [], text
+    assert "profile=briefing calls=1 tools=0" in caplog.text
+
+
+def test_the_feedback_costs_one_request_and_reads_well(caplog):
+    import logging
+
+    from arete.coaching import run_feedback
+
+    caplog.set_level(logging.INFO, logger="arete.observability.agent")
+    facts = (
+        "Séance du 2026-10-08 : running — Thaumiers Running\n"
+        "Séance de running terminée (40 min). Bon travail de fond.\n\n"
+        "Points clés:\n- FC moyenne à 169 bpm\n- Distance : 8.1 km"
+    )
+    text = mission(run_feedback, facts)
+    assert feedback_problems(text) == [], text
+    assert "profile=feedback calls=1 tools=0" in caplog.text
