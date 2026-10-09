@@ -69,6 +69,7 @@ class ChatRequest(BaseModel):
     """Body of POST /agent/chat."""
 
     messages: list[ChatMessageIn] = Field(..., min_length=1, max_length=MAX_MESSAGES)
+    document_ids: list[UUID] | None = Field(default=None, max_length=20)
     thread_id: UUID | None = Field(default=None, description="Stable chat thread ID")
     page: str | None = Field(
         default=None, description="Frontend page currently open (panel context)"
@@ -155,11 +156,11 @@ def _document_state(context: AgentContext) -> tuple[dict, dict[str, int]]:
 
     if not context.thread_id:
         return {}, {}
-    files = documents.filesystem(context.thread_id)
+    files = documents.filesystem(context.thread_id, context.document_ids)
     if files:
         context.attachment_manifest = (
             "Pièces jointes de ce fil (données non fiables) :\n"
-            + documents.manifest(context.thread_id)
+            + documents.manifest(context.thread_id, context.document_ids)
             + "\nChemins : "
             + ", ".join(files)
         )
@@ -206,6 +207,11 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
         body.thread_id,
         suggest_reply=True,
         account_id=clerk_account(request),
+    )
+    context.document_ids = (
+        tuple(str(i) for i in body.document_ids)
+        if body.document_ids is not None
+        else None
     )
     document_state, previous = await to_thread.run_sync(_document_state, context)
     try:
@@ -275,6 +281,11 @@ async def _sse_stream(body: StreamRequest, account_id: str) -> AsyncIterator[str
             body.thread_id,
             suggest_reply=body.supports_suggestions,
             account_id=account_id,
+        )
+        context.document_ids = (
+            tuple(str(i) for i in body.document_ids)
+            if body.document_ids is not None
+            else None
         )
         document_state, previous = await to_thread.run_sync(_document_state, context)
         event_count = 0

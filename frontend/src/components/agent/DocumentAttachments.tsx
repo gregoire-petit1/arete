@@ -4,9 +4,9 @@ import { ArrowDownToLine, Check, FileText, Image, LoaderCircle, Paperclip, Plus,
 import { ACCEPTED_FILES, documentsApi, downloadDocument, uploadDocument, type CoachDocument } from '@/lib/documents';
 import { DocumentPreview } from './DocumentPreview';
 
-export interface AttachmentsHandle { upload: (files: File[]) => void }
+export interface AttachmentsHandle { choose: () => void; upload: (files: File[]) => void }
 
-export function DocumentAttachments({ threadId, disabled = false, compact = false, ref, onBusy, onDocuments }: { threadId: string; disabled?: boolean; compact?: boolean; ref: Ref<AttachmentsHandle>; onBusy: (busy: boolean) => void; onDocuments: (ids: string[]) => void }) {
+export function DocumentAttachments({ threadId, disabled = false, ref, onBusy, onDocuments, compact = false, collapsed = false, selectedIds = [] }: { threadId: string; disabled?: boolean; ref: Ref<AttachmentsHandle>; onBusy: (busy: boolean) => void; onDocuments: (ids: string[]) => void; compact?: boolean; collapsed?: boolean; selectedIds?: string[] }) {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ['coach-documents', threadId], queryFn: () => documentsApi.list(threadId), retry: false });
   const controller = useRef<AbortController | null>(null);
@@ -14,37 +14,64 @@ export function DocumentAttachments({ threadId, disabled = false, compact = fals
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
+  const [library, setLibrary] = useState(false);
   const [source, setSource] = useState<CoachDocument | null>(null);
   useEffect(() => () => { controller.current?.abort(); onBusy(false); }, [onBusy]);
-  useEffect(() => { if (query.data) onDocuments(query.data.map(doc => doc.id)); }, [query.data, onDocuments]);
+  useEffect(() => { if (!compact && query.data) onDocuments(query.data.map(doc => doc.id)); }, [query.data, onDocuments, compact]);
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['coach-documents', threadId] });
   const upload = async (files: File[]) => {
     if (disabled || controller.current || !files.length) return;
     if (files.length > 5) { setErrors(['Maximum 5 fichiers par dépôt.']); return; }
     const abort = new AbortController(); controller.current = abort;
     setBusy(true); onBusy(true); setErrors([]);
+    const selected = [...selectedIds];
     try {
       for (const file of files) {
         if (abort.signal.aborted) break;
-        try { await uploadDocument(threadId, file, abort.signal, message => setProgress(`${file.name} · ${message}`)); }
+        try {
+          const doc = await uploadDocument(threadId, file, abort.signal, message => setProgress(`${file.name} · ${message}`));
+          if (compact && !selected.includes(doc.id)) { selected.push(doc.id); onDocuments([...selected]); }
+        }
         catch (error) { setErrors(previous => [...previous, `${file.name} : ${abort.signal.aborted ? 'Envoi annulé. Supprime le fichier incomplet avant de le renvoyer.' : error instanceof Error ? error.message : 'Envoi impossible.'}`]); }
       }
     } finally {
       controller.current = null; setBusy(false); onBusy(false); setProgress(''); await refresh();
     }
   };
-  useImperativeHandle(ref, () => ({ upload: files => { void upload(files); } }));
+  useImperativeHandle(ref, () => ({ choose: () => input.current?.click(), upload: files => { void upload(files); } }));
   const action = async (work: () => Promise<unknown>) => {
     try { await work(); } catch (error) { setErrors(previous => [...previous.slice(-19), error instanceof Error ? error.message : 'Opération impossible.']); }
   };
   const hasDocuments = !!query.data?.length;
+  if (compact) return <div className="space-y-2 text-xs">
+    <input ref={input} type="file" multiple accept={ACCEPTED_FILES} className="sr-only" aria-label="Joindre des documents" disabled={busy || disabled} onChange={e => { void upload(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
+    <div className="flex flex-wrap gap-2 max-h-44 overflow-y-auto" aria-label="Pièces jointes du brouillon">
+      {selectedIds.map(id => {
+        const doc = query.data?.find(d => d.id === id);
+        return <div key={id} className="flex min-w-0 max-w-full items-center rounded-lg border border-text-muted/20 bg-abyss px-2">
+          <button disabled={!doc || doc.status !== 'ready'} onClick={() => doc && setSource(doc)} className="min-w-0 py-3 text-left flex items-center gap-2"><FileText size={20} className="shrink-0 text-neon-cyan" /><span className="min-w-0"><span className="block max-w-48 truncate font-medium">{doc?.name ?? 'Document indisponible'}</span><span className="block mt-1 text-[10px] text-text-muted">{doc?.status === 'ready' ? 'Prêt · Aperçu ↗' : 'À vérifier ou retirer'}</span></span></button>
+          <button disabled={busy || disabled} aria-label={`Retirer ${doc?.name ?? 'le document'} du brouillon`} onClick={() => onDocuments(selectedIds.filter(key => key !== id))} className="size-11 shrink-0 text-text-muted">×</button>
+        </div>;
+      })}
+    </div>
+    {busy && <div role="status" aria-live="polite" className="flex items-center gap-2 py-2 text-text-secondary"><LoaderCircle size={14} className="animate-spin" /><span className="min-w-0 flex-1 break-words">{progress || 'Préparation…'}</span><button className="min-h-11" onClick={() => controller.current?.abort()}>Annuler</button></div>}
+    {query.error && <p role="alert" className="text-danger-red">{query.error.message}</p>}
+    {errors.map((error, i) => <p role="alert" key={i} className="text-danger-red break-words">{error}</p>)}
+    <div className="flex items-center gap-3"><button disabled={busy || disabled} aria-label="Joindre un fichier" onClick={() => input.current?.click()} className="flex size-11 items-center justify-center rounded-lg border border-text-muted/20 text-neon-cyan"><Plus size={20} /></button><button aria-expanded={library} onClick={() => setLibrary(!library)} className="min-h-11 text-text-muted">Fichiers du fil ({query.data?.length ?? 0})</button><span className="ml-auto text-[10px] text-text-muted">20 Mio / fichier</span></div>
+    {library && <div className="max-h-48 overflow-y-auto rounded-lg border border-text-muted/20 p-3 space-y-2">
+      <p className="text-text-muted">Sélectionne les fichiers du prochain message. Retirer du brouillon conserve l’original.</p>
+      {!query.data?.length && <p>Aucun document dans cette discussion.</p>}
+      {query.data?.map(doc => <div key={doc.id} className="flex items-center gap-2"><label className="min-w-0 flex-1 flex gap-2 py-2"><input type="checkbox" disabled={busy || disabled || doc.status !== 'ready'} checked={selectedIds.includes(doc.id)} onChange={e => onDocuments(e.target.checked ? [...selectedIds, doc.id] : selectedIds.filter(id => id !== doc.id))} /><span className="truncate">{doc.name}{doc.status !== 'ready' && ' · Incomplet'}</span></label><button aria-label={`Supprimer définitivement ${doc.name}`} className="size-11 text-danger-red" disabled={busy || disabled} onClick={() => action(async () => { await documentsApi.delete(threadId, doc.id); onDocuments(selectedIds.filter(id => id !== doc.id)); await refresh(); })}><Trash2 size={16} /></button></div>)}
+    </div>}
+    {source && <DocumentPreview threadId={threadId} document={source} onClose={() => setSource(null)} />}
+  </div>;
   return <section aria-label="Documents du coach" className="overflow-hidden rounded-xl border border-white/10 bg-white/[0.015] text-xs">
     <input ref={input} type="file" multiple accept={ACCEPTED_FILES} className="sr-only" aria-label="Joindre des documents" disabled={busy || disabled} onChange={e => { void upload(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
     <div className="flex items-center justify-between gap-3 px-3.5 py-3">
       <span className="flex items-center gap-2 font-medium text-text-secondary"><Paperclip size={14} className="text-text-muted" />Documents{hasDocuments && <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] tabular-nums text-text-muted">{query.data?.length}</span>}</span>
       <button disabled={busy || disabled} onClick={() => input.current?.click()} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-neon-cyan transition-colors hover:bg-neon-cyan/10 disabled:opacity-40"><Plus size={13} />Joindre</button>
     </div>
-    {!hasDocuments && !busy && !compact && <button disabled={disabled} onClick={() => input.current?.click()} className="mx-3 mb-3 flex w-[calc(100%-1.5rem)] flex-col items-center gap-2 rounded-lg border border-dashed border-white/10 px-4 py-5 transition-colors hover:border-neon-cyan/30 hover:bg-neon-cyan/[0.03] disabled:opacity-50">
+    {!hasDocuments && !busy && !collapsed && <button disabled={disabled} onClick={() => input.current?.click()} className="mx-3 mb-3 flex w-[calc(100%-1.5rem)] flex-col items-center gap-2 rounded-lg border border-dashed border-white/10 px-4 py-5 transition-colors hover:border-neon-cyan/30 hover:bg-neon-cyan/[0.03] disabled:opacity-50">
       <UploadCloud size={23} strokeWidth={1.5} className="mb-1 text-neon-cyan/70" />
       <span className="text-text-secondary">Dépose ton programme ici</span>
       <span className="text-[10px] leading-relaxed text-text-muted">Excel, PDF, images, texte · 20 Mio par fichier</span>

@@ -1,0 +1,127 @@
+// @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { gameApi, type Player } from '@/lib/gamification';
+import { ProfilePage } from './Profile';
+import { GamificationTab } from './settings/GamificationTab';
+
+vi.mock('@/lib/api', () => ({
+  settingsApi: { get: vi.fn(async () => ({ display_name: 'Arthur' })) },
+  strengthApi: {},
+  analyticsApi: {},
+}));
+vi.mock('@/lib/gamification', async (original) => {
+  const module = await original<typeof import('@/lib/gamification')>();
+  Object.assign(module.gameApi, {
+    preference: vi.fn(),
+    sync: vi.fn(),
+    purchase: vi.fn(),
+    equip: vi.fn(),
+    toggle: vi.fn(),
+    snapshot: vi.fn(),
+  });
+  return module;
+});
+const fixture: Player = {
+  enabled: true,
+  available: true,
+  version: 1,
+  athlete_class: 'sentinel',
+  silhouette: 'balanced',
+  equipped: 'base',
+  xp: 1770,
+  shards: 390,
+  level: 6,
+  rank: 'Adepte',
+  in_level: 270,
+  level_span: 600,
+  sessions: 21,
+  pending: 0,
+  week: { sessions: 5, goal: 5, complete: true, timezone: 'Europe/Paris' },
+  catalog: [
+    { id: 'eclipse', name: 'Éclipse', price: 300, level: 1, owned: false },
+  ],
+  badges: [],
+  history: [],
+  has_more: false,
+};
+function mount(node: React.ReactNode, path = '/profile') {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[path]}>{node}</MemoryRouter>
+    </QueryClientProvider>
+  );
+}
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(gameApi.preference).mockResolvedValue({
+    enabled: true,
+    opted_in: true,
+    available: true,
+    version: 1,
+  });
+  vi.mocked(gameApi.sync).mockResolvedValue(structuredClone(fixture));
+});
+afterEach(cleanup);
+it('gates direct profile links without projecting rewards when opted out', async () => {
+  vi.mocked(gameApi.preference).mockResolvedValue({
+    enabled: false,
+    opted_in: false,
+    available: true,
+    version: 0,
+  });
+  mount(<ProfilePage />);
+  expect(await screen.findByText('Ouvrir les Réglages →')).toBeTruthy();
+  expect(gameApi.sync).not.toHaveBeenCalled();
+});
+it('uses the confirmed purchase result before offering a separate equip action', async () => {
+  vi.mocked(gameApi.purchase).mockImplementation(async () => {
+    vi.mocked(gameApi.sync).mockResolvedValue({
+      ...fixture,
+      version: 2,
+      shards: 90,
+      catalog: [{ ...fixture.catalog[0], owned: true }],
+    });
+    return { skin: 'eclipse', charged: 300 };
+  });
+  mount(<ProfilePage />, '/profile?tab=collection');
+  fireEvent.click(await screen.findByRole('button', { name: /Éclipse/ }));
+  fireEvent.click(
+    screen.getByRole('button', { name: 'Confirmer · 300 Éclats' })
+  );
+  expect(
+    await screen.findByRole('button', { name: 'Équiper gratuitement' })
+  ).toBeTruthy();
+  expect(gameApi.purchase).toHaveBeenCalledTimes(1);
+  expect(gameApi.equip).not.toHaveBeenCalled();
+  expect(screen.getByText('Solde : 90 Éclats')).toBeTruthy();
+});
+it('keeps the switch at the server value when saving fails', async () => {
+  vi.mocked(gameApi.preference).mockResolvedValue({
+    enabled: false,
+    opted_in: false,
+    available: true,
+    version: 0,
+  });
+  vi.mocked(gameApi.toggle).mockRejectedValue(new Error('Réseau indisponible'));
+  mount(<GamificationTab />);
+  const toggle = await screen.findByRole('switch');
+  fireEvent.click(toggle);
+  await waitFor(() =>
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Réseau indisponible'
+    )
+  );
+  expect(toggle.getAttribute('aria-checked')).toBe('false');
+});

@@ -1,0 +1,46 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="240" height="240" viewBox="0 0 240 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Personnage / Ascension">
+<path id="Vector" d="M120 218C175.781 218 221 172.781 221 117C221 61.2192 175.781 16 120 16C64.2192 16 19 61.2192 19 117C19 172.781 64.2192 218 120 218Z" fill="#172938"/>
+<path id="Vector_2" d="M120 211C171.915 211 214 168.915 214 117C214 65.0852 171.915 23 120 23C68.0852 23 26 65.0852 26 117C26 168.915 68.0852 211 120 211Z" stroke="#334553"/>
+<g id="Vector_3">
+<path d="M20 117H220ZM120 16V218Z" fill="black"/>
+<path d="M20 117H220M120 16V218" stroke="#28404B"/>
+</g>
+<path id="Vector_4" d="M120 189C159.765 189 192 156.765 192 117C192 77.2355 159.765 45 120 45C80.2355 45 48 77.2355 48 117C48 156.765 80.2355 189 120 189Z" stroke="#F2CE89" stroke-dasharray="3 9"/>
+<path id="Vector_5" opacity="0.18" d="M120 228C150.376 228 175 224.418 175 220C175 215.582 150.376 212 120 212C89.6243 212 65 215.582 65 220C65 224.418 89.6243 228 120 228Z" fill="#0B1420"/>
+<path id="Vector_6" d="M89.6 148L87.8 194L71.8 212L90.8 215L126 174L155.9 208H167.6L155.6 150L89.6 148Z" fill="#0B1420"/>
+<path id="Vector_7" d="M75.8 200L92.8 204L90.8 219H69.4C77.1333 213.667 79.2667 207.333 75.8 200Z" fill="#F2CE89"/>
+<path id="Vector_8" d="M153.9 199H166.8L177.8 216H149.6L153.9 199Z" fill="#F2CE89"/>
+<path id="Vector_9" d="M78 84C106 77.3333 134 77.3333 162 84L158.8 158C132.933 166 107.4 166 82.2 158L78 84Z" fill="#F2CE89" stroke="#0B1420" stroke-width="2.5"/>
+<g id="Vector_10">
+<path d="M80 87C74.9333 87 71.4 97 69.4 117L64.6 148L76.6 154L85.4 121" fill="#E6B790"/>
+<path d="M80 87C74.9333 87 71.4 97 69.4 117L64.6 148L76.6 154L85.4 121" stroke="#0B1420" stroke-width="2.5" stroke-linejoin="round"/>
+</g>
+<g id="Vector_11">
+<path d="M160 89C162.4 87 164.933 95.6667 167.6 115L176.3 143L165.3 151L152.6 125" fill="#E6B790"/>
+<path d="M160 89C162.4 87 164.933 95.6667 167.6 115L176.3 143L165.3 151L152.6 125" stroke="#0B1420" stroke-width="2.5" stroke-linejoin="round"/>
+</g>
+<path id="Vector_12" d="M108 68H131V91C123.667 99.6667 116 99.6667 108 91V68Z" fill="#E6B790"/>
+<path id="Vector_13" d="M123 32H117C106.507 32 98 40.5066 98 51V62C98 72.4934 106.507 81 117 81H123C133.493 81 142 72.4934 142 62V51C142 40.5066 133.493 32 123 32Z" fill="#E6B790" stroke="#0B1420" stroke-width="2"/>
+<path id="Vector_14" d="M98 52C92 37.3333 96 28.3333 110 25C124 21 135.333 24.6667 144 36L139 53L132 39L119 43L105 40L102 58L98 52Z" fill="#0B1420"/>
+<g id="Vector_15">
+<path d="M105 56H110ZM128 56H133Z" fill="black"/>
+<path d="M105 56H110M128 56H133" stroke="#0B1420" stroke-width="3" stroke-linecap="round"/>
+</g>
+<path id="Vector_16" d="M116 68C118.667 70 122 69.6667 126 67" stroke="#0B1420" stroke-width="2" stroke-linecap="round"/>
+<path id="Vector_17" d="M101 111L119 131L139 108" stroke="#D5FFF5" stroke-width="5"/>
+<path id="Vector_18" d="M120 126C123.314 126 126 123.314 126 120C126 116.686 123.314 114 120 114C116.686 114 114 116.686 114 120C114 123.314 116.686 126 120 126Z" fill="#F2CE89"/>
+<g id="Vector_19">
+<path d="M101 154H143Z" fill="black"/>
+<path d="M101 154H143" stroke="#0B1420" stroke-width="6"/>
+</g>
+<path id="Vector_20" d="M76 82L79.2 100L66.2 94L82.2 80L76 82Z" fill="#F2CE89" stroke="#0B1420" stroke-width="2"/>
+<path id="Vector_21" d="M164 82L161.8 81L172.8 95L158.8 100L164 82Z" fill="#F2CE89" stroke="#0B1420" stroke-width="2"/>
+<g id="Vector_22">
+<path d="M53 154H190Z" fill="black"/>
+<path d="M53 154H190" stroke="#0B1420" stroke-width="8"/>
+</g>
+<path id="Vector_23" d="M57 138H49C46.7909 138 45 139.791 45 142V167C45 169.209 46.7909 171 49 171H57C59.2091 171 61 169.209 61 167V142C61 139.791 59.2091 138 57 138Z" fill="#F2CE89" stroke="#0B1420" stroke-width="3"/>
+<path id="Vector_24" d="M196 138H188C185.791 138 184 139.791 184 142V167C184 169.209 185.791 171 188 171H196C198.209 171 200 169.209 200 167V142C200 139.791 198.209 138 196 138Z" fill="#F2CE89" stroke="#0B1420" stroke-width="3"/>
+</g>
+</svg>

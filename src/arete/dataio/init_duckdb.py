@@ -605,6 +605,12 @@ def _m17_google_calendar(con) -> None:
             con.execute(statement)
 
 
+def _m19_gamification(con) -> None:
+    from arete.dataio.game_schema import migrate
+
+    migrate(con)
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -624,6 +630,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (16, _m16_weekly_reviews),
     (17, _m17_google_calendar),
     (18, _m18_users),
+    (19, _m19_gamification),
 ]
 
 
