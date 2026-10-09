@@ -203,6 +203,33 @@ Start coding sessions with [AGENTS.md](AGENTS.md) (shared instructions) or
 explains ownership, allowed dependencies, profiles and runtime limits. Changes to
 these boundaries must update the guide and the dependency tests together.
 
+### Automated repository wiki
+
+[OpenWiki](https://docs.langchain.com/oss/openwiki/automate-updates) maintains
+generated reference documentation and source-grounded claims in `openwiki/`.
+The [workflow](.github/workflows/openwiki-update.yml) runs daily at 05:23 UTC or
+manually from **Actions → OpenWiki Update → Run workflow**, always against `main`.
+It creates the initial wiki automatically; [the brief](openwiki/INSTRUCTIONS.md)
+defines its scope. Existing guides in `docs/` remain manually maintained.
+
+Add `OPENROUTER_API_KEY` as a **repository Actions secret** (Settings → Secrets
+and variables → Actions). Enable **Allow GitHub Actions to create and approve
+pull requests** in Settings → Actions → General. The workflow uses the built-in
+`GITHUB_TOKEN` to maintain one `openwiki/update` PR and arms auto-merge; `main`
+must require the existing CI checks. Review the generated documentation and
+select **Approve workflows to run** in the PR merge box: GitHub gates CI for
+[PRs created with `GITHUB_TOKEN`](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+Inference uses only [`openrouter/free`](https://openrouter.ai/openrouter/free),
+with 8,192 output tokens per request, one page worker, one provider retry and a
+25-minute generation timeout (35 minutes for the job). Free-model availability,
+context windows and quotas vary; failures stop the job without publishing partial
+results or switching to a paid model. OpenWiki 0.7.1 exposes no OpenRouter
+temperature, per-request timeout or total-request-budget setting; the workflow
+bounds wall time, not total requests. Timestamp-only updates do not open a PR.
+
+### Checks
+
 ```bash
 uv run ruff check src tests && uv run ruff format --check src tests
 uv run mypy src/arete
