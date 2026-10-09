@@ -48,3 +48,28 @@ def test_legacy_column_is_renamed_once(tmp_path, monkeypatch):
     con.close()
     assert "actual_session_id" in cols and "garmin_activity_id" not in cols
     assert versions == [version for version, _ in init_duckdb.MIGRATIONS]
+
+
+def test_a_current_database_skips_the_ddl(tmp_path, monkeypatch):
+    # Boot runs one statement against a current schema, not the whole DDL.
+    monkeypatch.setenv("ARETE_DB", str(tmp_path / "current.duckdb"))
+    init_duckdb.main()
+    monkeypatch.setattr(init_duckdb, "DDL", "SELECT * FROM no_such_table")
+    init_duckdb.main()  # would raise if the DDL ran
+
+
+def test_a_database_behind_runs_its_migrations(tmp_path, monkeypatch):
+    path = tmp_path / "behind.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = duckdb.connect(str(path))
+    con.execute(
+        "DELETE FROM app.schema_version WHERE version = ?",
+        [init_duckdb.MIGRATIONS[-1][0]],
+    )
+    con.close()
+    init_duckdb.main()
+    con = duckdb.connect(str(path), read_only=True)
+    (latest,) = con.execute("SELECT MAX(version) FROM app.schema_version").fetchone()
+    con.close()
+    assert latest == init_duckdb.MIGRATIONS[-1][0]

@@ -11,34 +11,40 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import aclosing
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
-from langchain_core.messages import AIMessage, HumanMessage
-from langchain_core.messages import BaseMessage as LangchainMessage
 from pydantic import BaseModel, Field
 
-from arete.agent.context.builder import ContextBudgetExceeded
 from arete.agent.runtime.context import (
     MAX_PANEL_CONTEXT_CHARS,
     PANEL_CONTEXT_KEY,
     PANEL_PAGES,
     AgentContext,
 )
-from arete.agent.runtime.execution import (
-    LIMIT_MESSAGE,
-    RUN_LIMIT_ERRORS,
-    TIMEOUT_MESSAGE,
-    invoke_agent,
-    stream_agent,
-)
-from arete.api.agent_streaming import (
-    MAX_STREAM_EVENTS,
-    StreamProjection,
-)
-from arete.coaching import get_agent
 from arete.services.memory import NOTES_LEDGER, SESSIONS_LEDGER, memory_root
+
+if TYPE_CHECKING:
+    from langchain_core.messages import BaseMessage as LangchainMessage
+
+# The agent stack (LangChain, LangGraph, Deep Agents, LangSmith: about 1.4 s of
+# imports) loads on the first coach request, not when the app boots: on a
+# cold serverless instance every route used to pay for it, /health included.
+
+
+def get_agent():
+    from arete.coaching import get_agent as build
+
+    return build()
+
+
+async def invoke_agent(graph: Any, state: dict, *, context: AgentContext) -> dict:
+    from arete.agent.runtime.execution import invoke_agent as run
+
+    return await run(graph, state, context=context)
+
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +91,8 @@ class ChatResponse(BaseModel):
 
 
 def _to_langchain(role: str, content: str) -> LangchainMessage:
+    from langchain_core.messages import AIMessage, HumanMessage
+
     if role == "assistant":
         return AIMessage(content=content)
     return HumanMessage(content=content)
@@ -130,6 +138,13 @@ def _to_agent_context(
 @router.post("/chat", response_model=ChatResponse)
 async def chat(body: ChatRequest) -> ChatResponse:
     """Run the coaching agent over the client-provided history."""
+    from arete.agent.context.builder import ContextBudgetExceeded
+    from arete.agent.runtime.execution import (
+        LIMIT_MESSAGE,
+        RUN_LIMIT_ERRORS,
+        TIMEOUT_MESSAGE,
+    )
+
     history = [_to_langchain(m.role, m.content) for m in body.messages]
     source = _panel_context_source(body)
     try:
@@ -174,6 +189,14 @@ def _sse(event: dict) -> str:
 
 async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
     """Messages, tool activity and failures are separate UI events."""
+    from arete.agent.runtime.execution import (
+        LIMIT_MESSAGE,
+        RUN_LIMIT_ERRORS,
+        TIMEOUT_MESSAGE,
+        stream_agent,
+    )
+    from arete.api.agent_streaming import MAX_STREAM_EVENTS, StreamProjection
+
     projection = StreamProjection()
     try:
         graph = get_agent()

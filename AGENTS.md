@@ -60,6 +60,11 @@ responsibility a testable owner. Do not create empty architectural scaffolding.
   or an entire run with an ambiguous outcome.
 - `LLM_CONTEXT_TOKENS` is the deployment's configured window, not a guarantee from
   a provider router. Budget system text, schemas, history, page data and output.
+- Booting the app must not import the agent stack, Garmin's client or the
+  workout grammars: `api/agent.py` and `api/ai_tips.py` import them inside their
+  handlers, a cold serverless instance pays every top-level import before its
+  first request (`tests/test_api.py` guards it). A table or column added to the
+  DDL needs a migration: boots on a current schema skip the DDL.
 - Async model clients belong to the server event loop. Sync API/scheduler work uses
   AnyIO workers and `invoke_agent_sync`; never add a fresh `asyncio.run()` per job.
 - Follow-up suggestions are fixed page-aware lists in the browser; no model

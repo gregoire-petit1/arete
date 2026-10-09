@@ -6,8 +6,8 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from arete import coaching
 from arete.services import coaching_rules as rules
+from arete.services.coaching_repository import BriefingRepository
 from arete.services.coaching_rules import PostSessionResponse
 
 router = APIRouter(prefix="/tips", tags=["tips"])
@@ -36,7 +36,13 @@ class PostSessionRequest(BaseModel):
 
 @router.get("/daily", response_model=DailyTipResponse)
 def get_daily_tip() -> DailyTipResponse:
-    briefing = coaching.get_or_create_briefing(trigger="api")
+    # The stored briefing first: importing the agent stack (`arete.coaching`)
+    # costs a second on a cold instance, and most visits find one written.
+    briefing = BriefingRepository().get_for_day()
+    if briefing is None:
+        from arete import coaching
+
+        briefing = coaching.get_or_create_briefing(trigger="api")
     return DailyTipResponse(
         tip=briefing.text,
         priority=briefing.priority,  # type: ignore[arg-type]
@@ -55,6 +61,8 @@ def post_session_feedback(body: PostSessionRequest) -> PostSessionResponse:
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
+    from arete import coaching
+
     feedback, source = coaching.enrich_session_feedback(
         result.feedback, result.highlights, evidence
     )

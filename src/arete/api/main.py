@@ -1,6 +1,7 @@
 import asyncio
 import hmac
 import logging
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -22,7 +23,6 @@ from arete.config import config
 from arete.dataio.db import db_connection
 from arete.dataio.init_duckdb import main as init_schema
 from arete.dataio.mirror import MirrorMiddleware
-from arete.observability.tracing import close_tracing, get_tracing_client
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,11 @@ def configure_logging() -> None:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
-    get_tracing_client()
+    if config.langsmith_tracing:
+        # LangSmith loads only when tracing is on; this rejects a missing key.
+        from arete.observability.tracing import get_tracing_client
+
+        get_tracing_client()
     try:
         init_schema()
         logger.info("Database schema initialized")
@@ -52,7 +56,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     finally:
         if task is not None:
             task.cancel()
-        await asyncio.to_thread(close_tracing)
+        if "arete.observability.tracing" in sys.modules:
+            from arete.observability.tracing import close_tracing
+
+            await asyncio.to_thread(close_tracing)
 
 
 app = FastAPI(title="Arete API", version="0.1.0", lifespan=lifespan)
