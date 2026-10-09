@@ -19,6 +19,7 @@ from arete.api.garmin import router as garmin_router
 from arete.api.garmin_export import router as garmin_export_router
 from arete.api.garmin_health import router as garmin_health_router
 from arete.api.garmin_sync import router as garmin_sync_router
+from arete.api.goals import router as goals_router
 from arete.api.metrics import router as metrics_router
 from arete.api.notifications import router as notifications_router
 from arete.api.plan import router as plan_router
@@ -159,5 +160,6 @@ for router in (
     documents_router,
     plan_router,
     notifications_router,
+    goals_router,
 ):
     app.include_router(router)

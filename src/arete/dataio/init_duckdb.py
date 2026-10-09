@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS app.planned_sessions (
     structure_json  VARCHAR,                   -- explicit workout steps (optional)
     garmin_workout_id  VARCHAR,                -- copy scheduled on Garmin's calendar
     garmin_schedule_id VARCHAR,
-    garmin_pushed_at   TIMESTAMP
+    garmin_pushed_at   TIMESTAMP,
+    goal_id         INTEGER                    -- set on sessions a goal's plan generated
 );
 
 -- Actual training sessions (imported from Garmin/FIT files)
@@ -333,6 +334,21 @@ CREATE TABLE IF NOT EXISTS app.plan_decisions (
 -- ============================================================
 -- Web Push subscriptions (one per browser that accepted notifications)
 -- ============================================================
+CREATE SEQUENCE IF NOT EXISTS app.goals_seq START 1;
+
+-- Goal races: what the periodised plan is built towards
+CREATE TABLE IF NOT EXISTS app.goals (
+    id               INTEGER PRIMARY KEY DEFAULT nextval('app.goals_seq'),
+    user_id          INTEGER NOT NULL DEFAULT 1,
+    name             VARCHAR NOT NULL,
+    race_date        DATE NOT NULL,
+    distance_km      DOUBLE NOT NULL,
+    target_time_sec  INTEGER,                 -- optional finishing time
+    priority         VARCHAR NOT NULL DEFAULT 'A',      -- 'A', 'B', 'C'
+    status           VARCHAR NOT NULL DEFAULT 'active', -- 'active', 'done', 'cancelled'
+    created_at       TIMESTAMP DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS app.push_subscriptions (
     endpoint         VARCHAR PRIMARY KEY,
     p256dh           VARCHAR NOT NULL,
@@ -500,6 +516,14 @@ def _m12_push_subscriptions(con) -> None:
     con.execute(DDL[start : DDL.index(");", start) + 2])
 
 
+def _m14_goals(con) -> None:
+    """Goal races, and the link from a generated session to its goal."""
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.goals_seq")
+    con.execute(DDL[start : DDL.index(");", DDL.index("app.goals (")) + 2])
+    if "goal_id" not in _columns(con, "planned_sessions"):
+        con.execute("ALTER TABLE app.planned_sessions ADD COLUMN goal_id INTEGER")
+
+
 #: Append-only. A database at the last version skips the DDL entirely on boot
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
@@ -524,6 +548,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (11, _m11_plan_adaptation),
     (12, _m12_push_subscriptions),
     (13, _m13_document_imports),
+    (14, _m14_goals),
 ]
 
 
