@@ -235,6 +235,15 @@ manually from **Actions → OpenWiki Update → Run workflow**, always against `
 It creates the initial wiki automatically; [the brief](openwiki/INSTRUCTIONS.md)
 defines its scope. Existing guides in `docs/` remain manually maintained.
 
+To explore the wiki locally, run this from the repository root:
+
+```bash
+npx --yes openwiki@0.7.1 visualize
+```
+
+Open [http://localhost:4321](http://localhost:4321). The visualizer refreshes when
+wiki pages change; press Ctrl-C to stop it. The version matches the CI workflow.
+
 Add `OPENROUTER_API_KEY` as a **repository Actions secret** (Settings → Secrets
 and variables → Actions). Enable **Allow GitHub Actions to create and approve
 pull requests** in Settings → Actions → General. The workflow uses the built-in
