@@ -54,8 +54,9 @@ def google_access_token(clerk_user_id: str) -> GoogleToken:
             continue
         scopes = tuple(getattr(item, "scopes", None) or ())
         expires = getattr(item, "expires_at", None)
+        # Clerk's timestamps are Unix milliseconds.
         expires_at = (
-            datetime.fromtimestamp(expires)
+            datetime.fromtimestamp(expires / 1000)
             if isinstance(expires, int | float)
             else None
         )
