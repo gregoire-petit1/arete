@@ -1,6 +1,6 @@
 """HTTP contracts for analytics; services own queries and calculations."""
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from arete.services import analytics as service
@@ -33,3 +33,11 @@ def update_session(session_id: int, body: SessionUpdate):
 def list_sessions(limit: int = 20, offset: int = 0, for_model: bool = False):
     """Recent sessions; ``for_model`` leaves out Strava's, for an AI client."""
     return service.list_sessions(limit=limit, offset=offset, for_model=for_model)
+
+
+@router.get("/sessions/{session_id}")
+def get_session(session_id: int):
+    result = service.get_session(session_id)
+    if result is None:
+        raise HTTPException(404, "Séance introuvable.")
+    return result

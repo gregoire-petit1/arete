@@ -82,6 +82,7 @@ export function invalidateAfterSession(queryClient: QueryClient): void {
     qk.cardioSessions,
     qk.analytics,
     qk.playerStats,
+    ['game'],
     qk.fitness,
     qk.workload,
     qk.planToday,

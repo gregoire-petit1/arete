@@ -25,6 +25,7 @@ export function restoreConversation(raw: string | null): ChatMessage[] {
       typeof m.content !== 'string'
     )
       throw new Error('Message sauvegardé invalide.');
+    if (m.attachmentIds !== undefined && (!Array.isArray(m.attachmentIds) || m.attachmentIds.length > 20 || !m.attachmentIds.every((id: unknown) => typeof id === 'string'))) throw new Error('Pièces jointes sauvegardées invalides.');
     let parts: ChatPart[] | undefined;
     if (Array.isArray(m.parts)) {
       parts = m.parts.map((p: ChatPart) => {
@@ -73,6 +74,7 @@ export function restoreConversation(raw: string | null): ChatMessage[] {
     if (m.workouts !== undefined && (!Array.isArray(m.workouts) || m.workouts.length > 50 || !m.workouts.every(isWorkoutUpdate))) throw new Error('Séances sauvegardées invalides.');
     return settleMessage(
       {
+        attachmentIds: Array.isArray(m.attachmentIds) && m.attachmentIds.length <= 20 && m.attachmentIds.every((id: unknown) => typeof id === 'string') ? m.attachmentIds : undefined,
         workouts: m.workouts,
         imports: Array.isArray(m.imports) && m.imports.length <= 50 && m.imports.every((item: { id?: unknown; version?: unknown }) => typeof item.id === 'string' && Number.isInteger(item.version)) ? m.imports : undefined,
         role: m.role,

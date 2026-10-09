@@ -383,3 +383,17 @@ def test_import_tool_uses_server_thread_and_never_confirms(document_db):
     )
     assert "error" in rejected
     assert imports.list_drafts(other) == []
+
+
+def test_selected_documents_are_thread_scoped_and_never_silently_dropped(document_db):
+    first = uploaded(document_db, "first.md", b"first")
+    second = uploaded(document_db, "second.md", b"second")
+    files = documents.filesystem(document_db, (second["id"],))
+    assert list(files) == [f"/attachments/{second['id']}.md"]
+    assert documents.filesystem(document_db, ()) == {}
+    assert first["id"] not in documents.manifest(document_db, (second["id"],))
+    with pytest.raises(DocumentError, match="absente"):
+        documents.filesystem(str(uuid4()), (second["id"],))
+    pending = documents.begin_upload(document_db, "pending.txt", 2, "0" * 64)
+    with pytest.raises(DocumentError, match="incomplète"):
+        documents.filesystem(document_db, (pending["id"],))

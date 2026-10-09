@@ -170,6 +170,15 @@ for UI, limits and verification.
 Only `GarminClient` touches the remote service. See [document imports](document-imports.md)
 for resource bounds, frontend worker assets, unsupported conversions and acceptance.
 
+## Optional athlete RPG
+
+`services/gamification.py` owns deterministic XP, cosmetic currency and purchases.
+Activity repositories capture evidence inside the session transaction; explicit
+projection writes auditable ledger deltas. The model cannot grant rewards or spend
+currency. The account preference defaults off, with a deployment kill switch.
+Chiron reuses the existing coach runtime and selected conversation documents.
+See [gamification system design](gamification-design.md) for rollout, transaction
+contracts, limits and the distinction between shipped behavior and Figma scope.
 ## Identity
 
 `api/auth.py` owns who is calling: a pure ASGI middleware (like the mirror's,
@@ -206,7 +215,7 @@ See [Google Calendar setup](google-calendar.md) for activation and live testing.
 
 ## Personal memory
 
-Migration 19 versions athlete facts and distinguishes explicit declarations,
+Migration 20 versions athlete facts and distinguishes explicit declarations,
 coach hypotheses and legacy evidence. Active, currently valid facts are mandatory
 context; missing reads and oversized contexts fail explicitly. Settings and the
 coach use optimistic revisions, and deleting a fact removes its history.

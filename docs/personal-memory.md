@@ -7,10 +7,12 @@ context contribution, not a new agent or a separate permission system.
 ## Ownership and persistence
 
 `services/athlete_facts.py` owns facts, validity and optimistic concurrency.
-Migration 19 adds evidence classification, source references, inclusive
+Migration 20 adds evidence classification, source references, inclusive
 `valid_until`, revision numbers and historical snapshots. Existing facts are
 `legacy`, including those originally entered in Settings: the migration does not
-invent confirmation or reconstruct lost revisions.
+invent confirmation or reconstruct lost revisions. Migration 20 also applies the
+idempotent game schema so local/preview databases that ran this branch’s former
+memory migration 19 receive both features without resetting existing game state.
 
 `evidence` is independent of `source` (the original writer):
 

@@ -30,6 +30,7 @@ _PAGE_LABELS = {
     "analytics": "Analytics",
     "log": "Journal d'entraînement",
     "settings": "Réglages",
+    "profile": "Mon profil",
 }
 
 
