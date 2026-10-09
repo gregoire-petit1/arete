@@ -101,3 +101,14 @@ def remove_plan(goal_id: int) -> dict[str, Any]:
         return {"deleted": plan_builder.remove(goal_id)}
     except LookupError:
         raise HTTPException(status_code=404, detail="Objectif introuvable") from None
+
+
+@router.get("/{goal_id}/projection")
+def get_projection(goal_id: int) -> dict[str, Any]:
+    """CTL / ATL / TSB until race day, from the history and the planned sessions."""
+    from arete.services import plan_builder
+
+    try:
+        return plan_builder.projection(goal_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Objectif introuvable") from None

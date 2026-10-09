@@ -184,3 +184,87 @@ def remove(goal_id: int, today: date | None = None) -> int:
         return _delete_future(con, goal_id, (today or date.today()) + timedelta(days=1))
     finally:
         con.close()
+
+
+# --------------------------------------------------------------------------- #
+# Form on race day: the history plus what is planned
+# --------------------------------------------------------------------------- #
+#: Race minutes when there is neither a target time nor a VDOT: 6:00/km.
+FALLBACK_RACE_PACE_SEC_KM = 360
+
+
+def _race_minutes(goal: Goal) -> float:
+    from arete.features.running import race_time_sec
+    from arete.services.metrics import current_vdot
+
+    if goal.target_time_sec:
+        return goal.target_time_sec / 60
+    vdot = current_vdot()
+    if vdot:
+        return race_time_sec(vdot[0], goal.distance_km * 1000) / 60
+    return goal.distance_km * FALLBACK_RACE_PACE_SEC_KM / 60
+
+
+def projection(goal_id: int, today: date | None = None) -> dict[str, Any]:
+    """CTL / ATL / TSB day by day until race day, from history and plan."""
+    from arete.dataio.queries import daily_tss_by_date
+    from arete.features.plan_generator import planned_tss
+    from arete.services.metrics import fitness_series
+
+    goal = _goal_or_raise(goal_id)
+    today = today or date.today()
+    con = connect()
+    try:
+        history = {d: t for d, t in daily_tss_by_date(con).items() if d <= today}
+    finally:
+        con.close()
+    # Today counts as done once a session is in; otherwise its plan still stands.
+    first_planned = today + timedelta(days=1) if history.get(today) else today
+    planned = GarminRepository().list_planned_sessions(
+        start_date=first_planned,
+        end_date=goal.race_date,
+        status=None,
+        limit=500,
+        ascending=True,
+    )
+    future: dict[date, float] = {}
+    for s in planned:
+        if s.status not in (SessionStatus.PENDING, SessionStatus.MODIFIED):
+            continue
+        if s.session_type == SessionType.RACE and s.date == goal.race_date:
+            minutes = _race_minutes(goal)
+        else:
+            minutes = float(s.target_duration_min or 0)
+        future[s.date] = future.get(s.date, 0.0) + planned_tss(
+            s.session_type.value, minutes
+        )
+
+    loads = {**history, **future}
+    loads.setdefault(goal.race_date, 0.0)
+    shown: list[dict[str, Any]] = []
+    for day, ctl, atl in fitness_series(loads, goal.race_date):
+        if day.date < today - timedelta(days=28):
+            continue
+        shown.append(
+            {
+                "date": day.date.isoformat(),
+                "ctl": round(ctl, 1),
+                "atl": round(atl, 1),
+                "tsb": round(ctl - atl, 1),
+                "tss": round(day.tss, 1),
+                "planned": day.date in future,
+            }
+        )
+    # Race morning: the form the day before, before the race's own load lands.
+    morning = shown[-2] if len(shown) > 1 else (shown[-1] if shown else None)
+    ctls = [float(p["ctl"]) for p in shown]
+    return {
+        "goal": goal.to_dict(today),
+        "series": shown,
+        "race_day": {
+            "ctl": morning["ctl"] if morning else None,
+            "tsb": morning["tsb"] if morning else None,
+        },
+        "peak_ctl": max(ctls) if ctls else None,
+        "planned_sessions": len(future),
+    }

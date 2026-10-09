@@ -386,3 +386,21 @@ def generate_plan(inp: PlanInputs) -> list[WeekPlan]:
             )
         weeks.append(week)
     return weeks
+
+
+#: RPE a planned session is expected to feel like, by type, for its TSS.
+PLANNED_RPE: dict[str, float] = {
+    "recovery": 3,
+    "endurance": 4,
+    "long_run": 4.5,
+    "tempo": 7,
+    "intervals": 8,
+    "race": 9,
+}
+DEFAULT_PLANNED_RPE = 5
+
+
+def planned_tss(session_type: str, minutes: float) -> float:
+    """TSS a planned session should bring, with the RPE formula the history uses."""
+    rpe = PLANNED_RPE.get(session_type, DEFAULT_PLANNED_RPE)
+    return minutes * (rpe / 10) ** 2 / 0.36

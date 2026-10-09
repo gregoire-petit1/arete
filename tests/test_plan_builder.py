@@ -110,3 +110,23 @@ def test_routes(goal, router_client):
     )
     resp = client.post(f"/goals/{far.id}/plan/preview")
     assert resp.status_code == 422 and "24 semaines" in resp.json()["detail"]
+
+
+def test_projection_shows_the_taper_freshening_the_athlete(goal):
+    plan_builder.apply(goal.id, TODAY)
+    body = plan_builder.projection(goal.id, TODAY)
+    series = body["series"]
+    assert series[-1]["date"] == goal.race_date.isoformat()
+    assert body["planned_sessions"] > 0
+    assert series[0]["date"] >= (TODAY - timedelta(days=28)).isoformat()
+    # The plan loads, then the taper lets form come back before the race.
+    lowest_tsb = min(p["tsb"] for p in series)
+    assert body["race_day"]["tsb"] > lowest_tsb
+    assert body["peak_ctl"] >= series[0]["ctl"]
+
+
+def test_planned_tss_uses_the_history_formula():
+    from arete.features.plan_generator import planned_tss
+
+    assert round(planned_tss("tempo", 60)) == round(60 * 0.49 / 0.36)
+    assert planned_tss("intervals", 50) > planned_tss("endurance", 50)
