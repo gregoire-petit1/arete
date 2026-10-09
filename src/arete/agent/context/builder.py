@@ -16,6 +16,7 @@ from arete.agent.capabilities.discovery import (
 from arete.agent.context.sections import ContextSection, page_section
 from arete.agent.runtime.policy import resolve_policy
 from arete.agent.tools.toolkits import META_TOOLS
+from arete.services.athlete_facts import facts_block
 from arete.services.journal import journal_block
 
 
@@ -81,6 +82,7 @@ def build_context(request: ModelRequest):
         ContextSection("profile", instructions, "server"),
         ContextSection("catalog", catalog, "registry"),
         ContextSection("capabilities", tool_instructions_suffix(loaded), "registry"),
+        ContextSection("facts", facts_block(), "ledger"),
         ContextSection("journal", journal_block(), "ledger"),
         ContextSection(
             "attachments", context.attachment_manifest if context else "", "server"

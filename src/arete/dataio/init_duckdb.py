@@ -349,6 +349,21 @@ CREATE TABLE IF NOT EXISTS app.goals (
     created_at       TIMESTAMP DEFAULT now()
 );
 
+CREATE SEQUENCE IF NOT EXISTS app.athlete_facts_seq START 1;
+
+-- What the coach knows for good about the athlete, editable by the athlete
+CREATE TABLE IF NOT EXISTS app.athlete_facts (
+    id          INTEGER PRIMARY KEY DEFAULT nextval('app.athlete_facts_seq'),
+    user_id     INTEGER NOT NULL DEFAULT 1,
+    kind        VARCHAR NOT NULL,      -- 'injury', 'constraint', 'preference', 'goal', 'other'
+    text        VARCHAR NOT NULL,
+    since       DATE NOT NULL,
+    status      VARCHAR NOT NULL DEFAULT 'active',  -- 'active', 'resolved'
+    source      VARCHAR NOT NULL DEFAULT 'coach',   -- 'coach', 'athlete'
+    created_at  TIMESTAMP DEFAULT now(),
+    updated_at  TIMESTAMP DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS app.push_subscriptions (
     endpoint         VARCHAR PRIMARY KEY,
     p256dh           VARCHAR NOT NULL,
@@ -524,6 +539,12 @@ def _m14_goals(con) -> None:
         con.execute("ALTER TABLE app.planned_sessions ADD COLUMN goal_id INTEGER")
 
 
+def _m15_athlete_facts(con) -> None:
+    """Structured, editable facts about the athlete (injuries, constraints…)."""
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.athlete_facts_seq")
+    con.execute(DDL[start : DDL.index(");", DDL.index("app.athlete_facts (")) + 2])
+
+
 #: Append-only. A database at the last version skips the DDL entirely on boot
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
@@ -549,6 +570,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (12, _m12_push_subscriptions),
     (13, _m13_document_imports),
     (14, _m14_goals),
+    (15, _m15_athlete_facts),
 ]
 
 

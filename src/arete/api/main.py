@@ -14,6 +14,7 @@ from arete import scheduler
 from arete.api.agent import router as agent_router
 from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
+from arete.api.athlete_facts import router as athlete_facts_router
 from arete.api.documents import router as documents_router
 from arete.api.garmin import router as garmin_router
 from arete.api.garmin_export import router as garmin_export_router
@@ -161,5 +162,6 @@ for router in (
     plan_router,
     notifications_router,
     goals_router,
+    athlete_facts_router,
 ):
     app.include_router(router)
