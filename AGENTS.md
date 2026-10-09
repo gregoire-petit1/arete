@@ -66,7 +66,9 @@ responsibility a testable owner. Do not create empty architectural scaffolding.
   workout grammars: `api/agent.py` and `api/ai_tips.py` import them inside their
   handlers, a cold serverless instance pays every top-level import before its
   first request (`tests/test_api.py` guards it). A table or column added to the
-  DDL needs a migration: boots on a current schema skip the DDL.
+  DDL needs a migration: boots on a current schema skip the DDL. Every missing
+  version runs, even below the latest, so never renumber a migration that any
+  database (a preview included) has recorded: take a fresh number.
 - Async model clients belong to the server event loop. Sync API/scheduler work uses
   AnyIO workers and `invoke_agent_sync`; never add a fresh `asyncio.run()` per job.
 - Empty threads use fixed page-aware starters. Interactive chat may make one bounded,

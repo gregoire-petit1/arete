@@ -232,3 +232,35 @@ def test_memory_upgrade_accepts_both_version_19_histories(
         assert con.execute(
             "SELECT max(version) FROM app.schema_version"
         ).fetchone() == (20,)
+
+
+def test_a_missing_version_below_the_latest_still_runs(tmp_path, monkeypatch):
+    # A preview database shared by parallel branches can record a higher
+    # version before a lower one is merged: the lower one must still run.
+    path = tmp_path / "gap.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = duckdb.connect(str(path))
+    con.execute("DROP TABLE app.calendar_actions")
+    con.execute("DROP TABLE app.calendar_connections")
+    con.execute("DELETE FROM app.schema_version WHERE version = 17")
+    con.execute("INSERT INTO app.schema_version (version) VALUES (9999)")
+    con.close()
+    init_duckdb.main()
+    init_duckdb.main()
+    con = duckdb.connect(str(path), read_only=True)
+    tables = {
+        r[0]
+        for r in con.execute(
+            "SELECT table_name FROM duckdb_tables() WHERE schema_name = 'app'"
+        ).fetchall()
+    }
+    versions = [
+        r[0]
+        for r in con.execute(
+            "SELECT version FROM app.schema_version WHERE version = 17"
+        ).fetchall()
+    ]
+    con.close()
+    assert {"calendar_actions", "calendar_connections"} <= tables
+    assert versions == [17]  # recorded once, and the unknown 9999 is ignored
