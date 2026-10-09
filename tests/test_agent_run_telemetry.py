@@ -105,3 +105,13 @@ def test_streaming_records_the_time_to_the_first_answer_token(caplog):
     asyncio.run(consume())
     assert context.stats.first_token_ms is not None
     assert "ttft_ms=None" not in _run_lines(caplog)[0]
+
+
+def test_a_streamed_model_name_is_not_repeated():
+    from types import SimpleNamespace
+
+    from arete.observability.agent import served_models
+
+    name = "nvidia/nemotron-3-super-120b-a12b:free"
+    message = SimpleNamespace(response_metadata={"model_name": name * 2})
+    assert served_models(SimpleNamespace(result=[message])) == [name]
