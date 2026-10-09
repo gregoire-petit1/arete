@@ -587,10 +587,16 @@ def _m18_users(con) -> None:
     con.execute(DDL[start : DDL.index(");", DDL.index("app.users (")) + 2])
 
 
-#: Append-only. A database at the last version skips the DDL entirely on boot
-#: (one statement instead of ~30, each a round trip to MotherDuck), so any
+#: Append-only. A database that has every version skips the DDL entirely on
+#: boot (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
 #: creates it on existing databases. Migrations must stay idempotent.
+#:
+#: A version is an identifier, not a high-water mark: every version a database
+#: lacks runs, even below its latest. Parallel branches deploy previews against
+#: one shared database in any order, and a migration merged after a higher one
+#: must still run. Never renumber a migration once any database has recorded
+#: it: take a fresh number instead.
 def _m13_document_imports(con) -> None:
     from arete.dataio.document_schema import migrate
 
@@ -644,14 +650,16 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
 ]
 
 
+def _applied(con) -> set[int]:
+    rows = con.execute("SELECT version FROM app.schema_version").fetchall()
+    return {int(r[0]) for r in rows}
+
+
 def _run_migrations(con) -> None:
-    """Apply pending migrations and record them in app.schema_version."""
-    row = con.execute(
-        "SELECT COALESCE(MAX(version), 0) FROM app.schema_version"
-    ).fetchone()
-    current = int(row[0]) if row else 0
+    """Apply every missing migration, in list order, and record it."""
+    applied = _applied(con)
     for version, migrate in MIGRATIONS:
-        if version <= current:
+        if version in applied:
             continue
         migrate(con)
         con.execute("INSERT INTO app.schema_version (version) VALUES (?)", [version])
@@ -660,12 +668,11 @@ def _run_migrations(con) -> None:
 
 def _is_current(con) -> bool:
     try:
-        row = con.execute(
-            "SELECT COALESCE(MAX(version), 0) FROM app.schema_version"
-        ).fetchone()
+        applied = _applied(con)
     except duckdb.CatalogException:
         return False  # a fresh database: no schema yet
-    return bool(row) and int(row[0]) == MIGRATIONS[-1][0]
+    # Versions from other branches may be present; only missing ones matter.
+    return {version for version, _ in MIGRATIONS} <= applied
 
 
 def main():
@@ -674,7 +681,7 @@ def main():
     try:
         con = connect(False)
         if _is_current(con):
-            logger.info("Database schema is current (version %d)", MIGRATIONS[-1][0])
+            logger.info("Database schema is current (%d migrations)", len(MIGRATIONS))
             return
         for stmt in DDL.strip().split(";"):
             s = stmt.strip()
