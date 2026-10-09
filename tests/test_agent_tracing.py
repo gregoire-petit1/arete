@@ -100,6 +100,9 @@ class RecordingClient(Client):
 @pytest.fixture(autouse=True)
 def isolated_graph(monkeypatch, tmp_path):
     monkeypatch.setenv("ARETE_DB", str(tmp_path / "agent.duckdb"))
+    from arete.dataio.init_duckdb import main as init_db
+
+    init_db()  # Missing memory tables are now explicit failures, not empty context.
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("LLM_MODEL", "test-coach")
     monkeypatch.setenv("LANGSMITH_PROJECT", "test-project")

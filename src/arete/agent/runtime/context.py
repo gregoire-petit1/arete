@@ -40,6 +40,9 @@ class RunStats:
 
     model_calls: int = 0
     suggestion_calls: int = 0
+    memory_searches: int = 0
+    memory_ms: int = 0
+    memory_tokens: int = 0
     tool_calls: int = 0
     model_ms: int = 0
     first_token_ms: int | None = None

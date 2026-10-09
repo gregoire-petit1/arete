@@ -122,7 +122,7 @@ export const goalsApi = {
 export const athleteFactsApi = {
   list: () => fetchAPI<import("@/types").AthleteFact[]>("/athlete-facts"),
 
-  create: (fact: { kind: import("@/types").FactKind; text: string; since?: string }) =>
+  create: (fact: { kind: import("@/types").FactKind; text: string; since?: string; valid_until?: string }) =>
     fetchAPI<import("@/types").AthleteFact>("/athlete-facts", {
       method: "POST",
       body: JSON.stringify(fact),
@@ -130,15 +130,17 @@ export const athleteFactsApi = {
 
   update: (
     id: number,
-    patch: Partial<Pick<import("@/types").AthleteFact, "kind" | "text" | "status" | "since">>
+    patch: Partial<Pick<import("@/types").AthleteFact, "kind" | "text" | "status" | "since" | "evidence" | "valid_until" | "source_ref">> & { expected_revision: number }
   ) =>
     fetchAPI<import("@/types").AthleteFact>(`/athlete-facts/${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     }),
 
-  remove: (id: number) =>
-    fetchAPI<void>(`/athlete-facts/${id}`, { method: "DELETE" }),
+  history: (id: number) => fetchAPI<import("@/types").AthleteFact[]>(`/athlete-facts/${id}/history`),
+
+  remove: (id: number, revision: number) =>
+    fetchAPI<void>(`/athlete-facts/${id}?expected_revision=${revision}`, { method: "DELETE" }),
 };
 
 // ========================= //

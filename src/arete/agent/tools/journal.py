@@ -52,15 +52,39 @@ def remember_fact(
     text: str,
     fact_id: int = 0,
     status: Literal["active", "resolved"] = "active",
+    evidence: Literal["explicit", "hypothesis"] = "hypothesis",
+    expected_revision: int | None = None,
+    source_ref: str = "",
+    since: str = "",
+    valid_until: str = "",
 ) -> str:
     """Enregistre un fait durable sur l'athlète (blessure, contrainte,
     préférence, objectif), ou corrige celui dont tu donnes `fact_id` (son
-    numéro #N dans la liste jointe). `status="resolved"` quand le fait ne tient
+    numéro #N et `expected_revision` dans la liste jointe). `evidence="explicit"`
+    seulement pour une déclaration de l’athlète, sinon `hypothesis`. `source_ref`:
+    courte référence à la déclaration ou à une source connue, jamais inventée ;
+    obligatoire pour une déclaration explicite.
+    `since` et `valid_until`: dates ISO pour une exception temporaire, qui doit
+    rester un fait séparé de la préférence durable. `status="resolved"` quand le fait ne tient
     plus (blessure guérie, contrainte levée). Un fait par appel, une phrase."""
     try:
+        if evidence == "explicit" and not source_ref.strip():
+            raise ValueError(
+                "Une déclaration explicite nécessite sa source dans source_ref."
+            )
+        start = date.fromisoformat(since) if since else None
+        end = date.fromisoformat(valid_until) if valid_until else None
         if fact_id:
             fact = athlete_facts.update_fact(
-                fact_id, kind=kind, text=text, status=status
+                fact_id,
+                kind=kind,
+                text=text,
+                status=status,
+                evidence=evidence,
+                expected_revision=expected_revision,
+                source_ref=source_ref or None,
+                since=start,
+                valid_until=end,
             )
             if fact is None:
                 return json.dumps({"error": f"Fait #{fact_id} introuvable."})
@@ -69,7 +93,14 @@ def remember_fact(
                 return json.dumps(
                     {"error": "Un nouveau fait est actif ; pour clore, donne fact_id."}
                 )
-            fact = athlete_facts.add_fact(kind, text)
+            fact = athlete_facts.add_fact(
+                kind,
+                text,
+                evidence=evidence,
+                source_ref=source_ref,
+                since=start,
+                valid_until=end,
+            )
     except ValueError as e:
         return json.dumps({"error": str(e)})
     return json.dumps({"saved": True, "fact": fact.to_dict()}, ensure_ascii=False)
