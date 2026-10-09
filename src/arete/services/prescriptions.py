@@ -174,3 +174,63 @@ def strength_sets(
 
     visit(prescription.steps)
     return result
+
+
+def conversation_prescription(
+    raw: str, sport: str, day: Date, strength_text: str = ""
+) -> Prescription:
+    """Validate model input without allowing it to replace the strength grammar."""
+    if len(raw) > 32_000 or len(strength_text) > 4_000:
+        raise ValueError("Prescription trop volumineuse.")
+    prescription = Prescription.model_validate_json(raw)
+    if sport == "strength":
+        if not strength_text:
+            raise ValueError(
+                "Fournis le texte exact de musculation pour vérifier les séries."
+            )
+        parsed = strength_prescription(strength_text, day)
+        if strength_sets(prescription) != strength_sets(parsed):
+            raise ValueError(
+                "Les séries ne correspondent pas au texte reconnu par la grammaire."
+            )
+    return prescription
+
+
+def describe(prescription: Prescription) -> str:
+    """A bounded, literal summary; distance never invents a duration."""
+
+    def step_text(step: Step) -> str:
+        if step.kind == "repeat":
+            return (
+                f"{step.repeat} × ("
+                + " / ".join(step_text(s) for s in step.steps)
+                + ")"
+            )
+        value = step.value or 0
+        amount = {
+            "seconds": f"{value / 60:g} min" if value % 60 == 0 else f"{value:g} s",
+            "meters": f"{value:g} m",
+            "reps": f"{value:g} répétitions",
+            "lap": "jusqu’au tour manuel",
+        }[step.duration_kind]
+        if step.exercise:
+            amount = f"{step.exercise} · {amount}"
+        if step.weight_kg is not None:
+            amount += f" à {step.weight_kg:g} kg"
+        if step.target:
+            target = step.target
+            if target.kind == "hr_zone":
+                amount += f" Z{target.low:g}"
+            else:
+                unit = {
+                    "pace_sec_km": "s/km",
+                    "heart_rate_bpm": "bpm",
+                    "power_w": "W",
+                    "cadence_rpm": "tr/min",
+                }[target.kind]
+                amount += f" · {target.low:g}–{target.high:g} {unit}"
+        if step.kind in {"recovery", "rest"}:
+            amount = "récupération " + amount
+        return amount
+
+    return " · ".join(step_text(step) for step in prescription.steps)

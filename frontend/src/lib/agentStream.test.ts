@@ -45,6 +45,7 @@ describe('SSE transport', () => {
         messages: [{ role: 'user', content: 'Demain ?' }],
         panel_context: { page: 'planning' },
         thread_id: 'dfe771b8-661a-46af-9cee-dce80e6bc304',
+        supports_suggestions: true,
       });
     } finally {
       vi.unstubAllGlobals();
@@ -217,5 +218,35 @@ describe('request window', () => {
     expect(window.length).toBeLessThanOrEqual(REQUEST_WINDOW_MESSAGES);
     expect(window[0].role).toBe('user');
     expect(window.at(-1)?.content).toBe('dernière');
+  });
+});
+
+
+describe('next-message suggestions', () => {
+  it('decodes a separate draft event without changing the coach answer', async () => {
+    const suggestion: StreamEvent = { type: 'suggestion', text: 'Oui, prépare la séance.' };
+    const events: StreamEvent[] = [];
+    await consumeStream(stream(frame(suggestion) + frame(done)), e => events.push(e));
+    expect(events).toEqual([suggestion, done]);
+    expect(applyEvent(empty, suggestion)).toBe(empty);
+  });
+  it('accepts the backend Unicode character limit across split UTF-8 chunks', async () => {
+    const suggestion: StreamEvent = { type: 'suggestion', text: '🏃'.repeat(300) };
+    const events: StreamEvent[] = [];
+    await consumeStream(stream(frame(suggestion) + frame(done)), e => events.push(e));
+    expect(events).toEqual([suggestion, done]);
+  });
+  it.each([null, '', ' ', 'x'.repeat(301), '🏃'.repeat(301), ['a', 'b']])('omits an invalid optional suggestion and still completes the answer: %j', async text => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const events: StreamEvent[] = [];
+      const answer: StreamEvent = { type: 'message', id: 'answer', text: 'Réponse' };
+      await consumeStream(stream(frame(answer) + `data: ${JSON.stringify({ type: 'suggestion', text })}\n\n` + frame(done)), e => events.push(e));
+      expect(events).toEqual([answer, done]);
+      expect(events.reduce(applyEvent, empty)).toMatchObject({ content: 'Réponse', pending: false, error: undefined });
+      expect(warning).toHaveBeenCalledOnce();
+    } finally {
+      warning.mockRestore();
+    }
   });
 });

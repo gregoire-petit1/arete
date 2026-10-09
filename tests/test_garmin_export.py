@@ -366,30 +366,345 @@ def test_coach_move_marks_export_dirty_without_rewriting_prescription(planned):
     )
 
 
-def test_daily_session_cannot_switch_export_owner_during_upload(planned):
+def test_daily_session_cannot_change_steps_during_upload(planned):
     with db_connection() as con:
         con.execute(
-            "UPDATE app.planned_sessions SET prescription=NULL WHERE id=?", [planned]
+            "UPDATE app.planned_sessions SET prescription=NULL,target_duration_min=30 WHERE id=?",
+            [planned],
         )
-    with pytest.raises(DocumentError, match="parcours Garmin quotidien"):
-        service.update_session(
-            planned,
-            1,
-            date(2027, 1, 12),
-            "Test",
-            Prescription(
-                steps=[Step(kind="effort", duration_kind="seconds", value=1800)]
-            ),
-        )
+    garmin = Garmin()
+
+    def concurrent_edit():
+        with pytest.raises(DocumentError, match="Vérifie l’export"):
+            service.update_session(
+                planned,
+                1,
+                date(2027, 1, 12),
+                "Test",
+                Prescription(
+                    steps=[Step(kind="effort", duration_kind="seconds", value=1800)]
+                ),
+            )
+
+    garmin.on_create = concurrent_edit
+    assert service.export(planned, client=garmin)["state"] == "scheduled"
 
 
-def test_existing_daily_export_cannot_create_second_garmin_copy(planned):
+def test_incomplete_daily_export_cannot_create_second_copy(planned):
     with db_connection() as con:
         con.execute(
             "UPDATE app.planned_sessions SET garmin_workout_id='100' WHERE id=?",
             [planned],
         )
     garmin = Garmin()
-    with pytest.raises(DocumentError, match="déjà un export"):
-        service.export(planned, client=garmin)
+    result = service.export(planned, client=garmin)
+    assert result["state"] == "failed"
+    assert "incomplet" in result["error"]
     assert garmin.calls == []
+
+
+def test_conversation_creates_structured_session_without_import(planned):
+    from arete.services import planning
+
+    result = json.loads(
+        planning.create_planned_session(
+            "2027-01-14",
+            "intervals",
+            "6 × 400 m",
+            prescription_json=json.dumps(
+                {
+                    "version": 1,
+                    "steps": [
+                        {
+                            "kind": "repeat",
+                            "repeat": 6,
+                            "steps": [
+                                {
+                                    "kind": "effort",
+                                    "duration_kind": "meters",
+                                    "value": 400,
+                                },
+                                {
+                                    "kind": "recovery",
+                                    "duration_kind": "seconds",
+                                    "value": 90,
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ),
+        )
+    )
+    identifier = result["session"]["id"]
+    saved = GarminRepository().get_planned_session(identifier)
+    assert saved.source == "coach" and saved.prescription and not saved.provenance
+    view = service.inspect_session(identifier)
+    assert view["session"]["exportable"] and not view["session"]["derived"]
+    assert "400 m" in view["session"]["summary"]
+    garmin = Garmin()
+    updates = []
+    result = service.export_batch(
+        [identifier], client=garmin, on_progress=updates.append
+    )
+    assert result["results"][0]["state"] == "scheduled"
+    assert updates[0]["export"]["state"] == "working"
+    assert updates[-1]["export"]["state"] == "scheduled"
+    assert all(e["session"]["id"] == identifier for e in updates)
+    assert len(garmin.workouts) == len(garmin.schedules) == 1
+
+
+def test_legacy_adoption_checks_content_and_reuses_copy(planned):
+    with db_connection() as con:
+        con.execute(
+            "UPDATE app.planned_sessions SET prescription=NULL,target_duration_min=30,garmin_workout_id='1',garmin_schedule_id='100' WHERE id=?",
+            [planned],
+        )
+    garmin = Garmin()
+    payload, day, _, _ = service._payload(planned)
+    garmin.workouts[1] = {**payload, "description": "Ancien résumé", "workoutId": 1}
+    garmin.schedules[100] = {
+        "workoutId": 1,
+        "workoutScheduleId": 100,
+        "date": day.isoformat(),
+    }
+    result = service.export(planned, client=garmin)
+    assert result["state"] == "scheduled"
+    assert not any(method == "POST" for method, _, _ in garmin.calls)
+    assert garmin.workouts[1]["description"] == f"ARETE_SESSION:{planned}"
+
+
+def test_batch_stops_after_lost_response_and_reports_remaining(planned):
+    from arete.services import planning
+
+    next_id = json.loads(
+        planning.create_planned_session(
+            "2027-01-15", "endurance", target_duration_min=30
+        )
+    )["session"]["id"]
+    garmin = Garmin()
+    garmin.fail = "create"
+    result = service.export_batch([planned, next_id], client=garmin)
+    assert result["blocked"] == planned and result["not_attempted"] == [next_id]
+    assert result["results"][0]["state"] == "uncertain"
+    assert len(garmin.workouts) == 1
+    count = len(garmin.calls)
+    again = service.export_batch([planned, next_id], client=garmin)
+    assert again["error"] and len(garmin.calls) == count
+
+
+def test_stale_revision_and_expired_batch_never_write(planned):
+    from time import monotonic
+
+    garmin = Garmin()
+    result = service.export_batch([planned], revisions=[2], client=garmin)
+    assert result["error"] and not garmin.calls
+    result = service.export_batch([planned], deadline=monotonic() - 1, client=garmin)
+    assert result["error"] and not garmin.calls
+
+
+@pytest.mark.parametrize("ids", [[], [1, 1], list(range(1, 7)), [-1]])
+def test_invalid_batch_is_rejected_before_remote_io(ids, planned):
+    garmin = Garmin()
+    with pytest.raises(DocumentError):
+        service.export_batch(ids, client=garmin)
+    assert not garmin.calls
+
+
+def test_prescription_edit_checks_revision_and_dirties_export(planned):
+    garmin = Garmin()
+    service.export(planned, client=garmin)
+    from arete.agent.tools.garmin import update_session_prescription
+
+    args = dict(
+        session_id=planned,
+        revision=1,
+        date_str="2027-01-13",
+        description="40 minutes",
+        prescription_json='{"steps":[{"kind":"effort","duration_kind":"seconds","value":2400}]}',
+    )
+    result = json.loads(update_session_prescription.invoke(args))
+    assert result["session"]["revision"] == 2
+    assert result["export"]["state"] == "dirty"
+    count = len(garmin.calls)
+    assert json.loads(update_session_prescription.invoke(args))["error"]
+    assert len(garmin.calls) == count
+
+
+def test_daily_and_chat_share_export_reservation(planned):
+    from arete.services import plan_adaptation
+
+    with db_connection() as con:
+        con.execute(
+            "UPDATE app.planned_sessions SET prescription=NULL,target_duration_min=30 WHERE id=?",
+            [planned],
+        )
+    garmin = Garmin()
+
+    def concurrent_push():
+        with pytest.raises(DocumentError, match="déjà en cours"):
+            plan_adaptation.push_session(garmin, planned)
+        result = json.loads(
+            __import__(
+                "arete.services.planning", fromlist=["update_planned_status"]
+            ).update_planned_status(planned, "skipped")
+        )
+        assert result["error"]
+
+    garmin.on_create = concurrent_push
+    assert service.export(planned, client=garmin)["state"] == "scheduled"
+    assert len(garmin.workouts) == 1
+
+
+def test_skipped_daily_withdrawal_uses_same_reservation(planned):
+    from arete.garmin.models import SessionStatus
+
+    with db_connection() as con:
+        con.execute(
+            "UPDATE app.planned_sessions SET prescription=NULL,target_duration_min=30 WHERE id=?",
+            [planned],
+        )
+    garmin = Garmin()
+    service.export(planned, client=garmin)
+    GarminRepository().update_planned_session_status(planned, SessionStatus.SKIPPED)
+    assert service.withdraw_skipped(planned, client=garmin)["state"] == "removed"
+    assert not garmin.workouts and not garmin.schedules
+
+
+def test_strength_prescription_requires_grammar_source(planned):
+    from arete.services import planning
+
+    result = json.loads(
+        planning.create_planned_session(
+            "2027-01-15",
+            "strength",
+            sport="strength",
+            prescription_json='{"steps":[{"kind":"effort","duration_kind":"reps","value":8,"exercise":"Squat"}]}',
+        )
+    )
+    assert "texte exact" in result["error"]
+
+
+def test_graph_streams_domain_progress_before_final_answer(planned, monkeypatch):
+    import asyncio
+
+    from langchain.agents import create_agent
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    from arete.agent.middlewares.capabilities import ToolkitMiddleware
+    from arete.agent.middlewares.events import ToolEventMiddleware
+    from arete.agent.runtime.context import AgentContext
+    from arete.agent.runtime.execution import stream_agent
+    from arete.api.agent_streaming import StreamProjection
+
+    garmin = Garmin()
+    monkeypatch.setattr("arete.garmin.client.GarminClient", lambda: garmin)
+
+    class Model(GenericFakeChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    async def run():
+        graph = create_agent(
+            Model(
+                disable_streaming=True,
+                messages=iter(
+                    [
+                        AIMessage(
+                            content="",
+                            tool_calls=[
+                                {
+                                    "name": "export_garmin_sessions",
+                                    "args": {"session_ids": [planned]},
+                                    "id": "export-1",
+                                    "type": "tool_call",
+                                }
+                            ],
+                        ),
+                        AIMessage(content="La séance est programmée."),
+                    ]
+                ),
+            ),
+            middleware=[ToolkitMiddleware(), ToolEventMiddleware()],
+            context_schema=AgentContext,
+        )
+        projection = StreamProjection()
+        events = []
+        async for part in stream_agent(
+            graph,
+            {"messages": [{"role": "user", "content": "Envoie ma séance sur Garmin"}]},
+            context=AgentContext(thread_id="test-workouts"),
+        ):
+            events.extend(projection.events(part))
+        events.append(projection.done())
+        return events
+
+    events = asyncio.run(run())
+    updates = [e for e in events if e["type"] == "workout_update"]
+    assert updates and updates[0]["export"]["state"] == "working"
+    assert updates[-1]["export"]["state"] == "scheduled"
+    assert all(
+        e["id"] == "export-1" and e["thread_id"] == "test-workouts" for e in updates
+    )
+    assert events.index(updates[-1]) < next(
+        i
+        for i, e in enumerate(events)
+        if e["type"] == "message" and e["text"] == "La séance est programmée."
+    )
+    assert len(garmin.workouts) == 1
+
+
+def test_pending_document_import_cannot_use_new_writes():
+    from types import SimpleNamespace
+
+    from arete.agent.capabilities.execution import _resolve_tool
+    from arete.agent.runtime.context import AgentContext
+
+    for name in ("update_session_prescription", "export_garmin_sessions"):
+        request = SimpleNamespace(
+            tool_call={"name": name, "id": "blocked"},
+            state={},
+            runtime=SimpleNamespace(context=AgentContext(document_import_pending=True)),
+        )
+        assert _resolve_tool(request).status == "error"
+
+
+def test_workout_http_detail_and_batch_revision_contract(
+    planned, router_client, monkeypatch
+):
+    from arete.api.garmin_export import router
+
+    client = router_client(router)
+    detail = client.get(f"/garmin/planned/{planned}/workout")
+    assert detail.status_code == 200
+    assert detail.json()["session"]["revision"] == 1
+    assert detail.json()["session"]["prescription"]["version"] == 1
+    garmin = Garmin()
+    original = service.export_batch
+    monkeypatch.setattr(
+        service,
+        "export_batch",
+        lambda ids, device_id, **kwargs: original(
+            ids, device_id, client=garmin, **kwargs
+        ),
+    )
+    stale = client.post(
+        "/garmin/exports/batch", json={"session_ids": [planned], "revisions": [2]}
+    )
+    assert stale.status_code == 200
+    assert stale.json()["blocked"] == planned
+    assert not garmin.calls
+    valid = client.post(
+        "/garmin/exports/batch", json={"session_ids": [planned], "revisions": [1]}
+    )
+    assert valid.status_code == 200
+    result = valid.json()["results"][0]
+    assert result["state"] == "scheduled"
+    assert result["operation_id"] and result["updated_at"]
+    assert "intended_payload" not in result
+    oversized = client.post(
+        "/garmin/exports/batch",
+        json={"session_ids": list(range(1, 7)), "revisions": [1] * 6},
+    )
+    assert oversized.status_code == 422

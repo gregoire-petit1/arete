@@ -6,7 +6,7 @@ import { DocumentPreview } from './DocumentPreview';
 
 export interface AttachmentsHandle { upload: (files: File[]) => void }
 
-export function DocumentAttachments({ threadId, disabled = false, ref, onBusy, onDocuments }: { threadId: string; disabled?: boolean; ref: Ref<AttachmentsHandle>; onBusy: (busy: boolean) => void; onDocuments: (ids: string[]) => void }) {
+export function DocumentAttachments({ threadId, disabled = false, compact = false, ref, onBusy, onDocuments }: { threadId: string; disabled?: boolean; compact?: boolean; ref: Ref<AttachmentsHandle>; onBusy: (busy: boolean) => void; onDocuments: (ids: string[]) => void }) {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ['coach-documents', threadId], queryFn: () => documentsApi.list(threadId), retry: false });
   const controller = useRef<AbortController | null>(null);
@@ -44,7 +44,7 @@ export function DocumentAttachments({ threadId, disabled = false, ref, onBusy, o
       <span className="flex items-center gap-2 font-medium text-text-secondary"><Paperclip size={14} className="text-text-muted" />Documents{hasDocuments && <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] tabular-nums text-text-muted">{query.data?.length}</span>}</span>
       <button disabled={busy || disabled} onClick={() => input.current?.click()} className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-neon-cyan transition-colors hover:bg-neon-cyan/10 disabled:opacity-40"><Plus size={13} />Joindre</button>
     </div>
-    {!hasDocuments && !busy && <button disabled={disabled} onClick={() => input.current?.click()} className="mx-3 mb-3 flex w-[calc(100%-1.5rem)] flex-col items-center gap-2 rounded-lg border border-dashed border-white/10 px-4 py-5 transition-colors hover:border-neon-cyan/30 hover:bg-neon-cyan/[0.03] disabled:opacity-50">
+    {!hasDocuments && !busy && !compact && <button disabled={disabled} onClick={() => input.current?.click()} className="mx-3 mb-3 flex w-[calc(100%-1.5rem)] flex-col items-center gap-2 rounded-lg border border-dashed border-white/10 px-4 py-5 transition-colors hover:border-neon-cyan/30 hover:bg-neon-cyan/[0.03] disabled:opacity-50">
       <UploadCloud size={23} strokeWidth={1.5} className="mb-1 text-neon-cyan/70" />
       <span className="text-text-secondary">Dépose ton programme ici</span>
       <span className="text-[10px] leading-relaxed text-text-muted">Excel, PDF, images, texte · 20 Mio par fichier</span>

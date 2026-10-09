@@ -124,6 +124,7 @@ it("requires refresh after a lost decision response", async () => {
 
 it("preserves action IDs through SSE and browser storage without trusting a stored payload", () => {
   const event = parseEvent(JSON.stringify({ type: "calendar_action", id }));
+  if (!event) throw new Error("calendar_action must parse");
   const message = applyEvent(
     { role: "assistant", content: "Proposition" },
     event,

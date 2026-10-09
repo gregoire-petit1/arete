@@ -9,6 +9,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 
 MAX_TOOL_PREVIEW_CHARS = 2_000
+MAX_SUGGESTION_CHARS = 300
 
 
 class Preview(TypedDict):
@@ -80,3 +81,27 @@ def tool_result_event(
         "output": preview(content),
         "elapsed_ms": elapsed_ms,
     }
+
+
+def workout_updates(result: Any) -> list[dict]:
+    """Extract typed domain results, never the truncated tool previews."""
+    if not isinstance(result, str):
+        return []
+    try:
+        payload = json.loads(result)
+    except ValueError:
+        return []
+    if not isinstance(payload, dict) or payload.get("error"):
+        return []
+    sessions = payload.get("sessions", [])
+    if isinstance(payload.get("session"), dict):
+        sessions = [payload["session"]]
+    if not isinstance(sessions, list) or len(sessions) > 50:
+        return []
+    return [
+        {"session": session, "export": payload.get("export")}
+        for session in sessions
+        if isinstance(session, dict)
+        and isinstance(session.get("id"), int)
+        and isinstance(session.get("revision"), int)
+    ]

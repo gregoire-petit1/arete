@@ -1,3 +1,4 @@
+import { WorkoutSelection } from './WorkoutSelection';
 import { memo, useEffect, useRef, useState } from 'react';
 import {
   ArrowDown,
@@ -22,7 +23,7 @@ import {
   type ToolPart,
 } from '@/lib/agentStream';
 import { useCoachThreads } from '@/hooks/useCoachThreads';
-import { followUps, starters } from '@/lib/coachPrompts';
+import { starters } from '@/lib/coachPrompts';
 import { ThreadHistory } from './agent/ThreadHistory';
 import { AgentMarkdown } from './agent/AgentMarkdown';
 import { ToolActivity } from './agent/ToolActivity';
@@ -64,7 +65,11 @@ function useElapsedSeconds(running: boolean): number {
  *  A card per tool round read as several answers stacked on each other. */
 const MessageSurfaces = memo(function MessageSurfaces({
   message,
+  onAction,
+  locked,
 }: {
+  onAction?: (text: string) => void;
+  locked?: boolean;
   message: ChatMessage;
 }) {
   const parts: ChatPart[] = message.parts?.length
@@ -91,6 +96,7 @@ const MessageSurfaces = memo(function MessageSurfaces({
           <CalendarActionCard key={`calendar-${part.id}`} id={part.id} />
         ) : null
       )}
+      {!!message.workouts?.length && <WorkoutSelection sessions={message.workouts} onResult={onAction} locked={locked} />}
       {message.error && (
         <div
           role="alert"
@@ -101,7 +107,7 @@ const MessageSurfaces = memo(function MessageSurfaces({
         </div>
       )}
       {message.interrupted && (
-        <p className="mt-3 text-xs text-text-muted">Réponse interrompue.</p>
+        <p className="mt-3 text-xs text-text-muted">Réponse interrompue. Les séances déjà enregistrées sont conservées ; vérifie Garmin avant tout nouvel envoi.</p>
       )}
     </>
   );
@@ -125,7 +131,6 @@ export function AgentSidePanel({
   const streaming = runningId === active.id;
   const busy = runningId !== null || documentsBusy;
   const elapsed = useElapsedSeconds(streaming);
-  const asked = messages.filter((m) => m.role === 'user').map((m) => m.content);
   const [showHistory, setShowHistory] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [following, setFollowing] = useState(true);
@@ -316,7 +321,7 @@ export function AgentSidePanel({
             }}
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6"
           >
-            <DocumentAttachments key={active.id} threadId={active.id} disabled={runningId !== null} ref={attachmentsRef} onBusy={setDocumentsBusy} onDocuments={coach.attachments} />
+            <DocumentAttachments key={active.id} threadId={active.id} compact={active.messages.length > 0} disabled={runningId !== null} ref={attachmentsRef} onBusy={setDocumentsBusy} onDocuments={coach.attachments} />
             <div className="my-3"><DocumentImports key={`imports-${active.id}`} threadId={active.id} /></div>
             {!messages.length && (
               <div className="mx-auto mt-10 max-w-sm">
@@ -361,8 +366,8 @@ export function AgentSidePanel({
                       <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-text-muted">
                         <Bot className="size-3.5 text-neon-cyan/70" /> ARETE
                       </div>
-                      <MessageSurfaces message={message} />
-                      {i === messages.length - 1 && !busy && !message.pending && (
+                      <MessageSurfaces message={message} locked={busy} onAction={text => coach.recordAction(active.id, text)} />
+                      {i === messages.length - 1 && !busy && !message.pending && !message.workouts?.length && (
                         <button
                           onClick={() => coach.retry() && followLatest()}
                           className="mt-3 inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary"
@@ -370,20 +375,6 @@ export function AgentSidePanel({
                           <RotateCcw className="size-3" />
                           {message.error || message.interrupted ? 'Réessayer' : 'Regénérer'}
                         </button>
-                      )}
-                      {i === messages.length - 1 && !busy && !message.pending &&
-                        !message.error && !message.interrupted && (
-                        <div aria-label="Suggestions de suivi" className="mt-4 flex flex-wrap gap-2">
-                          {followUps(panelContext.page, asked).map((prompt) => (
-                            <button
-                              key={prompt}
-                              onClick={() => send(prompt)}
-                              className="rounded-xl border border-neon-cyan/20 px-3 py-2 text-left text-xs text-text-secondary hover:bg-neon-cyan/5"
-                            >
-                              {prompt}
-                            </button>
-                          ))}
-                        </div>
                       )}
                       {streaming && i === messages.length - 1 && (
                         <div
@@ -394,10 +385,10 @@ export function AgentSidePanel({
                           {message.parts?.some(
                             (p) => p.kind === 'tool' && p.status === 'running'
                           )
-                            ? 'Consultation en cours…'
+                            ? 'Action en cours…'
                             : message.content
                               ? 'Rédaction…'
-                              : 'Le coach réfléchit…'}
+                              : elapsed < 1 ? 'Demande envoyée' : 'Préparation de la réponse…'}
                           {elapsed >= 3 && ` ${elapsed} s`}
                         </div>
                       )}
@@ -414,7 +405,7 @@ export function AgentSidePanel({
                 setFollowing(true);
                 scrollRef.current?.scrollTo({
                   top: scrollRef.current.scrollHeight,
-                  behavior: 'smooth',
+                  behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
                 });
               }}
               className="absolute bottom-36 right-5 flex items-center gap-1.5 rounded-full border border-text-muted/20 bg-shadow px-3 py-2 text-xs shadow-lg"

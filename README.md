@@ -67,10 +67,11 @@ drafts. Threads are saved in this browser (up to 30), while the coach’s memory
 ledger remains shared across conversations. Hiding the panel or switching threads
 keeps the current response running in its original thread; one response runs at a time.
 
-Below the last answer, up to three French follow-up questions suited to the open
-page; clicking one sends it as the next message. They are fixed lists in the
-browser: no model request after an answer, and the input unlocks as soon as the
-answer ends.
+After each chat answer, the coach can propose one contextual next message directly
+in the composer. Edit it or send it yourself; it is never sent automatically and
+never overwrites typing. This costs one additional model request, bounded to five
+seconds and 512 output tokens with no SDK retries. Failure leaves the answer intact.
+Empty conversations still offer fixed questions suited to the open page.
 
 Chat, daily briefings and session feedback share a five-minute execution deadline,
 8 main model calls and 32 tool calls per run, with at most four concurrent tools.
@@ -201,6 +202,37 @@ Start coding sessions with [AGENTS.md](AGENTS.md) (shared instructions) or
 [CLAUDE.md](CLAUDE.md) (Claude entrypoint). The [architecture guide](docs/architecture.md)
 explains ownership, allowed dependencies, profiles and runtime limits. Changes to
 these boundaries must update the guide and the dependency tests together.
+
+### Automated repository wiki
+
+[OpenWiki](https://docs.langchain.com/oss/openwiki/automate-updates) maintains
+generated reference documentation and source-grounded claims in `openwiki/`.
+The [workflow](.github/workflows/openwiki-update.yml) runs daily at 05:23 UTC or
+manually from **Actions → OpenWiki Update → Run workflow**, always against `main`.
+It creates the initial wiki automatically; [the brief](openwiki/INSTRUCTIONS.md)
+defines its scope. Existing guides in `docs/` remain manually maintained.
+
+Add `OPENROUTER_API_KEY` as a **repository Actions secret** (Settings → Secrets
+and variables → Actions). Enable **Allow GitHub Actions to create and approve
+pull requests** in Settings → Actions → General. The workflow uses the built-in
+`GITHUB_TOKEN` to maintain one `openwiki/update` PR and arms auto-merge; `main`
+must require the existing CI checks. Review the generated documentation and
+select **Approve workflows to run** in the PR merge box: GitHub gates CI for
+[PRs created with `GITHUB_TOKEN`](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+Inference uses only [`openrouter/free`](https://openrouter.ai/openrouter/free),
+with 8,192 output tokens per request, one page worker, one provider retry and a
+25-minute generation timeout (35 minutes for the job). Free-model availability,
+context windows and quotas vary; failures stop the job without publishing partial
+results or switching to a paid model. OpenWiki 0.7.1 exposes no OpenRouter
+temperature, per-request timeout or total-request-budget setting; the workflow
+bounds wall time, not total requests. Timestamp-only updates do not open a PR.
+Installation resolves dependencies published before 2026-10-07 UTC, immediately
+after OpenWiki 0.7.1's release, to avoid a newer AWS SDK dependency that references
+an unpublished package version. Update this cutoff with the OpenWiki version and
+verify a clean install before shipping either change.
+
+### Checks
 
 ```bash
 uv run ruff check src tests && uv run ruff format --check src tests

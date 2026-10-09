@@ -1,3 +1,4 @@
+import { isWorkoutUpdate, type WorkoutUpdate } from './workouts';
 import { readableError } from './utils';
 import type { PanelPageContext } from './pageContext';
 
@@ -26,6 +27,7 @@ export interface CalendarActionPart {
 }
 export type ChatPart = ToolPart | TextPart | CalendarActionPart;
 export interface ChatMessage {
+  workouts?: WorkoutUpdate[];
   imports?: { id: string; version: number }[];
   role: 'user' | 'assistant';
   content: string;
@@ -35,6 +37,8 @@ export interface ChatMessage {
   pending?: boolean;
 }
 export type StreamEvent =
+  | WorkoutUpdate
+  | { type: 'suggestion'; text: string }
   | { type: 'import_preview'; id: string; version: number }
   | { type: 'calendar_action'; id: string }
   | { type: 'token'; id: string; text: string }
@@ -56,6 +60,7 @@ export type StreamEvent =
  *  used to trigger a summarization request on every turn of a long thread). */
 export const REQUEST_WINDOW_MESSAGES = 30;
 export const MAX_MESSAGE_CHARS = 16_000;
+export const MAX_SUGGESTION_CHARS = 300;
 
 /** The tail of a thread sent to the coach, starting on a question: some
  *  models refuse a conversation that opens with an assistant message. */
@@ -80,10 +85,18 @@ function isPreview(value: unknown): value is Preview {
   );
 }
 
-/** Fail explicitly on malformed events; losing one can leave a tool running forever. */
-export function parseEvent(data: string): StreamEvent {
+/** Fail on malformed required events; optional drafts may be omitted with a warning. */
+export function parseEvent(data: string): StreamEvent | null {
   const e: unknown = JSON.parse(data);
   if (!record(e)) throw new Error('Événement du coach invalide.');
+  if (isWorkoutUpdate(e)) return e;
+  if (e.type === 'suggestion') {
+    // Match Python's Unicode code-point limit, including emoji. An optional
+    // draft must never turn a completed answer into a retryable failure.
+    if (typeof e.text === 'string' && e.text.trim() && Array.from(e.text).length <= MAX_SUGGESTION_CHARS) return e as StreamEvent;
+    console.warn('Suggestion du coach invalide : brouillon ignoré.');
+    return null;
+  }
   if (e.type === 'import_preview' && typeof e.id === 'string' && /^[0-9a-f-]{36}$/i.test(e.id) && Number.isInteger(e.version) && Number(e.version) > 0) return e as StreamEvent;
   const identified = typeof e.id === 'string' && e.id.length > 0;
   if (
@@ -142,6 +155,15 @@ export function applyEvent(
   message: ChatMessage,
   event: StreamEvent
 ): ChatMessage {
+  // Suggestions belong to the editable draft, never to conversation history.
+  if (event.type === 'suggestion') return message;
+  if (event.type === 'workout_update') {
+    const current = message.workouts ?? [];
+    const previous = current.find(w => w.session.id === event.session.id);
+    if (previous && (previous.session.revision > event.session.revision || previous.sequence >= event.sequence)) return message;
+    if (!previous && current.length >= 50) throw new Error('Maximum 50 séances par réponse.');
+    return { ...message, workouts: previous ? current.map(w => w.session.id === event.session.id ? event : w) : [...current, event] };
+  }
   if (event.type === 'import_preview') return { ...message, imports: [...(message.imports ?? []).filter(item => item.id !== event.id), { id: event.id, version: event.version }] };
   if (event.type === 'error') return settleMessage(message, event.detail);
   if (event.type === 'done')
@@ -225,6 +247,7 @@ export async function consumeStream(
         if (++events > MAX_STREAM_EVENTS)
           throw new Error('Trop d’événements dans la réponse.');
         const event = parseEvent(data);
+        if (!event) continue;
         if (event.type === 'error') throw new Error(event.detail);
         onEvent(event);
         if (event.type === 'done') return;
@@ -256,6 +279,7 @@ export async function runAgentStream(
     body: JSON.stringify({
       messages: history.map(({ role, content }) => ({ role, content })),
       thread_id: threadId,
+      supports_suggestions: true,
       panel_context,
     }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]),
