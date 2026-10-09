@@ -203,9 +203,38 @@ class TestStart:
 class TestDailySync:
     def test_reports_missing_connectors(self, tmp_path, monkeypatch):
         monkeypatch.setenv("ARETE_GARMIN_TOKENS_DIR", str(tmp_path / "none"))
-        with patch("arete.api.strava._get_strava_tokens", return_value=None):
+        with (
+            patch("arete.api.strava._get_strava_tokens", return_value=None),
+            patch("arete.services.plan_adaptation.adapt_today", return_value=[]),
+        ):
             status = scheduler.daily_sync()
-        assert status == {"garmin": "no tokens", "strava": "not connected"}
+        assert status == {
+            "garmin": "no tokens",
+            "plan": "0 decisions (none)",
+            "strava": "not connected",
+        }
+
+    def test_adaptation_runs_before_strava_and_failures_are_reported(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setenv("ARETE_GARMIN_TOKENS_DIR", str(tmp_path / "none"))
+        calls: list[str] = []
+
+        def adapt(**_kwargs):
+            calls.append("adapt")
+            raise RuntimeError("db down")
+
+        def tokens():
+            calls.append("strava")
+            return None
+
+        with (
+            patch("arete.services.plan_adaptation.adapt_today", side_effect=adapt),
+            patch("arete.api.strava._get_strava_tokens", side_effect=tokens),
+        ):
+            status = scheduler.daily_sync()
+        assert calls == ["adapt", "strava"]
+        assert status["plan"] == "failed: db down"
 
     def test_status_is_kept_not_discarded(self, tmp_path, monkeypatch):
         # run_forever ignores the return value; the coach needs to know what
