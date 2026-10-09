@@ -206,6 +206,22 @@ class GarminClient:
             dict[str, Any] | None, self.connect().get_endurance_score(day.isoformat())
         )
 
+    # Structured workouts: created in the library, then put on the calendar
+
+    def upload_workout(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return cast(dict[str, Any], self.connect().upload_workout(payload))
+
+    def schedule_workout(self, workout_id: str, day: date) -> dict[str, Any]:
+        return cast(
+            dict[str, Any], self.connect().schedule_workout(workout_id, day.isoformat())
+        )
+
+    def unschedule_workout(self, schedule_id: str) -> Any:
+        return self.connect().unschedule_workout(schedule_id)
+
+    def delete_workout(self, workout_id: str) -> Any:
+        return self.connect().delete_workout(workout_id)
+
     def hill_score(self, day: date) -> dict[str, Any] | None:
         return cast(
             dict[str, Any] | None, self.connect().get_hill_score(day.isoformat())

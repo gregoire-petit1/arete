@@ -116,6 +116,12 @@ def daily_sync() -> dict[str, str]:
     except Exception as e:  # noqa: BLE001 - background job must not die
         status["plan"] = f"failed: {e}"
 
+    # After the decisions, so a session they changed goes out changed.
+    if garmin.has_tokens():
+        from arete.services.plan_adaptation import push_today
+
+        status["garmin_push"] = push_today(garmin)
+
     from arete.api.strava import SyncRequest, _get_strava_tokens, sync
 
     if _get_strava_tokens():

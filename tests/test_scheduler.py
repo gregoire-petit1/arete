@@ -244,6 +244,35 @@ class TestDailySync:
             status = scheduler.daily_sync()
         assert scheduler.last_status() == status
 
+    def test_with_garmin_the_push_follows_the_decisions(self):
+        from unittest.mock import MagicMock
+
+        garmin = MagicMock()
+        garmin.has_tokens.return_value = True
+        calls: list[str] = []
+        sync_client = MagicMock()
+        sync_client.sync_activities.return_value = MagicMock(
+            activities_synced=0, errors=[]
+        )
+        with (
+            patch("arete.garmin.client.GarminClient", return_value=garmin),
+            patch("arete.garmin.sync.GarminSyncClient", return_value=sync_client),
+            patch("arete.garmin.health_sync.sync_range", return_value=[]),
+            patch("arete.garmin.readiness.update_readiness_range"),
+            patch(
+                "arete.services.plan_adaptation.adapt_today",
+                side_effect=lambda **_: calls.append("adapt") or [],
+            ),
+            patch(
+                "arete.services.plan_adaptation.push_today",
+                side_effect=lambda client: calls.append("push") or "1 sent",
+            ),
+            patch("arete.api.strava._get_strava_tokens", return_value=None),
+        ):
+            status = scheduler.daily_sync()
+        assert calls == ["adapt", "push"]
+        assert status["garmin_push"] == "1 sent"
+
     def test_last_status_is_a_copy(self):
         # Callers must not be able to edit the scheduler's record.
         snapshot = scheduler.last_status()

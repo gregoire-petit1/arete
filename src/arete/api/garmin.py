@@ -69,6 +69,8 @@ class PlannedSessionResponse(BaseModel):
     description: str | None
     source: str
     status: str
+    garmin_workout_id: str | None = None
+    garmin_pushed_at: datetime | None = None
 
 
 class ActualSessionResponse(BaseModel):
@@ -147,6 +149,8 @@ def _planned_to_response(session: PlannedSession) -> PlannedSessionResponse:
         status=session.status.value
         if isinstance(session.status, SessionStatus)
         else session.status,
+        garmin_workout_id=session.garmin_workout_id,
+        garmin_pushed_at=session.garmin_pushed_at,
     )
 
 
@@ -258,6 +262,40 @@ def delete_planned_session(session_id: int):
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"message": "Session deleted"}
+
+
+@router.get("/planned/{session_id}/structure")
+def get_planned_structure(session_id: int):
+    """The steps the watch would receive, or why it would receive none."""
+    from arete.services.plan_adaptation import structure_preview
+
+    try:
+        return structure_preview(session_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Séance introuvable") from None
+
+
+@router.post("/planned/{session_id}/push")
+def push_planned_session(session_id: int):
+    """Schedule the session on Garmin's calendar (the watch syncs it from there)."""
+    from arete.garmin.client import GarminClient
+    from arete.garmin.workout_structure import NotPushable
+    from arete.services.plan_adaptation import push_session
+
+    client = GarminClient()
+    if not client.has_tokens():
+        raise HTTPException(status_code=401, detail="Garmin n'est pas connecté")
+    try:
+        return push_session(client, session_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Séance introuvable") from None
+    except NotPushable as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    except Exception as e:
+        logger.warning("Garmin push failed for session %s", session_id, exc_info=True)
+        raise HTTPException(
+            status_code=502, detail=f"Garmin a refusé la séance : {e}"
+        ) from e
 
 
 # ─────────────────────────────────────────────────────────────────────────

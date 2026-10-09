@@ -9,12 +9,13 @@ the health sync, before the briefing) and by ``POST /plan/today/adapt``.
 from __future__ import annotations
 
 import logging
-from datetime import date
-from typing import Any
+from datetime import date, datetime
+from typing import TYPE_CHECKING, Any
 
-from arete.dataio.settings import get_user_settings
+from arete.dataio.settings import athlete_zone_model, get_user_settings
 from arete.garmin.models import PlannedSession, SessionStatus
 from arete.garmin.repository import GarminRepository
+from arete.garmin.workout_structure import NotPushable, derive, describe_fr
 from arete.services.adaptation import AdaptationInput, Decision, evaluate
 from arete.services.plan_repository import (
     AlreadyDecided,
@@ -22,7 +23,14 @@ from arete.services.plan_repository import (
     PlanDecisionRepository,
 )
 
+if TYPE_CHECKING:
+    from arete.garmin.client import GarminClient
+    from arete.garmin.workout_structure import Block
+
 logger = logging.getLogger(__name__)
+
+#: Bound on what the daily run sends to Garmin in one go.
+MAX_DAILY_PUSHES = 3
 
 #: The planning fields a decision may overwrite, saved before it does.
 _PLAN_FIELDS = (
@@ -110,12 +118,17 @@ def adapt_today(
         except AlreadyDecided:
             continue  # another run claimed it first: its decision stands
         if outcome.decision in (Decision.EASE, Decision.REPLACE_EASY):
+            # garmin_pushed_at cleared: a copy sent before the change is stale,
+            # the next push replaces it.
             planned_repo.update_planned_session_fields(
-                session.id, **outcome.adapted, status=SessionStatus.MODIFIED
+                session.id,
+                **outcome.adapted,
+                status=SessionStatus.MODIFIED,
+                garmin_pushed_at=None,
             )
         elif outcome.decision == Decision.REST:
             planned_repo.update_planned_session_fields(
-                session.id, status=SessionStatus.SKIPPED
+                session.id, status=SessionStatus.SKIPPED, garmin_pushed_at=None
             )
         decisions.mark(decision.id, "applied_at")
         logger.info(
@@ -136,7 +149,8 @@ def revert(decision_id: int) -> PlanDecision:
 
     Raises ``LookupError`` for an unknown id and ``NothingToRevert`` for a
     keep or a decision already reverted. A copy already scheduled on Garmin
-    is forgotten here (its ids cleared) so the athlete can send the original.
+    is marked unsent: its ids stay, so the next push replaces it instead of
+    leaving it on the calendar beside the original.
     """
     decisions = PlanDecisionRepository()
     decision = decisions.get(decision_id)
@@ -148,11 +162,142 @@ def revert(decision_id: int) -> PlanDecision:
     GarminRepository().update_planned_session_fields(
         decision.planned_session_id,
         **original,
-        garmin_workout_id=None,
-        garmin_schedule_id=None,
         garmin_pushed_at=None,
     )
     decisions.mark(decision.id, "reverted_at")
     reverted = decisions.get(decision.id)
     assert reverted is not None
     return reverted
+
+
+# --------------------------------------------------------------------------- #
+# The session as watch steps, and its copy on Garmin's calendar
+# --------------------------------------------------------------------------- #
+def structure(session: PlannedSession) -> tuple[Block, ...]:
+    """The session's steps in the athlete's zones; ``NotPushable`` says why not."""
+    settings = get_user_settings() or {}
+    return derive(session, athlete_zone_model(), settings.get("threshold_pace_sec_km"))
+
+
+def structure_preview(session_id: int) -> dict[str, Any]:
+    """What the watch would receive, or why it would receive nothing."""
+    from arete.garmin.workout_structure import estimated_seconds
+
+    session = GarminRepository().get_planned_session(session_id)
+    if session is None:
+        raise LookupError(f"planned session {session_id}")
+    try:
+        blocks = structure(session)
+    except NotPushable as e:
+        return {
+            "pushable": False,
+            "text": None,
+            "estimated_min": None,
+            "reason": str(e),
+        }
+    return {
+        "pushable": True,
+        "text": describe_fr(blocks),
+        "estimated_min": round(estimated_seconds(blocks) / 60),
+        "reason": None,
+    }
+
+
+def push_session(client: GarminClient, session_id: int) -> dict[str, Any]:
+    """Schedule the session on Garmin's calendar, replacing an earlier copy.
+
+    Raises ``LookupError`` (unknown session), ``NotPushable`` (no structure);
+    Garmin's own errors propagate. Never retried automatically: a failed
+    upload may still have created the workout.
+    """
+    from arete.garmin.workouts import build_payload, remove, upload_and_schedule
+
+    repo = GarminRepository()
+    session = repo.get_planned_session(session_id)
+    if session is None:
+        raise LookupError(f"planned session {session_id}")
+    blocks = structure(session)
+    if session.garmin_workout_id or session.garmin_schedule_id:
+        remove(client, session.garmin_workout_id, session.garmin_schedule_id)
+        repo.update_planned_session_fields(
+            session_id, garmin_workout_id=None, garmin_schedule_id=None
+        )
+    text = describe_fr(blocks)
+    payload = build_payload(
+        blocks,
+        name=f"Arete — {session.description or text}",
+        description=text,
+        sport=session.sport,
+    )
+    workout_id, schedule_id = upload_and_schedule(client, payload, session.date)
+    pushed_at = datetime.now()
+    repo.update_planned_session_fields(
+        session_id,
+        garmin_workout_id=workout_id,
+        garmin_schedule_id=schedule_id,
+        garmin_pushed_at=pushed_at,
+    )
+    logger.info("Planned session %s scheduled on Garmin as %s", session_id, workout_id)
+    return {
+        "garmin_workout_id": workout_id,
+        "garmin_schedule_id": schedule_id,
+        "garmin_pushed_at": pushed_at.isoformat(),
+    }
+
+
+def push_today(client: GarminClient, target_date: date | None = None) -> str:
+    """The daily run's push: today's sessions not on Garmin yet. Never raises."""
+    if not bool((get_user_settings() or {}).get("push_to_garmin_enabled", False)):
+        return "disabled"
+    day = target_date or date.today()
+    sent, skipped, failed = 0, 0, 0
+    try:
+        sessions = GarminRepository().list_planned_sessions(
+            start_date=day, end_date=day, status=None, limit=10, ascending=True
+        )
+    except Exception as e:  # noqa: BLE001 - background job must not die
+        return f"failed: {e}"
+    for session in sessions:
+        if (
+            session.status == SessionStatus.SKIPPED
+            and session.id is not None
+            and (session.garmin_workout_id or session.garmin_schedule_id)
+        ):
+            _withdraw(client, session)  # rest day: the watch must not offer it
+            continue
+        if sent + failed >= MAX_DAILY_PUSHES:
+            break
+        if (
+            session.id is None
+            or session.status not in (SessionStatus.PENDING, SessionStatus.MODIFIED)
+            or session.garmin_pushed_at is not None
+        ):
+            continue
+        try:
+            push_session(client, session.id)
+            sent += 1
+        except NotPushable:
+            skipped += 1
+        except Exception:  # noqa: BLE001 - one failed upload, not the run
+            logger.warning(
+                "Garmin push failed for session %s", session.id, exc_info=True
+            )
+            failed += 1
+    return f"{sent} sent, {skipped} not pushable, {failed} failed"
+
+
+def _withdraw(client: GarminClient, session: PlannedSession) -> None:
+    from arete.garmin.workouts import remove
+
+    assert session.id is not None
+    try:
+        remove(client, session.garmin_workout_id, session.garmin_schedule_id)
+    except Exception:  # noqa: BLE001 - leave the ids for the next attempt
+        logger.warning("Could not withdraw session %s from Garmin", session.id)
+        return
+    GarminRepository().update_planned_session_fields(
+        session.id,
+        garmin_workout_id=None,
+        garmin_schedule_id=None,
+        garmin_pushed_at=None,
+    )

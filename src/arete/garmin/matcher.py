@@ -261,16 +261,6 @@ class SessionMatcher:
 
 
 def _zone_midpoint(zones: ZoneModel, index: int) -> float:
-    """Middle heart rate of zone ``index`` (0-4) in the athlete's model.
-
-    The two outer zones are open-ended; each is given the width of its
-    neighbour, so a planned Z1 or Z5 still has a heart rate to aim at.
-    """
-    b = zones.boundaries
-    if index == 0:
-        low, high = b[0] - (b[1] - b[0]), b[0]
-    elif index == 4:
-        low, high = b[3], b[3] + (b[3] - b[2])
-    else:
-        low, high = b[index - 1], b[index]
-    return (low + high) / 2
+    """Middle heart rate of zone ``index`` (0-4) in the athlete's model."""
+    low, high = zones.target_range(index + 1)
+    return (low + high + 1) / 2
