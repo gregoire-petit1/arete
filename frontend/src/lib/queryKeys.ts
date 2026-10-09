@@ -36,6 +36,14 @@ export const qk = {
   healthStatus: ['garminHealthStatus'] as const,
   syncStatus: ['syncStatus'] as const,
   stravaStatus: ['stravaStatus'] as const,
+
+  planToday: ['plan', 'today'] as const,
+  /** Watch steps of a planned session; changes whenever the session is adapted. */
+  plannedStructure: (id?: number) =>
+    id == null ? (['plannedStructure'] as const) : (['plannedStructure', id] as const),
+  vapidKey: ['vapidPublicKey'] as const,
+  /** This device's Web Push state (lib/push.ts), not a server answer. */
+  pushState: ['pushState'] as const,
 };
 
 /**
@@ -60,6 +68,8 @@ export function invalidateAfterSession(queryClient: QueryClient): void {
     qk.playerStats,
     qk.fitness,
     qk.workload,
+    qk.planToday,
+    qk.plannedStructure(),
   ]) {
     queryClient.invalidateQueries({ queryKey: key });
   }

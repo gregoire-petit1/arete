@@ -1,9 +1,12 @@
 import { createElement, useState } from 'react';
-import { Check, ChevronDown, Trash2, X } from 'lucide-react';
+import { Check, ChevronDown, RotateCcw, Trash2, Watch, X } from 'lucide-react';
+import { formatClock } from '@/lib/fr';
 import { getSportColor, getSportIconComponent } from '@/lib/sport';
 import type { PlannedState } from '@/lib/sessionMatch';
 import { cn, formatDurationCompact, formatPace } from '@/lib/utils';
-import type { ActualSession, PlannedSession, StrengthSession } from '@/types';
+import type { ActualSession, PlanDecision, PlannedSession, StrengthSession } from '@/types';
+import { DecisionBadge } from './DecisionBadge';
+import { Spinner } from './ui/Spinner';
 
 const INTENSITY_LABEL: Record<string, string> = {
   easy: 'facile',
@@ -121,13 +124,37 @@ interface SessionCardProps {
   onStatus?: (status: 'completed' | 'skipped' | 'pending') => void;
   onDelete?: () => void;
   busy?: boolean;
+  /** Today's adaptation of this session, if the morning run decided one. */
+  decision?: PlanDecision | null;
+  /** Shown for an applied decision other than keep. */
+  onRevert?: () => void;
+  /** "Send to the watch" control; omit when the session cannot be sent. */
+  push?: SessionPush;
+}
+
+export interface SessionPush {
+  /** Steps the watch will get, e.g. "10' Z2 · 4×(3' Z5 / 2' Z1) · 10' Z1". */
+  text: string | null;
+  onPush: () => void;
+  pending: boolean;
+  error: string | null;
 }
 
 /**
  * One planned session. Once it is done the realised session takes the front seat
  * and the plan becomes a collapsible reminder underneath.
  */
-export function SessionCard({ planned, realised, state, onStatus, onDelete, busy }: SessionCardProps) {
+export function SessionCard({
+  planned,
+  realised,
+  state,
+  onStatus,
+  onDelete,
+  busy,
+  decision,
+  onRevert,
+  push,
+}: SessionCardProps) {
   const [open, setOpen] = useState(false);
   const typeLabel = SESSION_TYPE_LABEL[planned.session_type] ?? planned.session_type;
   const intensity = planned.target_intensity;
@@ -162,6 +189,20 @@ export function SessionCard({ planned, realised, state, onStatus, onDelete, busy
                   {INTENSITY_LABEL[intensity]}
                 </span>
               )}
+              {planned.status === 'modified' && (
+                <span className="border rounded px-1.5 py-0.5 text-[11px] text-neon-gold border-neon-gold/40">
+                  modifiée
+                </span>
+              )}
+            </div>
+          )}
+
+          {decision && (
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11px] font-mono">
+              <DecisionBadge decision={decision.decision} reverted={decision.reverted_at != null} />
+              <span className="text-text-secondary">
+                {decision.reverted_at ? 'Séance prévue rétablie.' : decision.reason}
+              </span>
             </div>
           )}
 
@@ -223,6 +264,46 @@ export function SessionCard({ planned, realised, state, onStatus, onDelete, busy
         </div>
       </div>
 
+      {!realised && (planned.garmin_pushed_at || push || canRevert(decision, onRevert)) && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono">
+          {planned.garmin_pushed_at ? (
+            <span
+              className="flex items-center gap-1 text-success-green/80"
+              title="La montre la récupère à sa prochaine synchronisation avec le téléphone."
+            >
+              <Watch className="w-3 h-3" />
+              Envoyée à Garmin {formatClock(planned.garmin_pushed_at)}
+            </span>
+          ) : (
+            push && (
+              <button
+                type="button"
+                disabled={busy || push.pending}
+                onClick={push.onPush}
+                title={push.text ?? undefined}
+                className="flex items-center gap-1 rounded border border-neon-cyan/30 bg-neon-cyan/10 px-2 py-1 text-neon-cyan hover:bg-neon-cyan/20 disabled:opacity-40"
+              >
+                {push.pending ? <Spinner className="w-3 h-3" /> : <Watch className="w-3 h-3" />}
+                Envoyer sur la montre
+              </button>
+            )
+          )}
+          {push?.text && !planned.garmin_pushed_at && <span className="text-text-muted">{push.text}</span>}
+          {canRevert(decision, onRevert) && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onRevert}
+              className="flex items-center gap-1 text-text-muted hover:text-text-primary disabled:opacity-40"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Rétablir la séance prévue
+            </button>
+          )}
+          {push?.error && <span className="basis-full text-danger-red">{push.error}</span>}
+        </div>
+      )}
+
       {state === 'done' && realised?.adherence_score != null && (
         <div className="mt-1 text-[11px] font-mono text-success-green/80">
           Adhérence {Math.round(realised.adherence_score)} %
@@ -230,4 +311,9 @@ export function SessionCard({ planned, realised, state, onStatus, onDelete, busy
       )}
     </div>
   );
+}
+
+/** An applied decision that changed the session can be undone, once. */
+function canRevert(decision: PlanDecision | null | undefined, onRevert: (() => void) | undefined): boolean {
+  return Boolean(onRevert && decision && decision.decision !== 'keep' && !decision.reverted_at);
 }

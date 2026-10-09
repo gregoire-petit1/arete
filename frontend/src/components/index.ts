@@ -5,6 +5,7 @@ export { LoadingState, ErrorState, EmptyState, SystemAlert } from "./States";
 export { CalendarWeek } from "./CalendarWeek";
 export { SessionCard, OffPlanRow, SessionFacts, strengthAsActual, SESSION_TYPE_LABEL } from "./SessionCard";
 export { AdherenceBar } from "./AdherenceBar";
+export { DecisionBadge } from "./DecisionBadge";
 export { FitDropzone } from "./FitDropzone";
 export * from "./SportIcons";
 export { MuscleMap } from "./muscle-map";

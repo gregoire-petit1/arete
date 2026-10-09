@@ -82,3 +82,15 @@ export const SPORT_LABEL: Record<string, string> = {
 
 export const sportLabel = (sport: string | null | undefined): string =>
   sport ? (SPORT_LABEL[sport.toLowerCase()] ?? sport.replace(/_/g, ' ')) : 'Autre';
+
+/** The morning adaptation's decisions (services/adaptation.py). */
+export const DECISION_LABEL: Record<string, string> = {
+  keep: 'Maintenue',
+  ease: 'Allégée',
+  replace_easy: 'Remplacée',
+  rest: 'Repos',
+};
+
+/** "08:05" in the browser's time zone, from an ISO timestamp. */
+export const formatClock = (iso: string): string =>
+  new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
