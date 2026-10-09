@@ -414,7 +414,8 @@ class TestBuildChatModel:
             DEFAULT_OPENROUTER_MODEL,
             *DEFAULT_OPENROUTER_FALLBACKS,
         ]
-        assert payload["extra_body"]["models"][-1] == "openrouter/free"
+        # The free router once answered a briefing with a safety classifier.
+        assert "openrouter/free" not in payload["extra_body"]["models"]
 
     def test_a_pinned_model_is_never_rerouted_silently(self, monkeypatch):
         from arete.agent.models.providers import build_chat_model
@@ -423,6 +424,16 @@ class TestBuildChatModel:
         payload = self._payload(build_chat_model())
         assert payload["model"] == "custom/model:free"
         assert "models" not in (payload.get("extra_body") or {})
+
+    @pytest.mark.parametrize("pinned", [None, "custom/model:free"])
+    def test_openrouter_requests_never_pay(self, monkeypatch, pinned):
+        from arete.agent.models.providers import build_chat_model
+
+        self._openrouter(monkeypatch, pinned)
+        payload = self._payload(build_chat_model())
+        assert payload["extra_body"]["provider"] == {
+            "max_price": {"prompt": 0, "completion": 0}
+        }
 
     def test_a_pinned_model_takes_explicit_fallbacks_in_order(self, monkeypatch):
         from arete.agent.models.providers import build_chat_model

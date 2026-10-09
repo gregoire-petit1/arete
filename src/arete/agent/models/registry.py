@@ -16,15 +16,22 @@ AGENT_TIMEOUT_SEC = 60
 AGENT_MAX_RETRIES = 2
 AGENT_STREAM_CHUNK_TIMEOUT_SEC = 30
 
-#: Free, tool-calling models, measured on 2026-10-09: both Nemotrons answered
-#: a tool call in 1.3 s (Gemma 4 was rate-limited upstream). `openrouter/free`
-#: (a random free model per request) closes the list. Free availability
-#: changes weekly: LLM_MODEL and LLM_MODEL_FALLBACKS override both.
-DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3.5-lightning:free"
+#: Free, tool-calling chat models, measured on 2026-10-09. Nemotron 3 Super
+#: answers a tool call in 1.3 s and a real briefing in 6-8 s, in French, with
+#: its reasoning kept out of the answer. Rejected the same day: Nemotron 3.5
+#: Lightning (writes its reasoning into the answer), `openrouter/free` (routed
+#: a tool-less request to a content-safety classifier that replied "User
+#: Safety: safe"), Ling 3.1 Flash (priced 0 but not free under a price cap).
+#: Free availability changes weekly: LLM_MODEL and LLM_MODEL_FALLBACKS
+#: override both.
+DEFAULT_OPENROUTER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 DEFAULT_OPENROUTER_FALLBACKS = (
-    "nvidia/nemotron-3-super-120b-a12b:free",
-    "openrouter/free",
+    "google/gemma-4-31b-it:free",
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
 )
+#: Sent with every OpenRouter request: a model that stops being free is
+#: skipped instead of billed to the account's credits.
+OPENROUTER_FREE_ONLY = {"max_price": {"prompt": 0, "completion": 0}}
 #: OpenRouter rejects a longer `models` list with HTTP 400.
 MAX_OPENROUTER_MODELS = 3
 
