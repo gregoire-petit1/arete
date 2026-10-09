@@ -157,3 +157,25 @@ it('asks the same question again on retry, without the failed answer', async () 
   expect(screen.getAllByRole('article', { name: 'Ton message' })).toHaveLength(1);
   expect(screen.queryByText('Le coach est indisponible.')).toBeNull();
 });
+
+it('gathers every tool of an answer in one activity card', async () => {
+  render(<Harness />);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ouvrir le coach' })[0]);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message au coach' }), {
+    target: { value: 'Ma semaine ?' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
+  const preview = { text: '{}', truncated: false };
+  await act(async () => {
+    stream.emit?.({ type: 'tool_start', id: 't1', name: 'get_workload', args: preview });
+    stream.emit?.({ type: 'tool_end', id: 't1', name: 'get_workload', status: 'done', output: preview, elapsed_ms: 5 });
+    stream.emit?.({ type: 'token', id: 'm1', text: 'Je regarde ton planning.' });
+    stream.emit?.({ type: 'tool_start', id: 't2', name: 'list_planned', args: preview });
+    stream.emit?.({ type: 'tool_end', id: 't2', name: 'list_planned', status: 'done', output: preview, elapsed_ms: 5 });
+    stream.emit?.({ type: 'done', message: { role: 'assistant', content: 'Semaine équilibrée.' } });
+    stream.resolve?.();
+  });
+  const cards = screen.getAllByLabelText('Activité des outils');
+  expect(cards).toHaveLength(1);
+  expect(within(cards[0]).getByText(/2 outils/)).toBeTruthy();
+});

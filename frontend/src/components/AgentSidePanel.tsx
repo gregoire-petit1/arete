@@ -57,7 +57,8 @@ function useElapsedSeconds(running: boolean): number {
   return seconds;
 }
 
-/** Keep model turns in order, with independent tool groups between them. */
+/** One activity card per answer, where its first tool ran; texts in order.
+ *  A card per tool round read as several answers stacked on each other. */
 const MessageSurfaces = memo(function MessageSurfaces({
   message,
 }: {
@@ -68,13 +69,12 @@ const MessageSurfaces = memo(function MessageSurfaces({
     : message.content
       ? [{ kind: 'text', id: 'answer', text: message.content }]
       : [];
+  const tools = parts.filter((part): part is ToolPart => part.kind === 'tool');
   const groups: (ChatPart | ToolPart[])[] = [];
   for (const part of parts) {
-    const previous = groups[groups.length - 1];
-    if (part.kind === 'tool') {
-      if (Array.isArray(previous)) previous.push(part);
-      else groups.push([part]);
-    } else groups.push(part);
+    if (part.kind === 'text') {
+      if (part.text.trim()) groups.push(part);
+    } else if (part === tools[0]) groups.push(tools);
   }
   return (
     <>
