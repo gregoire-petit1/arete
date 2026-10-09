@@ -419,7 +419,7 @@ def get_garmin_candidates(session_id: int):
     end = session.date + timedelta(days=1)
 
     actual_sessions = GarminRepository().list_actual_sessions(
-        start_date=start, end_date=end, limit=200
+        start_date=start, end_date=end, limit=200, include_blobs=False
     )
 
     # Filter to strength activities
@@ -452,7 +452,7 @@ def _cardio_muscle_activity(
     from arete.garmin.repository import GarminRepository
 
     sessions = GarminRepository().list_actual_sessions(
-        start_date=start_date, end_date=end_date, limit=1000
+        start_date=start_date, end_date=end_date, limit=1000, include_blobs=False
     )
 
     volume: dict[str, float] = {}
