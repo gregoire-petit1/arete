@@ -260,6 +260,17 @@ CREATE TABLE IF NOT EXISTS app.daily_metrics (
     steps                INTEGER,
     intensity_minutes    INTEGER,
     readiness_score      INTEGER,
+    training_readiness_score    INTEGER,  -- Garmin's morning Training Readiness
+    training_readiness_level    VARCHAR,
+    training_readiness_feedback VARCHAR,
+    training_status      VARCHAR,     -- e.g. PRODUCTIVE_1
+    vo2max_run           DOUBLE,
+    race_5k_sec          INTEGER,     -- Garmin race predictions
+    race_10k_sec         INTEGER,
+    race_half_sec        INTEGER,
+    race_marathon_sec    INTEGER,
+    endurance_score      INTEGER,
+    hill_score           INTEGER,
     source               VARCHAR DEFAULT 'garmin',
     fetched_at           TIMESTAMP DEFAULT now(),
     PRIMARY KEY (user_id, date)
@@ -388,6 +399,30 @@ def _m9_canonical_sport_names(con) -> None:
             )
 
 
+#: Garmin's own training metrics, pulled beside the health data.
+GARMIN_PERFORMANCE_COLUMNS: dict[str, str] = {
+    "training_readiness_score": "INTEGER",
+    "training_readiness_level": "VARCHAR",
+    "training_readiness_feedback": "VARCHAR",
+    "training_status": "VARCHAR",
+    "vo2max_run": "DOUBLE",
+    "race_5k_sec": "INTEGER",
+    "race_10k_sec": "INTEGER",
+    "race_half_sec": "INTEGER",
+    "race_marathon_sec": "INTEGER",
+    "endurance_score": "INTEGER",
+    "hill_score": "INTEGER",
+}
+
+
+def _m10_garmin_performance_columns(con) -> None:
+    """Training Readiness, status, VO2max, race predictions, endurance and hill."""
+    existing = _columns(con, "daily_metrics")
+    for name, sql_type in GARMIN_PERFORMANCE_COLUMNS.items():
+        if name not in existing:
+            con.execute(f"ALTER TABLE app.daily_metrics ADD COLUMN {name} {sql_type}")
+
+
 #: Append-only. A database at the last version skips the DDL entirely on boot
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
@@ -402,6 +437,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (7, _m7_threshold_measured_on),
     (8, _m8_coach_briefing_enabled),
     (9, _m9_canonical_sport_names),
+    (10, _m10_garmin_performance_columns),
 ]
 
 
