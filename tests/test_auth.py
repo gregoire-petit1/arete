@@ -76,10 +76,9 @@ def test_enforced_mode_requires_a_credential(client, enforced):
         "publishable_key": "pk_test_fake",
     }
     assert client.get("/openapi.json").status_code == 200
-    # OAuth callbacks arrive from the provider's redirect, with no session: they
-    # keep their own state checks and must not be turned away at the door.
+    # The Strava callback arrives from the provider's redirect, with no session:
+    # it keeps its own state check and must not be turned away at the door.
     assert client.get("/strava/callback").status_code != 401
-    assert client.get("/google-calendar/callback").status_code != 401
 
 
 def test_the_owner_gets_the_athlete_and_other_accounts_wait(client, enforced):

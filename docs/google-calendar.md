@@ -1,49 +1,43 @@
 # Google Calendar
 
-Arete uses Vercel Connect for delegated Google OAuth and calls the Calendar API
-from FastAPI. It does not expose an MCP server or require a JavaScript agent.
-The Google HTTP contract is separate from the approval service, so provider
-credentials never enter model context or browser storage.
+The Calendar integration rides on sign-in: the Google account a user signs in
+with through Clerk holds the grant, and Clerk keeps its refresh token. FastAPI
+asks Clerk for a fresh access token per operation and calls the Calendar API.
+No Google credential enters DuckDB, the model context or browser storage. Each
+signed-in account has its own connection, selection and pending actions.
 
 ## Operator setup
 
-1. Update the Vercel CLI (`npm i -g vercel@latest`), then run `vercel login` from
-   this workspace. Link the intended project with `vercel link`.
-2. Create a **development-only** Google connector:
-   `vercel connect create google --name arete-calendar-dev`.
-   Follow the CLI's Google OAuth setup; if a Google Cloud client is requested,
-   enable Calendar API, configure the consent audience, and register Connect's
-   redirect URI `https://connect.vercel.com/callback` on a **Web application**
-   client. Arete's return URL is not Google's OAuth callback. Keep the client
-   secret in Connect. The connector has no default scopes: a manual
-   `vercel connect token` must pass `--scopes`; Arete sends them on each request.
-3. Allow the connector only in the project's Development environment. Request:
+1. Turn on sign-in (`ARETE_AUTH=clerk`, see the README's "Who can use it").
+   Calendar is available exactly when sign-in is: no other variable.
+2. In Google Cloud, create a **Web application** OAuth client, enable the Calendar
+   API, and add the three scopes below to the consent screen. While the app is in
+   testing mode, list each user as a test user (`calendar.events` is a sensitive
+   scope: going public needs Google's verification).
+3. In the Clerk dashboard (`vercel integration open clerk`), Google social
+   connection: switch to custom credentials with that client, and register
+   Clerk's redirect URI on it. Leave the sign-in scopes at their defaults: the
+   calendar is asked for later, only by users who connect it. Clerk's shared
+   development credentials cannot request extra scopes.
+4. Scopes requested on **Connecter Google Calendar**:
    `https://www.googleapis.com/auth/calendar.calendarlist.readonly`,
-   `https://www.googleapis.com/auth/calendar.events`, and
+   `https://www.googleapis.com/auth/calendar.events`,
    `https://www.googleapis.com/auth/calendar.events.freebusy`.
-4. Configure `GOOGLE_CALENDAR_CONNECTOR` with the returned connector UID in `.env`.
-   Set `FRONTEND_URL` to the exact browser origin (`http://localhost:5173` for
-   `make dev`). Leave the server-owned `GOOGLE_CALENDAR_SUBJECT` stable; it
-   identifies the single athlete at Connect, not a browser-provided identity.
-5. Run `vercel env pull .env.local`. The backend reads the local OIDC token from
-   this ignored file, without importing the other variables into its config.
-   Refresh it with the same command if it expires. Vercel injects it at runtime
-   on deployed instances. An explicit server-only `VERCEL_CONNECT_ACCESS_TOKEN`
-   is supported for externally hosted environments.
-6. Verify external authentication covers the frontend, every `/api/*` route,
-   backend service URLs, previews, and alternate deployment domains. Only then
-   set `GOOGLE_CALENDAR_ACCESS_PROTECTED=true`. This flag is an operator
-   acknowledgement, **not** an authentication implementation. A local instance
-   must remain bound to loopback. Google OAuth does not authenticate Arete users.
-7. Restart the backend (compiled coach profiles are cached). Open **Réglages →
-   Connexions → Google Calendar**, complete consent, and select a test calendar.
-   Read and write selection starts empty, including after reconnection.
+5. Open **Réglages → Connexions → Google Calendar**, connect, and select a test
+   calendar. Read and write selection starts empty, including after reconnection.
 
-For production, use a **separate connector** linked only to the Production
-environment and the production HTTPS `FRONTEND_URL`. Never share Google's
-subject grant between development and production connectors. Preview remains
-disabled unless explicitly configured with its own test connector. Connection
-preferences and actions are namespaced by connector, subject and Vercel environment.
+Use one Clerk instance (and Google client) per environment: development and
+preview on the development instance, production on its own.
+
+## How connecting works
+
+**Connecter** first asks the server (`POST /google-calendar/connect`), which
+checks that the account's Google token carries the scopes. When it does not,
+the browser asks Google through Clerk (`reauthorize` with the extra scopes on
+the existing Google account, or a new Google account for a user who signed up by
+e-mail) and comes back to Settings, which calls `connect` once more without
+asking again: a refused consent cannot loop. **Déconnecter** disables access
+locally, then revokes the Google grant; the next connection asks Google again.
 
 ## User behavior
 
@@ -65,9 +59,10 @@ preferences and actions are namespaced by connector, subject and Vercel environm
   event ID and compares the resulting state. Refresh an executing card if a
   request was lost; after 60 seconds it becomes verifiable. Confirming a matching
   state is not proof of which actor made the change.
-- Disconnect disables local access before requesting remote revocation. A failed
-  remote revocation is shown explicitly and can be retried. An already-started
-  write may finish; disconnect cannot undo it.
+- Disconnect disables local access before revoking the Google grant. A failed
+  revocation is shown explicitly and can be retried. An already-started write
+  may finish; disconnect cannot undo it. Revoking the grant does not sign the
+  user out: sign-in asks Google again for its basic scopes.
 
 Supported: simple events without attendees, all-day events (exclusive end date),
 explicit timezone offsets, and individual recurring occurrences. Whole recurring
@@ -84,8 +79,8 @@ days, 500 events/intervals and 10 pages; overflow is an error, not partial conte
 Tool results use the existing 32,000-character limit and complete-request context
 budget. No auxiliary model calls or automatic follow-up generation are added.
 
-Migration 17 adds connection preferences, a hashed expiring consent transaction,
-and proposed actions with outcomes. No Google access/refresh token is stored in
+Migration 17 adds connection preferences and proposed actions with outcomes
+(its consent columns are unused since Clerk carries the consent). No Google access/refresh token is stored in
 DuckDB. Each proposal is bounded to 10,000 characters and at most 100 live pending
 proposals exist per connection. Actions older than 30 days are removed when a new
 proposal is created. Browser threads persist only action IDs; cards fetch the
@@ -107,7 +102,8 @@ nothing is written before each click, and that another selected read-only
 calendar cannot be modified. Test consent denial and removing Google permissions.
 Never run a script opening the live local database beside a running backend.
 
-Wire references: [Vercel Connect SDK](https://github.com/vercel/vercel-plugin/blob/main/skills/vercel-connect/SKILL.md),
-`@vercel/connect` 2.4.1 (`authorization.js` and `token.js`),
-[Google scopes](https://developers.google.com/workspace/calendar/api/auth), and
+Wire references: Clerk's backend `users.get_o_auth_access_token` (Python SDK)
+and `ExternalAccount.reauthorize` / `User.createExternalAccount` (`@clerk/react`),
+[Google scopes](https://developers.google.com/workspace/calendar/api/auth),
+[token revocation](https://developers.google.com/identity/protocols/oauth2/web-server#tokenrevoke), and
 [conditional writes](https://developers.google.com/workspace/calendar/api/guides/version-resources).

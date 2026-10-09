@@ -1,5 +1,7 @@
 """Assert that invocation policy matches the server-selected compiled profile."""
 
+from collections.abc import Callable
+
 from langchain.agents.middleware import AgentMiddleware
 
 from arete.agent.profiles.models import AgentProfile
@@ -13,7 +15,7 @@ class ProfilePolicyMiddleware(AgentMiddleware):
         profile_id: str,
         *,
         profile: AgentProfile | None = None,
-        calendar: CalendarService | None = None,
+        calendar: Callable[[str], CalendarService] | None = None,
     ):
         self.profile_id = profile_id
         self.profile = profile
@@ -26,7 +28,13 @@ class ProfilePolicyMiddleware(AgentMiddleware):
             "Invocation profile differs from compiled policy"
         )
         context.resolved_profile = self.profile
-        context.calendar = self.calendar
+        # The calendar is the caller's own: built per run from the verified
+        # account, absent for the API key and for background missions.
+        context.calendar = (
+            self.calendar(context.account_id)
+            if self.calendar and context.account_id
+            else None
+        )
         return None
 
     async def abefore_agent(self, state, runtime):

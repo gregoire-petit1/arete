@@ -39,7 +39,6 @@ PUBLIC_PATHS = frozenset(
         "/health",
         "/auth/config",
         "/strava/callback",
-        "/google-calendar/callback",
         "/cron/daily-sync",
         "/openapi.json",
     }
@@ -213,6 +212,18 @@ def current_user(request: Request) -> AppUser:
     return AppUser(
         id=0, clerk_user_id="", email="", name=None, athlete_id=OWNER_ATHLETE_ID
     )
+
+
+def clerk_account(request: Request) -> str:
+    """The caller's Clerk user id; empty for the API key or with auth off.
+
+    Features that act on the person's own accounts at a provider (their
+    Google calendar) need a real signed-in user, not the athlete's key.
+    """
+    user = current_user(request)
+    if user.clerk_user_id == API_KEY_USER.clerk_user_id:
+        return ""
+    return user.clerk_user_id
 
 
 @router.get("/config")

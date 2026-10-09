@@ -8,6 +8,13 @@ export interface AuthState {
   isOwner: boolean;
   /** Ends the session, drops the cached API answers and reloads; a no-op when sign-in is off. */
   signOut: () => Promise<void>;
+  /**
+   * Asks Google for more scopes on the signed-in Google account (adding one if the
+   * user signed up by e-mail). Resolves true when the page is leaving for Google's
+   * consent screen, false when everything was already granted. Rejects when
+   * sign-in is off.
+   */
+  grantGoogleScopes: (scopes: string[], returnTo: string) => Promise<boolean>;
 }
 
 export const AUTH_DISABLED: AuthState = {
@@ -15,6 +22,9 @@ export const AUTH_DISABLED: AuthState = {
   email: null,
   isOwner: false,
   signOut: async () => {},
+  grantGoogleScopes: async () => {
+    throw new Error('Connexion Google indisponible : la connexion au compte est désactivée.');
+  },
 };
 
 /** Provided by the auth gate; components rendered without one see sign-in as off. */

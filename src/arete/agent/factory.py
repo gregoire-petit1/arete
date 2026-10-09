@@ -1,5 +1,6 @@
 """Assemble a graph from explicit dependencies; no business work or model routing."""
 
+from collections.abc import Callable
 from typing import Any
 
 from langchain.agents import create_agent
@@ -23,6 +24,9 @@ from arete.agent.tools.journal import append_journal, remember_fact
 from arete.agent.tools.pages import get_page_context
 from arete.services.calendar import CalendarService
 
+#: Builds the calendar of one signed-in account (its Clerk user id).
+CalendarFactory = Callable[[str], CalendarService]
+
 
 def build_agent(
     profile: AgentProfile,
@@ -31,7 +35,7 @@ def build_agent(
     context_tokens: int,
     output_tokens: int,
     filesystem: AgentMiddleware[Any, Any, Any],
-    calendar: CalendarService | None = None,
+    calendar: CalendarFactory | None = None,
     suggestion_model: BaseChatModel | None = None,
 ):
     middleware = [

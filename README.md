@@ -213,11 +213,11 @@ Marketplace (`vercel integration add clerk`), which sets `CLERK_SECRET_KEY` and
 
 Turn it on in Preview first, sign in there, then in Production. Once the app
 signs users in, Vercel Authentication can be switched off for Production so the
-installed PWA no longer asks for a Vercel login; keep it on for Previews. With
-Google as the sign-in method, the user's Google token (and the Calendar scopes
-configured in the Clerk dashboard) is available server-side through
-`services/google_tokens.py`: one consent at sign-in, nothing of Google's stored
-in Arete.
+installed PWA no longer asks for a Vercel login; keep it on for Previews. Sign-in
+also carries Google Calendar: the signed-in Google account grants the calendar
+scopes when the user connects it in Settings, and Clerk keeps the token, so
+nothing of Google's is stored in Arete. Setup:
+[docs/google-calendar.md](docs/google-calendar.md).
 
 ## Development
 

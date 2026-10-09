@@ -180,26 +180,30 @@ thread. `services/users.py` owns the accounts table and the one rule that
 attaches an account to the athlete: its e-mail is one of the owner's. Services never import
 `arete.api.auth`; the athlete's data stays `user_id = 1`, so nothing below the
 boundary changed. `services/google_tokens.py` reads the signed-in user's Google
-token from Clerk for integrations that need it (Calendar), and
+token from Clerk for Calendar, and
 `services/oauth_state.py` signs the Strava OAuth state the callback demands.
 
 ## Google Calendar
 
-When explicitly configured, the composition root adds Calendar to the chat's
-resolved capabilities/preloads and supplies its service through invocation
-context. The declarative background profiles remain tool-less. A resolved
-profile is server-owned and cannot be supplied through browser page metadata.
+With sign-in on, the composition root adds Calendar to the chat's resolved
+capabilities/preloads and compiles a calendar factory into the policy
+middleware. Each run gets the caller's own service, built from the Clerk user id
+the API stamps on the invocation context from the verified identity; the API key
+and background profiles get none. A resolved profile is server-owned and cannot
+be supplied through browser page metadata.
 
 `calendar.py` composes the provider adapter and repository without importing the
 agent stack; API endpoints use it without paying coaching cold-start costs.
 `services/calendar.py` owns permissions, bounded reads, proposals, and execution.
-The provider adapter uses Vercel Connect for credentials and Google Calendar for
-operations. Only the HTTP decision endpoint approves writes; the model has reads
-and proposal tools. The browser's approval executes the stored arguments directly.
+The provider adapter takes the Google token from Clerk (`services/google_tokens.py`)
+and calls Google Calendar. Only the HTTP decision endpoint approves writes; the
+model has reads and proposal tools. The browser's approval executes the stored
+arguments directly.
 
-Migration 17 persists connection selections, consent hashes, and a one-shot action
-registry, not conversation history. A `calendar_action` SSE event carries only
-an action ID. Browser storage keeps that ID; cards reload the authoritative
-proposal and outcome from the API. Settings changes invalidate pending actions,
-ETags protect existing events, and ambiguous writes are never replayed.
+Migration 17 persists connection selections and a one-shot action registry, keyed
+by account and environment, not conversation history. A `calendar_action` SSE
+event carries only an action ID. Browser storage keeps that ID; cards reload the
+authoritative proposal and outcome from the API. Settings changes invalidate
+pending actions, ETags protect existing events, and ambiguous writes are never
+replayed.
 See [Google Calendar setup](google-calendar.md) for activation and live testing.

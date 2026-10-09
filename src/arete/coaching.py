@@ -50,7 +50,7 @@ def _assemble(profile_id: str):
     profile = get_profile(profile_id)
     calendar = None
     if profile_id == "chat" and config.google_calendar_configured:
-        calendar = get_calendar_service()
+        calendar = get_calendar_service
         profile = replace(
             profile,
             capabilities=(*profile.capabilities, "calendar"),
