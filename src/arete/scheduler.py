@@ -78,6 +78,7 @@ def is_due(hour: int, now: datetime, last_run: date | None) -> bool:
 def daily_sync() -> dict[str, str]:
     """Run every configured sync once. Returns a short status per source."""
     status: dict[str, str] = {}
+    imported = 0  # new sessions from any source, for the notification
 
     from arete.garmin.client import GarminClient
 
@@ -89,6 +90,7 @@ def daily_sync() -> dict[str, str]:
 
         try:
             result = GarminSyncClient(client=garmin).sync_activities(download_fit=True)
+            imported += result.activities_synced
             status["garmin_activities"] = (
                 f"{result.activities_synced} synced, {len(result.errors)} errors"
             )
@@ -127,12 +129,17 @@ def daily_sync() -> dict[str, str]:
     if _get_strava_tokens():
         try:
             result = sync(SyncRequest(days=7))
+            imported += int(result["imported"])
             status["strava"] = f"{result['imported']} imported"
         except Exception as e:  # noqa: BLE001
             status["strava"] = f"failed: {e}"
     else:
         status["strava"] = "not connected"
 
+    if imported:
+        from arete.services.notifications import notify
+
+        notify("Arete", f"{imported} séance(s) importée(s)", "/log?tab=cardio")
     logger.info("Daily sync: %s", status)
     _last_status.clear()
     _last_status.update(status)
@@ -164,6 +171,9 @@ def write_daily_briefing() -> str:
         logger.warning("Daily briefing failed: %s", e)
         return f"failed: {e}"
     logger.info("Daily briefing: %s", briefing.source)
+    from arete.services.notifications import first_sentence, notify
+
+    notify("Briefing du coach", first_sentence(briefing.text), "/")
     return briefing.source
 
 

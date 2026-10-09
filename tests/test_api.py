@@ -76,6 +76,8 @@ def test_booting_the_app_leaves_the_heavy_stacks_out(tmp_path):
         "curl_cffi",
         "lark",
         "rapidfuzz",
+        "pywebpush",
+        "aiohttp",
     ]
     code = (
         "import sys, arete.api.main; "

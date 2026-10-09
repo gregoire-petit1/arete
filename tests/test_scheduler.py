@@ -180,6 +180,21 @@ class TestWriteDailyBriefing:
             assert scheduler.write_daily_briefing() == "agent"
         generate.assert_not_called()
 
+    def test_the_written_briefing_is_pushed_by_its_first_sentence(self):
+        fresh = self._existing("scheduler")
+        fresh = type(fresh)(**{**fresh.__dict__, "text": "Footing 45'. Puis repos."})
+        with (
+            patch("arete.services.briefing.briefing_enabled", return_value=True),
+            patch(
+                "arete.services.coaching_repository.BriefingRepository.get_for_day",
+                return_value=None,
+            ),
+            patch("arete.coaching.generate_briefing", return_value=fresh),
+            patch("arete.services.notifications.notify") as notify,
+        ):
+            scheduler.write_daily_briefing()
+        notify.assert_called_once_with("Briefing du coach", "Footing 45'.", "/")
+
     def test_a_briefing_written_before_the_sync_is_rewritten(self):
         fresh = self._existing("scheduler")
         with (
@@ -272,6 +287,18 @@ class TestDailySync:
             status = scheduler.daily_sync()
         assert calls == ["adapt", "push"]
         assert status["garmin_push"] == "1 sent"
+
+    def test_new_sessions_are_announced_once(self):
+        with (
+            patch("arete.services.plan_adaptation.adapt_today", return_value=[]),
+            patch("arete.api.strava._get_strava_tokens", return_value={"x": 1}),
+            patch("arete.api.strava.sync", return_value={"imported": 2}),
+            patch("arete.services.notifications.notify") as notify,
+        ):
+            scheduler.daily_sync()
+        notify.assert_called_once_with(
+            "Arete", "2 séance(s) importée(s)", "/log?tab=cardio"
+        )
 
     def test_last_status_is_a_copy(self):
         # Callers must not be able to edit the scheduler's record.

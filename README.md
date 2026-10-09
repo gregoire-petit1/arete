@@ -48,6 +48,7 @@ All settings come from environment variables (see `.env.example`):
 | `ARETE_DB` | DuckDB file path (default `data/arete.duckdb`), or `md:<database>` for MotherDuck |
 | `ARETE_DATA_DIR` | Files beside the database (default: its directory, `/tmp/arete-data` on MotherDuck) |
 | `CRON_SECRET` | Bearer token of `GET /cron/daily-sync`; unset = endpoint closed |
+| `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, `WEB_PUSH_SUBJECT` | Web Push keys for the coach's notifications (`uv run vapid --gen`); unset = no push |
 | `ARETE_LOG_LEVEL` | Backend log level (default `INFO`) |
 | `ARETE_AUTO_SYNC_HOUR` | Local hour of the daily Garmin activities + health and Strava sync, best set after wake-up; unset = manual only |
 | `LLM_CONTEXT_TOKENS` | Coaching deployment context window (default 65,536); set to your actual model/server limit |

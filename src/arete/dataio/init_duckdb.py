@@ -329,6 +329,18 @@ CREATE TABLE IF NOT EXISTS app.plan_decisions (
     created_at         TIMESTAMP DEFAULT now(),
     UNIQUE (user_id, date, planned_session_id)
 );
+
+-- ============================================================
+-- Web Push subscriptions (one per browser that accepted notifications)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS app.push_subscriptions (
+    endpoint         VARCHAR PRIMARY KEY,
+    p256dh           VARCHAR NOT NULL,
+    auth             VARCHAR NOT NULL,
+    user_agent       VARCHAR,
+    created_at       TIMESTAMP DEFAULT now(),
+    last_success_at  TIMESTAMP
+);
 """
 
 
@@ -482,6 +494,12 @@ def _m11_plan_adaptation(con) -> None:
     con.execute(DDL[start:end])
 
 
+def _m12_push_subscriptions(con) -> None:
+    """The browsers that accepted the coach's notifications."""
+    start = DDL.index("CREATE TABLE IF NOT EXISTS app.push_subscriptions")
+    con.execute(DDL[start : DDL.index(");", start) + 2])
+
+
 #: Append-only. A database at the last version skips the DDL entirely on boot
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
@@ -498,6 +516,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (9, _m9_canonical_sport_names),
     (10, _m10_garmin_performance_columns),
     (11, _m11_plan_adaptation),
+    (12, _m12_push_subscriptions),
 ]
 
 
