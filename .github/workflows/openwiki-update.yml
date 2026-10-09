@@ -36,9 +36,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Record the documented source revision
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v5
         with:
           node-version: "22.22.0"
+
+      - name: Test the provider transport
+        run: node --test scripts/openwiki/transport.test.mjs
 
       - name: Install OpenWiki
         timeout-minutes: 5
@@ -47,12 +54,23 @@ jobs:
         # from npm. Advance the cutoff only after a clean installation test.
         run: npm install --global --before=2026-10-07T00:00:00Z openwiki@0.7.1
 
+      - name: Restore OpenWiki progress for this source revision
+        id: progress
+        uses: actions/cache/restore@v4
+        with:
+          path: openwiki/
+          key: openwiki-v1-${{ steps.source.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            openwiki-v1-${{ steps.source.outputs.sha }}-
+
       - name: Update the wiki
+        id: generate
         timeout-minutes: 25
         # --update also bootstraps a missing wiki. Failed runs must not publish
         # partial pages or advance the successful-update metadata.
         run: openwiki code --update --print
         env:
+          NODE_OPTIONS: --import ${{ github.workspace }}/scripts/openwiki/preload.mjs
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENWIKI_PROVIDER: openrouter
           OPENWIKI_MODEL_ID: openrouter/free
@@ -61,10 +79,48 @@ jobs:
           OPENWIKI_PROVIDER_RETRY_ATTEMPTS: "1"
           OPENWIKI_TELEMETRY_DISABLED: "1"
 
+      - name: Verify OpenWiki completed the run
+        id: complete
+        # Do not treat an exit code alone as proof that every page completed.
+        run: |
+          node --input-type=module <<'JS'
+          import assert from 'node:assert/strict';
+          import { existsSync, readFileSync } from 'node:fs';
+          const state = JSON.parse(readFileSync('openwiki/.last-update.json', 'utf8'));
+          assert.equal(state.status, 'complete', 'OpenWiki metadata is incomplete');
+          assert(!existsSync('openwiki/.run.json'), 'OpenWiki still has a pending checkpoint');
+          JS
+
+      - name: Preserve progress for the next scheduled or manual attempt
+        # OpenWiki owns resumable page checkpoints. Cache only wiki state from
+        # this exact source revision, never credentials or the whole checkout.
+        if: >-
+          !cancelled() && steps.progress.outputs.cache-primary-key != '' &&
+          (steps.generate.outcome == 'success' || steps.generate.outcome == 'failure') &&
+          hashFiles('openwiki/.last-update.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: openwiki/
+          key: ${{ steps.progress.outputs.cache-primary-key }}
+
+      - name: Explain an interrupted generation
+        if: failure() && (steps.generate.outcome == 'failure' || steps.complete.outcome == 'failure')
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          OpenWiki did not complete; no documentation PR was published by this run.
+
+          Provider requests are paced and transient failures have bounded retries.
+          Check the `OpenWiki HTTP` lines for attempt counts and the terminal error
+          for exhausted quota, persistent provider failures or an exceeded budget.
+          Available wiki checkpoints are cached for the same source commit so a
+          later scheduled/manual run can resume completed pages. Cache retention
+          is best-effort; an empty or evicted cache starts a fresh generation.
+          EOF
+
       - name: Check for documentation changes
         id: changes
         run: |
-          rm -f -- openwiki/.run.json
+          rm -f -- openwiki/.run.json.*.tmp
           # A freshness timestamp or source fingerprint alone is not a docs PR.
           changes=$(git status --porcelain --untracked-files=all -- \
             openwiki AGENTS.md CLAUDE.md \
