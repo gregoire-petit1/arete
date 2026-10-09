@@ -177,6 +177,78 @@ def update_planned_status(session_id: int, status: str) -> str:
     )
 
 
+_ZONES = ("Z1", "Z2", "Z3", "Z4", "Z5")
+
+
+def update_planned_session(
+    session_id: int,
+    date_str: str = "",
+    session_type: str = "",
+    description: str = "",
+    target_duration_min: int = 0,
+    target_distance_km: float = 0.0,
+    target_hr_zone: str = "",
+    target_intensity: str = "",
+) -> str:
+    """Move or adjust a planned session; empty or 0 leaves a field unchanged.
+
+    Args:
+        session_id: Id of the planned session.
+        date_str: New ISO date (YYYY-MM-DD), empty = same day.
+        session_type: New type (recovery, endurance, tempo, intervals, long_run,
+            strength, hypertrophy, power, deload, cross_training, race, other).
+        description: New description.
+        target_duration_min: New duration in minutes.
+        target_distance_km: New distance in km.
+        target_hr_zone: New heart-rate zone, Z1 to Z5.
+        target_intensity: easy, moderate or hard.
+    """
+    fields: dict[str, Any] = {}
+    if date_str:
+        day = _parse_iso(date_str, "date_str")
+        if isinstance(day, str):
+            return day
+        fields["date"] = day
+    if session_type:
+        try:
+            fields["session_type"] = SessionType(session_type)
+        except ValueError:
+            return json.dumps(
+                {
+                    "error": f"Unknown session_type '{session_type}'. "
+                    f"Valid: {[t.value for t in SessionType]}"
+                }
+            )
+    zone = target_hr_zone.strip().upper()
+    if zone:
+        if zone not in _ZONES:
+            return json.dumps({"error": "target_hr_zone must be Z1|Z2|Z3|Z4|Z5"})
+        fields["target_hr_zone"] = zone
+    intensity = target_intensity.strip().lower()
+    if intensity:
+        if intensity not in ("easy", "moderate", "hard"):
+            return json.dumps({"error": "target_intensity must be easy|moderate|hard"})
+        fields["target_intensity"] = intensity
+    if description:
+        fields["description"] = description
+    if target_duration_min:
+        fields["target_duration_min"] = target_duration_min
+    if target_distance_km:
+        fields["target_distance_km"] = target_distance_km
+    if not fields:
+        return json.dumps({"error": "Nothing to change: give at least one field"})
+    # A copy already on Garmin's calendar no longer matches: mark it unsent.
+    if not _repo().update_planned_session_fields(
+        session_id, **fields, garmin_pushed_at=None
+    ):
+        return json.dumps({"error": f"Planned session {session_id} not found"})
+    updated = _repo().get_planned_session(session_id)
+    return json.dumps(
+        {"updated": True, "session": _session_to_dict(updated) if updated else None},
+        ensure_ascii=False,
+    )
+
+
 def delete_planned_session(session_id: int) -> str:
     """Delete a planned session by id. Prefer update_planned_status to mark it
     skipped — deletion loses the record.

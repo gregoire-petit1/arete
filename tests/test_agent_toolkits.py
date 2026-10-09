@@ -48,9 +48,11 @@ def test_planning_toolkit_registered():
         "list_planned",
         "create_planned_session",
         "update_planned_status",
+        "update_planned_session",
         "delete_planned_session",
     }
     assert "planning" in tk.instructions.lower()
+    assert "update_planned_session" not in tk.read_tools  # a write, chat only
 
 
 def test_search_finds_planning_by_capability():
@@ -533,3 +535,70 @@ def test_bad_dates_are_tool_errors_not_exceptions():
         )
     )
     assert "date_str" in created["error"]
+
+
+def test_update_planned_session_moves_the_date_and_keeps_the_rest():
+    from arete.agent.tools.planning import (
+        create_planned_session,
+        delete_planned_session,
+        update_planned_session,
+    )
+
+    day = date.today() + timedelta(days=450)
+    created = json.loads(
+        create_planned_session.invoke(
+            {
+                "date_str": day.isoformat(),
+                "session_type": "tempo",
+                "description": "3x10' seuil",
+                "target_duration_min": 50,
+            }
+        )
+    )
+    session_id = created["session"]["id"]
+    try:
+        moved = json.loads(
+            update_planned_session.invoke(
+                {
+                    "session_id": session_id,
+                    "date_str": (day + timedelta(days=1)).isoformat(),
+                    "target_hr_zone": "z4",
+                }
+            )
+        )
+        session = moved["session"]
+        assert session["date"] == (day + timedelta(days=1)).isoformat()
+        assert session["target_hr_zone"] == "Z4"
+        assert (session["session_type"], session["target_duration_min"]) == (
+            "tempo",
+            50,
+        )
+        assert session["description"] == "3x10' seuil"
+    finally:
+        delete_planned_session.invoke({"session_id": session_id})
+
+
+def test_update_planned_session_rejects_bad_input():
+    from arete.agent.tools.planning import update_planned_session
+
+    for args, word in (
+        ({"target_hr_zone": "Z7"}, "target_hr_zone"),
+        ({"date_str": "demain"}, "date_str"),
+        ({"session_type": "sprint"}, "session_type"),
+        ({}, "Nothing to change"),
+    ):
+        out = json.loads(update_planned_session.invoke({"session_id": 1, **args}))
+        assert word in out["error"]
+
+
+@pytest.mark.parametrize("profile", ["briefing", "feedback"])
+def test_background_profiles_cannot_move_a_session(profile):
+    from arete.agent.runtime.policy import resolve_policy
+
+    planning = CAPABILITIES["planning"]
+    assert not resolve_policy(profile).can_execute(
+        "planning", "update_planned_session", planning.read_tools
+    )
+    assert resolve_policy("chat").can_execute(
+        "planning", "update_planned_session", planning.read_tools
+    )

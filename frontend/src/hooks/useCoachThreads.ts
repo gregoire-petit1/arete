@@ -26,6 +26,7 @@ const SAVE_DELAY_MS = 250;
 const SESSION_WRITE_TOOLS = new Set([
   'create_planned_session',
   'update_planned_status',
+  'update_planned_session',
   'delete_planned_session',
   'save_workout',
 ]);
