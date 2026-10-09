@@ -79,6 +79,8 @@ class ToolkitMiddleware(AgentMiddleware):
             **config.get("configurable", {}),
             "workout_progress": progress,
             "workout_deadline": getattr(context, "deadline", None),
+            # Dependencies and deadlines belong to invocation context, never model args.
+            "arete_context": context,
         }
         return config, progress
 

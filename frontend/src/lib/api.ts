@@ -30,7 +30,7 @@ function recordOrNull<T extends { id: number }>(data: unknown): T | null {
     : null;
 }
 
-async function fetchAPI<T>(
+export async function fetchAPI<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {

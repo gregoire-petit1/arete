@@ -15,14 +15,14 @@ from arete.agent.capabilities.discovery import (
     tool_instructions_suffix,
 )
 from arete.agent.context.sections import ContextSection, page_section
-from arete.agent.runtime.policy import resolve_policy
+from arete.agent.runtime.policy import ProfileSpec, resolve_policy
 from arete.agent.tools.toolkits import META_TOOLS
 from arete.services.athlete_facts import facts_block
 from arete.services.journal import journal_block
 
 
 def _augment_tools(
-    tools: list[Any], loaded: list[str], profile: str = "chat"
+    tools: list[Any], loaded: list[str], profile: ProfileSpec = "chat"
 ) -> list[Any]:
     """Meta-tools + tools of already-loaded toolkits, deduped by name.
 
@@ -47,7 +47,7 @@ def _names(tools: list[Any]) -> set[str]:
     return {getattr(t, "name", "") for t in tools}
 
 
-def _loadable(loaded: list[str], profile: str) -> list[str]:
+def _loadable(loaded: list[str], profile: ProfileSpec) -> list[str]:
     """Toolkits the profile could still load; none means no discovery tools."""
     return [tid for tid in _registry(profile) if tid not in loaded]
 

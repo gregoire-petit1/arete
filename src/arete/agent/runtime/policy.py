@@ -18,5 +18,10 @@ class RunPolicy:
         )
 
 
-def resolve_policy(profile_id: str) -> RunPolicy:
-    return RunPolicy(get_profile(profile_id))
+ProfileSpec = str | AgentProfile
+
+
+def resolve_policy(profile_id: ProfileSpec) -> RunPolicy:
+    return RunPolicy(
+        profile_id if isinstance(profile_id, AgentProfile) else get_profile(profile_id)
+    )

@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { garminApi, stravaApi } from '@/lib/api';
 import { Button } from '@/components/ui';
 import { invalidateAfterSession } from '@/lib/queryKeys';
+import { GoogleCalendarConnection } from './GoogleCalendarConnection';
 
 export function ConnectionsTab() {
   const queryClient = useQueryClient();
@@ -78,6 +79,7 @@ export function ConnectionsTab() {
       <h2 className="text-lg font-sans text-text-primary mb-4">SERVICES CONNECTÉS</h2>
 
       <div className="space-y-3">
+        <GoogleCalendarConnection />
         {/* Garmin */}
         <div
           className={cn(

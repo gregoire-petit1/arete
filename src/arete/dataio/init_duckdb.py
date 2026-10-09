@@ -578,6 +578,14 @@ def _m13_document_imports(con) -> None:
     migrate(con)
 
 
+def _m17_google_calendar(con) -> None:
+    from arete.services.calendar_repository import CALENDAR_DDL
+
+    for statement in CALENDAR_DDL.strip().split(";"):
+        if statement.strip():
+            con.execute(statement)
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -595,6 +603,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (14, _m14_goals),
     (15, _m15_athlete_facts),
     (16, _m16_weekly_reviews),
+    (17, _m17_google_calendar),
 ]
 
 

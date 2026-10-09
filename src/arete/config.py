@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 load_dotenv()
 
@@ -20,6 +20,35 @@ def _env(name: str, default: str | None = None) -> str | None:
 
 
 class Config:
+    @property
+    def google_calendar_connector(self) -> str:
+        return _env("GOOGLE_CALENDAR_CONNECTOR", "") or ""
+
+    @property
+    def google_calendar_subject(self) -> str:
+        return _env("GOOGLE_CALENDAR_SUBJECT", "arete-athlete-1") or "arete-athlete-1"
+
+    @property
+    def google_calendar_environment(self) -> str:
+        return _env("VERCEL_ENV", "development") or "development"
+
+    @property
+    def google_calendar_configured(self) -> bool:
+        # An operator must verify external access protection before enabling writes.
+        return (
+            bool(self.google_calendar_connector)
+            and _env("GOOGLE_CALENDAR_ACCESS_PROTECTED") == "true"
+        )
+
+    @property
+    def vercel_connect_credential(self) -> str:
+        return (
+            _env("VERCEL_OIDC_TOKEN")
+            or _env("VERCEL_CONNECT_ACCESS_TOKEN")
+            or dotenv_values(".env.local").get("VERCEL_OIDC_TOKEN")
+            or ""
+        )
+
     # --- storage -----------------------------------------------------------
     @property
     def db_target(self) -> str:
