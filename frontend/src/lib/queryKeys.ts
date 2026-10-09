@@ -72,6 +72,8 @@ export const strengthSessionsQuery = {
 /** Everything that changes when a session is logged, uploaded, synced or matched. */
 export function invalidateAfterSession(queryClient: QueryClient): void {
   for (const key of [
+    ['workout'],
+    ['garmin-exports'],
     qk.planned(),
     qk.actual(),
     qk.matchSummary(),

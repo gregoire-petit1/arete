@@ -1,3 +1,5 @@
+import { markWorkout, measureWorkout } from '@/lib/workoutPerformance';
+import { cacheWorkout } from '@/lib/workouts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { documentsApi } from '@/lib/documents';
@@ -26,6 +28,9 @@ const MAX_ACTIVE_RUNS = 1;
 const SAVE_DELAY_MS = 250;
 const SESSION_WRITE_TOOLS = new Set([
   'create_planned_session',
+  'update_session_prescription',
+  'export_garmin_sessions',
+  'reconcile_garmin_session',
   'update_planned_status',
   'update_planned_session',
   'delete_planned_session',
@@ -116,7 +121,10 @@ export function useCoachThreads(context: PanelPageContext) {
     if (!content || activeRuns >= MAX_ACTIVE_RUNS) return false;
     const retrying = keep < active.messages.length;
     const history = requestWindow([
-      ...active.messages.slice(0, keep).filter(
+      ...active.messages.slice(0, keep).map(m => m.workouts?.length ? {
+        ...m, error: undefined, interrupted: false,
+        content: `${m.content}\nSéances concernées : ${m.workouts.map(w => `#${w.session.id} (${w.session.date}, ${w.session.description}, état observé : ${w.export?.state ?? 'enregistrée'}).`).join(' ')} Relire leur état actuel avant toute écriture.`,
+      } : m).filter(
         (m) => m.content.trim() && !m.error && !m.interrupted
       ),
       { role: 'user', content },
@@ -131,6 +139,10 @@ export function useCoachThreads(context: PanelPageContext) {
     const answerIndex = keep + 1;
     const controller = new AbortController();
     runRef.current = { threadId, controller };
+    markWorkout('coach:request-start');
+    performance.clearMarks('coach:first-workout');
+    performance.clearMarks('coach:first-scheduled');
+    performance.clearMarks('coach:last-token');
     setRunningId(threadId);
     setError('');
     setStore((prev) =>
@@ -166,6 +178,28 @@ export function useCoachThreads(context: PanelPageContext) {
       history,
       context,
       (event) => {
+        if (event.type === 'workout_update') {
+          if (event.thread_id !== threadId) throw new Error('Événement reçu pour un autre fil.');
+          cacheWorkout(queryClient, event);
+          markWorkout('coach:workout-received');
+          if (!performance.getEntriesByName('coach:first-workout', 'mark').length) {
+            markWorkout('coach:first-workout');
+            measureWorkout('coach:time-to-useful-result', 'coach:request-start', 'coach:first-workout');
+          }
+          if (['scheduled', 'transfer_requested'].includes(event.export?.state ?? '') && !performance.getEntriesByName('coach:first-scheduled', 'mark').length) {
+            markWorkout('coach:first-scheduled');
+            measureWorkout('coach:time-to-scheduled', 'coach:request-start', 'coach:first-scheduled');
+          }
+        }
+        if (event.type === 'token') {
+          markWorkout('coach:token-received');
+          measureWorkout('coach:last-stream-gap', 'coach:last-token', 'coach:token-received');
+          markWorkout('coach:last-token');
+        }
+        if (event.type === 'done') {
+          markWorkout('coach:done');
+          measureWorkout('coach:total', 'coach:request-start', 'coach:done');
+        }
         patchAnswer((m) => applyEvent(m, event));
         if (event.type === 'import_preview' || event.type === 'done') void queryClient.invalidateQueries({ queryKey: ['coach-imports', threadId] });
         // Refresh when the write completes, even if the final answer fails or
@@ -200,11 +234,17 @@ export function useCoachThreads(context: PanelPageContext) {
   };
   /** Ask the last question again, replacing its answer. */
   const retry = () => {
+    if (active.messages.at(-1)?.workouts?.length) return false;
     const last = active.messages.map((m) => m.role).lastIndexOf('user');
     return last >= 0 && send(active.messages[last].content, last);
   };
 
+  const recordAction = (threadId: string, text: string) => setStore(prev => updateThread(prev, threadId, t => ({
+    ...t, updatedAt: Date.now(), messages: [...t.messages, { role: 'assistant', content: text }],
+  })));
+
   return {
+    recordAction,
     store,
     active,
     runningId,

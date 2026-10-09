@@ -2,6 +2,10 @@
 
 from langchain_core.tools import BaseTool, tool
 
+from arete.agent.tools.garmin import (
+    inspect_planned_session,
+    update_session_prescription,
+)
 from arete.agent.tools.imports import inspect_import, prepare_import
 from arete.services import planning as service
 
@@ -29,6 +33,8 @@ def create_planned_session(
     target_duration_min: int = 0,
     target_distance_km: float = 0.0,
     target_intensity: str = "",
+    prescription_json: str = "",
+    strength_text: str = "",
 ) -> str:
     """Create a planned training session (source stamped 'coach').
 
@@ -41,6 +47,8 @@ def create_planned_session(
         target_duration_min: Target duration in minutes (0 = unset).
         target_distance_km: Target distance in km (0 = unset).
         target_intensity: easy, moderate or hard (empty = unset).
+        prescription_json: Optional versioned JSON {"version":1,"steps":[{"kind":"effort","duration_kind":"seconds","value":1800}]}. Steps: warmup|effort|recovery|cooldown|rest|repeat. Repeat uses repeat (2..100) and steps. Duration: seconds|meters|reps|lap. Optional target/secondary_target: {kind:pace_sec_km|heart_rate_bpm|power_w|cadence_rpm|hr_zone,low,high}. Swimming requires pool_length_m. Maximum 100 steps and two repeat levels.
+        strength_text: Exact strength text; grammar verifies reps, exercises and weights.
     """
     return service.create_planned_session(
         date_str=date_str,
@@ -50,6 +58,8 @@ def create_planned_session(
         target_duration_min=target_duration_min,
         target_distance_km=target_distance_km,
         target_intensity=target_intensity,
+        prescription_json=prescription_json,
+        strength_text=strength_text,
     )
 
 
@@ -113,6 +123,8 @@ def delete_planned_session(session_id: int) -> str:
 
 PLANNING_TOOLS: list[BaseTool] = [
     list_planned,
+    inspect_planned_session,
+    update_session_prescription,
     create_planned_session,
     update_planned_status,
     update_planned_session,

@@ -61,3 +61,21 @@ def exercises():
 
     assert len(EXERCISES) <= 2000
     return EXERCISES
+
+
+@router.get("/planned/{session_id}/workout")
+def inspect_workout(session_id: int):
+    return garmin_export.inspect_session(session_id)
+
+
+class BatchExportIn(BaseModel):
+    session_ids: list[int] = Field(min_length=1, max_length=5)
+    revisions: list[int] = Field(min_length=1, max_length=5)
+    device_id: int | None = Field(default=None, gt=0)
+
+
+@router.post("/exports/batch")
+def export_batch(body: BatchExportIn):
+    return garmin_export.export_batch(
+        body.session_ids, body.device_id, revisions=body.revisions
+    )

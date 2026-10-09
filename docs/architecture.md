@@ -61,7 +61,7 @@ Discovery, binding, policy checks and structural tests consume the same catalog.
 Tools call services; they do not import HTTP handlers. New tools are unavailable
 to background missions until explicitly classified as read-only.
 
-Chat preloads analytics, planning and strength capabilities: loading one cost a
+Chat preloads analytics, planning, strength and Garmin capabilities: loading one cost a
 model request per turn, and requests are the free tier's budget. The on-demand
 loading machinery (catalog, `load_toolkit`, load-before-execute) stays for
 profiles that do not preload. The briefing and the session feedback bind no tool:
@@ -103,7 +103,11 @@ auxiliary model request runs after an answer. Generating them cost one request
 per turn and held `done` for up to eight seconds.
 
 Runtime tool events are projected into the existing SSE protocol by
-`api/agent_streaming.py`. Optional LangSmith tracing remains invocation-scoped, including stream
+`api/agent_streaming.py`. Workout events carry session ID/revision, tool call,
+thread and durable operation state. The domain service publishes through an injected
+callback; the runtime supplies correlation and the API projects `workout_update`.
+Cards consume these events before `done`, independently of truncated tool previews.
+Optional LangSmith tracing remains invocation-scoped, including stream
 cancellation cleanup, dynamic tool spans and browser thread IDs. Provider usage logs
 retain reported cache/input/output details and model timing without logging the
 athlete's prompts. Opt-in LangSmith traces include full inputs, outputs and tool
@@ -137,7 +141,13 @@ The model can propose a draft but has no confirmation tool; pending imports bloc
 ordinary coach planning writes. Human confirmation commits selected sessions once.
 
 `services/prescriptions.py` owns versioned steps and provenance. Garmin conversion
-lives in `garmin/workouts.py`; `services/garmin_export.py` owns explicit export,
-reconciliation and removal with durable reservations and no ambiguous write replay.
+lives in `garmin/workouts.py`; `services/garmin_export.py` owns both interactive
+and daily export, reconciliation and removal with durable reservations and no
+ambiguous write replay. Chat can create coach prescriptions without a document;
+explicit prescriptions remain excluded from automatic daily adaptation/export.
+Legacy sessions use deterministic conversion, and existing Garmin identifiers must
+be verified before adoption. Updates require the current revision and mark the
+export dirty without transmitting it. See [conversational workouts](conversational-workouts.md)
+for UI, limits and verification.
 Only `GarminClient` touches the remote service. See [document imports](document-imports.md)
 for resource bounds, frontend worker assets, unsupported conversions and acceptance.

@@ -30,6 +30,8 @@ def _resolve_tool(request) -> BaseTool | ToolMessage | None:
     context = getattr(getattr(request, "runtime", None), "context", None)
     if getattr(context, "document_import_pending", False) and name in {
         "create_planned_session",
+        "update_session_prescription",
+        "export_garmin_sessions",
         "update_planned_status",
         "update_planned_session",
         "delete_planned_session",

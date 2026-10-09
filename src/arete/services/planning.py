@@ -18,6 +18,11 @@ from arete.garmin.models import (
     canonical_sport,
 )
 from arete.garmin.repository import GarminRepository
+from arete.services.prescriptions import (
+    Prescription,
+    conversation_prescription,
+    describe,
+)
 
 _MAX_LIST = 50
 _HORIZON_DAYS = 120
@@ -40,6 +45,11 @@ def _session_to_dict(s: PlannedSession) -> dict[str, Any]:
         "description": s.description,
         "source": s.source,
         "status": s.status.value,
+        "revision": s.revision,
+        "structured": s.prescription is not None,
+        "summary": describe(Prescription.model_validate(s.prescription))
+        if s.prescription
+        else s.description,
     }
 
 
@@ -106,6 +116,8 @@ def create_planned_session(
     target_duration_min: int = 0,
     target_distance_km: float = 0.0,
     target_intensity: str = "",
+    prescription_json: str = "",
+    strength_text: str = "",
 ) -> str:
     """Create a planned training session (source stamped 'coach').
 
@@ -134,6 +146,16 @@ def create_planned_session(
     day = _parse_iso(date_str, "date_str")
     if isinstance(day, str):
         return day
+    try:
+        prescription = (
+            conversation_prescription(
+                prescription_json, canonical_sport(sport), day, strength_text
+            )
+            if prescription_json
+            else None
+        )
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)}, ensure_ascii=False)
     planned = PlannedSession(
         date=day,
         sport=canonical_sport(sport),
@@ -143,6 +165,7 @@ def create_planned_session(
         target_intensity=intensity,
         description=description or None,
         source="coach",
+        prescription=prescription.model_dump(mode="json") if prescription else None,
     )
     session_id = _repo().create_planned_session(planned)
     created = _repo().get_planned_session(session_id)
@@ -168,7 +191,11 @@ def update_planned_status(session_id: int, status: str) -> str:
         return json.dumps(
             {"error": "status must be pending|completed|skipped|modified"}
         )
-    if not _repo().update_planned_session_status(session_id, st):
+    try:
+        changed = _repo().update_planned_session_status(session_id, st)
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)}, ensure_ascii=False)
+    if not changed:
         return json.dumps({"error": f"Planned session {session_id} not found"})
     updated = _repo().get_planned_session(session_id)
     return json.dumps(
