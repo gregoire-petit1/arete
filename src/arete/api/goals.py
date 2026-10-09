@@ -63,3 +63,41 @@ def update_goal(goal_id: int, body: GoalUpdate) -> dict[str, Any]:
 def delete_goal(goal_id: int) -> None:
     if not service.delete_goal(goal_id):
         raise HTTPException(status_code=404, detail="Objectif introuvable")
+
+
+@router.post("/{goal_id}/plan/preview")
+def preview_plan(goal_id: int) -> dict[str, Any]:
+    """The weeks the plan would hold, without writing anything."""
+    from arete.features.plan_generator import PlanError
+    from arete.services import plan_builder
+
+    try:
+        return plan_builder.preview(goal_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Objectif introuvable") from None
+    except PlanError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+
+
+@router.post("/{goal_id}/plan")
+def write_plan(goal_id: int) -> dict[str, Any]:
+    """Write the plan; replaces only this goal's future sessions still to do."""
+    from arete.features.plan_generator import PlanError
+    from arete.services import plan_builder
+
+    try:
+        return plan_builder.apply(goal_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Objectif introuvable") from None
+    except PlanError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+
+
+@router.delete("/{goal_id}/plan")
+def remove_plan(goal_id: int) -> dict[str, Any]:
+    from arete.services import plan_builder
+
+    try:
+        return {"deleted": plan_builder.remove(goal_id)}
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Objectif introuvable") from None
