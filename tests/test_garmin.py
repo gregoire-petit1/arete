@@ -513,3 +513,21 @@ class TestGarminIntegration:
         for pid in planned_ids:
             repo.delete_planned_session(pid)
 
+
+def test_fit_upload_parses_off_the_event_loop(router_client):
+    import asyncio
+    from unittest.mock import patch
+
+    from arete.api.garmin import router
+
+    def no_running_loop(*_args, **_kwargs):
+        with pytest.raises(RuntimeError):
+            asyncio.get_running_loop()  # a worker thread has none
+        raise ValueError("not a FIT file")
+
+    with patch("arete.api.garmin.FITParser.parse_stream", side_effect=no_running_loop):
+        resp = router_client(router).post(
+            "/garmin/upload-fit",
+            files={"file": ("a.fit", b"x", "application/octet-stream")},
+        )
+    assert resp.status_code == 400

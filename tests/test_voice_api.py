@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import patch
 
 import pytest
@@ -39,6 +40,16 @@ class TestTranscribeEndpoint:
         assert body["notation"] == "squat 3x5 @100\ntractions 4x8"
         assert body["exercises"] == 2
         assert body["unparsed"] == []
+
+    def test_transcription_runs_off_the_event_loop(self, client):
+        def no_running_loop(*_args, **_kwargs):
+            with pytest.raises(RuntimeError):
+                asyncio.get_running_loop()  # a worker thread has none
+            return transcribed(DICTATION)
+
+        with patch("arete.llm.transcription.transcribe", side_effect=no_running_loop):
+            resp = client.post("/strength/sessions/transcribe", files=audio_file())
+        assert resp.status_code == 200
 
     def test_reports_the_cost(self, client):
         with patch(

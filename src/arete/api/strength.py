@@ -705,10 +705,10 @@ class VoiceTranscriptionResponse(BaseModel):
     cost_usd: float | None = Field(default=None, description="What the call cost")
 
 
-async def _read_upload(file: UploadFile, max_bytes: int) -> bytes:
+def _read_upload(file: UploadFile, max_bytes: int) -> bytes:
     """Read an upload in chunks, refusing anything oversized."""
     content = b""
-    while chunk := await file.read(CHUNK_SIZE):
+    while chunk := file.file.read(CHUNK_SIZE):
         content += chunk
         if len(content) > max_bytes:
             raise HTTPException(
@@ -731,7 +731,7 @@ _TRANSCRIPTION_STATUS: dict[str, int] = {
 
 
 @router.post("/sessions/transcribe", response_model=VoiceTranscriptionResponse)
-async def transcribe_workout_audio(
+def transcribe_workout_audio(
     file: UploadFile = File(..., description="Audio recorded in the browser"),
 ):
     """Dictated session -> French transcript and the notation read from it.
@@ -739,13 +739,17 @@ async def transcribe_workout_audio(
     Nothing is saved: the athlete proof-reads the notation in the session box
     and sends it through ``/sessions/parse`` as usual. What the grammar cannot
     read comes back verbatim rather than guessed.
+
+    A plain ``def``: FastAPI runs it in a worker thread, so the synchronous
+    transcription call (up to a minute) does not block the event loop and
+    every other request the instance is serving.
     """
     from arete.config import config
     from arete.llm.notation import to_notation
     from arete.llm.speech_grammar import parse_dictation, unparsed_dictation
     from arete.llm.transcription import TranscriptionError, transcribe
 
-    audio = await _read_upload(file, config.stt_max_audio_mb * 1024 * 1024)
+    audio = _read_upload(file, config.stt_max_audio_mb * 1024 * 1024)
     if not audio:
         raise HTTPException(status_code=400, detail="Enregistrement vide")
 
