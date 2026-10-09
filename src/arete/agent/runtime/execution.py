@@ -27,6 +27,7 @@ from arete.agent.runtime.budget import (
 )
 from arete.agent.runtime.context import AgentContext
 from arete.config import config
+from arete.observability.agent import record_run
 from arete.observability.tracing import agent_tracing
 
 RUN_LIMIT_ERRORS = (ModelCallLimitExceededError, ToolCallLimitExceededError)
@@ -64,16 +65,33 @@ def run_config(
     return result
 
 
+def _elapsed_ms(started: float) -> int:
+    return round((monotonic() - started) * 1000)
+
+
 async def invoke_agent(graph: Any, state: dict, *, context: AgentContext) -> dict:
-    context.deadline = monotonic() + MAX_RUN_SECONDS
-    with agent_tracing():
-        async with asyncio.timeout(MAX_RUN_SECONDS):
-            return cast(
-                dict,
-                await graph.ainvoke(
-                    state, context=context, config=run_config(context=context)
-                ),
-            )
+    started = monotonic()
+    context.deadline = started + MAX_RUN_SECONDS
+    error = None
+    try:
+        with agent_tracing():
+            async with asyncio.timeout(MAX_RUN_SECONDS):
+                return cast(
+                    dict,
+                    await graph.ainvoke(
+                        state, context=context, config=run_config(context=context)
+                    ),
+                )
+    except BaseException as exc:
+        error = type(exc).__name__
+        raise
+    finally:
+        record_run(
+            profile=context.profile,
+            stats=context.stats,
+            total_ms=_elapsed_ms(started),
+            error=error,
+        )
 
 
 def invoke_agent_sync(graph: Any, state: dict, *, context: AgentContext) -> dict:
@@ -89,16 +107,41 @@ def invoke_agent_sync(graph: Any, state: dict, *, context: AgentContext) -> dict
 async def stream_agent(
     graph: Any, state: dict, *, context: AgentContext
 ) -> AsyncGenerator[dict, None]:
-    context.deadline = monotonic() + MAX_RUN_SECONDS
-    with agent_tracing():
-        async with asyncio.timeout(MAX_RUN_SECONDS):
-            stream = graph.astream(
-                state,
-                context=context,
-                config=run_config(context=context),
-                stream_mode=["messages", "updates", "custom"],
-                version="v2",
-            )
-            async with aclosing(stream):
-                async for part in stream:
-                    yield part
+    started = monotonic()
+    context.deadline = started + MAX_RUN_SECONDS
+    error = None
+    try:
+        with agent_tracing():
+            async with asyncio.timeout(MAX_RUN_SECONDS):
+                stream = graph.astream(
+                    state,
+                    context=context,
+                    config=run_config(context=context),
+                    stream_mode=["messages", "updates", "custom"],
+                    version="v2",
+                )
+                async with aclosing(stream):
+                    async for part in stream:
+                        if context.stats.first_token_ms is None and _is_answer_text(
+                            part
+                        ):
+                            context.stats.first_token_ms = _elapsed_ms(started)
+                        yield part
+    except BaseException as exc:
+        error = type(exc).__name__
+        raise
+    finally:
+        record_run(
+            profile=context.profile,
+            stats=context.stats,
+            total_ms=_elapsed_ms(started),
+            error=error,
+        )
+
+
+def _is_answer_text(part: dict) -> bool:
+    """A streamed text chunk from the coach's own model node."""
+    if part.get("type") != "messages" or part.get("ns"):
+        return False
+    chunk, meta = part["data"]
+    return meta.get("langgraph_node") == "model" and bool(chunk.text)

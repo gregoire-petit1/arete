@@ -6,6 +6,7 @@ from langchain_core.tools import BaseTool
 
 from arete.agent.capabilities.execution import _resolve_tool
 from arete.agent.capabilities.registry import validate_registry
+from arete.agent.middlewares.observability import run_stats
 from arete.agent.runtime.state import CoachState
 from arete.agent.tools.toolkits import META_TOOLS
 
@@ -23,7 +24,14 @@ class ToolkitMiddleware(AgentMiddleware):
         # the graph state.
         self.tools: list[BaseTool] = META_TOOLS
 
+    @staticmethod
+    def _count(request) -> None:
+        stats = run_stats(request)
+        if stats is not None:
+            stats.tool_calls += 1
+
     def wrap_tool_call(self, request, handler):
+        self._count(request)
         name = str(request.tool_call.get("name", ""))
         tool = _resolve_tool(request)
         if isinstance(tool, ToolMessage):
@@ -39,6 +47,7 @@ class ToolkitMiddleware(AgentMiddleware):
         )
 
     async def awrap_tool_call(self, request, handler):
+        self._count(request)
         name = str(request.tool_call.get("name", ""))
         tool = _resolve_tool(request)
         if isinstance(tool, ToolMessage):

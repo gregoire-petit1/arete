@@ -47,10 +47,12 @@ Production sync entrypoints run in AnyIO workers and bridge model execution onto
 the server event loop. This avoids sharing the SDK's cached async HTTP connections
 across short-lived event loops. Async callers use `invoke_agent` directly.
 
-The execution envelope is five minutes, 16 main graph model calls, 32 tool calls,
+The execution envelope is five minutes, 8 main graph model calls, 32 tool calls,
 and four simultaneous tool executions per invocation. Framework recursion is a
-separate 100-step backstop. SDK retries remain capped at four retries per model
-call; tools and failed runs are never automatically replayed. Already-started
+separate 100-step backstop. A model call gives up after 60 s, or 30 s without a
+streamed chunk, with two SDK retries; on OpenRouter the request carries a
+fallback list of at most three models. Tools and failed runs are never
+automatically replayed. Already-started
 synchronous operations cannot be forcibly cancelled or rolled back.
 
 ## Capability and context ownership
@@ -96,10 +98,12 @@ cancellation cleanup, dynamic tool spans and browser thread IDs. Provider usage 
 retain reported cache/input/output details and model timing without logging the
 athlete's prompts. Opt-in LangSmith traces include full inputs, outputs and tool
 results, as described in the README. Missing usage remains unknown, not zero.
+Each invocation also logs one `Agent run:` line (`RunStats` on the run context):
+model calls, tool calls, model time, time to first token and served models.
 
 These bounds are not a cumulative token/spend quota: SDK retries, compaction and
 suggestions have their own limits and share the run deadline. Arete has no delegated
-children or fallback chain to budget. No database or browser-store migration is
+children to budget; a provider-side fallback stays within one model call. No database or browser-store migration is
 required.
 
 ## Enforcement

@@ -4,7 +4,9 @@ from pydantic import SecretStr
 
 from arete.agent.models.registry import (
     DEFAULT_GITHUB_MODEL,
+    DEFAULT_OPENROUTER_FALLBACKS,
     DEFAULT_OPENROUTER_MODEL,
+    MAX_OPENROUTER_MODELS,
     ModelRoute,
 )
 from arete.config import config
@@ -44,5 +46,23 @@ def resolve_route() -> ModelRoute:
             f"Unknown LLM_PROVIDER '{provider}' for the agent. Supported: ollama, openrouter, github"
         )
     return ModelRoute(
-        configured_model_name(), url, SecretStr(key), config.llm_context_tokens
+        configured_model_name(),
+        url,
+        SecretStr(key),
+        config.llm_context_tokens,
+        _openrouter_fallbacks() if provider == "openrouter" else (),
     )
+
+
+def _openrouter_fallbacks() -> tuple[str, ...]:
+    """The default list only backs the default model: a pinned LLM_MODEL is
+    never rerouted unless LLM_MODEL_FALLBACKS asks for it."""
+    fallbacks = config.llm_model_fallbacks
+    if len({configured_model_name(), *fallbacks}) > MAX_OPENROUTER_MODELS:
+        raise ValueError(
+            f"LLM_MODEL plus LLM_MODEL_FALLBACKS: {MAX_OPENROUTER_MODELS} models "
+            "at most, OpenRouter rejects longer lists"
+        )
+    if fallbacks:
+        return fallbacks
+    return () if config.llm_model else DEFAULT_OPENROUTER_FALLBACKS

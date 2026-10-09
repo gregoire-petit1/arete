@@ -331,24 +331,10 @@ class TestBuildChatModel:
         monkeypatch.delenv("LLM_MODEL", raising=False)
         assert build_chat_model().openai_api_base.startswith("http")
 
-    @pytest.mark.parametrize("configured_model", [None, "", "custom/model:free"])
-    def test_openrouter_routes_tool_requests_without_a_fallback_chain(
-        self, monkeypatch, configured_model
-    ):
-        from arete.agent.models.providers import build_chat_model
-
-        monkeypatch.setenv("LLM_PROVIDER", "openrouter")
-        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
-        if configured_model is None:
-            monkeypatch.delenv("LLM_MODEL", raising=False)
-        else:
-            monkeypatch.setenv("LLM_MODEL", configured_model)
-        model = build_chat_model()
-        assert model.openai_api_base == "https://openrouter.ai/api/v1"
-        assert not model.default_headers
-
+    @staticmethod
+    def _payload(model):
         # Exercise tool binding: the router needs the schemas to select a
-        # capable model, and an explicit model must not be silently rerouted.
+        # capable model.
         with patch.object(model.client.with_raw_response, "create") as create:
             create.return_value.headers = {}
             create.return_value.parse.return_value = {
@@ -356,11 +342,67 @@ class TestBuildChatModel:
                 "model": "selected/model",
             }
             model.bind_tools([get_page_context]).invoke("Hello")
-        payload = create.call_args.kwargs
-        assert payload["model"] == (configured_model or "openrouter/free")
+        return create.call_args.kwargs
+
+    @staticmethod
+    def _openrouter(monkeypatch, model=None, fallbacks=None):
+        monkeypatch.setenv("LLM_PROVIDER", "openrouter")
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test")
+        for name, value in (("LLM_MODEL", model), ("LLM_MODEL_FALLBACKS", fallbacks)):
+            if value is None:
+                monkeypatch.delenv(name, raising=False)
+            else:
+                monkeypatch.setenv(name, value)
+
+    @pytest.mark.parametrize("configured_model", [None, ""])
+    def test_openrouter_default_sends_its_fallback_list(
+        self, monkeypatch, configured_model
+    ):
+        from arete.agent.models.providers import build_chat_model
+        from arete.agent.models.registry import (
+            DEFAULT_OPENROUTER_FALLBACKS,
+            DEFAULT_OPENROUTER_MODEL,
+        )
+
+        self._openrouter(monkeypatch, configured_model)
+        model = build_chat_model()
+        assert model.openai_api_base == "https://openrouter.ai/api/v1"
+        assert not model.default_headers
+        payload = self._payload(model)
+        assert payload["model"] == DEFAULT_OPENROUTER_MODEL
         assert payload["tools"][0]["function"]["name"] == "get_page_context"
-        assert "models" not in payload
+        assert payload["extra_body"]["models"] == [
+            DEFAULT_OPENROUTER_MODEL,
+            *DEFAULT_OPENROUTER_FALLBACKS,
+        ]
+        assert payload["extra_body"]["models"][-1] == "openrouter/free"
+
+    def test_a_pinned_model_is_never_rerouted_silently(self, monkeypatch):
+        from arete.agent.models.providers import build_chat_model
+
+        self._openrouter(monkeypatch, "custom/model:free")
+        payload = self._payload(build_chat_model())
+        assert payload["model"] == "custom/model:free"
         assert "models" not in (payload.get("extra_body") or {})
+
+    def test_a_pinned_model_takes_explicit_fallbacks_in_order(self, monkeypatch):
+        from arete.agent.models.providers import build_chat_model
+
+        self._openrouter(monkeypatch, "a/one:free", "b/two:free, openrouter/free")
+        payload = self._payload(build_chat_model())
+        assert payload["extra_body"]["models"] == [
+            "a/one:free",
+            "b/two:free",
+            "openrouter/free",
+        ]
+
+    def test_more_than_three_models_is_refused_before_any_request(self, monkeypatch):
+        # OpenRouter answers HTTP 400 to a longer list.
+        from arete.agent.models.providers import build_chat_model
+
+        self._openrouter(monkeypatch, "a:free", "b:free,c:free,d:free")
+        with pytest.raises(ValueError, match="3 models"):
+            build_chat_model()
 
     def test_openrouter_without_a_key_is_actionable(self, monkeypatch):
         from arete.agent.models.providers import build_chat_model
