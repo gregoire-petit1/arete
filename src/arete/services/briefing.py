@@ -91,6 +91,11 @@ def briefing_facts(target_date: date, rule_text: str) -> str:
         facts = rule_facts(target_date)
         if facts.readiness_score is None:
             readiness = "Préparation : indisponible"
+        elif facts.readiness_source == "garmin_training":
+            readiness = (
+                "Préparation à l'entraînement Garmin ce matin : "
+                f"{facts.readiness_score:.0f}/100"
+            )
         elif facts.readiness_source == "garmin" and facts.readiness_measured_on:
             night = (
                 "cette nuit"

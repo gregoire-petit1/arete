@@ -84,3 +84,14 @@ def test_the_recovery_bar_says_where_the_number_comes_from():
     )
     assert previous.source == "garmin_previous" and "08/10" in (previous.detail or "")
     assert metrics._recovery_bar(None, TODAY).source == "model"
+
+
+def test_the_watch_training_readiness_comes_first():
+    model = metrics.fitness_model(_history(120), TODAY)
+    rows = [r + (None,) for r in _garmin_rows([TODAY])]
+    rows[-1] = rows[-1][:6] + (64,)  # this morning's Training Readiness
+    readiness = metrics.current_readiness(TODAY, rows, model)
+    assert readiness is not None
+    assert (readiness.score, readiness.source) == (64.0, "garmin_training")
+    bar = metrics._recovery_bar(readiness, TODAY)
+    assert bar.source == "garmin_training" and bar.current == 64.0
