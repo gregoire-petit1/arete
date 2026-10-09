@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorState } from '@/components/States';
 import { authApi, type AuthConfig } from '@/lib/api';
 import { AUTH_DISABLED, AuthStateContext } from './authState';
@@ -67,11 +68,14 @@ export function AuthGate({ children, onSessionEnd }: AuthGateProps) {
       </GateScreen>
     );
   }
+  // A key the SDK rejects would otherwise blank the page: the boundary shows an error instead.
   return (
-    <Suspense fallback={<GateSpinner />}>
-      <ClerkGate publishableKey={config.publishable_key} onSessionEnd={onSessionEnd}>
-        {children}
-      </ClerkGate>
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={<GateSpinner />}>
+        <ClerkGate publishableKey={config.publishable_key} onSessionEnd={onSessionEnd}>
+          {children}
+        </ClerkGate>
+      </Suspense>
+    </ErrorBoundary>
   );
 }
