@@ -64,6 +64,42 @@ def update_planned_status(session_id: int, status: str) -> str:
 
 
 @tool
+def update_planned_session(
+    session_id: int,
+    date_str: str = "",
+    session_type: str = "",
+    description: str = "",
+    target_duration_min: int = 0,
+    target_distance_km: float = 0.0,
+    target_hr_zone: str = "",
+    target_intensity: str = "",
+) -> str:
+    """Move or adjust a planned session; empty or 0 leaves a field unchanged.
+
+    Args:
+        session_id: Id of the planned session.
+        date_str: New ISO date (YYYY-MM-DD), empty = same day.
+        session_type: New type (recovery, endurance, tempo, intervals, long_run,
+            strength, hypertrophy, power, deload, cross_training, race, other).
+        description: New description.
+        target_duration_min: New duration in minutes.
+        target_distance_km: New distance in km.
+        target_hr_zone: New heart-rate zone, Z1 to Z5.
+        target_intensity: easy, moderate or hard.
+    """
+    return service.update_planned_session(
+        session_id=session_id,
+        date_str=date_str,
+        session_type=session_type,
+        description=description,
+        target_duration_min=target_duration_min,
+        target_distance_km=target_distance_km,
+        target_hr_zone=target_hr_zone,
+        target_intensity=target_intensity,
+    )
+
+
+@tool
 def delete_planned_session(session_id: int) -> str:
     """Delete a planned session by id. Prefer update_planned_status to mark it
     skipped — deletion loses the record.
@@ -78,5 +114,6 @@ PLANNING_TOOLS: list[BaseTool] = [
     list_planned,
     create_planned_session,
     update_planned_status,
+    update_planned_session,
     delete_planned_session,
 ]

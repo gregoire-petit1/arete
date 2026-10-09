@@ -12,7 +12,8 @@ ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé. Règles:
 
 PLANNING_INSTRUCTIONS = """Toolkit `planning` chargé. Règles:
 - Avant de planifier, regarde la charge récente et ce qui est déjà prévu, pour ne pas doubler une séance.
-- Une séance qui ne se fera pas passe en `skipped`; ne la supprime que si l'athlète le demande."""
+- Une séance qui ne se fera pas passe en `skipped`; ne la supprime que si l'athlète le demande.
+- Pour déplacer ou ajuster une séance prévue, `update_planned_session`: jamais supprimer puis recréer."""
 
 
 STRENGTH_INSTRUCTIONS = """Toolkit `strength` chargé. Règles:
