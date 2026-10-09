@@ -230,11 +230,65 @@ class TestGarminSyncClient:
             client.download_fit_file(42, output_dir=tmp_path)
         client.client.download_fit.assert_called_once()
 
+    def _sync_with(self, repo, raw):
+        from arete.features.hr_zones import ZoneModel
+
+        client = GarminSyncClient(client=MagicMock(), zones=ZoneModel.from_reference())
+        client.client.activities.return_value = raw
+        client._repository = repo
+        with (
+            patch("arete.garmin.sync.time.sleep"),
+            patch("arete.garmin.sync.refresh_threshold", return_value={}),
+        ):
+            return client, client.sync_activities(download_fit=False)
+
+    def test_sync_starts_from_the_newest_garmin_activity(self):
+        repo = MagicMock()
+        repo.last_garmin_import.return_value = (date(2026, 9, 1), None)
+        repo.list_actual_sessions.return_value = []
+        client, _ = self._sync_with(repo, [])
+        start, _end = client.client.activities.call_args.args
+        assert start == date(2026, 9, 1)
+
+    def test_new_activities_are_matched_to_the_plan(self):
+        from arete.garmin.models import PlannedSession, SessionStatus, SessionType
+
+        repo = MagicMock()
+        repo.last_garmin_import.return_value = (None, None)
+        repo.list_actual_sessions.return_value = []
+        repo.find_overlapping_session.return_value = None
+        repo.create_actual_session.return_value = 42
+        repo.get_potential_matches.return_value = [
+            PlannedSession(
+                id=7,
+                date=date(2026, 10, 1),
+                sport="running",
+                session_type=SessionType.ENDURANCE,
+                target_duration_min=60,
+                status=SessionStatus.PENDING,
+            )
+        ]
+        raw = [
+            {
+                "activityId": 1,
+                "activityName": "Footing",
+                "startTimeLocal": "2026-10-01T08:00:00",
+                "duration": 3600,
+                "activityType": {"typeKey": "trail_running"},
+            }
+        ]
+        _, result = self._sync_with(repo, raw)
+        assert result.activities_synced == 1
+        assert result.activities_matched == 1
+        repo.update_actual_session_match.assert_called_once()
+        assert repo.update_actual_session_match.call_args.args[:2] == (42, 7)
+
     def test_sync_activities_reports_auth_error(self):
         client = self._client()
         client.client.activities.side_effect = GarminAuthError("no tokens")
         client._repository = MagicMock()
         client._repository.list_actual_sessions.return_value = []
+        client._repository.last_garmin_import.return_value = (None, None)
         with patch("arete.garmin.sync.time.sleep"):
             result = client.sync_activities(start_date=date(2025, 12, 1))
         assert result.success is False
@@ -400,3 +454,23 @@ class TestSyncResult:
         assert result.activities_skipped == 2
         assert len(result.errors) == 1
         assert result.last_activity_date == date(2025, 12, 1)
+
+
+def test_sync_status_reports_the_last_garmin_import(router_client):
+    from datetime import datetime
+
+    from arete.api import garmin_sync
+
+    imported = datetime(2026, 10, 8, 8, 2, 11)
+    garmin = MagicMock()
+    garmin.is_authenticated.return_value = False
+    with (
+        patch("arete.garmin.client.GarminClient", return_value=garmin),
+        patch.object(
+            garmin_sync._repo, "last_garmin_import", return_value=(None, imported)
+        ),
+        patch.object(garmin_sync._repo, "count_actual_sessions", return_value=3),
+    ):
+        body = router_client(garmin_sync.router).get("/garmin/sync/status").json()
+    assert body["last_sync"] == imported.isoformat()
+    assert body["activities_synced"] == 3

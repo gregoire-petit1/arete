@@ -86,6 +86,32 @@ class TestActualSession:
 class TestSessionMatcher:
     """Tests for SessionMatcher."""
 
+    def test_intensity_is_read_against_the_athletes_zones(self):
+        """A planned Z2 means the athlete's Z2, not a share of 190 bpm."""
+        from arete.features.hr_zones import ZoneModel
+
+        actual = ActualSession(
+            date=date(2024, 6, 15), sport="running", duration_sec=2700, avg_hr=152
+        )
+        planned = PlannedSession(
+            id=1,
+            date=date(2024, 6, 15),
+            session_type=SessionType.ENDURANCE,
+            target_duration_min=45,
+            target_hr_zone="Z2",
+        )
+        athlete = SessionMatcher(zones=ZoneModel.from_reference(lthr=176))
+        deviation = athlete._calculate_intensity_deviation(actual, planned)
+        assert deviation is not None and abs(deviation) <= 0.10
+        # The old fixed table read 152 bpm as 80 % of 190: far above "Z2".
+        generic = SessionMatcher(zones=ZoneModel.from_reference(max_hr=190))
+        assert generic._calculate_intensity_deviation(actual, planned) > 0.2
+        # Full intensity points for the athlete's model, none for the generic one.
+        assert (
+            athlete._calculate_match_score(actual, planned)[0]
+            - generic._calculate_match_score(actual, planned)[0]
+        ) == 10
+
     def test_exact_match(self):
         """Test matching with same date and type."""
         matcher = SessionMatcher()
@@ -531,3 +557,26 @@ def test_fit_upload_parses_off_the_event_loop(router_client):
             files={"file": ("a.fit", b"x", "application/octet-stream")},
         )
     assert resp.status_code == 400
+
+
+def test_canonical_sport():
+    from arete.garmin.models import canonical_sport
+
+    for raw, expected in [
+        ("running", "running"),
+        ("trail_running", "running"),
+        ("Run", "running"),
+        ("TrailRun", "running"),
+        ("ride", "cycling"),
+        ("indoor_cycling", "cycling"),
+        ("lap_swimming", "swimming"),
+        ("strength_training", "strength"),
+        ("training", "strength"),
+        ("hike", "hiking"),
+        ("indoor_rowing", "rowing"),
+        ("  Walking ", "walking"),
+        ("paragliding", "other"),
+        ("", "other"),
+        (None, "other"),
+    ]:
+        assert canonical_sport(raw) == expected, raw

@@ -15,6 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
+from arete.dataio.settings import athlete_zone_model
 from arete.garmin.fit_parser import FITParser
 from arete.garmin.matcher import SessionMatcher
 from arete.garmin.models import (
@@ -23,6 +24,7 @@ from arete.garmin.models import (
     PlannedSession,
     SessionStatus,
     SessionType,
+    canonical_sport,
 )
 from arete.garmin.repository import GarminRepository
 
@@ -193,7 +195,7 @@ def create_planned_session(session: PlannedSessionCreate):
     """
     planned = PlannedSession(
         date=session.date,
-        sport=session.sport,
+        sport=canonical_sport(session.sport),
         session_type=session.session_type,
         target_duration_min=session.target_duration_min,
         target_distance_km=session.target_distance_km,
@@ -296,8 +298,11 @@ def upload_fit_file(
 
     content_bytes = bytes(content)
 
+    # The athlete's zones: bucketing the upload's HR and reading a planned
+    # "Z2" both need them (the default 190 bpm model misreads both).
+    zones = athlete_zone_model()
     try:
-        parser = FITParser()
+        parser = FITParser(zones=zones)
         parsed = parser.parse_stream(io.BytesIO(content_bytes))
         # Sanitize filename to prevent path traversal
         parsed.source_file = Path(file.filename).name
@@ -310,7 +315,7 @@ def upload_fit_file(
     # Convert parsed activity to ActualSession
     actual = ActualSession(
         date=parsed.start_time.date() if parsed.start_time else date.today(),
-        sport=parsed.sport or "running",
+        sport=canonical_sport(parsed.sport or "running"),
         session_type=parsed.sub_sport or parsed.infer_session_type(),
         duration_sec=parsed.duration_sec or parsed.elapsed_time_sec or 0,
         distance_m=parsed.distance_m,
@@ -339,7 +344,7 @@ def upload_fit_file(
     if auto_match:
         planned_sessions = _repo.get_potential_matches(actual)
         if planned_sessions:
-            matcher = SessionMatcher()
+            matcher = SessionMatcher(zones=zones)
             match = matcher.find_match(actual, planned_sessions)
             if match.is_matched and match.planned_session is not None:
                 planned_id = match.planned_session.id
@@ -401,7 +406,7 @@ def create_actual_session(payload: ActualSessionCreate):
     distance_m = payload.distance_km * 1000 if payload.distance_km else None
     session = ActualSession(
         date=payload.date,
-        sport=payload.sport,
+        sport=canonical_sport(payload.sport),
         session_type=payload.session_type or payload.sport,
         name=payload.name,
         duration_sec=duration_sec,

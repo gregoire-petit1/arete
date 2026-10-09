@@ -25,7 +25,8 @@ def get_records(sport: str = Query("running")):
 
 @router.patch("/sessions/{session_id}")
 def update_session(session_id: int, body: SessionUpdate):
-    return service.update_session(session_id, rpe=body.rpe, notes=body.notes)
+    # Only the keys the client sent: an explicit null clears the value.
+    return service.update_session(session_id, body.model_dump(exclude_unset=True))
 
 
 @router.get("/sessions")

@@ -74,3 +74,67 @@ def test_daily_tss_by_date_matches_the_gap_filled_series():
     finally:
         con.execute("DELETE FROM app.actual_sessions WHERE source = 'test'")
         con.close()
+
+
+def _set_thresholds(con, lthr, max_hr):
+    con.execute(
+        "INSERT INTO app.user_settings (user_id, lthr, max_hr) VALUES (1, ?, ?) "
+        "ON CONFLICT (user_id) DO UPDATE SET lthr = EXCLUDED.lthr, max_hr = EXCLUDED.max_hr",
+        [lthr, max_hr],
+    )
+
+
+def test_hr_tss_is_read_against_the_threshold():
+    con = connect()
+    saved = con.execute(
+        "SELECT lthr, max_hr FROM app.user_settings WHERE user_id = 1"
+    ).fetchone()
+    day = date(2025, 2, 3)
+    try:
+        con.execute("DELETE FROM app.actual_sessions WHERE source = 'test'")
+        con.execute(
+            "INSERT INTO app.actual_sessions (user_id, date, sport, duration_sec, avg_hr, source)"
+            " VALUES (1, ?, 'running', 3600, 170, 'test')",
+            [day],
+        )
+        _set_thresholds(con, 170, None)  # 1 h at threshold = 100
+        assert round(daily_tss(con, day, day)[0].tss) == 100
+        _set_thresholds(con, None, 200)  # threshold derived: 0.9 x 200 = 180
+        assert round(daily_tss(con, day, day)[0].tss) == round(100 * (170 / 180) ** 2)
+    finally:
+        con.execute("DELETE FROM app.actual_sessions WHERE source = 'test'")
+        _set_thresholds(con, *(saved or (None, None)))
+        con.close()
+
+
+def test_strength_sessions_count_once():
+    con = connect()
+    day = date(2025, 2, 10)
+    try:
+        con.execute("DELETE FROM app.actual_sessions WHERE source = 'test'")
+        con.execute("DELETE FROM app.strength_sessions WHERE name LIKE 'test-%'")
+        con.execute(
+            "INSERT INTO app.strength_sessions (user_id, date, name, duration_min, overall_rpe)"
+            " VALUES (1, ?, 'test-free', 60, 6)",
+            [day],
+        )
+        # Linked to a Garmin activity: that activity carries the load already.
+        con.execute(
+            "INSERT INTO app.strength_sessions"
+            " (user_id, date, name, duration_min, overall_rpe, actual_session_id)"
+            " VALUES (1, ?, 'test-linked', 60, 9, 999999)",
+            [day],
+        )
+        # No duration: no load, and no say in the day's mean RPE.
+        con.execute(
+            "INSERT INTO app.strength_sessions (user_id, date, name, overall_rpe)"
+            " VALUES (1, ?, 'test-undated', 10)",
+            [day],
+        )
+        assert round(daily_tss(con, day, day)[0].tss) == 60  # 1 h @ RPE 6
+        assert daily_tss_by_date(con)[day] == daily_tss(con, day, day)[0].tss
+        load = daily_loads(con, day, day)[0]
+        assert load.duration_min == 60 and load.rpe == 6
+    finally:
+        con.execute("DELETE FROM app.strength_sessions WHERE name LIKE 'test-%'")
+        con.close()

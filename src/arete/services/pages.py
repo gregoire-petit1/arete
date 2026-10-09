@@ -125,7 +125,13 @@ def _log() -> dict[str, Any]:
 def _settings() -> dict[str, Any]:
     from arete.services.settings import get_settings
 
-    return {"settings": get_settings().model_dump(mode="json")}
+    # Identity stays out of the prompt: the coach has no use for it, and the
+    # page data goes to the model provider (and to LangSmith when tracing).
+    return {
+        "settings": get_settings().model_dump(
+            mode="json", exclude={"email", "display_name"}
+        )
+    }
 
 
 _PAGE_FETCHERS = {
