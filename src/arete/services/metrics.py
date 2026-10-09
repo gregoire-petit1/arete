@@ -29,10 +29,18 @@ from arete.features.workload import (
     ACWRZone,
     compute_workload_metrics,
 )
-from arete.garmin.readiness import compute_readiness, fetch_window
+from arete.garmin.readiness import (
+    compute_readiness,
+    fetch_window,
+    training_readiness_from_rows,
+)
 
 logger = logging.getLogger(__name__)
 TSS_PER_SESSION = 50.0
+
+#: garmin_training: the watch's morning Training Readiness; garmin: Arete's
+#: score from Garmin's HRV, sleep and body battery; model: the CTL/ATL model.
+ReadinessSource = Literal["garmin_training", "garmin", "model"]
 READINESS_LOOKBACK_DAYS = 1
 
 
@@ -62,7 +70,7 @@ class FitnessMetricsOut(BaseModel):
         description="Readiness 0-100: Garmin's (today, else yesterday), else the model's"
     )
     readiness_level: str = Field(description="Readiness level")
-    readiness_source: Literal["garmin", "model"] = Field(
+    readiness_source: ReadinessSource = Field(
         default="model", description="Where the readiness score comes from"
     )
     readiness_measured_on: date | None = Field(
@@ -196,7 +204,7 @@ class Readiness:
     """The one readiness number every surface shows, and where it comes from."""
 
     score: float
-    source: Literal["garmin", "model"]
+    source: ReadinessSource
     measured_on: date | None  # the Garmin night; None for the model
 
     @property
@@ -207,8 +215,13 @@ class Readiness:
 def current_readiness(
     today: date, window: Sequence[tuple], model: PerformanceModel | None
 ) -> Readiness | None:
-    """Garmin's readiness for today, yesterday's when the night is not in yet,
-    the CTL/ATL model only when Garmin has nothing recent."""
+    """The watch's Training Readiness this morning, else Arete's Garmin score
+    (today's, yesterday's when the night is not in yet), else the CTL/ATL model."""
+    training = training_readiness_from_rows(today, window)
+    if training is not None:
+        return Readiness(
+            score=float(training), source="garmin_training", measured_on=today
+        )
     for offset in range(READINESS_LOOKBACK_DAYS + 1):
         day = today - timedelta(days=offset)
         score = compute_readiness(day, window=window)
@@ -245,6 +258,14 @@ def _recovery_bar(readiness: Readiness | None, today: date) -> StatBar:
             label="Récupération",
             detail="Aucune donnée de charge ni mesure Garmin",
             source="model",
+        )
+    if readiness.source == "garmin_training":
+        return StatBar(
+            current=readiness.score,
+            max=100,
+            label="Récupération",
+            detail="Préparation à l'entraînement Garmin (ce matin)",
+            source="garmin_training",
         )
     if readiness.source == "garmin":
         same_day = readiness.measured_on == today

@@ -42,7 +42,7 @@ def generate_daily_tip(
     readiness_score: float | None,
     fatigue_threshold: int = DEFAULT_FATIGUE_THRESHOLD,
     fitness_goal: str = "build",
-    readiness_source: Literal["garmin", "model"] = "model",
+    readiness_source: str = "model",
 ) -> tuple[str, Literal["info", "warning", "alert"]]:
     """Rule-based daily tip, read against the athlete's own settings.
 
@@ -89,7 +89,7 @@ def generate_daily_tip(
         )
 
     if readiness_score is not None and readiness_score >= fatigue_threshold:
-        measured = "Garmin" if readiness_source == "garmin" else "estimée"
+        measured = "estimée" if readiness_source == "model" else "Garmin"
         return (
             f"Préparation {measured} à {readiness_score:.0f}/100, au-dessus de ton seuil de "
             f"{fatigue_threshold}. C'est le jour pour une séance dure ou un test.",
@@ -124,7 +124,7 @@ class RuleFacts:
     readiness_score: float | None
     fatigue_threshold: int
     fitness_goal: str
-    readiness_source: Literal["garmin", "model"] = "model"
+    readiness_source: str = "model"  # see services.metrics.ReadinessSource
     readiness_measured_on: date | None = None
 
 
