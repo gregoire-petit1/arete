@@ -105,6 +105,17 @@ def daily_sync() -> dict[str, str]:
     else:
         status["garmin"] = "no tokens"
 
+    # After the health data, before the briefing that explains it. Runs without
+    # Garmin too: the readiness then comes from the load model.
+    try:
+        from arete.services.plan_adaptation import adapt_today
+
+        decisions = adapt_today(respect_setting=True)
+        kinds = ", ".join(sorted({d.decision for d in decisions})) or "none"
+        status["plan"] = f"{len(decisions)} decisions ({kinds})"
+    except Exception as e:  # noqa: BLE001 - background job must not die
+        status["plan"] = f"failed: {e}"
+
     from arete.api.strava import SyncRequest, _get_strava_tokens, sync
 
     if _get_strava_tokens():
