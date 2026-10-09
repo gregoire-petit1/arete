@@ -51,9 +51,11 @@ responsibility a testable owner. Do not create empty architectural scaffolding.
   auxiliary calls without measuring them (`Agent run:` log line). Briefings
   and feedback bind no tool: the server computes their facts and files the
   feedback's ledger entry; they cannot alter training plans or log workouts.
-- The journal is written only through `services/memory.append_entry` (the chat's
-  `append_journal` tool, the feedback): dated by the server, never twice. Each
-  prompt rule lives once: the shared core in `prompts/coach.py`, the rest in the
+- New journal entries go through `services/memory.append_entry` (the chat's
+  `append_journal` tool, the feedback): dated by the server, never twice. Chat
+  may correct/remove existing content with `edit_file` or delete an entire
+  `notes.md`/`sessions.md` with `delete`; archives and attachments stay read-only.
+  Each prompt rule lives once: the shared core in `prompts/coach.py`, the rest in the
   profile or the toolkit that needs it (`tests/test_agent_prompts.py`).
 - Each invocation has named call, concurrency and time limits. SDK retries and
   auxiliary calls must remain bounded. Never automatically replay a failed write

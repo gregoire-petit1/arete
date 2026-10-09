@@ -7,8 +7,11 @@ has no dependency on the agent framework and preserves the existing data paths.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
+from threading import RLock
 
 from arete.config import config
 
@@ -21,6 +24,19 @@ NOTES_LEDGER = "notes.md"
 # Keep the journal affordable to read while archiving whole entries.
 MAX_SESSIONS_LEDGER_CHARS = 40_000
 KEEP_SESSIONS_LEDGER_CHARS = 20_000
+LEDGER_LOCK_TIMEOUT_SECONDS = 10
+_ledger_lock = RLock()
+
+
+@contextmanager
+def ledger_lock() -> Iterator[None]:
+    """Protect local read/modify/write operations, including nested rotation."""
+    if not _ledger_lock.acquire(timeout=LEDGER_LOCK_TIMEOUT_SECONDS):
+        raise TimeoutError("Timed out waiting for the journal write lock")
+    try:
+        yield
+    finally:
+        _ledger_lock.release()
 
 
 def memory_root() -> Path:
@@ -35,6 +51,7 @@ def archive_path(root: Path, when: date) -> Path:
     return root / f"sessions-{when:%Y-%m}.md"
 
 
+@ledger_lock()
 def rotate_sessions_ledger(now: date | None = None) -> Path | None:
     """Archive the old half of ``sessions.md`` when it outgrows its budget.
 
@@ -71,6 +88,7 @@ def rotate_sessions_ledger(now: date | None = None) -> Path | None:
     return archive
 
 
+@ledger_lock()
 def append_entry(file: str, title: str, body: str, when: date | None = None) -> bool:
     """Append one dated entry to a ledger; False when it is already there.
 

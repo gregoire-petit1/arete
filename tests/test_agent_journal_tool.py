@@ -1,4 +1,4 @@
-"""append_journal: the coach's only write on its journal."""
+"""append_journal: dated, deduplicated new journal entries."""
 
 import json
 from datetime import date

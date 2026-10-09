@@ -712,16 +712,12 @@ class TestAnalyticsPageRead:
 
 
 class TestLedgerTools:
-    """The journal's tools, described for a journal — and safe to append with."""
+    """The journal supports targeted corrections without arbitrary file creation."""
 
     def _tools(self):
         from arete.agent.backends.memory import build_memory_filesystem
 
         return {t.name: t for t in build_memory_filesystem().tools}
-
-    def test_no_tool_can_delete_a_journal_file(self):
-        # Rotation is the server's job; a delete could only lose data.
-        assert "delete" not in self._tools()
 
     def test_reading_points_at_the_end_of_the_journal(self):
         """`read_file` reads 100 lines from the top; new entries are appended.
@@ -731,9 +727,15 @@ class TestLedgerTools:
         """
         assert "fin" in self._tools()["read_file"].description
 
-    def test_the_filesystem_only_reads(self):
-        # Writes go through append_journal: dated, deduplicated, bounded.
-        assert set(self._tools()) == {"read_file", "ls", "glob", "grep"}
+    def test_the_filesystem_can_correct_and_delete_but_not_create(self):
+        assert set(self._tools()) == {
+            "read_file",
+            "ls",
+            "glob",
+            "grep",
+            "edit_file",
+            "delete",
+        }
 
 
 def test_settings_page_data_has_no_identity_fields():

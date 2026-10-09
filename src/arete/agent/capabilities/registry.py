@@ -120,6 +120,8 @@ def validate_registry() -> None:
     names = {"search_toolkits", "load_toolkit"} | {
         "get_page_context",
         "read_file",
+        "edit_file",
+        "delete",
         "ls",
         "glob",
         "grep",

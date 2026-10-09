@@ -1,4 +1,4 @@
-"""The coach's one write on its journal: a dated entry, filed by the server."""
+"""New journal entries and durable athlete facts, filed by the server."""
 
 from __future__ import annotations
 
