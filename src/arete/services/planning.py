@@ -238,9 +238,13 @@ def update_planned_session(
     if not fields:
         return json.dumps({"error": "Nothing to change: give at least one field"})
     # A copy already on Garmin's calendar no longer matches: mark it unsent.
-    if not _repo().update_planned_session_fields(
-        session_id, **fields, garmin_pushed_at=None
-    ):
+    try:
+        changed = _repo().update_planned_session_fields(
+            session_id, **fields, garmin_pushed_at=None
+        )
+    except ValueError as exc:
+        return json.dumps({"error": str(exc)}, ensure_ascii=False)
+    if not changed:
         return json.dumps({"error": f"Planned session {session_id} not found"})
     updated = _repo().get_planned_session(session_id)
     return json.dumps(

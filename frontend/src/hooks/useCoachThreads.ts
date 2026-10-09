@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { documentsApi } from '@/lib/documents';
 import { invalidateAfterSession } from '@/lib/queryKeys';
 import type { PanelPageContext } from '@/lib/pageContext';
 import {
@@ -90,11 +91,16 @@ export function useCoachThreads(context: PanelPageContext) {
       );
     }
   };
-  const remove = (id: string) => {
+  const remove = async (id: string) => {
     if (runRef.current?.threadId === id) runRef.current.controller.abort();
+    try { await documentsApi.deleteThread(id); }
+    catch (err) { setError(err instanceof Error ? err.message : 'Suppression des documents impossible.'); return; }
     setStore((prev) => removeThread(prev, id));
     setError('');
   };
+  const attachments = useCallback((ids: string[]) => {
+    setStore(prev => updateThread(prev, active.id, thread => JSON.stringify(thread.attachmentIds ?? []) === JSON.stringify(ids) ? thread : { ...thread, attachmentIds: ids }));
+  }, [active.id]);
   const draft = (text: string) =>
     setStore((prev) =>
       updateThread(prev, prev.activeId, (t) => ({ ...t, draft: text }))
@@ -160,6 +166,7 @@ export function useCoachThreads(context: PanelPageContext) {
       context,
       (event) => {
         patchAnswer((m) => applyEvent(m, event));
+        if (event.type === 'import_preview' || event.type === 'done') void queryClient.invalidateQueries({ queryKey: ['coach-imports', threadId] });
         // Refresh when the write completes, even if the final answer fails or
         // the athlete has switched threads while this run was in flight.
         if (
@@ -207,6 +214,7 @@ export function useCoachThreads(context: PanelPageContext) {
     create,
     remove,
     draft,
+    attachments,
     send,
     retry,
     stop,

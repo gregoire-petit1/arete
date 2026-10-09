@@ -33,6 +33,7 @@ vi.mock('@/lib/agentStream', async (importOriginal) => ({
       })
   ),
 }));
+vi.mock('@/lib/documents', () => ({ documentsApi: { deleteThread: vi.fn().mockResolvedValue({ deleted: true }) } }));
 const context = { page: 'dashboard', path: '/', params: {} };
 let queryClient: QueryClient;
 function wrapper({ children }: { children: ReactNode }) {
@@ -103,7 +104,7 @@ it('aborts deletion of an active run without leaking into the replacement thread
     result.current.send('Question');
   });
   await act(async () => {
-    result.current.remove(first);
+    await result.current.remove(first);
   });
   expect(runs[0].signal.aborted).toBe(true);
   expect(result.current.runningId).toBeNull();

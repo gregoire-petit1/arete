@@ -69,6 +69,9 @@ class PlannedSessionResponse(BaseModel):
     description: str | None
     source: str
     status: str
+    prescription: dict | None = None
+    provenance: list[dict] | None = None
+    revision: int = 1
     garmin_workout_id: str | None = None
     garmin_pushed_at: datetime | None = None
 
@@ -146,6 +149,9 @@ def _planned_to_response(session: PlannedSession) -> PlannedSessionResponse:
         target_intensity=session.target_intensity,
         description=session.description,
         source=session.source,
+        prescription=session.prescription,
+        provenance=session.provenance,
+        revision=session.revision,
         status=session.status.value
         if isinstance(session.status, SessionStatus)
         else session.status,
@@ -258,7 +264,10 @@ def update_planned_status(session_id: int, payload: PlannedStatusUpdate):
 @router.delete("/planned/{session_id}")
 def delete_planned_session(session_id: int):
     """Delete a planned session."""
-    success = _repo.delete_planned_session(session_id)
+    try:
+        success = _repo.delete_planned_session(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"message": "Session deleted"}

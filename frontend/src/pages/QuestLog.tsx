@@ -11,6 +11,7 @@ import { weekStats } from '@/lib/sessionMatch';
 import { cn } from '@/lib/utils';
 import type { PlannedSession } from '@/types';
 import { WeekPlanList } from './planning/WeekPlanList';
+import { GarminExportPanel } from './planning/GarminExportPanel';
 
 // Session types per sport category
 const CARDIO_SESSION_TYPES = [
@@ -295,6 +296,8 @@ export function PlanningPage() {
             onDelete={setToDelete}
           />
         </Panel>
+
+        <GarminExportPanel sessions={plannedQuery.data ?? []} />
 
         <Panel title="ADHÉRENCE DE LA SEMAINE" className="mb-4 sm:mb-8" delay={0.1}>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-6">

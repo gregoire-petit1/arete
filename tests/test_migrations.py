@@ -75,6 +75,36 @@ def test_a_database_behind_runs_its_migrations(tmp_path, monkeypatch):
     assert latest == init_duckdb.MIGRATIONS[-1][0]
 
 
+def test_document_migration_preserves_version_twelve_planning(tmp_path, monkeypatch):
+    path = tmp_path / "version-twelve.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    with duckdb.connect(str(path)) as con:
+        con.execute(
+            "INSERT INTO app.planned_sessions (date,sport,session_type,description) VALUES ('2027-01-12','running','endurance','Existing session')"
+        )
+        for column in ("prescription", "provenance", "revision"):
+            con.execute(f"ALTER TABLE app.planned_sessions DROP COLUMN {column}")
+        for table in (
+            "document_quota",
+            "coach_documents",
+            "coach_document_chunks",
+            "coach_imports",
+            "garmin_exports",
+        ):
+            con.execute(f"DROP TABLE app.{table}")
+        con.execute("DELETE FROM app.schema_version WHERE version=13")
+    init_duckdb.main()
+    with duckdb.connect(str(path)) as con:
+        row = con.execute(
+            "SELECT description,prescription,provenance,revision FROM app.planned_sessions"
+        ).fetchone()
+        assert row == ("Existing session", None, None, 1)
+        assert con.execute("SELECT used_bytes FROM app.document_quota").fetchone() == (
+            0,
+        )
+
+
 def test_sport_names_are_canonicalised_once(tmp_path, monkeypatch):
     path = tmp_path / "sports.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))

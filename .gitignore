@@ -58,3 +58,6 @@ wip-deepagent-sidepanel/
 .env*.local
 .agents/
 skills-lock.json
+
+# Generated from pinned npm OCR packages.
+frontend/public/ocr/

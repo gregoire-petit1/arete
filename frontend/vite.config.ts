@@ -48,6 +48,7 @@ export default defineConfig({
       srcDir: "src",
       filename: "sw.ts",
       injectManifest: {
+        globIgnores: ["ocr/**", "**/pdf*.mjs", "**/pdf*.js"],
         globPatterns: ["**/*.{js,css,html,png,svg,woff2}"],
       },
     }),

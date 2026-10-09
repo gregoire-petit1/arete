@@ -69,6 +69,7 @@ export function restoreConversation(raw: string | null): ChatMessage[] {
     }
     return settleMessage(
       {
+        imports: Array.isArray(m.imports) && m.imports.length <= 50 && m.imports.every((item: { id?: unknown; version?: unknown }) => typeof item.id === 'string' && Number.isInteger(item.version)) ? m.imports : undefined,
         role: m.role,
         content: m.content,
         parts,

@@ -50,6 +50,8 @@ def test_planning_toolkit_registered():
         "update_planned_status",
         "update_planned_session",
         "delete_planned_session",
+        "prepare_import",
+        "inspect_import",
     }
     assert "planning" in tk.instructions.lower()
     assert "update_planned_session" not in tk.read_tools  # a write, chat only

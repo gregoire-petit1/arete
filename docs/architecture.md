@@ -124,3 +124,20 @@ checks, load-before-execute, concurrent invocation isolation, call/deadline limi
 context schema accounting and completion events. Service/API tests cover domain
 behavior and wire compatibility. Trace regression tests cover cancellation, parent spans, metadata and export
 failures. Live model evaluations remain opt-in.
+
+## Document imports and outbound workouts
+
+Conversation messages remain browser-owned. Document originals, extracted blocks,
+import drafts and outbound Garmin operation records are deliberately durable in
+DuckDB/MotherDuck (migration 13). `services/documents.py` and `services/imports.py`
+own these lifecycles. API chat hydration builds an invocation-local StateBackend
+view at `/attachments/`; the context builder receives only a bounded manifest.
+The readonly filesystem composes that view with the existing ledger backend.
+The model can propose a draft but has no confirmation tool; pending imports block
+ordinary coach planning writes. Human confirmation commits selected sessions once.
+
+`services/prescriptions.py` owns versioned steps and provenance. Garmin conversion
+lives in `garmin/workouts.py`; `services/garmin_export.py` owns explicit export,
+reconciliation and removal with durable reservations and no ambiguous write replay.
+Only `GarminClient` touches the remote service. See [document imports](document-imports.md)
+for resource bounds, frontend worker assets, unsupported conversions and acceptance.

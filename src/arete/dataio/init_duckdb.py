@@ -504,6 +504,12 @@ def _m12_push_subscriptions(con) -> None:
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
 #: creates it on existing databases. Migrations must stay idempotent.
+def _m13_document_imports(con) -> None:
+    from arete.dataio.document_schema import migrate
+
+    migrate(con)
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -517,6 +523,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (10, _m10_garmin_performance_columns),
     (11, _m11_plan_adaptation),
     (12, _m12_push_subscriptions),
+    (13, _m13_document_imports),
 ]
 
 

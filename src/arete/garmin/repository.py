@@ -1,5 +1,6 @@
 """Repository for Garmin sessions database operations."""
 
+import json
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -18,7 +19,7 @@ PLANNED_COLUMNS = (
     "id, user_id, date, sport, session_type, target_duration_min, "
     "target_distance_km, target_hr_zone, target_intensity, description, source, "
     "status, created_at, structure_json, garmin_workout_id, garmin_schedule_id, "
-    "garmin_pushed_at"
+    "garmin_pushed_at, prescription, provenance, revision"
 )
 
 #: What a plan edit (coach, daily adaptation, Garmin push) may overwrite.
@@ -60,6 +61,9 @@ def _planned_from_row(row: tuple) -> PlannedSession:
         garmin_workout_id=row[14],
         garmin_schedule_id=row[15],
         garmin_pushed_at=row[16],
+        prescription=json.loads(row[17]) if row[17] else None,
+        provenance=json.loads(row[18]) if row[18] else None,
+        revision=row[19],
     )
 
 
@@ -202,11 +206,40 @@ class GarminRepository:
         ]
         conn = self._get_connection()
         try:
+            conn.execute("BEGIN TRANSACTION")
+            row = conn.execute(
+                "SELECT prescription FROM planned_sessions WHERE id=?", [session_id]
+            ).fetchone()
+            active = conn.execute(
+                "SELECT state FROM garmin_exports WHERE session_id=?", [session_id]
+            ).fetchone()
+            if active and active[0] in {"working", "uncertain", "conflict"}:
+                raise ValueError(
+                    "Réconcilie l’export Garmin avant de modifier la séance."
+                )
+            if (
+                row
+                and row[0]
+                and set(fields) - {"date", "description", "status", "garmin_pushed_at"}
+            ):
+                raise ValueError(
+                    "Modifie les étapes dans l’éditeur de prescription du Planning."
+                )
+            # Both planning editors share the version used to reserve exports.
             result = conn.execute(
-                f"UPDATE planned_sessions SET {', '.join(f'{k} = ?' for k in fields)} "
-                "WHERE id = ? RETURNING id",
+                f"UPDATE planned_sessions SET {', '.join(f'{k} = ?' for k in fields)}, "
+                "revision=revision+1 WHERE id = ? RETURNING id",
                 [*values, session_id],
             ).fetchone()
+            conn.execute(
+                "UPDATE garmin_exports SET state='dirty',updated_at=current_timestamp "
+                "WHERE session_id=? AND state<>'removed'",
+                [session_id],
+            )
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
         finally:
             conn.close()
         return result is not None
@@ -214,10 +247,28 @@ class GarminRepository:
     def delete_planned_session(self, session_id: int) -> bool:
         """Delete a planned session by ID."""
         conn = self._get_connection()
-        result = conn.execute(
-            "DELETE FROM planned_sessions WHERE id = ? RETURNING id", [session_id]
-        ).fetchone()
-        conn.close()
+        try:
+            conn.execute("BEGIN TRANSACTION")
+            active = conn.execute(
+                "SELECT state FROM garmin_exports WHERE session_id=?", [session_id]
+            ).fetchone()
+            if active and active[0] in {"working", "uncertain", "conflict"}:
+                raise ValueError(
+                    "Réconcilie l’export Garmin avant de supprimer la séance."
+                )
+            conn.execute(
+                "UPDATE garmin_exports SET deleted=true,state='pending_removal',updated_at=current_timestamp WHERE session_id=? AND state<>'removed'",
+                [session_id],
+            )
+            result = conn.execute(
+                "DELETE FROM planned_sessions WHERE id = ? RETURNING id", [session_id]
+            ).fetchone()
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
         return result is not None
 
     # ─────────────────────────────────────────────────────────────────────

@@ -78,7 +78,13 @@ def adapt_today(
         start_date=day, end_date=day, status=None, limit=10, ascending=True
     )
     decided = {d.planned_session_id for d in decisions.list_for_day(day)}
-    pending = [s for s in sessions if s.id is not None and s.id not in decided]
+    # Imported prescriptions were explicitly reviewed; summary-field adaptation
+    # cannot faithfully rewrite their steps or their source evidence.
+    pending = [
+        s
+        for s in sessions
+        if s.id is not None and s.id not in decided and s.prescription is None
+    ]
     if not pending:
         return decisions.list_for_day(day)
 
@@ -163,6 +169,9 @@ def revert(decision_id: int) -> PlanDecision:
         raise LookupError(f"decision {decision_id}")
     if decision.reverted_at is not None or decision.decision == Decision.KEEP.value:
         raise NothingToRevert(f"decision {decision_id}")
+    session = GarminRepository().get_planned_session(decision.planned_session_id)
+    if session is not None and session.prescription is not None:
+        raise NothingToRevert("Cette séance possède une prescription validée.")
     original = {k: v for k, v in (decision.original or {}).items() if k in _PLAN_FIELDS}
     GarminRepository().update_planned_session_fields(
         decision.planned_session_id,
@@ -180,6 +189,10 @@ def revert(decision_id: int) -> PlanDecision:
 # --------------------------------------------------------------------------- #
 def structure(session: PlannedSession) -> tuple[Block, ...]:
     """The session's steps in the athlete's zones; ``NotPushable`` says why not."""
+    if session.prescription is not None:
+        raise NotPushable(
+            "Utilise l’export Garmin de la prescription validée dans le Planning."
+        )
     settings = get_user_settings() or {}
     return derive(session, athlete_zone_model(), settings.get("threshold_pace_sec_km"))
 
@@ -263,6 +276,10 @@ def push_today(client: GarminClient, target_date: date | None = None) -> str:
     except Exception as e:  # noqa: BLE001 - background job must not die
         return f"failed: {e}"
     for session in sessions:
+        # Document exports and withdrawals require the athlete's explicit action.
+        if session.prescription is not None:
+            skipped += 1
+            continue
         if (
             session.status == SessionStatus.SKIPPED
             and session.id is not None
