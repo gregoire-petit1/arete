@@ -372,6 +372,12 @@ class TestGarminRepository:
         assert "adherence_rate" in summary
         assert {"planned_due", "completed", "skipped"} <= set(summary)
 
+    def test_summary_costs_two_statements(self, repo, statement_log):
+        connect = repo._get_connection
+        repo._get_connection = lambda: statement_log.wrap(connect())
+        repo.get_matches_summary(date.today() - timedelta(days=7), date.today())
+        assert len(statement_log) == 2
+
     def test_summary_counts_only_due_sessions(self, repo):
         """Future planned sessions do not lower the adherence rate; past pending ones are skipped."""
         from datetime import date as _date
@@ -506,3 +512,4 @@ class TestGarminIntegration:
         repo.delete_actual_session(actual_id)
         for pid in planned_ids:
             repo.delete_planned_session(pid)
+

@@ -26,7 +26,7 @@ from arete.strength.models import (
     SessionExercise,
     StrengthSession,
 )
-from arete.strength.repository import StrengthRepository
+from arete.strength.repository import StrengthRepository, muscle_activity
 
 logger = logging.getLogger(__name__)
 
@@ -439,21 +439,26 @@ def get_garmin_candidates(session_id: int):
 # ─────────────────────────────────────────────────────────────────────────
 
 
+def _cardio_sessions(start_date: date_type, end_date: date_type) -> list:
+    from arete.garmin.repository import GarminRepository
+
+    return GarminRepository().list_actual_sessions(
+        start_date=start_date, end_date=end_date, limit=2000, include_blobs=False
+    )
+
+
 def _cardio_muscle_activity(
+    sessions: list,
     start_date: date_type,
     end_date: date_type,
 ) -> tuple[dict[str, float], dict[str, date_type]]:
     """Pseudo-volume credited to muscles by cardio sessions, and when they ran."""
-    from arete.garmin.repository import GarminRepository
-
-    sessions = GarminRepository().list_actual_sessions(
-        start_date=start_date, end_date=end_date, limit=1000, include_blobs=False
-    )
-
     volume: dict[str, float] = {}
     last: dict[str, date_type] = {}
 
     for session in sessions:
+        if not start_date <= session.date <= end_date:
+            continue
         sport = session.sport.lower().replace(" ", "_") if session.sport else ""
         impact = CARDIO_MUSCLE_IMPACT.get(sport)
         if not impact:
@@ -486,22 +491,25 @@ def get_muscle_stats(
     prev_end = start - timedelta(days=1)
     prev_start = prev_end - timedelta(days=days - 1)
 
-    strength_volume, sets, strength_last = _repo.get_muscle_activity(start, end)
-    prev_strength, _, _ = _repo.get_muscle_activity(prev_start, prev_end)
+    # One read per source over both windows, sliced here.
+    strength_rows = _repo.muscle_set_rows(prev_start, end)
+    strength_volume, sets, strength_last = muscle_activity(strength_rows, start, end)
+    prev_strength, _, _ = muscle_activity(strength_rows, prev_start, prev_end)
 
     volume = dict(strength_volume)
     last = dict(strength_last)
     previous = dict(prev_strength)
 
     if include_cardio:
-        cardio_volume, cardio_last = _cardio_muscle_activity(start, end)
+        cardio = _cardio_sessions(prev_start, end)
+        cardio_volume, cardio_last = _cardio_muscle_activity(cardio, start, end)
         for muscle, value in cardio_volume.items():
             volume[muscle] = volume.get(muscle, 0.0) + value
         for muscle, day in cardio_last.items():
             seen = last.get(muscle)
             if seen is None or day > seen:
                 last[muscle] = day
-        prev_cardio, _ = _cardio_muscle_activity(prev_start, prev_end)
+        prev_cardio, _ = _cardio_muscle_activity(cardio, prev_start, prev_end)
         for muscle, value in prev_cardio.items():
             previous[muscle] = previous.get(muscle, 0.0) + value
 
