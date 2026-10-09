@@ -48,6 +48,7 @@ export function useCoachThreads(context: PanelPageContext) {
   const runRef = useRef<{
     threadId: string;
     controller: AbortController;
+    draftEdited: boolean;
   } | null>(null);
   const storeRef = useRef(store);
   const active = store.threads.find((t) => t.id === store.activeId);
@@ -107,10 +108,12 @@ export function useCoachThreads(context: PanelPageContext) {
   const attachments = useCallback((ids: string[]) => {
     setStore(prev => updateThread(prev, active.id, thread => JSON.stringify(thread.attachmentIds ?? []) === JSON.stringify(ids) ? thread : { ...thread, attachmentIds: ids }));
   }, [active.id]);
-  const draft = (text: string) =>
+  const draft = (text: string) => {
+    if (runRef.current?.threadId === active.id) runRef.current.draftEdited = true;
     setStore((prev) =>
       updateThread(prev, prev.activeId, (t) => ({ ...t, draft: text }))
     );
+  };
   const stop = useCallback(() => runRef.current?.controller.abort(), []);
 
   /** ``keep`` = messages kept before the new question (a retry drops the
@@ -138,7 +141,9 @@ export function useCoachThreads(context: PanelPageContext) {
     const threadId = active.id;
     const answerIndex = keep + 1;
     const controller = new AbortController();
-    runRef.current = { threadId, controller };
+    const run = { threadId, controller, draftEdited: retrying && !!active.draft };
+    runRef.current = run;
+    let suggestion: string | undefined;
     markWorkout('coach:request-start');
     performance.clearMarks('coach:first-workout');
     performance.clearMarks('coach:first-scheduled');
@@ -178,6 +183,11 @@ export function useCoachThreads(context: PanelPageContext) {
       history,
       context,
       (event) => {
+        if (controller.signal.aborted) return;
+        if (event.type === 'suggestion') {
+          suggestion = event.text;
+          return;
+        }
         if (event.type === 'workout_update') {
           if (event.thread_id !== threadId) throw new Error('Événement reçu pour un autre fil.');
           cacheWorkout(queryClient, event);
@@ -199,6 +209,12 @@ export function useCoachThreads(context: PanelPageContext) {
         if (event.type === 'done') {
           markWorkout('coach:done');
           measureWorkout('coach:total', 'coach:request-start', 'coach:done');
+          // Commit the proposed draft only once the run succeeds. A late event
+          // must neither overwrite typing (even if erased) nor touch another thread.
+          const proposed = suggestion;
+          if (proposed && !run.draftEdited) {
+            setStore(prev => updateThread(prev, threadId, t => run.draftEdited || t.draft ? t : { ...t, draft: proposed }));
+          }
         }
         patchAnswer((m) => applyEvent(m, event));
         if (event.type === 'import_preview' || event.type === 'done') void queryClient.invalidateQueries({ queryKey: ['coach-imports', threadId] });

@@ -34,8 +34,9 @@ The service batch is sequential: at most five sessions, 120 seconds total, 60 re
 requests, at most 12 requests per session, clamped to the invocation deadline.
 Planning selects at most 50 sessions and sends batches of five, stopping on the
 first failure. Cards poll only active writes, every second for at most 150 seconds.
-Chat retains eight model requests, 32 tools and five minutes. No auxiliary model
-request animates the UI or generates follow-ups.
+Chat retains eight main model requests, 32 tools and five minutes. One optional,
+tool-free completion can propose the next message in the composer (five seconds,
+512 output tokens, zero SDK retries); no auxiliary model request animates workout cards.
 
 ## Verification and measurement
 

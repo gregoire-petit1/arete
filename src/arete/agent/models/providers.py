@@ -21,6 +21,7 @@ def build_chat_model(
     timeout: float = AGENT_TIMEOUT_SEC,
     max_retries: int = AGENT_MAX_RETRIES,
     temperature: float = AGENT_TEMPERATURE,
+    openrouter_reasoning: bool | None = None,
 ) -> ChatOpenAI:
     route = route or resolve_route()
     if not 0 < max_tokens < route.context_tokens:
@@ -32,6 +33,8 @@ def build_chat_model(
         extra_body["models"] = models
     if route.base_url.startswith("https://openrouter.ai"):
         extra_body["provider"] = OPENROUTER_FREE_ONLY
+        if openrouter_reasoning is not None:
+            extra_body["reasoning"] = {"enabled": openrouter_reasoning}
     return ChatOpenAI(
         model=route.model,
         base_url=route.base_url,

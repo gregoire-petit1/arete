@@ -12,7 +12,12 @@ from typing import Literal
 from arete.agent.backends.memory import build_memory_filesystem
 from arete.agent.factory import build_agent
 from arete.agent.models.providers import build_chat_model
-from arete.agent.models.registry import AGENT_MAX_TOKENS
+from arete.agent.models.registry import (
+    AGENT_MAX_TOKENS,
+    SUGGESTION_MAX_TOKENS,
+    SUGGESTION_TEMPERATURE,
+    SUGGESTION_TIMEOUT_SEC,
+)
 from arete.agent.models.routing import resolve_route
 from arete.agent.profiles.catalog import get_profile
 from arete.agent.runtime.budget import MAX_GRAPH_STEPS
@@ -42,12 +47,30 @@ def _assemble(profile_id: str):
     profile = get_profile(profile_id)
     route = resolve_route()
     model = build_chat_model(route=route)
+    suggestion_model = None
+    if profile.id == "chat":
+        suggestion_model = build_chat_model(
+            route=route,
+            max_tokens=SUGGESTION_MAX_TOKENS,
+            timeout=SUGGESTION_TIMEOUT_SEC,
+            max_retries=0,
+            temperature=SUGGESTION_TEMPERATURE,
+            # Reasoning shares the output budget and can consume all 512 tokens
+            # before producing any visible text for this simple drafting task.
+            openrouter_reasoning=False,
+        )
+        # Keep auxiliary tokens out of the coach's answer stream. LangChain
+        # still records the provider request as a child LLM span.
+        suggestion_model = suggestion_model.model_copy(
+            update={"disable_streaming": True}
+        )
     return build_agent(
         profile,
         model=model,
         context_tokens=route.context_tokens,
         output_tokens=AGENT_MAX_TOKENS,
         filesystem=build_memory_filesystem(),
+        suggestion_model=suggestion_model,
     )
 
 

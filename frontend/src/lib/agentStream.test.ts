@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyEvent,
+  parseEvent,
   consumeStream,
   REQUEST_WINDOW_MESSAGES,
   requestWindow,
@@ -217,5 +218,19 @@ describe('request window', () => {
     expect(window.length).toBeLessThanOrEqual(REQUEST_WINDOW_MESSAGES);
     expect(window[0].role).toBe('user');
     expect(window.at(-1)?.content).toBe('dernière');
+  });
+});
+
+
+describe('next-message suggestions', () => {
+  it('decodes a separate draft event without changing the coach answer', async () => {
+    const suggestion: StreamEvent = { type: 'suggestion', text: 'Oui, prépare la séance.' };
+    const events: StreamEvent[] = [];
+    await consumeStream(stream(frame(suggestion) + frame(done)), e => events.push(e));
+    expect(events).toEqual([suggestion, done]);
+    expect(applyEvent(empty, suggestion)).toBe(empty);
+  });
+  it.each([null, '', ' ', 'x'.repeat(301), ['a', 'b']])('rejects an invalid suggestion: %j', text => {
+    expect(() => parseEvent(JSON.stringify({ type: 'suggestion', text }))).toThrow('invalide');
   });
 });

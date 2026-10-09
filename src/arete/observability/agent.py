@@ -51,7 +51,7 @@ def record_run(
     """One line per run: what a turn, a briefing or a feedback really cost."""
     logger.info(
         "Agent run: profile=%s calls=%d tools=%d model_ms=%d ttft_ms=%s "
-        "total_ms=%d models=%s error=%s",
+        "total_ms=%d models=%s error=%s suggestion_calls=%d",
         profile,
         stats.model_calls,
         stats.tool_calls,
@@ -60,4 +60,5 @@ def record_run(
         total_ms,
         sorted(set(stats.served_models)) or None,
         error,
+        stats.suggestion_calls,
     )

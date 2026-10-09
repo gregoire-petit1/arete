@@ -23,7 +23,7 @@ import {
   type ToolPart,
 } from '@/lib/agentStream';
 import { useCoachThreads } from '@/hooks/useCoachThreads';
-import { followUps, starters } from '@/lib/coachPrompts';
+import { starters } from '@/lib/coachPrompts';
 import { ThreadHistory } from './agent/ThreadHistory';
 import { AgentMarkdown } from './agent/AgentMarkdown';
 import { ToolActivity } from './agent/ToolActivity';
@@ -127,7 +127,6 @@ export function AgentSidePanel({
   const streaming = runningId === active.id;
   const busy = runningId !== null || documentsBusy;
   const elapsed = useElapsedSeconds(streaming);
-  const asked = messages.filter((m) => m.role === 'user').map((m) => m.content);
   const [showHistory, setShowHistory] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [following, setFollowing] = useState(true);
@@ -372,20 +371,6 @@ export function AgentSidePanel({
                           <RotateCcw className="size-3" />
                           {message.error || message.interrupted ? 'Réessayer' : 'Regénérer'}
                         </button>
-                      )}
-                      {i === messages.length - 1 && !busy && !message.pending &&
-                        !message.error && !message.interrupted && (
-                        <div aria-label="Suggestions de suivi" className="mt-4 flex flex-wrap gap-2">
-                          {followUps(panelContext.page, asked).map((prompt) => (
-                            <button
-                              key={prompt}
-                              onClick={() => send(prompt)}
-                              className="rounded-xl border border-neon-cyan/20 px-3 py-2 text-left text-xs text-text-secondary hover:bg-neon-cyan/5"
-                            >
-                              {prompt}
-                            </button>
-                          ))}
-                        </div>
                       )}
                       {streaming && i === messages.length - 1 && (
                         <div

@@ -417,6 +417,35 @@ class TestBuildChatModel:
         # The free router once answered a briefing with a safety classifier.
         assert "openrouter/free" not in payload["extra_body"]["models"]
 
+    def test_only_auxiliary_openrouter_calls_disable_reasoning(self, monkeypatch):
+        from arete import coaching
+
+        self._openrouter(monkeypatch)
+        with patch.object(coaching, "build_agent") as assemble:
+            coaching._assemble("chat")
+        models = assemble.call_args.kwargs
+        coach_payload = self._payload(models["model"])
+        draft_payload = self._payload(models["suggestion_model"])
+        assert "reasoning" not in coach_payload["extra_body"]
+        assert draft_payload["extra_body"]["reasoning"] == {"enabled": False}
+        assert draft_payload["max_completion_tokens"] == 512
+        assert (
+            draft_payload["extra_body"]["provider"]
+            == coach_payload["extra_body"]["provider"]
+        )
+        assert models["suggestion_model"].max_retries == 0
+
+    @pytest.mark.parametrize("provider", ["ollama", "github"])
+    def test_openrouter_reasoning_controls_do_not_reach_other_providers(
+        self, monkeypatch, provider
+    ):
+        from arete.agent.models.providers import build_chat_model
+
+        monkeypatch.setenv("LLM_PROVIDER", provider)
+        monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+        payload = self._payload(build_chat_model(openrouter_reasoning=False))
+        assert "reasoning" not in (payload.get("extra_body") or {})
+
     def test_a_pinned_model_is_never_rerouted_silently(self, monkeypatch):
         from arete.agent.models.providers import build_chat_model
 

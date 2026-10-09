@@ -47,7 +47,8 @@ the server event loop. This avoids sharing the SDK's cached async HTTP connectio
 across short-lived event loops. Async callers use `invoke_agent` directly.
 
 The execution envelope is five minutes, 8 main graph model calls, 32 tool calls,
-and four simultaneous tool executions per invocation. Framework recursion is a
+and four simultaneous tool executions per invocation. Interactive chat may add one
+optional next-message completion (512 output tokens, five seconds, zero SDK retries). Framework recursion is a
 separate 100-step backstop. A model call gives up after 60 s, or 30 s without a
 streamed chunk, with two SDK retries; on OpenRouter the request carries a
 fallback list of at most three models. Tools and failed runs are never
@@ -97,10 +98,23 @@ long thread, since nothing persists the summary between requests.
 
 ## Completion, transport and observability
 
-Follow-up suggestions are the browser's: fixed, page-aware lists
-(`frontend/src/lib/coachPrompts.ts`), so `done` follows the last token and no
-auxiliary model request runs after an answer. Generating them cost one request
-per turn and held `done` for up to eight seconds.
+Empty conversations use fixed, page-aware starters (`frontend/src/lib/coachPrompts.ts`).
+After an interactive answer, `AutoSuggestionMiddleware` invokes one tool-free
+completion through `runtime/autosuggestion.py`, using the complete latest user/coach
+exchange assembled and budgeted by the context builder. It emits one `suggestion`
+custom event before `done`; non-streaming chat exposes the same optional field.
+The browser inserts the suggestion as an editable draft only on successful completion
+and only if the athlete has not edited the originating thread's draft meanwhile.
+Drafts use the existing browser storage; generated text never enters message history
+until the athlete sends it. There are no follow-up cards during a conversation.
+The auxiliary call shares the run trace (a `coach_autosuggestion` LLM child span)
+and is included in total model calls, timing and `suggestion_calls` telemetry.
+OpenRouter reasoning is disabled for this short completion so it cannot consume
+the entire output reservation before writing the draft. The exchange is serialized
+as user data; a trailing assistant message would be interpreted as a prefill by some providers.
+It has five seconds and no SDK retries; provider failures or invalid/oversized output
+are logged and leave the answer intact. Near the run deadline it is skipped.
+Briefings, feedback and reviews never request a suggestion.
 
 Runtime tool events are projected into the existing SSE protocol by
 `api/agent_streaming.py`. Workout events carry session ID/revision, tool call,
