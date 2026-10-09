@@ -27,12 +27,6 @@ def _resolve_tool(request) -> BaseTool | ToolMessage | None:
     profile = _profile(getattr(request, "runtime", None))
     found = _toolkit_tool(name)
     reason = None
-    if profile == "feedback" and name in {
-        "load_toolkit",
-        "search_toolkits",
-        "get_page_context",
-    }:
-        reason = "This mission uses supplied session facts and memory only."
     if found is not None:
         tid, tool = found
         tk = _registry(profile).get(tid)

@@ -48,7 +48,7 @@ def get_daily_tip() -> DailyTipResponse:
 @router.post("/post-session", response_model=PostSessionResponse)
 def post_session_feedback(body: PostSessionRequest) -> PostSessionResponse:
     try:
-        result = (
+        result, evidence = (
             rules._generate_strength_feedback(body.session_id)
             if body.session_type == "strength"
             else rules._generate_cardio_feedback(body.session_id)
@@ -56,7 +56,7 @@ def post_session_feedback(body: PostSessionRequest) -> PostSessionResponse:
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from None
     feedback, source = coaching.enrich_session_feedback(
-        result.feedback, result.highlights
+        result.feedback, result.highlights, evidence
     )
     return PostSessionResponse(
         feedback=feedback, highlights=result.highlights, source=source

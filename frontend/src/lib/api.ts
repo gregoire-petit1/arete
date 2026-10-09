@@ -268,6 +268,13 @@ export interface UserSettings {
   lthr_measured_on: string | null;
 }
 
+/** The coach's word on a finished session, or the rule engine's when it is away. */
+export interface PostSessionFeedback {
+  feedback: string;
+  highlights: string[];
+  source: "agent" | "rules";
+}
+
 export const tipsApi = {
   getDaily: () =>
     fetchAPI<{
@@ -282,7 +289,7 @@ export const tipsApi = {
     sessionType: "strength" | "cardio",
     sessionId: number
   ) =>
-    fetchAPI<{ feedback: string; highlights: string[] }>("/tips/post-session", {
+    fetchAPI<PostSessionFeedback>("/tips/post-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

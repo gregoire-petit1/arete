@@ -18,15 +18,12 @@ PROFILES: dict[ProfileId, AgentProfile] = {
         preloaded=("analytics", "planning", "strength"),
         training_writes=True,
         page_context=True,
+        journal_tools=True,
         suggestions=True,
     ),
-    "briefing": AgentProfile(
-        "briefing",
-        "arete_briefing",
-        BRIEFING_PROMPT,
-        ("analytics",),
-        preloaded=("analytics",),
-    ),
+    # Missions get their facts in the message and answer in one request:
+    # no tool is bound, the server reads the data and files the journal.
+    "briefing": AgentProfile("briefing", "arete_briefing", BRIEFING_PROMPT, ()),
     "feedback": AgentProfile("feedback", "arete_session_feedback", FEEDBACK_PROMPT, ()),
 }
 

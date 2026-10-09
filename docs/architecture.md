@@ -63,10 +63,15 @@ Tools call services; they do not import HTTP handlers. New tools are unavailable
 to background missions until explicitly classified as read-only.
 
 Chat preloads analytics, planning and strength capabilities: loading one cost a
-model request per turn, and requests are the free tier's budget. Briefings preload
-read-only analytics. The on-demand loading machinery (catalog, `load_toolkit`,
-load-before-execute) stays for profiles that do not preload. Feedback receives session evidence and memory only. Both
-background profiles can maintain the ledger but cannot mutate training data.
+model request per turn, and requests are the free tier's budget. The on-demand
+loading machinery (catalog, `load_toolkit`, load-before-execute) stays for
+profiles that do not preload. The briefing and the session feedback bind no tool:
+`services/briefing.py` and `services/session_feedback.py` compute their facts
+(load, form, recovery, today's plan, recent sessions, yesterday's briefing; or the
+session's numbers, RPE and notes) and the model answers in one request. The
+server files the feedback's ledger entry itself (`services/memory.append_entry`,
+dated heading, never twice), so neither mission can mutate training data or
+forget to write. Every profile receives the current date.
 Model-generated loaded state and client page metadata cannot change these policies.
 
 The context builder combines the harness/filesystem contribution, mission

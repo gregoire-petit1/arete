@@ -81,10 +81,11 @@ limits, not a cumulative token or spend cap. Cancellation cannot undo a committe
 write or stop a synchronous tool already running in a worker thread; failed runs
 are never automatically replayed.
 
-Background briefings receive read-only analytics already loaded. Session feedback
-uses supplied facts and the memory ledger only. Both can maintain coaching memory,
-but neither can change the training plan or log workouts. The server checks these
-permissions at execution as well as filtering tool schemas. Chat has its three
+The daily briefing and the session feedback (cardio uploads and saved strength
+sessions) are one model request each, with no tool: the server computes their
+facts and files the feedback in the coach's journal itself. Neither can change the
+training plan or log workouts; the server checks permissions at execution as well
+as filtering tool schemas. Chat has its three
 toolkits preloaded and retains direct training writes; the page the athlete has
 open is read by the server and placed in the prompt, so a question about the
 screen costs one model request. The browser sends the last 30 messages of a
@@ -114,11 +115,13 @@ The coach receives the backend's current date on each chat invocation, and the
 UI refreshes session data after successful coach writes.
 
 For free hosted inference, set `LLM_PROVIDER=openrouter` and `OPENROUTER_API_KEY`,
-and leave `LLM_MODEL` unset. Arete then asks for two free tool-calling models
-measured fast (`agent/models/registry.py`) and lets OpenRouter fall back, in the
-same request, to the next one and finally to the
-[Free Models Router](https://openrouter.ai/openrouter/free) when a model is
-rate-limited or down. Free availability changes weekly: set `LLM_MODEL` to pin a
+and leave `LLM_MODEL` unset. Arete then asks for three free tool-calling chat
+models, measured and chosen in `agent/models/registry.py`, and lets OpenRouter
+fall back to the next one within the same request when a model is rate-limited or
+down. Every OpenRouter request carries a price cap of 0, so a model that stops
+being free is skipped, never billed. The
+[Free Models Router](https://openrouter.ai/openrouter/free) is deliberately not
+in the list: it can route a request to a model that is not an assistant. Free availability changes weekly: set `LLM_MODEL` to pin a
 model (never rerouted then) and `LLM_MODEL_FALLBACKS` (comma-separated) to give
 it a list; OpenRouter accepts three models at most. Each run logs one
 `Agent run:` line with its model calls, tool calls, time to first token and the

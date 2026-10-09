@@ -16,7 +16,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import date
 from typing import Literal
+
+from arete.services.memory import SESSIONS_LEDGER, append_entry
 
 logger = logging.getLogger(__name__)
 
@@ -24,21 +28,58 @@ logger = logging.getLogger(__name__)
 MAX_FEEDBACK_CHARS = 900
 
 
+@dataclass(frozen=True)
+class SessionEvidence:
+    """Who the session is: what the ledger entry is filed under."""
+
+    date: date
+    title: str
+    rpe: float | None = None
+    notes: str | None = None
+
+
+def _facts(
+    rule_feedback: str, highlights: list[str], evidence: SessionEvidence | None
+) -> str:
+    lines = []
+    if evidence is not None:
+        lines.append(f"Séance du {evidence.date.isoformat()} : {evidence.title}")
+        if evidence.rpe:
+            lines.append(f"RPE ressenti : {evidence.rpe}/10")
+        if evidence.notes:
+            lines.append(f"Notes de l'athlète : {evidence.notes}")
+    lines.append(rule_feedback)
+    facts = "\n".join(lines)
+    if highlights:
+        facts += "\n\nPoints clés:\n" + "\n".join(f"- {h}" for h in highlights)
+    return facts
+
+
 def enrich_session_feedback(
-    rule_feedback: str, highlights: list[str], *, produce: Callable[[str], str]
+    rule_feedback: str,
+    highlights: list[str],
+    *,
+    produce: Callable[[str], str],
+    evidence: SessionEvidence | None = None,
 ) -> tuple[str, Literal["agent", "rules"]]:
     """The coach's word on a finished session, with the rule text as floor.
 
     Returns ``(text, source)`` where source is ``"agent"`` or ``"rules"``.
     Never raises: an athlete who just uploaded a session gets an answer either
-    way.
+    way. With ``evidence``, the server files the session in ``sessions.md``
+    itself — once, whatever the model does — so tomorrow's briefing knows it
+    happened; the model only writes the answer.
     """
-    facts = rule_feedback
-    if highlights:
-        facts += "\n\nPoints clés:\n" + "\n".join(f"- {h}" for h in highlights)
-
+    facts = _facts(rule_feedback, highlights, evidence)
     try:
-        return produce(facts), "agent"
+        text, source = produce(facts), "agent"
     except Exception:
         logger.warning("Session feedback agent run failed", exc_info=True)
-        return rule_feedback, "rules"
+        text, source = rule_feedback, "rules"
+    if evidence is not None:
+        body = facts + (f"\n\nRetour du coach : {text}" if source == "agent" else "")
+        try:
+            append_entry(SESSIONS_LEDGER, evidence.title, body, when=evidence.date)
+        except OSError:
+            logger.warning("Could not file the session in the journal", exc_info=True)
+    return text, source  # type: ignore[return-value]

@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, Check, Sparkles } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AlertCircle, AlertTriangle, Check, Loader2, Sparkles } from 'lucide-react';
 import { cn, readableError } from '@/lib/utils';
 import { Button, Field, Input, Modal, ModalHeader, Textarea } from '@/components/ui';
-import { strengthApi } from '@/lib/api';
+import { strengthApi, tipsApi } from '@/lib/api';
 import type { ParsedWorkout, WorkoutTranscription } from '@/types';
 import { toLocalISODate } from '@/lib/dates';
 import { invalidateAfterSession } from '@/lib/queryKeys';
@@ -55,6 +55,16 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
         setStep('preview');
       }
     },
+  });
+
+  // The coach's word on the saved session; it also files it in its journal.
+  const savedId = step === 'saved' ? parseResult?.session_id : undefined;
+  const feedback = useQuery({
+    queryKey: ['postSession', 'strength', savedId],
+    queryFn: () => tipsApi.getPostSession('strength', savedId as number),
+    enabled: savedId != null,
+    staleTime: Infinity,
+    retry: false,
   });
 
   const reset = () => {
@@ -258,6 +268,20 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
               {parseResult.message || `${parseResult.exercises.length} exercice(s) enregistré(s)`}
             </p>
           </div>
+          {feedback.isLoading && (
+            <p className="text-sm font-mono text-text-muted flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-neon-cyan" />
+              Le coach regarde ta séance…
+            </p>
+          )}
+          {feedback.data && (
+            <div className="text-left glass-panel p-3">
+              <p className="text-[11px] font-mono text-neon-cyan mb-1">
+                {feedback.data.source === 'agent' ? 'LE COACH' : 'CALCULÉ À PARTIR DE LA SÉANCE'}
+              </p>
+              <p className="text-sm font-mono text-text-secondary">{feedback.data.feedback}</p>
+            </div>
+          )}
           <Button variant="outline" strong size="lg" fullWidth onClick={reset}>
             FERMER
           </Button>

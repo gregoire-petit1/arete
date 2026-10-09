@@ -9,6 +9,7 @@ its journal. When the agent is unavailable, the rule text is what ships.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
 
@@ -19,6 +20,7 @@ from arete.dataio.settings import athlete_zone_model, get_user_settings
 from arete.features.fitness import compute_performance_model
 from arete.features.workload import compute_workload_metrics
 from arete.garmin.repository import GarminRepository
+from arete.services.session_feedback import SessionEvidence
 from arete.strength.repository import StrengthRepository
 
 logger = logging.getLogger(__name__)
@@ -112,17 +114,19 @@ def generate_daily_tip(
     )
 
 
-def daily_rule_tip(
-    target_date: date | None = None,
-) -> tuple[str, Literal["info", "warning", "alert"]]:
-    """Today's rule-based tip and its priority.
+@dataclass(frozen=True)
+class RuleFacts:
+    """What the daily tip is computed from; the briefing is written from it too."""
 
-    The deterministic floor under everything the coach says: it always
-    produces a concrete, numeric sentence, and it is what the dashboard shows
-    when the agent is unavailable or its run fails. The priority it returns is
-    the one used either way — it drives the card's colour and must not depend
-    on a model.
-    """
+    acwr: float | None
+    tsb: float | None
+    readiness_score: float | None
+    fatigue_threshold: int
+    fitness_goal: str
+
+
+def rule_facts(target_date: date | None = None) -> RuleFacts:
+    """ACWR over 28 days, form over 42, and the athlete's own thresholds."""
     target_date = target_date or date.today()
 
     acwr: float | None = None
@@ -145,14 +149,35 @@ def daily_rule_tip(
         logger.warning("Failed to compute fitness metrics for tip", exc_info=True)
 
     settings = get_user_settings(user_id=1) or {}
-    return generate_daily_tip(
-        acwr,
-        tsb,
-        readiness_score,
+    return RuleFacts(
+        acwr=acwr,
+        tsb=tsb,
+        readiness_score=readiness_score,
         fatigue_threshold=int(
             settings.get("fatigue_threshold") or DEFAULT_FATIGUE_THRESHOLD
         ),
         fitness_goal=str(settings.get("fitness_goal") or "build"),
+    )
+
+
+def daily_rule_tip(
+    target_date: date | None = None,
+) -> tuple[str, Literal["info", "warning", "alert"]]:
+    """Today's rule-based tip and its priority.
+
+    The deterministic floor under everything the coach says: it always
+    produces a concrete, numeric sentence, and it is what the dashboard shows
+    when the agent is unavailable or its run fails. The priority it returns is
+    the one used either way — it drives the card's colour and must not depend
+    on a model.
+    """
+    facts = rule_facts(target_date)
+    return generate_daily_tip(
+        facts.acwr,
+        facts.tsb,
+        facts.readiness_score,
+        fatigue_threshold=facts.fatigue_threshold,
+        fitness_goal=facts.fitness_goal,
     )
 
 
@@ -208,11 +233,19 @@ def _pace_str(sec_per_km: float) -> str:
     return f"{minutes}:{seconds:02d}"
 
 
-def _generate_strength_feedback(session_id: int) -> PostSessionResponse:
+def _generate_strength_feedback(
+    session_id: int,
+) -> tuple[PostSessionResponse, SessionEvidence]:
     repo = StrengthRepository()
     session = repo.get_session(session_id)
     if session is None:
         raise LookupError("Strength session not found")
+    evidence = SessionEvidence(
+        date=session.date if isinstance(session.date, date) else date.today(),
+        title=f"musculation — {session.name or 'séance'}",
+        rpe=session.overall_rpe,
+        notes=session.notes,
+    )
 
     # Compute volume per muscle for this session
     session_volume: dict[str, float] = {}
@@ -230,7 +263,7 @@ def _generate_strength_feedback(session_id: int) -> PostSessionResponse:
         return PostSessionResponse(
             feedback="Séance enregistrée ! Continuez à vous entraîner régulièrement.",
             highlights=["Séance complétée"],
-        )
+        ), evidence
 
     # Compare vs last 4 weeks average
     session_date = session.date if isinstance(session.date, date) else date.today()
@@ -283,14 +316,22 @@ def _generate_strength_feedback(session_id: int) -> PostSessionResponse:
         feedback=rule_feedback,
         highlights=rule_highlights,
         source="rules",
-    )
+    ), evidence
 
 
-def _generate_cardio_feedback(session_id: int) -> PostSessionResponse:
+def _generate_cardio_feedback(
+    session_id: int,
+) -> tuple[PostSessionResponse, SessionEvidence]:
     repo = GarminRepository()
     session = repo.get_actual_session(session_id)
     if session is None:
         raise LookupError("Cardio session not found")
+    evidence = SessionEvidence(
+        date=session.date,
+        title=f"{session.sport or 'activité'} — {session.name or 'sans titre'}",
+        rpe=session.rpe,
+        notes=session.notes,
+    )
 
     highlights: list[str] = []
     feedback_parts: list[str] = []
@@ -340,4 +381,4 @@ def _generate_cardio_feedback(session_id: int) -> PostSessionResponse:
         feedback=rule_feedback,
         highlights=rule_highlights,
         source="rules",
-    )
+    ), evidence

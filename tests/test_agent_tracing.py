@@ -277,16 +277,17 @@ def test_native_dynamic_and_filesystem_tools_stay_in_one_trace(
     assert roots[0].get("outputs") is not None
 
 
+@pytest.mark.usefixtures("progressive_chat")
 def test_loaded_toolkits_do_not_leak_between_tasks(monkeypatch):
     install_model(
         monkeypatch,
         [
             tool_call("load_toolkit", {"toolkit_id": "analytics"}, "load"),
-            AIMessage(content="briefing"),
+            AIMessage(content="chat"),
             AIMessage(content="feedback"),
         ],
     )
-    first = invoke(state(), context=AgentContext(profile="briefing"))
+    first = invoke(state(), context=AgentContext(profile="chat"))
     second = invoke(state(), context=AgentContext(profile="feedback"))
     assert first["loaded_toolkits"] == ["analytics"]
     assert not second.get("loaded_toolkits")
@@ -501,7 +502,7 @@ def test_producers_select_the_correct_task(monkeypatch):
 
     invoke = Mock(return_value={"messages": [AIMessage(content="Un conseil.")]})
     monkeypatch.setattr(agent, "invoke_agent_sync", invoke)
-    assert briefing() == "Un conseil."
+    assert briefing("briefing facts") == "Un conseil."
     assert feedback("session facts") == "Un conseil."
     assert [call.kwargs["context"].profile for call in invoke.call_args_list] == [
         "briefing",

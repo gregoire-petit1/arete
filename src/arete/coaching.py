@@ -26,7 +26,6 @@ from arete.agent.runtime.context import AgentContext
 from arete.agent.runtime.execution import invoke_agent_sync
 from arete.services import briefing, session_feedback
 from arete.services.coaching_repository import Briefing
-from arete.services.memory import rotate_sessions_ledger
 
 AGENT_RECURSION_LIMIT = MAX_GRAPH_STEPS
 
@@ -90,7 +89,6 @@ def build_feedback_agent():
 
 
 def _run_mission(graph, profile: str, message: str, max_chars: int) -> str:
-    rotate_sessions_ledger()
     result = invoke_agent_sync(
         graph,
         {"messages": [{"role": "user", "content": message}]},
@@ -109,12 +107,9 @@ def _run_mission(graph, profile: str, message: str, max_chars: int) -> str:
     return text
 
 
-def run_briefing() -> str:
+def run_briefing(facts: str) -> str:
     return _run_mission(
-        build_briefing_agent(),
-        "briefing",
-        "Écris mon briefing du jour.",
-        briefing.MAX_BRIEFING_CHARS,
+        build_briefing_agent(), "briefing", facts, briefing.MAX_BRIEFING_CHARS
     )
 
 
@@ -141,8 +136,10 @@ def get_or_create_briefing(
 
 
 def enrich_session_feedback(
-    rule_feedback: str, highlights: list[str]
+    rule_feedback: str,
+    highlights: list[str],
+    evidence: session_feedback.SessionEvidence | None = None,
 ) -> tuple[str, Literal["agent", "rules"]]:
     return session_feedback.enrich_session_feedback(
-        rule_feedback, highlights, produce=run_feedback
+        rule_feedback, highlights, produce=run_feedback, evidence=evidence
     )
