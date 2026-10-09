@@ -21,6 +21,15 @@ function parseDetail(body: string): string | null {
   }
 }
 
+/** The record when the answer is one (an object with a numeric id), else null.
+ *  "Nothing yet" endpoints answer null; anything else must not pass for a record. */
+function recordOrNull<T extends { id: number }>(data: unknown): T | null {
+  return data !== null && typeof data === "object" && !Array.isArray(data) &&
+    typeof (data as { id?: unknown }).id === "number"
+    ? (data as T)
+    : null;
+}
+
 async function fetchAPI<T>(
   endpoint: string,
   options?: RequestInit
@@ -71,7 +80,8 @@ export const goalsApi = {
     fetchAPI<import("@/types").Goal[]>(`/goals?include_past=${includePast}`),
 
   /** The next active race, or null. */
-  next: () => fetchAPI<import("@/types").Goal | null>("/goals/next"),
+  next: async () =>
+    recordOrNull<import("@/types").Goal>(await fetchAPI<unknown>("/goals/next")),
 
   create: (goal: import("@/types").GoalCreate) =>
     fetchAPI<import("@/types").Goal>("/goals", {
@@ -96,8 +106,11 @@ export const goalsApi = {
   deletePlan: (id: number) =>
     fetchAPI<{ deleted: number }>(`/goals/${id}/plan`, { method: "DELETE" }),
 
-  getProjection: (id: number) =>
-    fetchAPI<import("@/types").GoalProjection>(`/goals/${id}/projection`),
+  getProjection: async (id: number) => {
+    const data = await fetchAPI<import("@/types").GoalProjection>(`/goals/${id}/projection`);
+    // A projection without its series cannot be drawn: treat it as none.
+    return data && Array.isArray(data.series) ? data : null;
+  },
 };
 
 // ========================= //
@@ -544,7 +557,8 @@ export const planApi = {
     }),
 
   /** Last week's review, or null when it was not written yet. */
-  getReview: () => fetchAPI<import("@/types").WeeklyReview | null>("/plan/review"),
+  getReview: async () =>
+    recordOrNull<import("@/types").WeeklyReview>(await fetchAPI<unknown>("/plan/review")),
 
   /** Written once per week; `refresh` writes it again. May wait for the coach (~60 s). */
   writeReview: (refresh = false) =>
