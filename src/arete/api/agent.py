@@ -126,7 +126,7 @@ def _panel_context_source(request: ChatRequest) -> dict[str, str]:
 
 
 def _to_agent_context(
-    source: dict[str, str], thread_id: UUID | None = None
+    source: dict[str, str], thread_id: UUID | None = None, *, suggest_reply: bool
 ) -> AgentContext:
     """Coerce the raw source dict into the declared context schema.
 
@@ -137,7 +137,7 @@ def _to_agent_context(
     return AgentContext(
         source=source,
         thread_id=str(thread_id) if thread_id else None,
-        suggest_reply=True,
+        suggest_reply=suggest_reply,
     )
 
 
@@ -195,7 +195,7 @@ async def chat(body: ChatRequest) -> ChatResponse:
     source = _panel_context_source(body)
     from anyio import to_thread
 
-    context = _to_agent_context(source, body.thread_id)
+    context = _to_agent_context(source, body.thread_id, suggest_reply=True)
     document_state, previous = await to_thread.run_sync(_document_state, context)
     try:
         graph = get_agent()
@@ -234,6 +234,10 @@ async def chat(body: ChatRequest) -> ChatResponse:
 class StreamRequest(ChatRequest):
     """Body of POST /agent/chat/stream — same contract, SSE response."""
 
+    # Cached clients reject unknown SSE events; only spend a model call when
+    # the caller can consume the optional draft.
+    supports_suggestions: bool = Field(default=False, strict=True)
+
 
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
@@ -255,7 +259,11 @@ async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
     try:
         graph = get_agent()
         history = [_to_langchain(m.role, m.content) for m in body.messages]
-        context = _to_agent_context(_panel_context_source(body), body.thread_id)
+        context = _to_agent_context(
+            _panel_context_source(body),
+            body.thread_id,
+            suggest_reply=body.supports_suggestions,
+        )
         document_state, previous = await to_thread.run_sync(_document_state, context)
         event_count = 0
         async with aclosing(

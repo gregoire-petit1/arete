@@ -7,6 +7,8 @@ return a final message. Nested graphs must not overwrite the coach's answer.
 
 from __future__ import annotations
 
+import logging
+
 from langchain_core.messages import AIMessage
 
 from arete.agent.runtime.events import MAX_SUGGESTION_CHARS
@@ -15,6 +17,7 @@ from arete.agent.runtime.execution import MAX_RUN_SECONDS
 MAX_STREAM_EVENTS = 12_000
 MAX_STREAM_TEXT_CHARS = 64_000
 MAX_STREAM_SECONDS = MAX_RUN_SECONDS
+logger = logging.getLogger(__name__)
 
 
 class StreamProjection:
@@ -42,7 +45,9 @@ class StreamProjection:
                     or not text.strip()
                     or len(text) > MAX_SUGGESTION_CHARS
                 ):
-                    raise ValueError("Suggestion du coach invalide.")
+                    # This optional event cannot invalidate the coach's answer.
+                    logger.warning("Invalid coach suggestion event; draft omitted")
+                    return []
                 return [{"type": "suggestion", "text": text}]
             return (
                 [data]
