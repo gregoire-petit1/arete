@@ -355,3 +355,21 @@ class TestGarminTrainingMetrics:
         metrics = _gather_metrics(client, date(2026, 10, 9))
         assert "race_10k_sec" not in metrics
         assert metrics["hill_score"] == 72 and metrics["training_readiness_score"] == 68
+
+
+def test_race_predictions_also_read_the_list_form():
+    from datetime import date
+    from unittest.mock import MagicMock
+
+    from arete.garmin.health_sync import _fetch_performance
+
+    client = MagicMock()
+    client.race_predictions.return_value = [
+        {
+            "time5K": 1200,
+            "time10K": 2500,
+            "timeHalfMarathon": 5500,
+            "timeMarathon": 11600,
+        }
+    ]
+    assert _fetch_performance(client, date(2026, 10, 9))["race_10k_sec"] == 2500

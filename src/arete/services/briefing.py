@@ -192,7 +192,7 @@ def briefing_facts(target_date: date, rule_text: str) -> str:
         ]
 
     def recent() -> list[str]:
-        rows = list_sessions(limit=3)["sessions"]
+        rows = list_sessions(limit=3, for_model=True)["sessions"]
         return [
             ", ".join(
                 part

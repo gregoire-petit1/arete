@@ -95,9 +95,10 @@ def test_advice_answers_even_without_data():
     assert "risk_level" in out and isinstance(out["recommendations"], list)
 
 
-def test_records_answer_shape():
+def test_records_stay_out_of_the_model():
+    # Best efforts are Strava data: the coach says where to find them instead.
     out = json.loads(get_personal_records.invoke({}))
-    assert isinstance(out, dict)
+    assert out["records"] == [] and "Strava" in out["unavailable"]
 
 
 def test_recent_sessions_answer_shape():

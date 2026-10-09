@@ -79,6 +79,11 @@ limits, not a cumulative token or spend cap. Cancellation cannot undo a committe
 write or stop a synchronous tool already running in a worker thread; failed runs
 are never automatically replayed.
 
+Sessions imported from Strava never reach the model: Strava's API agreement
+forbids using its data in AI applications. The coach reads Garmin, FIT and
+manual sessions, and points to the Analytics page for records (Strava best
+efforts).
+
 The daily briefing and the session feedback (cardio uploads and saved strength
 sessions) are one model request each, with no tool: the server computes their
 facts and files the feedback in the coach's journal itself. Neither can change the

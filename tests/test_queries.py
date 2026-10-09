@@ -138,3 +138,22 @@ def test_strength_sessions_count_once():
     finally:
         con.execute("DELETE FROM app.strength_sessions WHERE name LIKE 'test-%'")
         con.close()
+
+
+def test_strava_sessions_never_reach_the_model():
+    from arete.services.analytics import list_sessions
+
+    con = connect()
+    try:
+        con.execute(
+            "INSERT INTO app.actual_sessions (user_id, date, sport, duration_sec, name, source)"
+            " VALUES (1, DATE '2099-12-31', 'running', 1800, 'strava-only', 'strava'),"
+            " (1, DATE '2099-12-31', 'running', 1800, 'from-garmin', 'garmin_connect')"
+        )
+        page = [s["name"] for s in list_sessions(limit=5)["sessions"]]
+        coach = [s["name"] for s in list_sessions(limit=5, for_model=True)["sessions"]]
+        assert "strava-only" in page and "from-garmin" in page
+        assert "strava-only" not in coach and "from-garmin" in coach
+    finally:
+        con.execute("DELETE FROM app.actual_sessions WHERE date = DATE '2099-12-31'")
+        con.close()
