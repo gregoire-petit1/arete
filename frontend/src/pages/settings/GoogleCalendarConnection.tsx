@@ -181,6 +181,13 @@ export function GoogleCalendarConnection() {
                     />{" "}
                     Modification
                   </label>
+                  {!["owner", "writer"].includes(calendar.accessRole) ? (
+                    <span className="text-text-muted">lecture seule dans Google</span>
+                  ) : (
+                    !selected.readable.includes(calendar.id) && (
+                      <span className="text-text-muted">coche Lecture d’abord</span>
+                    )
+                  )}
                 </div>
               ))}
               {calendars.isError && (

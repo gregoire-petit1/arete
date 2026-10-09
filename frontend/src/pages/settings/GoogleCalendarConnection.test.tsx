@@ -56,7 +56,9 @@ it("starts without access and saves explicit read/write selection", async () => 
     (screen.getByRole("checkbox", { name: "Modification" }) as HTMLInputElement)
       .disabled,
   ).toBe(true);
+  expect(screen.getByText("coche Lecture d’abord")).toBeTruthy();
   fireEvent.click(read);
+  expect(screen.queryByText("coche Lecture d’abord")).toBeNull();
   fireEvent.click(screen.getByRole("checkbox", { name: "Modification" }));
   fireEvent.click(
     screen.getByRole("button", { name: "Enregistrer les calendriers" }),
@@ -80,4 +82,16 @@ it("shows revocation failure while local access is disabled", async () => {
   expect(
     screen.getByRole("button", { name: "Réessayer la révocation" }),
   ).toBeTruthy();
+});
+it("explains why a read-only Google calendar cannot be modified", async () => {
+  vi.mocked(calendarApi.calendars).mockResolvedValue([
+    {
+      id: "weeks",
+      summary: "Numéros de semaine",
+      timeZone: "Europe/Paris",
+      accessRole: "reader",
+    },
+  ]);
+  mount();
+  expect(await screen.findByText("lecture seule dans Google")).toBeTruthy();
 });

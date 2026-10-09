@@ -1,5 +1,6 @@
 """Calendar contracts shared by the API, provider adapter and domain service."""
 
+from contextlib import suppress
 from datetime import date, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -120,16 +121,16 @@ class CalendarProposal(BaseModel):
 
 
 def validate_window(start: str, end: str) -> None:
-    try:
+    a: datetime | None = None
+    b: datetime | None = None
+    with suppress(ValueError):
         a, b = datetime.fromisoformat(start), datetime.fromisoformat(end)
-        valid = (
-            a.tzinfo is not None
-            and b.tzinfo is not None
-            and timedelta(0) < b - a <= timedelta(days=MAX_WINDOW_DAYS)
-        )
-    except ValueError:
-        valid = False
-    if not valid:
+    if a is None or b is None or a.tzinfo is None or b.tzinfo is None:
         raise CalendarError(
-            "Période invalide : dates avec fuseau et fenêtre de 31 jours maximum."
+            "Dates invalides : horodatages ISO avec décalage UTC requis, ex. "
+            f"2026-10-10T00:00:00+02:00 (reçu : start={start!r}, end={end!r})."
+        )
+    if not timedelta(0) < b - a <= timedelta(days=MAX_WINDOW_DAYS):
+        raise CalendarError(
+            "Période invalide : la fin doit suivre le début, 31 jours maximum."
         )

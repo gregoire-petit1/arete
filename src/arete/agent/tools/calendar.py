@@ -57,8 +57,12 @@ def propose_calendar_event(
 ) -> str:
     """Propose create/update/delete, without writing Google. User validates a card.
 
-    Read before update/delete. Supply the complete desired simple event for
-    create/update (preserve description/location). For delete omit event.
+    calendar_id: exact id of a calendar listed with writable=true by
+    list_calendar_events, never a guess such as "primary".
+    For update/delete, find event_id with list_calendar_events first (an
+    approved creation is only visible there); never ask the athlete.
+    Supply the complete desired simple event for create/update (preserve
+    description/location). For delete omit event.
     All-day end is exclusive; timed dates require offsets matching timezone.
     Only individual occurrences, no recurring series or attendees.
     """

@@ -20,6 +20,7 @@ from arete.services.calendar_provider import ConnectProvider, GoogleCalendar
 from arete.services.calendar_repository import CalendarRepository
 
 logger = logging.getLogger(__name__)
+VIRTUAL_CALENDAR_SUFFIX = "@group.v.calendar.google.com"
 EVENT_FIELDS = "id,etag,status,summary,description,location,start,end,recurrence,recurringEventId,attendees,organizer,eventType,htmlLink,transparency"
 
 
@@ -173,10 +174,15 @@ class CalendarService:
 
         state = self.repo.state()
         permission = "writable" if write else "readable"
-        if not state["enabled"] or (
-            selected and calendar_id not in state["selection"][permission]
-        ):
+        if not state["enabled"]:
             raise CalendarError("Calendrier non autorisé dans les réglages Arete.", 403)
+        allowed = state["selection"][permission]
+        if selected and calendar_id not in allowed:
+            raise CalendarError(
+                "Calendrier non autorisé dans les réglages Arete. Identifiants "
+                f"autorisés : {', '.join(allowed) or 'aucun'}.",
+                403,
+            )
         data = google.call(
             "GET", "users/me/calendarList/" + quote(calendar_id, safe="")
         )
@@ -200,6 +206,7 @@ class CalendarService:
         selected_calendars: list[dict] = []
         pages = 0
         with self.operation(deadline) as google:
+            writable = self.repo.state()["selection"]["writable"]
             for calendar_id in self._selected():
                 calendar = self._calendar(google, calendar_id)
                 selected_calendars.append(
@@ -207,6 +214,7 @@ class CalendarService:
                         "id": calendar_id,
                         "summary": calendar.get("summary", calendar_id),
                         "timezone": calendar.get("timeZone", "UTC"),
+                        "writable": calendar_id in writable,
                     }
                 )
                 page = None
@@ -257,9 +265,15 @@ class CalendarService:
     ) -> dict:
         validate_window(start, end)
         with self.operation(deadline) as google:
-            ids = self._selected()
-            for calendar_id in ids:
+            selected = self._selected()
+            for calendar_id in selected:
                 self._calendar(google, calendar_id)
+            # Google's virtual calendars (week numbers, holidays, birthdays) have
+            # no free/busy data and answer notFound; they never make a slot busy.
+            skipped = [c for c in selected if c.endswith(VIRTUAL_CALENDAR_SUFFIX)]
+            ids = [c for c in selected if c not in skipped]
+            if not ids:
+                return {"calendars": {}, "skipped": skipped}
             result = google.call(
                 "POST",
                 "freeBusy",
@@ -280,7 +294,7 @@ class CalendarService:
                 )
             if sum(len(c.get("busy", [])) for c in calendars.values()) > MAX_EVENTS:
                 raise CalendarError("Trop de créneaux. Réduis la période.", 413)
-            return result
+            return {**result, "skipped": skipped}
 
     def propose(
         self,

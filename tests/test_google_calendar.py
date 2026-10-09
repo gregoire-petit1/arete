@@ -310,6 +310,15 @@ def test_permissions_checked_locally_and_again_at_google(calendar):
     assert not calendar.fake.writes
 
 
+def test_unknown_calendar_id_names_the_allowed_ones(calendar):
+    # The model tends to guess "primary"; the error must let it correct itself.
+    guessed = proposal().model_copy(update={"calendar_id": "primary"})
+    with pytest.raises(CalendarError, match=f"autorisés : {CAL}"):
+        calendar.service.propose(guessed, "thread")
+    (listed,) = calendar.service.events(START, END)["calendars"]
+    assert listed["writable"] is True
+
+
 def test_disconnect_blocks_even_when_revocation_fails(calendar):
     action = calendar.service.propose(proposal(), "thread")
     calendar.fake.error = 503
@@ -341,6 +350,29 @@ def test_partial_availability_is_an_error(calendar):
     calendar.fake.busy_error = True
     with pytest.raises(CalendarError, match="partiellement"):
         calendar.service.availability(START, END)
+
+
+def test_window_errors_say_how_to_fix_the_dates(calendar):
+    # A bare message made the model retry the same naive dates five times.
+    with pytest.raises(CalendarError, match=r"décalage UTC.*\+02:00.*reçu"):
+        calendar.service.events("2026-10-10", "2026-10-11")
+    with pytest.raises(CalendarError, match="31 jours"):
+        calendar.service.events(END, START)
+    assert not calendar.fake.requests
+
+
+def test_virtual_calendars_are_skipped_by_availability(calendar):
+    # Google answers notFound for week numbers, holidays and birthdays.
+    week_numbers = "e_2_fr#weeknum@group.v.calendar.google.com"
+    calendar.repo.configure(
+        enabled=True, selection={"readable": [CAL, week_numbers], "writable": []}
+    )
+    result = calendar.service.availability(START, END)
+    (busy_request,) = [
+        r for r in calendar.fake.requests if r.url.path.endswith("/freeBusy")
+    ]
+    assert json.loads(busy_request.content)["items"] == [{"id": CAL}]
+    assert result["skipped"] == [week_numbers]
 
 
 def test_dates_dst_and_exclusive_all_day():

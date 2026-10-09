@@ -50,6 +50,9 @@ preferences and actions are namespaced by connector, subject and Vercel environm
 - Select at most 10 readable calendars and explicitly mark writable ones. OAuth
   scopes allow broader access; the Arete service enforces the narrower selection
   on reads, proposal creation, and approval. Google permissions are checked too.
+- Availability skips Google's virtual calendars (week numbers, holidays,
+  birthdays), which have no free/busy data, and lists them as `skipped`. Any
+  other calendar error still fails the whole request rather than guessing.
 - Ask the coach to read events or availability, then propose an event. For updates,
   it reads the current event and preserves unchanged fields. Cards show the
   complete before/after snapshot, calendar, timezone, and **Valider / Refuser**.
