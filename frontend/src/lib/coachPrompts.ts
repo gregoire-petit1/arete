@@ -27,6 +27,11 @@ const BY_PAGE: Record<string, string[]> = {
     'Mes séances récentes sont-elles trop intenses ?',
     'Je veux enregistrer une séance de musculation',
   ],
+  profile: [
+    'Explique ma progression et mes Éclats',
+    'Quel est mon prochain rang ?',
+    'Comment respecter mon objectif cette semaine ?',
+  ],
   settings: [
     'Mes zones cardiaques sont-elles à jour ?',
     'Explique-moi mon seuil',

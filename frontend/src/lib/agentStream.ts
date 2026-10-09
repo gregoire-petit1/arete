@@ -28,6 +28,7 @@ export interface CalendarActionPart {
 }
 export type ChatPart = ToolPart | TextPart | CalendarActionPart;
 export interface ChatMessage {
+  attachmentIds?: string[];
   workouts?: WorkoutUpdate[];
   imports?: { id: string; version: number }[];
   role: 'user' | 'assistant';
@@ -269,7 +270,8 @@ export async function runAgentStream(
   context: PanelPageContext,
   onEvent: (event: StreamEvent) => void,
   signal: AbortSignal,
-  threadId: string
+  threadId: string,
+  documentIds?: string[]
 ): Promise<void> {
   const panel_context: Record<string, string> = { page: context.page };
   for (const [key, value] of Object.entries(context.params))
@@ -280,6 +282,7 @@ export async function runAgentStream(
     body: JSON.stringify({
       messages: history.map(({ role, content }) => ({ role, content })),
       thread_id: threadId,
+      ...(documentIds !== undefined ? { document_ids: documentIds } : {}),
       supports_suggestions: true,
       panel_context,
     }),

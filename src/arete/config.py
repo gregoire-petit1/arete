@@ -21,6 +21,11 @@ def _env(name: str, default: str | None = None) -> str | None:
 
 class Config:
     @property
+    def gamification_available(self) -> bool:
+        """Deployment kill switch; the athlete still has to opt in."""
+        return (_env("GAMIFICATION_ENABLED", "true") or "").lower() == "true"
+
+    @property
     def google_calendar_connector(self) -> str:
         return _env("GOOGLE_CALENDAR_CONNECTOR", "") or ""
 

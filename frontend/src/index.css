@@ -267,3 +267,26 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .coach-panel { animation: none; }
 }
+
+/* Original Figma palettes; preserve the existing UI's semantic token owners. */
+html[data-theme='performance'], html[data-theme='odyssey'] { color-scheme: light; }
+html[data-theme='performance'] {
+  --color-void: #F4F5EF; --color-abyss: #FFFFFF; --color-shadow: #E8EBDF;
+  --color-text-primary: #17281E; --color-text-secondary: #56665A; --color-text-muted: #56665A;
+  --color-neon-cyan: #17281E; --color-neon-purple: #456144; --color-neon-gold: #456144;
+  --color-success-green: #325B47; --color-danger-red: #A92832; --color-warning-orange: #79551F;
+  --color-info-blue: #245A83; --rpg-selection: #D5FF3F;
+  --color-chart-surface: #FFFFFF; --color-chart-grid: #CCD3C7; --color-chart-axis: #56665A;
+  --color-chart-label: #56665A; --color-chart-text: #17281E;
+}
+html[data-theme='odyssey'] {
+  --color-void: #F5EBDD; --color-abyss: #FFF9EF; --color-shadow: #EDDDC9;
+  --color-text-primary: #3B3432; --color-text-secondary: #6B594C; --color-text-muted: #6B594C;
+  --color-neon-cyan: #96472D; --color-neon-purple: #79551F; --color-neon-gold: #79551F;
+  --color-success-green: #325B47; --color-danger-red: #A92832; --color-warning-orange: #79551F;
+  --color-info-blue: #245A83; --rpg-selection: #EDDDC9;
+  --color-chart-surface: #FFF9EF; --color-chart-grid: #D9C3A9; --color-chart-axis: #6B594C;
+  --color-chart-label: #6B594C; --color-chart-text: #3B3432;
+}
+.rpg-tab[aria-current='page'] { background: var(--rpg-selection, color-mix(in srgb, var(--color-neon-cyan) 10%, transparent)); color: var(--color-neon-cyan); }
+.rpg-surface { background: var(--color-abyss); border: 1px solid color-mix(in srgb, var(--color-text-muted) 25%, transparent); border-radius: 4px; }

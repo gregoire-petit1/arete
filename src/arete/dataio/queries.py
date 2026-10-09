@@ -277,10 +277,10 @@ def drift_rows(
 def best_effort_rows(
     con: duckdb.DuckDBPyConnection, sports: Sequence[str], user_id: int = 1
 ) -> list[tuple]:
-    """(best_efforts_json, date, name) for every session carrying best efforts."""
+    """(best_efforts_json, date, name, id) for every session carrying best efforts."""
     return con.execute(
         f"""
-        SELECT best_efforts_json, date, name
+        SELECT best_efforts_json, date, name, id
         FROM app.actual_sessions
         WHERE user_id = ?
           AND best_efforts_json IS NOT NULL

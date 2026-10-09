@@ -1,0 +1,41 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Chiron / Portrait">
+<path id="Vector" d="M12 22.8C17.9647 22.8 22.8 17.9647 22.8 12C22.8 6.03533 17.9647 1.2 12 1.2C6.03533 1.2 1.2 6.03533 1.2 12C1.2 17.9647 6.03533 22.8 12 22.8Z" fill="#172936"/>
+<path id="Vector_2" d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="#345366" stroke-width="0.1"/>
+<g id="Vector_3">
+<path d="M2 12H22ZM12 2V22Z" fill="black"/>
+<path d="M2 12H22M12 2V22" stroke="#345366" stroke-width="0.1"/>
+</g>
+<g id="Vector_4">
+<path d="M7.6 10.5L5.9 17L7.1 17.6L9.1 13.1M15.8 10.8L18 16.8L16.9 17.9L14.9 13.3" fill="#D9AA80"/>
+<path d="M7.6 10.5L5.9 17L7.1 17.6L9.1 13.1M15.8 10.8L18 16.8L16.9 17.9L14.9 13.3" stroke="#080F18" stroke-width="0.3"/>
+</g>
+<g id="Vector_5">
+<path d="M8.4 17.9L8.1 21.1L9.9 21.4L12 17.4L14.2 21.3L16.1 21.1L15.3 17.3" fill="#1B2934"/>
+<path d="M8.4 17.9L8.1 21.1L9.9 21.4L12 17.4L14.2 21.3L16.1 21.1L15.3 17.3" stroke="#080F18" stroke-width="0.3"/>
+</g>
+<path id="Vector_6" d="M8.1 20.7L7.5 22.2H10.1L10 21M14.2 21V22.2H16.7L15.7 20.8" fill="#B8CECC"/>
+<path id="Vector_7" d="M8.2 10.2C10.6 9.33334 13.1333 9.33334 15.8 10.2L15.3 18C13.1667 18.6667 10.9 18.7 8.5 18.1L8.2 10.2Z" fill="#8DE2D6" stroke="#080F18" stroke-width="0.3"/>
+<path id="Vector_8" d="M8.3 10.2L11 10.8L13.8 18.3L15.3 18.1L15.7 10.2L13.8 9.7L13.3 14.3L10.5 9.9L8.3 10.2Z" fill="#E1DAC5"/>
+<g id="Vector_9">
+<path d="M9.3 17.5H14.6Z" fill="black"/>
+<path d="M9.3 17.5H14.6" stroke="#182936" stroke-width="0.6"/>
+</g>
+<path id="Vector_10" d="M11.1 8.8V10C11.8333 10.7333 12.5667 10.7333 13.3 10V8.8" fill="#C49470"/>
+<path id="Vector_11" d="M9.6 4.3C11.2667 3.16667 12.9 3.26667 14.5 4.6L14.4 7.6C14.4667 9.13333 13.7333 10.0333 12.2 10.3C10.6 10.1667 9.76667 9.33333 9.7 7.8L9.6 4.3Z" fill="#D9AA80" stroke="#080F18" stroke-width="0.3"/>
+<path id="Vector_12" d="M9.5 7L9.1 4.8L10 3.2L12.1 2.5L14.5 3.5L15.1 4.9L14.5 7.1L13.7 4.9L11.8 4.6L10.3 5.3L9.9 7.2L9.5 7Z" fill="#D7E3E3" stroke="#080F18" stroke-width="0.3"/>
+<path id="Vector_13" d="M9.9 7.8L11.1 8.3L12.2 8L13.5 8.4L14.4 7.7L14.1 9.9L12.2 11.1L10.3 9.9L9.9 7.8Z" fill="#D7E3E3"/>
+<g id="Vector_14">
+<path d="M10.7 6.6H11.4ZM13.1 6.6H13.8Z" fill="black"/>
+<path d="M10.7 6.6H11.4M13.1 6.6H13.8" stroke="#182936" stroke-width="0.3" stroke-linecap="round"/>
+</g>
+<path id="Vector_15" d="M11.6 8.9C12 9.16667 12.4333 9.13334 12.9 8.8" stroke="#334650" stroke-width="0.2"/>
+<path id="Vector_16" d="M9.6 4.5L10 3.7L10.3 4.4M10.2 3.4L11 3L10.9 3.9M11.2 2.9L12 2.7L11.7 3.5" fill="#E9C98A"/>
+<path id="Vector_17" d="M16.4 15L18.7 14.7L19.4 18.1L17.1 18.5L16.4 15Z" fill="#E9C98A" stroke="#080F18" stroke-width="0.3"/>
+<g id="Vector_18">
+<path d="M16.9 15.3L17.7 18.2ZM17.9 15.6L18.6 15.5ZM18.1 16.3L18.8 16.2Z" fill="black"/>
+<path d="M16.9 15.3L17.7 18.2M17.9 15.6L18.6 15.5M18.1 16.3L18.8 16.2" stroke="#6A5B42" stroke-width="0.2"/>
+</g>
+<path id="Vector_19" d="M11.8 12.3C12.0209 12.3 12.2 12.1209 12.2 11.9C12.2 11.6791 12.0209 11.5 11.8 11.5C11.5791 11.5 11.4 11.6791 11.4 11.9C11.4 12.1209 11.5791 12.3 11.8 12.3Z" fill="#E9C98A"/>
+</g>
+</svg>
