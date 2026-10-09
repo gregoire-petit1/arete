@@ -17,7 +17,6 @@ from pydantic import BaseModel
 
 from arete.dataio.db import connect, db_connection
 from arete.dataio.queries import daily_metrics_range
-from arete.garmin.health_sync import sync_range
 from arete.garmin.readiness import update_readiness_range
 
 logger = logging.getLogger(__name__)
@@ -74,6 +73,8 @@ def trigger_sync(
         raise HTTPException(
             status_code=400, detail="Range too large (max 60 days per sync)"
         )
+
+    from arete.garmin.health_sync import sync_range  # garminconnect
 
     results = sync_range(start, end)
     synced = sum(1 for r in results if r.success)

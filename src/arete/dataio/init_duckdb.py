@@ -2,6 +2,8 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+import duckdb
+
 from arete.dataio.db import connect
 
 logger = logging.getLogger(__name__)
@@ -372,6 +374,10 @@ def _m8_coach_briefing_enabled(con) -> None:
         )
 
 
+#: Append-only. A database at the last version skips the DDL entirely on boot
+#: (one statement instead of ~30, each a round trip to MotherDuck), so any
+#: table, column or sequence added to ``DDL`` also needs a migration here that
+#: creates it on existing databases. Migrations must stay idempotent.
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -398,11 +404,24 @@ def _run_migrations(con) -> None:
         logger.info("Schema migration %d applied", version)
 
 
+def _is_current(con) -> bool:
+    try:
+        row = con.execute(
+            "SELECT COALESCE(MAX(version), 0) FROM app.schema_version"
+        ).fetchone()
+    except duckdb.CatalogException:
+        return False  # a fresh database: no schema yet
+    return bool(row) and int(row[0]) == MIGRATIONS[-1][0]
+
+
 def main():
     """Initialize the DuckDB database with the required schema."""
     con = None
     try:
         con = connect(False)
+        if _is_current(con):
+            logger.info("Database schema is current (version %d)", MIGRATIONS[-1][0])
+            return
         for stmt in DDL.strip().split(";"):
             s = stmt.strip()
             if s:

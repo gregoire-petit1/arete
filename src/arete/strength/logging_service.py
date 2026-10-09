@@ -16,10 +16,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import date as date_type
+from typing import TYPE_CHECKING
 
-from arete.llm.workout_parser import ParsedWorkout, parse_workout_text
 from arete.strength.models import ExerciseSet, SessionExercise, StrengthSession
 from arete.strength.repository import StrengthRepository
+
+if TYPE_CHECKING:
+    # The grammars are built at import; only parsing needs them, not boot.
+    from arete.llm.workout_parser import ParsedWorkout
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +62,8 @@ def parse_for_athlete(
     Deterministic — Lark grammar plus catalog matching, no model. Raises
     ValueError when nothing in the text looks like an exercise.
     """
+    from arete.llm.workout_parser import parse_workout_text
+
     return parse_workout_text(
         text=text,
         workout_date=workout_date,

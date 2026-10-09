@@ -50,3 +50,40 @@ class TestCronDailySync:
         assert response.status_code == 200
         assert response.json() == {"garmin": "ok", "briefing": "rules"}
         assert len(recorded) == 1
+
+
+def test_booting_the_app_leaves_the_heavy_stacks_out(tmp_path):
+    """A cold serverless instance imports the app before its first request.
+
+    The agent stack (LangChain, LangGraph, Deep Agents, LangSmith) took 1.4 s
+    of the 1.5 s, and every route paid for it, /health included. It loads on
+    the first coach request; Garmin's client and the workout grammars on
+    their own routes.
+    """
+    import os
+    import subprocess
+    import sys
+
+    heavy = [
+        "deepagents",
+        "langchain",
+        "langchain_core",
+        "langgraph",
+        "langsmith",
+        "anthropic",
+        "openai",
+        "garminconnect",
+        "curl_cffi",
+        "lark",
+        "rapidfuzz",
+    ]
+    code = (
+        "import sys, arete.api.main; "
+        f"print(sorted({{m.split('.')[0] for m in sys.modules}} & {set(heavy)!r}))"
+    )
+    env = {**os.environ, "ARETE_DB": str(tmp_path / "boot.duckdb")}
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, env=env
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "[]"
