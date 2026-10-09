@@ -1,0 +1,71 @@
+import { Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import type { Bucket, Card } from '@/types';
+import { CHART, COLORS } from '@/lib/chartTheme';
+import { StatCard } from '../StatCard';
+import { ChartGrid, ChartTooltip, bucketAxis, bucketLabel } from '../chartParts';
+
+/** Median running cadence per bucket; the tooltip adds the stride length. */
+export function CadenceCard({
+  card,
+  bucket,
+  previousLabel,
+  loading,
+  error,
+}: {
+  card?: Card;
+  bucket: Bucket;
+  previousLabel: string;
+  loading?: boolean;
+  error?: boolean;
+}) {
+  const data = (card?.series ?? []).map((p) => ({
+    bucket: p.bucket,
+    cadence: p.cadence === null ? null : Number(p.cadence),
+    stride_m: p.stride_m === null ? null : Number(p.stride_m),
+    n_runs: Number(p.n_runs ?? 0),
+  }));
+
+  return (
+    <StatCard
+      title="Cadence"
+      question="Combien de pas par minute en course ?"
+      card={card}
+      secondaryLabels={['Longueur de pas']}
+      previousLabel={previousLabel}
+      loading={loading}
+      error={error}
+    >
+      <ResponsiveContainer width="100%" height={240}>
+        <LineChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -8 }}>
+          <ChartGrid />
+          <XAxis {...bucketAxis(bucket)} />
+          <YAxis
+            domain={['dataMin - 5', 'dataMax + 5']}
+            allowDecimals={false}
+            stroke={CHART.axis}
+            tick={{ fontSize: 11, fill: CHART.axis }}
+            width={52}
+          />
+          <ChartTooltip
+            labelFormatter={bucketLabel(bucket)}
+            formatter={(value: number, _name: string, item) => {
+              const runs = item?.payload?.n_runs ?? 0;
+              const stride = item?.payload?.stride_m;
+              const detail = stride == null ? '' : ` · pas de ${stride.toFixed(2)} m`;
+              return [`${value} pas/min${detail} · ${runs} sortie${runs > 1 ? 's' : ''}`, 'Cadence médiane'];
+            }}
+          />
+          <Line
+            type="monotone"
+            dataKey="cadence"
+            name="Cadence médiane"
+            stroke={COLORS.neonCyan}
+            strokeWidth={2}
+            connectNulls
+            dot={{ r: 3 }}
+          />
+        </LineChart>
+      </ResponsiveContainer>
+    </StatCard>
+  );
+}

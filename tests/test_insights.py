@@ -109,3 +109,31 @@ class TestRecovery:
         assert insights.resting_hr_insight(55, 50)["tone"] == "warn"
         assert insights.resting_hr_insight(45, 50)["tone"] == "good"
         assert insights.resting_hr_insight(None, 50)["tone"] == "neutral"
+
+
+class TestElevation:
+    def test_terrain_from_running_ratio(self):
+        r = insights.elevation_insight(800, None, 30)
+        assert "montagneux" in r["text"] and "800 m D+" in r["text"]
+        assert "plat" in insights.elevation_insight(80, None, 4)["text"]
+
+    def test_no_running_ratio(self):
+        assert "terrain" not in insights.elevation_insight(300, None, None)["text"]
+
+    def test_empty(self):
+        assert "Aucun dénivelé" in insights.elevation_insight(0, 200, None)["text"]
+
+
+class TestCadence:
+    def test_low_cadence_warns(self):
+        assert insights.cadence_insight(152, None, 4)["tone"] == "warn"
+
+    def test_shift_is_reported(self):
+        assert "en baisse (-5)" in insights.cadence_insight(168, 173, 6)["text"]
+
+    def test_stable(self):
+        r = insights.cadence_insight(172, 171, 1)
+        assert r["text"] == "Cadence médiane 172 pas/min sur 1 sortie."
+
+    def test_empty(self):
+        assert "Aucune cadence" in insights.cadence_insight(None, 170, 0)["text"]

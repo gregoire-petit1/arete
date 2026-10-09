@@ -415,10 +415,21 @@ class FITParser:
         if "total_descent" in fields and fields["total_descent"]:
             activity.descent_m = float(fields["total_descent"])
 
-        # Cadence
-        if "avg_cadence" in fields and fields["avg_cadence"]:
+        # Cadence: on runs the FIT field is avg_running_cadence, in strides/min;
+        # store steps/min like the Garmin API and the Strava import
+        if fields.get("avg_running_cadence"):
+            strides = fields["avg_running_cadence"] + (
+                fields.get("avg_fractional_cadence") or 0
+            )
+            activity.avg_cadence = round(strides * 2)
+        elif "avg_cadence" in fields and fields["avg_cadence"]:
             activity.avg_cadence = int(fields["avg_cadence"])
-        if "max_cadence" in fields and fields["max_cadence"]:
+        if fields.get("max_running_cadence"):
+            strides = fields["max_running_cadence"] + (
+                fields.get("max_fractional_cadence") or 0
+            )
+            activity.max_cadence = round(strides * 2)
+        elif "max_cadence" in fields and fields["max_cadence"]:
             activity.max_cadence = int(fields["max_cadence"])
 
         # Power

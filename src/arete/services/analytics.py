@@ -14,6 +14,7 @@ from datetime import date, timedelta
 
 from arete.dataio.db import connect, db_connection
 from arete.dataio.queries import (
+    FOOT_SPORTS,
     RUNNING_SPORTS,
     SPORT_GROUPS,
     OverviewRow,
@@ -178,6 +179,16 @@ def get_overview(period: str = "30d"):
         and r.avg_pace_sec_km is not None
         and r.avg_pace_sec_km > 0
     ]
+    climbs = [
+        (r.date, r.sport, r.distance_m, r.ascent_m)
+        for r in shown
+        if r.sport in FOOT_SPORTS
+    ]
+    cadences = [
+        (r.date, r.avg_cadence, r.avg_pace_sec_km)
+        for r in runs
+        if r.avg_cadence is not None
+    ]
     pmc_series = ctl_atl_series(_daily_tss(rows, tss_start, window.end))
     loads_start = window.end - timedelta(days=ACWR_HISTORY_DAYS)
     acwr, acwr_zone = _acwr(_daily_loads(rows, loads_start, window.end), window.end)
@@ -198,6 +209,8 @@ def get_overview(period: str = "30d"):
             "sports": ov.build_sports_card(sports_cur, sports_prev),
             "decoupling": ov.build_decoupling_card(drifts, efficiency, window),
             "pace": ov.build_pace_card(paces, window),
+            "elevation": ov.build_elevation_card(climbs, window, RUNNING_SPORTS),
+            "cadence": ov.build_cadence_card(cadences, window),
             **recovery,
         },
     }

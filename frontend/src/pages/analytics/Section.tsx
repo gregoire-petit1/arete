@@ -12,10 +12,11 @@ export const SECTIONS: SectionDef[] = [
   { id: 'charge', title: 'Charge', intro: "Combien j'ai encaissé, et où en est la forme." },
   { id: 'intensite', title: 'Intensité', intro: 'À quelle intensité, et réparti sur quels sports.' },
   { id: 'efficacite', title: 'Efficacité', intro: 'Ce que le cœur paie pour une allure donnée.' },
+  { id: 'terrain', title: 'Terrain & foulée', intro: 'Le dénivelé encaissé et la mécanique de la foulée.' },
   { id: 'recuperation', title: 'Récupération', intro: 'Ce que la montre dit du sommeil et de la fraîcheur.' },
 ];
 
-/** Sticky jump bar: four sections, one click each. */
+/** Sticky jump bar: one click per section. */
 export function SectionNav({ active, onJump }: { active: string; onJump: (id: string) => void }) {
   return (
     <nav className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-void/90 backdrop-blur border-b border-text-muted/10">
