@@ -64,15 +64,11 @@ def _tool_call(name: str, args: dict[str, Any]) -> AIMessage:
 def record_turn(page: str, script: list[AIMessage]) -> list[dict[str, Any]]:
     """Run one turn of the real chat graph and return the recorded requests."""
     import arete.coaching as agent_module
-    from arete.agent.nodes.suggestions import SuggestionGenerator
     from arete.agent.runtime.context import AgentContext
 
     _Recorder.calls = []
     model = _Recorder(messages=iter(script))
-    with (
-        patch.object(agent_module, "build_chat_model", lambda **kw: model),
-        patch.object(SuggestionGenerator, "_messages", lambda *args: None),
-    ):
+    with patch.object(agent_module, "build_chat_model", lambda **kw: model):
         agent_module.get_agent.cache_clear()
         agent_module.get_agent().invoke(
             {"messages": [{"role": "user", "content": "Comment je vais ?"}]},

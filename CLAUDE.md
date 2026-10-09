@@ -21,8 +21,8 @@ boundary, and do not add speculative folders or catch-all shared modules.
 
 The current profiles are chat, daily briefing and session feedback. Browser threads
 remain authoritative. Background profiles cannot write training data; chat retains
-direct writes after toolkit loading. Optional follow-up suggestions are generated
-at chat completion and remain metadata until selected. Preserve these behaviors
+direct writes with its toolkits preloaded. Follow-up suggestions are fixed
+page-aware lists in the browser, never a model request. Preserve these behaviors
 when changing assembly, prompts, tools, SSE or browser storage.
 
 Use `make dev` locally and `make check` before handing off. The full check includes

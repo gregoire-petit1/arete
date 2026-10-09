@@ -11,15 +11,9 @@ from typing import Literal
 
 from arete.agent.backends.memory import build_memory_filesystem
 from arete.agent.factory import build_agent
-from arete.agent.middlewares.autosuggestion import AutoSuggestionMiddleware
 from arete.agent.models.providers import build_chat_model
 from arete.agent.models.registry import AGENT_MAX_TOKENS
 from arete.agent.models.routing import resolve_route
-from arete.agent.nodes.suggestions import (
-    SUGGESTION_MAX_TOKENS,
-    SUGGESTION_TIMEOUT_SECONDS,
-    SuggestionGenerator,
-)
 from arete.agent.profiles.catalog import get_profile
 from arete.agent.runtime.budget import MAX_GRAPH_STEPS
 from arete.agent.runtime.context import AgentContext
@@ -54,19 +48,6 @@ def _assemble(profile_id: str):
         context_tokens=route.context_tokens,
         output_tokens=AGENT_MAX_TOKENS,
         filesystem=build_memory_filesystem(),
-        suggestions=AutoSuggestionMiddleware(
-            SuggestionGenerator(
-                build_chat_model(
-                    route=route,
-                    max_tokens=SUGGESTION_MAX_TOKENS,
-                    timeout=SUGGESTION_TIMEOUT_SECONDS,
-                    max_retries=0,
-                    temperature=0.3,
-                )
-            )
-        )
-        if profile.suggestions
-        else None,
     )
 
 

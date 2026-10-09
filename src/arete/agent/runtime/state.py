@@ -23,5 +23,3 @@ class CoachState(AgentState):
     """Agent state plus the toolkits loaded during THIS run."""
 
     loaded_toolkits: NotRequired[Annotated[list[str], merge_loaded]]
-
-    suggestions: NotRequired[list[str]]

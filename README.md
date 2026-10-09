@@ -66,17 +66,14 @@ drafts. Threads are saved in this browser (up to 30), while the coach’s memory
 ledger remains shared across conversations. Hiding the panel or switching threads
 keeps the current response running in its original thread; one response runs at a time.
 
-Completed answers can show up to three French follow-up suggestions. Clicking one
-sends it as the next message; suggestions are stored with the browser thread and
-are never sent as conversation history unless selected. `AutoSuggestionMiddleware`
-uses one tool-free completion (512 output tokens, eight-second timeout, no retry).
-If generation fails, the exchange is too large, or the run has insufficient time
-remaining, the answer is kept without suggestions.
+Below the last answer, up to three French follow-up questions suited to the open
+page; clicking one sends it as the next message. They are fixed lists in the
+browser: no model request after an answer, and the input unlocks as soon as the
+answer ends.
 
 Chat, daily briefings and session feedback share a five-minute execution deadline,
-16 main model calls and 32 tool calls per run, with at most four concurrent tools.
-SDK retries remain separately bounded; summarization and suggestions are auxiliary
-calls within the deadline, not part of the main-call count. These are execution
+8 main model calls and 32 tool calls per run, with at most four concurrent tools.
+SDK retries remain separately bounded. These are execution
 limits, not a cumulative token or spend cap. Cancellation cannot undo a committed
 write or stop a synchronous tool already running in a worker thread; failed runs
 are never automatically replayed.

@@ -121,7 +121,27 @@ it('creates a thread without erasing the old one and retains a stream when hidde
   expect(screen.getByText('Réponse au trail').tagName).toBe('STRONG');
 });
 
-it('shows follow-ups only after completion and sends a clicked suggestion', async () => {
+it('offers page follow-ups only once the answer is done, and sends one', async () => {
+  render(<Harness />);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ouvrir le coach' })[0]);
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message au coach' }), {
+    target: { value: 'Ma forme ?' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
+  expect(screen.queryByRole('group', { name: 'Suggestions de suivi' })).toBeNull();
+  expect(screen.queryByLabelText('Suggestions de suivi')).toBeNull();
+  await act(async () => {
+    stream.emit?.({ type: 'done', message: { role: 'assistant', content: 'Repos aujourd’hui.' } });
+    stream.resolve?.();
+  });
+  const followUps = screen.getByLabelText('Suggestions de suivi');
+  const [first] = within(followUps).getAllByRole('button');
+  const question = first.textContent ?? '';
+  fireEvent.click(first);
+  expect(screen.getAllByText(question).length).toBeGreaterThan(0);
+});
+
+it('asks the same question again on retry, without the failed answer', async () => {
   render(<Harness />);
   fireEvent.click(screen.getAllByRole('button', { name: 'Ouvrir le coach' })[0]);
   fireEvent.change(screen.getByRole('textbox', { name: 'Message au coach' }), {
@@ -129,14 +149,11 @@ it('shows follow-ups only after completion and sends a clicked suggestion', asyn
   });
   fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
   await act(async () => {
-    stream.emit?.({ type: 'suggestions', suggestions: ['Quelle séance demain ?'] });
-  });
-  expect(screen.queryByRole('button', { name: 'Quelle séance demain ?' })).toBeNull();
-  await act(async () => {
-    stream.emit?.({ type: 'done', message: { role: 'assistant', content: 'Repos aujourd’hui.' } });
+    stream.emit?.({ type: 'error', detail: 'Le coach est indisponible.' });
     stream.resolve?.();
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Quelle séance demain ?' }));
-  expect(screen.getByText('Quelle séance demain ?')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Quelle séance demain ?' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: /Réessayer/ }));
+  // The thread title also reads the question: count the messages, not the text.
+  expect(screen.getAllByRole('article', { name: 'Ton message' })).toHaveLength(1);
+  expect(screen.queryByText('Le coach est indisponible.')).toBeNull();
 });

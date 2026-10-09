@@ -167,10 +167,6 @@ def test_system_skill_catalog_and_loaded_instructions_reach_every_model_call(
             ]
         )
     )
-    monkeypatch.setattr(
-        "arete.agent.nodes.suggestions.SuggestionGenerator._messages",
-        lambda *args: None,
-    )
     get_agent.cache_clear()
     try:
         with patch("arete.coaching.build_chat_model", return_value=model):

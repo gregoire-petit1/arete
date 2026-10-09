@@ -1,6 +1,5 @@
 import {
   settleMessage,
-  isSuggestions,
   type ChatMessage,
   type ChatPart,
   type ToolPart,
@@ -73,7 +72,6 @@ export function restoreConversation(raw: string | null): ChatMessage[] {
         role: m.role,
         content: m.content,
         parts,
-        suggestions: isSuggestions(m.suggestions) ? m.suggestions : undefined,
       },
       typeof m.error === 'string' ? m.error : undefined,
       m.interrupted === true || m.pending === true

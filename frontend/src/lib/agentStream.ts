@@ -1,3 +1,4 @@
+import { readableError } from './utils';
 import type { PanelPageContext } from './pageContext';
 
 export type ToolStatus = 'running' | 'done' | 'error' | 'interrupted';
@@ -27,10 +28,8 @@ export interface ChatMessage {
   error?: string;
   interrupted?: boolean;
   pending?: boolean;
-  suggestions?: string[];
 }
 export type StreamEvent =
-  | { type: 'suggestions'; suggestions: string[] }
   | { type: 'token'; id: string; text: string }
   | { type: 'message'; id: string; text: string }
   | { type: 'tool_start'; id: string; name: string; args: Preview }
@@ -63,12 +62,6 @@ const MAX_STREAM_EVENTS = 12_000;
 const MAX_STREAM_READS = 24_000;
 const STREAM_TIMEOUT_MS = 310_000;
 
-export function isSuggestions(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length <= 3 && value.every(
-    (s) => typeof s === 'string' && s.trim().length > 0 && s.length <= 120
-  ) && new Set(value.map((s) => s.trim().toLocaleLowerCase())).size === value.length;
-}
-
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
 }
@@ -84,8 +77,6 @@ function isPreview(value: unknown): value is Preview {
 export function parseEvent(data: string): StreamEvent {
   const e: unknown = JSON.parse(data);
   if (!record(e)) throw new Error('Événement du coach invalide.');
-  if (e.type === 'suggestions' && isSuggestions(e.suggestions))
-    return { type: 'suggestions', suggestions: e.suggestions };
   const identified = typeof e.id === 'string' && e.id.length > 0;
   if (
     identified &&
@@ -138,8 +129,6 @@ export function applyEvent(
   message: ChatMessage,
   event: StreamEvent
 ): ChatMessage {
-  if (event.type === 'suggestions')
-    return { ...message, suggestions: event.suggestions };
   if (event.type === 'error') return settleMessage(message, event.detail);
   if (event.type === 'done')
     return settleMessage({ ...message, content: event.message.content });
@@ -253,7 +242,11 @@ export async function runAgentStream(
     signal: AbortSignal.any([signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]),
   });
   if (!response.ok)
-    throw new Error(`API ${response.status} : ${await response.text()}`);
+    throw new Error(
+      `Le coach n'a pas pu répondre (${response.status}) : ${readableError(
+        new Error(await response.text())
+      )}`
+    );
   if (!response.body) throw new Error('Le serveur ne fournit pas de stream.');
   await consumeStream(response.body, onEvent);
 }

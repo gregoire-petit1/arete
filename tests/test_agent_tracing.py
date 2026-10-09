@@ -15,7 +15,6 @@ from langsmith import Client
 from pydantic import PrivateAttr
 
 from arete import coaching as agent
-from arete.agent.nodes.suggestions import SuggestionGenerator
 from arete.agent.profiles.catalog import get_profile
 from arete.agent.runtime import execution
 from arete.agent.runtime.context import AgentContext
@@ -107,7 +106,6 @@ def isolated_graph(monkeypatch, tmp_path):
     monkeypatch.setenv("LANGSMITH_TRACING", "false")
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
     monkeypatch.setattr(tracing, "_client", None)
-    monkeypatch.setattr(SuggestionGenerator, "_messages", lambda *a: None)
     # Accidental real requests are test failures, not hidden network access.
     monkeypatch.setattr(
         "requests.sessions.Session.request",

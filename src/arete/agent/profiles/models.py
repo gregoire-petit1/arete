@@ -18,4 +18,3 @@ class AgentProfile:
     #: Filesystem tools on the coach's journal; missions get it in the prompt
     #: and the server files their entries.
     journal_tools: bool = False
-    suggestions: bool = False

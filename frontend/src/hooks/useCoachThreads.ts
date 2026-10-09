@@ -100,12 +100,15 @@ export function useCoachThreads(context: PanelPageContext) {
     );
   const stop = useCallback(() => runRef.current?.controller.abort(), []);
 
-  const send = (prompt = active.draft) => {
+  /** ``keep`` = messages kept before the new question (a retry drops the
+   *  failed or unwanted answer and asks the same question again). */
+  const send = (prompt = active.draft, keep = active.messages.length) => {
     const content = prompt.trim();
     const activeRuns = runRef.current ? 1 : 0;
     if (!content || activeRuns >= MAX_ACTIVE_RUNS) return false;
+    const retrying = keep < active.messages.length;
     const history = requestWindow([
-      ...active.messages.filter(
+      ...active.messages.slice(0, keep).filter(
         (m) => m.content.trim() && !m.error && !m.interrupted
       ),
       { role: 'user', content },
@@ -117,7 +120,7 @@ export function useCoachThreads(context: PanelPageContext) {
       return false;
     }
     const threadId = active.id;
-    const answerIndex = active.messages.length + 1;
+    const answerIndex = keep + 1;
     const controller = new AbortController();
     runRef.current = { threadId, controller };
     setRunningId(threadId);
@@ -126,10 +129,10 @@ export function useCoachThreads(context: PanelPageContext) {
       updateThread(prev, threadId, (t) => ({
         ...t,
         title: t.messages.length ? t.title : titleFromMessage(content),
-        draft: '',
+        draft: retrying ? t.draft : '',
         updatedAt: Date.now(),
         messages: [
-          ...t.messages,
+          ...t.messages.slice(0, keep),
           { role: 'user', content },
           { role: 'assistant', content: '', parts: [], pending: true },
         ],
@@ -187,6 +190,12 @@ export function useCoachThreads(context: PanelPageContext) {
       });
     return true;
   };
+  /** Ask the last question again, replacing its answer. */
+  const retry = () => {
+    const last = active.messages.map((m) => m.role).lastIndexOf('user');
+    return last >= 0 && send(active.messages[last].content, last);
+  };
+
   return {
     store,
     active,
@@ -198,6 +207,7 @@ export function useCoachThreads(context: PanelPageContext) {
     remove,
     draft,
     send,
+    retry,
     stop,
   };
 }
