@@ -29,6 +29,7 @@ export const SESSION_TYPE_LABEL: Record<string, string> = {
   hypertrophy: 'Muscu',
   power: 'Muscu',
   deload: 'Décharge',
+  race: 'Course',
 };
 
 const STATE_STYLE: Record<PlannedState, string> = {

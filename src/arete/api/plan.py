@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from arete.services import plan_adaptation as service
 from arete.services.plan_repository import PlanDecisionRepository
@@ -43,3 +44,35 @@ def revert_decision(decision_id: int) -> dict[str, Any]:
         raise HTTPException(
             status_code=409, detail="Rien à rétablir pour cette décision"
         ) from None
+
+
+class ReviewApply(BaseModel):
+    indices: list[int]
+
+
+@router.get("/review")
+def get_review() -> dict[str, Any] | None:
+    """Last week's review, if it was written."""
+    from arete.services.weekly_review import get_review, last_monday
+
+    review = get_review(last_monday(date.today()))
+    return review.to_dict() if review else None
+
+
+@router.post("/review")
+def write_review(refresh: bool = False) -> dict[str, Any]:
+    """Write last week's review (once; ``refresh`` writes it again)."""
+    from arete import coaching
+
+    return coaching.generate_weekly_review(refresh=refresh).to_dict()
+
+
+@router.post("/review/{review_id}/apply")
+def apply_review(review_id: int, body: ReviewApply) -> dict[str, Any]:
+    """Apply the chosen proposals; ones whose session changed come back stale."""
+    from arete.services.weekly_review import apply_review
+
+    try:
+        return apply_review(review_id, body.indices)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Bilan introuvable") from None

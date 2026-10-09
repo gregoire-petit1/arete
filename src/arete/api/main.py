@@ -14,11 +14,13 @@ from arete import scheduler
 from arete.api.agent import router as agent_router
 from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
+from arete.api.athlete_facts import router as athlete_facts_router
 from arete.api.documents import router as documents_router
 from arete.api.garmin import router as garmin_router
 from arete.api.garmin_export import router as garmin_export_router
 from arete.api.garmin_health import router as garmin_health_router
 from arete.api.garmin_sync import router as garmin_sync_router
+from arete.api.goals import router as goals_router
 from arete.api.metrics import router as metrics_router
 from arete.api.notifications import router as notifications_router
 from arete.api.plan import router as plan_router
@@ -141,6 +143,7 @@ def cron_daily_sync(authorization: str | None = Header(default=None)):
     status = scheduler.daily_sync()
     scheduler.record_run(datetime.now())
     status["briefing"] = scheduler.write_daily_briefing()
+    status["review"] = scheduler.write_weekly_review()
     return status
 
 
@@ -159,5 +162,7 @@ for router in (
     documents_router,
     plan_router,
     notifications_router,
+    goals_router,
+    athlete_facts_router,
 ):
     app.include_router(router)

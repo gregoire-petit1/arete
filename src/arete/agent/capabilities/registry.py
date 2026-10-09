@@ -84,6 +84,7 @@ def validate_registry() -> None:
         "glob",
         "grep",
         "append_journal",
+        "remember_fact",
     }
     for tid, tk in CAPABILITIES.items():
         assert tid == tk.id, f"Toolkit id mismatch: {tid}"
