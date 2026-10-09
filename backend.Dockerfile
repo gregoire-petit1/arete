@@ -14,6 +14,8 @@ COPY README.md ./
 COPY src/ src/
 COPY scripts/ scripts/
 RUN uv sync --frozen --no-dev
+# The MotherDuck extension ships in the image rather than downloading at boot
+RUN /app/.venv/bin/python scripts/bundle_duckdb_extensions.py
 
 # Data directory (mounted as a volume in docker-compose)
 RUN mkdir -p data

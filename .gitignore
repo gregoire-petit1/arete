@@ -42,6 +42,9 @@ logs/
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+
+# MotherDuck extension downloaded at build time
+/duckdb_extensions/
 *.tsbuildinfo
 
 # Claude Code local state (agent worktrees, settings)

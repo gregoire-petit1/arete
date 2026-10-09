@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 import pathlib
+import shutil
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -28,6 +29,8 @@ logger = logging.getLogger(__name__)
 
 #: Writable home for DuckDB when the filesystem is read-only except ``/tmp``.
 REMOTE_HOME = pathlib.Path("/tmp/duckdb")
+#: Extensions downloaded at build time (``scripts/bundle_duckdb_extensions.py``).
+BUNDLED_EXTENSIONS = pathlib.Path(__file__).resolve().parents[3] / "duckdb_extensions"
 
 _remote: duckdb.DuckDBPyConnection | None = None
 _remote_lock = threading.Lock()
@@ -54,6 +57,19 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     return con
 
 
+def _seed_extensions() -> None:
+    """Copy the build's extensions where DuckDB looks for them, once.
+
+    ``scripts/bundle_duckdb_extensions.py`` downloads them at build time; the
+    bundle is read-only, and DuckDB's default directory under its home stays
+    writable. Without a bundle DuckDB downloads them as before.
+    """
+    target = REMOTE_HOME / ".duckdb" / "extensions"
+    if BUNDLED_EXTENSIONS.is_dir() and not target.exists():
+        shutil.copytree(BUNDLED_EXTENSIONS, target)
+        logger.info("Seeded DuckDB extensions from %s", BUNDLED_EXTENSIONS)
+
+
 def _open_remote() -> duckdb.DuckDBPyConnection:
     """Attach MotherDuck from an in-memory catalog.
 
@@ -63,6 +79,7 @@ def _open_remote() -> duckdb.DuckDBPyConnection:
     ``MOTHERDUCK_TOKEN`` in the environment.
     """
     REMOTE_HOME.mkdir(parents=True, exist_ok=True)
+    _seed_extensions()
     # The MotherDuck extension also reads $HOME, which Vercel leaves empty.
     if not os.environ.get("HOME"):
         os.environ["HOME"] = str(REMOTE_HOME)
