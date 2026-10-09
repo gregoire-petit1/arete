@@ -1,10 +1,11 @@
 import { OffPlanRow, SessionCard } from '@/components/SessionCard';
+import { parseLocalDate } from '@/lib/dates';
 import { linkDay } from '@/lib/sessionMatch';
 import { cn } from '@/lib/utils';
 import type { ActualSession, PlannedSession } from '@/types';
 
 function dayLabel(iso: string): string {
-  return new Date(iso).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+  return parseLocalDate(iso).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
 }
 
 export function WeekPlanList({
@@ -51,7 +52,7 @@ export function WeekPlanList({
           today
         );
         const isToday = date === today;
-        const weekday = new Date(date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+        const weekday = parseLocalDate(date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
         const isRestDay = restDays.includes(weekday);
         const empty = link.planned.length === 0 && link.offPlan.length === 0;
 

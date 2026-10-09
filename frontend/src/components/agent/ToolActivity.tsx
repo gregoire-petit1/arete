@@ -24,6 +24,7 @@ const LABELS: Record<string, string> = {
   list_planned: 'Planning',
   create_planned_session: 'Création d’une séance',
   update_planned_status: 'Mise à jour d’une séance',
+  update_planned_session: 'Modification d’une séance',
   delete_planned_session: 'Suppression d’une séance',
 };
 

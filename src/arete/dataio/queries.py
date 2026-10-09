@@ -14,6 +14,7 @@ import duckdb
 
 from arete.dataio.db import db_connection
 from arete.features.fitness import DailyTSS
+from arete.features.hr_zones import DEFAULT_MAX_HR, LTHR_FROM_MAX_HR
 from arete.features.workload import DailyLoad
 
 # Garmin sync writes "running"/"cycling"/..., Strava writes "run"/"ride"/...:
@@ -47,20 +48,51 @@ def sql_in(values: Iterable[str]) -> str:
     return ", ".join(f"'{v}'" for v in values)
 
 
+# The athlete's threshold HR, for the HR branch of the TSS estimate: tested,
+# else derived from max HR, else derived from the default max HR (single
+# athlete: settings live on user 1).
+THRESHOLD_HR_SQL = f"""
+    COALESCE(
+      (SELECT COALESCE(NULLIF(lthr, 0), ROUND(NULLIF(max_hr, 0) * {LTHR_FROM_MAX_HR}))
+       FROM app.user_settings WHERE user_id = 1),
+      {round(DEFAULT_MAX_HR * LTHR_FROM_MAX_HR)}
+    )
+"""
+
 # TSS estimate per session, best signal first:
-# RPE -> Strava suffer score -> HR-based -> flat default (RPE 5 equivalent).
-# (duration_min * intensity^2) / 0.36: 1 h at RPE 6 = 60 TSS, 1 h at RPE ~7.7 = 100 TSS.
-TSS_EXPR = """
+# RPE -> Strava suffer score -> hrTSS on the threshold -> flat default (RPE 5).
+# RPE: (duration_min * (RPE/10)^2) / 0.36, so 1 h at RPE 6 = 60, at ~7.7 = 100.
+# HR: hours * (avg HR / threshold HR)^2 * 100, so 1 h at threshold = 100.
+TSS_EXPR = f"""
     CASE
       WHEN rpe IS NOT NULL THEN
         (COALESCE(duration_sec, 0) / 60.0) * POWER(rpe / 10.0, 2) / 0.36
       WHEN suffer_score IS NOT NULL THEN
         suffer_score * 0.8
       WHEN avg_hr IS NOT NULL THEN
-        (COALESCE(duration_sec, 0) / 60.0) * POWER(LEAST(avg_hr, 200) / 180.0, 2) / 0.36
+        (COALESCE(duration_sec, 0) / 3600.0)
+        * POWER(avg_hr / CAST({THRESHOLD_HR_SQL} AS DOUBLE), 2) * 100
       ELSE
         (COALESCE(duration_sec, 0) / 60.0) * 0.25 / 0.36
     END
+"""
+
+# Every session that loads the athlete: the realised sessions, plus the logged
+# strength sessions not already linked to one of them (a linked strength
+# session is the Garmin activity it was recorded with: counted once). Strength
+# sessions without a duration carry no load, so they cannot skew a day's RPE.
+LOAD_ROWS = """
+    (
+      SELECT id, user_id, date, sport, duration_sec, rpe, suffer_score, avg_hr,
+             distance_m, hr_zones_json, avg_pace_sec_km, ascent_m, avg_cadence
+      FROM app.actual_sessions
+      UNION ALL
+      SELECT -id, user_id, date, 'strength', duration_min * 60,
+             CAST(ROUND(overall_rpe) AS INTEGER), NULL, NULL,
+             NULL, NULL, NULL, NULL, NULL
+      FROM app.strength_sessions
+      WHERE actual_session_id IS NULL AND duration_min > 0
+    ) AS sessions
 """
 
 
@@ -75,7 +107,7 @@ def daily_tss(
     rows = con.execute(
         f"""
         SELECT date, SUM({TSS_EXPR}) AS daily_tss
-        FROM app.actual_sessions
+        FROM {LOAD_ROWS}
         WHERE date >= ? AND date <= ? AND user_id = ?
         GROUP BY date
         """,
@@ -90,11 +122,11 @@ def daily_loads(
 ) -> list[DailyLoad]:
     """Daily duration/RPE loads between two dates, zeros for days without sessions."""
     rows = con.execute(
-        """
+        f"""
         SELECT date,
                SUM(COALESCE(duration_sec, 0)) / 60.0 AS total_duration,
                AVG(COALESCE(rpe, 5)) AS avg_rpe
-        FROM app.actual_sessions
+        FROM {LOAD_ROWS}
         WHERE date >= ? AND date <= ? AND user_id = ?
         GROUP BY date
         """,
@@ -116,7 +148,7 @@ def daily_tss_by_date(
     rows = con.execute(
         f"""
         SELECT date, SUM({TSS_EXPR})
-        FROM app.actual_sessions
+        FROM {LOAD_ROWS}
         WHERE user_id = ?
         GROUP BY date
         """,
@@ -210,7 +242,7 @@ def overview_rows(
         f"""
         SELECT date, sport, COALESCE(duration_sec, 0), distance_m, hr_zones_json,
                avg_pace_sec_km, avg_hr, rpe, ascent_m, avg_cadence, {TSS_EXPR}
-        FROM app.actual_sessions
+        FROM {LOAD_ROWS}
         WHERE date >= ? AND date <= ? AND user_id = ?
         ORDER BY date ASC, id ASC
         """,

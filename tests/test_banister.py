@@ -29,22 +29,21 @@ class TestFitCoefficients:
         ctl_vals = rng.uniform(40, 120, n).tolist()
         atl_vals = rng.uniform(30, 150, n).tolist()
 
-        true_k1, true_k2, true_baseline = 0.8, 1.5, 60.0
+        # Fitness raises the speed per beat, fatigue lowers it.
+        true_k1, true_k2, true_baseline = 0.2, 0.15, 80.0
 
-        eff = np.array(
+        proxy = np.array(
             [
                 true_baseline + true_k1 * c - true_k2 * a
                 for c, a in zip(ctl_vals, atl_vals, strict=True)
             ]
         )
-        noise = rng.normal(0, 3, size=len(eff))
-        y = eff + noise
+        y = proxy + rng.normal(0, 1, size=len(proxy))
 
         sessions = []
         for i, (ctl, atl) in enumerate(zip(ctl_vals, atl_vals, strict=True)):
             speed_mps = rng.uniform(2.5, 4.5)
-            eff_target = y[i]
-            hr = eff_target * speed_mps * 3.6
+            hr = 1000.0 * speed_mps * 3.6 / y[i]  # proxy = 1000 * km/h / bpm
             sessions.append(
                 {
                     "ctl": ctl,
@@ -57,9 +56,9 @@ class TestFitCoefficients:
         result = fit_coefficients(sessions)
         assert result is not None
         assert result["n_samples"] == n
-        assert abs(result["k1"] - true_k1) < 0.3, f"k1: {result['k1']} vs {true_k1}"
-        assert abs(result["k2"] - true_k2) < 0.3, f"k2: {result['k2']} vs {true_k2}"
-        assert abs(result["baseline"] - true_baseline) < 5.0, (
+        assert abs(result["k1"] - true_k1) < 0.05, f"k1: {result['k1']} vs {true_k1}"
+        assert abs(result["k2"] - true_k2) < 0.05, f"k2: {result['k2']} vs {true_k2}"
+        assert abs(result["baseline"] - true_baseline) < 3.0, (
             f"baseline: {result['baseline']} vs {true_baseline}"
         )
         assert result["r2"] > 0.8
@@ -82,7 +81,9 @@ class TestFitCoefficients:
         sessions = []
         for c, a in zip(ctl_vals, atl_vals, strict=True):
             speed_mps = rng.uniform(2.5, 4.5)
-            hr = (60.0 + 0.5 * c + 2.0 * a) * speed_mps * 3.6
+            # Inverted direction: fitness lowers the proxy, fatigue raises it.
+            proxy = 90.0 - 0.3 * c + 0.2 * a
+            hr = 1000.0 * speed_mps * 3.6 / proxy
             sessions.append(
                 {
                     "ctl": c,
@@ -93,9 +94,14 @@ class TestFitCoefficients:
             )
 
         result = fit_coefficients(sessions)
-        if result is not None:
-            assert result["k2"] >= 0.0
-            assert result["k1"] >= 0.0
+        assert result is not None
+        assert result["k1"] == 0.0
+        assert result["k2"] == 0.0
+
+    def test_proxy_is_the_inverse_of_the_cardiac_cost(self):
+        from arete.features.banister import compute_performance_proxy
+
+        assert compute_performance_proxy(150, 12.0 / 3.6) == pytest.approx(80.0)
 
     def test_compute_efficiency(self):
         assert compute_efficiency(150, 10.0 / 3.6) == pytest.approx(15.0)
@@ -112,10 +118,11 @@ class TestCtlAtlFromTssHistory:
         tss_history = _make_daily_tss(dates, tss_values)
 
         ctl = calculate_ctl(tss_history, today)
-        # 84 iterations at TC=42 → ~87% convergence:
-        #   CTL after 84 of 60 = 60*(1 - (1-1/42)^85) ≈ 52
-        #   Since today has TSS=0, final CTL ≈ 52 + (0-52)/42 ≈ 50.8
-        assert abs(ctl - 50.0) < 3.0, f"CTL {ctl} should be ~50.8"
+        # The average walks the whole 300-day history, not just 84 days:
+        #   CTL after 300 days of 60 = 60*(1 - (41/42)^300) ≈ 59.95
+        #   Since today has TSS=0, final CTL ≈ 59.95 * 41/42 ≈ 58.5
+        expected = 60 * (1 - (41 / 42) ** 300) * 41 / 42
+        assert ctl == pytest.approx(expected, abs=0.01)
 
     def test_atl_convergence(self):
         today = date.today()

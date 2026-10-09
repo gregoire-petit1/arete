@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from arete.dataio.db import connect
-from arete.dataio.queries import daily_tss_by_date, training_loads, tss_history
+from arete.dataio.queries import daily_tss_by_date, training_loads
 from arete.dataio.settings import get_user_settings
 from arete.features.fitness import (
     DailyTSS,
     PerformanceModel,
+    ReadinessLevel,
     compute_performance_model,
+    ctl_atl_series,
+    get_readiness_level,
 )
 from arete.features.recommendations import (
     RecommendationReport,
@@ -24,12 +29,19 @@ from arete.features.workload import (
     ACWRZone,
     compute_workload_metrics,
 )
-from arete.garmin.readiness import compute_readiness, fetch_window
+from arete.garmin.readiness import (
+    compute_readiness,
+    fetch_window,
+    training_readiness_from_rows,
+)
 
 logger = logging.getLogger(__name__)
 TSS_PER_SESSION = 50.0
+
+#: garmin_training: the watch's morning Training Readiness; garmin: Arete's
+#: score from Garmin's HRV, sleep and body battery; model: the CTL/ATL model.
+ReadinessSource = Literal["garmin_training", "garmin", "model"]
 READINESS_LOOKBACK_DAYS = 1
-FORM_HISTORY_DAYS = 42
 
 
 class WorkloadMetricsOut(BaseModel):
@@ -54,10 +66,20 @@ class FitnessMetricsOut(BaseModel):
     atl: float = Field(description="Acute Training Load (fatigue)")
     tsb: float = Field(description="Training Stress Balance (form)")
     form_zone: str = Field(description="Current form zone")
-    readiness_score: float = Field(description="Readiness score 0-100")
+    readiness_score: float = Field(
+        description="Readiness 0-100: Garmin's (today, else yesterday), else the model's"
+    )
     readiness_level: str = Field(description="Readiness level")
+    readiness_source: ReadinessSource = Field(
+        default="model", description="Where the readiness score comes from"
+    )
+    readiness_measured_on: date | None = Field(
+        default=None, description="Day of the Garmin measurement (None for the model)"
+    )
     ramp_rate: float | None = Field(description="CTL ramp rate (weekly change)")
-    days_analyzed: int = Field(description="Number of days with data")
+    days_analyzed: int = Field(
+        description="Days with load in the requested window (the model reads the whole history)"
+    )
 
 
 class StatBar(BaseModel):
@@ -136,29 +158,130 @@ def _week_history(
     return streak, sum(reached)
 
 
-def _recovery_bar(today: date, window: list[tuple], model: PerformanceModel) -> StatBar:
-    """HP: Garmin's readiness for today, yesterday's if the night is not in yet,
-    and the CTL/ATL model only when Garmin has nothing recent."""
+# --------------------------------------------------------------------------- #
+# One fitness series and one readiness, whatever the surface
+# --------------------------------------------------------------------------- #
+def fitness_history(by_date: Mapping[date, float], end: date) -> list[DailyTSS]:
+    """Every day from the first session to ``end``, zeros on rest days."""
+    if not by_date:
+        return []
+    first = min(by_date)
+    return [
+        DailyTSS(
+            date=first + timedelta(days=i),
+            tss=by_date.get(first + timedelta(days=i), 0.0),
+        )
+        for i in range((end - first).days + 1)
+    ]
+
+
+def fitness_series(
+    by_date: Mapping[date, float], end: date
+) -> list[tuple[DailyTSS, float, float]]:
+    """Day-by-day (TSS, CTL, ATL) over the whole history, for charts."""
+    return ctl_atl_series(fitness_history(by_date, end))
+
+
+def fitness_model(
+    by_date: Mapping[date, float], today: date
+) -> PerformanceModel | None:
+    """CTL/ATL/TSB for ``today`` over the whole history; None without any load.
+
+    The dashboard, the daily tip, the briefing, ``/metrics/fitness`` and the
+    Analytics chart all read this one series: each used to start its average
+    on a different day and showed a different form for the same morning.
+    """
+    if not any(tss > 0 for tss in by_date.values()):
+        return None
+    history = [
+        DailyTSS(date=d, tss=t) for d, t in sorted(by_date.items()) if d <= today
+    ]
+    return compute_performance_model(history, today)
+
+
+@dataclass(frozen=True)
+class Readiness:
+    """The one readiness number every surface shows, and where it comes from."""
+
+    score: float
+    source: ReadinessSource
+    measured_on: date | None  # the Garmin night; None for the model
+
+    @property
+    def level(self) -> str:
+        return get_readiness_level(self.score).value
+
+
+def current_readiness(
+    today: date, window: Sequence[tuple], model: PerformanceModel | None
+) -> Readiness | None:
+    """The watch's Training Readiness this morning, else Arete's Garmin score
+    (today's, yesterday's when the night is not in yet), else the CTL/ATL model."""
+    training = training_readiness_from_rows(today, window)
+    if training is not None:
+        return Readiness(
+            score=float(training), source="garmin_training", measured_on=today
+        )
     for offset in range(READINESS_LOOKBACK_DAYS + 1):
         day = today - timedelta(days=offset)
         score = compute_readiness(day, window=window)
-        if score is None:
-            continue
-        detail = (
-            "Garmin (VFC, sommeil, body battery)"
-            if offset == 0
-            else f"Garmin, mesure du {day.strftime('%d/%m')}"
-        )
+        if score is not None:
+            return Readiness(score=float(score), source="garmin", measured_on=day)
+    if model is None:
+        return None
+    return Readiness(
+        score=round(model.readiness_score, 1), source="model", measured_on=None
+    )
+
+
+def load_form(
+    today: date | None = None,
+) -> tuple[PerformanceModel | None, Readiness | None]:
+    """The fitness model and the readiness for ``today``, on one connection."""
+    today = today or date.today()
+    con = connect()
+    try:
+        window = fetch_window(con, today)
+        by_date = daily_tss_by_date(con)
+    finally:
+        con.close()
+    model = fitness_model(by_date, today)
+    return model, current_readiness(today, window, model)
+
+
+def _recovery_bar(readiness: Readiness | None, today: date) -> StatBar:
+    """HP: the readiness bar, labelled with where the number comes from."""
+    if readiness is None:
         return StatBar(
-            current=float(score),
+            current=50.0,
             max=100,
             label="Récupération",
-            detail=detail,
-            source="garmin" if offset == 0 else "garmin_previous",
+            detail="Aucune donnée de charge ni mesure Garmin",
+            source="model",
         )
-
+    if readiness.source == "garmin_training":
+        return StatBar(
+            current=readiness.score,
+            max=100,
+            label="Récupération",
+            detail="Préparation à l'entraînement Garmin (ce matin)",
+            source="garmin_training",
+        )
+    if readiness.source == "garmin":
+        same_day = readiness.measured_on == today
+        return StatBar(
+            current=readiness.score,
+            max=100,
+            label="Récupération",
+            detail=(
+                "Garmin (VFC, sommeil, body battery)"
+                if same_day
+                else f"Garmin, mesure du {readiness.measured_on:%d/%m}"
+            ),
+            source="garmin" if same_day else "garmin_previous",
+        )
     return StatBar(
-        current=round(model.readiness_score, 1),
+        current=readiness.score,
         max=100,
         label="Récupération",
         detail="Estimée depuis la charge (aucune mesure Garmin récente)",
@@ -189,15 +312,13 @@ def get_player_stats():
     finally:
         con.close()
 
-    days = (today - timedelta(days=n) for n in range(FORM_HISTORY_DAYS, -1, -1))
-    history = [DailyTSS(date=d, tss=by_date.get(d, 0.0)) for d in days]
-    model = compute_performance_model(history, today)
+    model = fitness_model(by_date, today)
 
     # --- HP: recovery ---
-    hp = _recovery_bar(today, window, model)
+    hp = _recovery_bar(current_readiness(today, window, model), today)
 
     # --- MP: form (TSB) ---
-    tsb = model.tsb
+    tsb = model.tsb if model else 0.0
     mp_current = round(max(0.0, min(100.0, (tsb + 30) * (100 / 60))), 1)
     mp = StatBar(
         current=mp_current,
@@ -281,40 +402,53 @@ def get_fitness_metrics(
 ):
     """Get Fitness-Fatigue model metrics (CTL/ATL/TSB).
 
-    Computes the Banister model:
+    Computes the Banister model over the whole history:
     - CTL: Chronic Training Load (42-day EWMA) = Fitness
     - ATL: Acute Training Load (7-day EWMA) = Fatigue
     - TSB: Training Stress Balance = Form (CTL - ATL)
-    """
-    history = tss_history(days=days)
-    target_date = date.today()
 
-    # Check for data
-    has_data = any(tss.tss > 0 for tss in history)
-    if not has_data:
-        # Return default values when no data
+    ``days`` only bounds ``days_analyzed``: the averages always walk the whole
+    history, so this endpoint and every other surface read the same numbers.
+    """
+    target_date = date.today()
+    con = connect()
+    try:
+        window = fetch_window(con, target_date)
+        by_date = daily_tss_by_date(con)
+    finally:
+        con.close()
+
+    model = fitness_model(by_date, target_date)
+    readiness = current_readiness(target_date, window, model)
+    if model is None:
         return FitnessMetricsOut(
             ctl=0.0,
             atl=0.0,
             tsb=0.0,
             form_zone="neutral",
-            readiness_score=50.0,
-            readiness_level="moderate",
+            readiness_score=readiness.score if readiness else 50.0,
+            readiness_level=readiness.level if readiness else "moderate",
+            readiness_source=readiness.source if readiness else "model",
+            readiness_measured_on=readiness.measured_on if readiness else None,
             ramp_rate=None,
             days_analyzed=0,
         )
 
-    model = compute_performance_model(history, target_date)
-
+    assert readiness is not None  # a model always yields a readiness
+    since = target_date - timedelta(days=days)
     return FitnessMetricsOut(
         ctl=round(model.ctl, 1),
         atl=round(model.atl, 1),
         tsb=round(model.tsb, 1),
         form_zone=model.form_zone.value,
-        readiness_score=round(model.readiness_score, 1),
-        readiness_level=model.readiness_level.value,
+        readiness_score=round(readiness.score, 1),
+        readiness_level=readiness.level,
+        readiness_source=readiness.source,
+        readiness_measured_on=readiness.measured_on,
         ramp_rate=round(model.ramp_rate, 2) if model.ramp_rate else None,
-        days_analyzed=len([tss for tss in history if tss.tss > 0]),
+        days_analyzed=sum(
+            1 for d, t in by_date.items() if since <= d <= target_date and t > 0
+        ),
     )
 
 
@@ -338,11 +472,9 @@ def get_recommendations(
         logger.warning("Failed to compute workload metrics", exc_info=True)
 
     fitness = None
-    tss = None
+    readiness = None
     try:
-        tss = tss_history(days=42)
-        if any(t.tss > 0 for t in tss):
-            fitness = compute_performance_model(tss, target_date)
+        fitness, readiness = load_form(target_date)
     except Exception:
         logger.warning("Failed to compute fitness metrics", exc_info=True)
 
@@ -356,7 +488,7 @@ def get_recommendations(
         strain_zone=workload.strain_zone if workload else None,
         tsb=fitness.tsb if fitness else None,
         form_zone=fitness.form_zone if fitness else None,
-        readiness=fitness.readiness_level if fitness else None,
+        readiness=ReadinessLevel(readiness.level) if readiness else None,
         ramp_rate=fitness.ramp_rate if fitness else None,
         chronic_load=workload.chronic_load if workload and workload.chronic_load else 0,
         sport_type=sport_type,
@@ -388,18 +520,7 @@ def get_recommendations(
             days_analyzed=len([load for load in loads if load.duration_min > 0]),
         )
 
-    fitness_out = None
-    if fitness and tss:
-        fitness_out = FitnessMetricsOut(
-            ctl=round(fitness.ctl, 1),
-            atl=round(fitness.atl, 1),
-            tsb=round(fitness.tsb, 1),
-            form_zone=fitness.form_zone.value,
-            readiness_score=round(fitness.readiness_score, 1),
-            readiness_level=fitness.readiness_level.value,
-            ramp_rate=round(fitness.ramp_rate, 2) if fitness.ramp_rate else None,
-            days_analyzed=len([t for t in tss if t.tss > 0]),
-        )
+    fitness_out = get_fitness_metrics() if fitness else None
 
     return RecommendationsResponse(
         risk_level=risk_level,

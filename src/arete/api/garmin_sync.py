@@ -75,9 +75,11 @@ def get_sync_status():
         with contextlib.suppress(Exception):
             user_email = client.profile().get("user_email")
 
+    _, imported_at = _repo.last_garmin_import()
     return SyncStatusResponse(
         garmin_authenticated=authenticated,
         user_email=user_email,
+        last_sync=imported_at.isoformat() if imported_at else None,
         activities_synced=_repo.count_actual_sessions(),
     )
 

@@ -203,6 +203,21 @@ class Config:
         return _env("CRON_SECRET", "") or ""
 
     @property
+    def web_push_vapid_public_key(self) -> str:
+        """VAPID public key (base64url) the browser subscribes with; empty = no push."""
+        return _env("WEB_PUSH_VAPID_PUBLIC_KEY", "") or ""
+
+    @property
+    def web_push_vapid_private_key(self) -> str:
+        """VAPID private key (base64url, or a PEM file path) that signs each push."""
+        return _env("WEB_PUSH_VAPID_PRIVATE_KEY", "") or ""
+
+    @property
+    def web_push_subject(self) -> str:
+        """Contact the push services can reach (``mailto:`` or https URL)."""
+        return _env("WEB_PUSH_SUBJECT", "mailto:admin@localhost") or ""
+
+    @property
     def log_level(self) -> str:
         return (_env("ARETE_LOG_LEVEL", "INFO") or "INFO").upper()
 

@@ -178,3 +178,51 @@ class GarminClient:
 
     def resting_hr(self, day: date) -> dict[str, Any] | None:
         return cast(dict[str, Any] | None, self.connect().get_rhr_day(day.isoformat()))
+
+    # Garmin's own training metrics (Training Readiness, status, predictions…)
+
+    def training_readiness(self, day: date) -> dict[str, Any] | None:
+        """The morning Training Readiness reading (after the wake-up reset)."""
+        return cast(
+            dict[str, Any] | None,
+            self.connect().get_morning_training_readiness(day.isoformat()),
+        )
+
+    def training_status(self, day: date) -> dict[str, Any] | None:
+        return cast(
+            dict[str, Any] | None, self.connect().get_training_status(day.isoformat())
+        )
+
+    def max_metrics(self, day: date) -> Any:
+        """VO2max estimates (a list of per-sport entries on most accounts)."""
+        return self.connect().get_max_metrics(day.isoformat())
+
+    def race_predictions(self) -> dict[str, Any] | None:
+        """Latest 5K / 10K / half / marathon predictions, in seconds."""
+        return cast(dict[str, Any] | None, self.connect().get_race_predictions())
+
+    def endurance_score(self, day: date) -> dict[str, Any] | None:
+        return cast(
+            dict[str, Any] | None, self.connect().get_endurance_score(day.isoformat())
+        )
+
+    # Structured workouts: created in the library, then put on the calendar
+
+    def upload_workout(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return cast(dict[str, Any], self.connect().upload_workout(payload))
+
+    def schedule_workout(self, workout_id: str, day: date) -> dict[str, Any]:
+        return cast(
+            dict[str, Any], self.connect().schedule_workout(workout_id, day.isoformat())
+        )
+
+    def unschedule_workout(self, schedule_id: str) -> Any:
+        return self.connect().unschedule_workout(schedule_id)
+
+    def delete_workout(self, workout_id: str) -> Any:
+        return self.connect().delete_workout(workout_id)
+
+    def hill_score(self, day: date) -> dict[str, Any] | None:
+        return cast(
+            dict[str, Any] | None, self.connect().get_hill_score(day.isoformat())
+        )

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Bot, Check, Dumbbell, Palette, Save, Target, Terminal, User, Watch, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ErrorState, LoadingState } from '@/components';
@@ -31,8 +32,13 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id'];
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
+const isTabId = (value: string | null): value is TabId => TABS.some((tab) => tab.id === value);
+
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('profile');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab: TabId = isTabId(tabParam) ? tabParam : 'profile';
+  const setActiveTab = (tab: TabId) => setSearchParams(tab === 'profile' ? {} : { tab }, { replace: true });
   const queryClient = useQueryClient();
 
   const { data: savedSettings, isLoading, isError, refetch } = useQuery({
@@ -102,10 +108,10 @@ export function SettingsPage() {
   const tabProps = { settings, updateSetting };
 
   return (
-    <div className="min-h-screen bg-void p-6">
+    <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
       <div className="max-w-4xl mx-auto">
-        <header className="flex justify-between items-center mb-8 animate-fade-down">
-          <h1 className="text-2xl font-sans font-bold text-text-primary tracking-wider">RÉGLAGES</h1>
+        <header className="flex justify-between items-center mb-4 sm:mb-8 animate-fade-down">
+          <h1 className="text-lg sm:text-2xl font-sans font-bold text-text-primary tracking-wider">RÉGLAGES</h1>
           {hasChanges && (
             <Button
               variant="green"
@@ -119,17 +125,18 @@ export function SettingsPage() {
           )}
         </header>
 
-        <div className="flex flex-col md:flex-row gap-6">
-          <nav className="md:w-48 shrink-0 animate-fade-left overflow-x-auto">
-            <div className="flex md:block gap-1 md:space-y-1">
+        {/* Below md the tabs become one scrolling row above the panel. */}
+        <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+          <nav className="md:w-48 md:shrink-0 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto animate-fade-left">
+            <div className="flex md:flex-col gap-1">
               {TABS.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    'shrink-0 md:w-full flex items-center gap-3 px-4 py-3 rounded',
-                    'text-sm font-mono transition-all text-left',
+                    'shrink-0 md:w-full flex items-center gap-2 md:gap-3 px-3 py-2 md:px-4 md:py-3 rounded',
+                    'text-sm font-mono transition-all text-left whitespace-nowrap',
                     activeTab === tab.id
                       ? 'bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/30'
                       : 'text-text-muted hover:text-text-secondary hover:bg-abyss'
@@ -142,7 +149,7 @@ export function SettingsPage() {
             </div>
           </nav>
 
-          <div key={activeTab} className="flex-1 min-w-0 glass-panel p-6 animate-fade-up">
+          <div key={activeTab} className="flex-1 min-w-0 glass-panel p-4 sm:p-6 animate-fade-up">
             {activeTab === 'profile' && <ProfileTab {...tabProps} />}
             {activeTab === 'goals' && <GoalsTab {...tabProps} />}
             {activeTab === 'workout' && <WorkoutTab {...tabProps} />}

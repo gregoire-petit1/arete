@@ -26,6 +26,20 @@ export function CardioTab() {
   const [feedbackPending, setFeedbackPending] = useState(false);
   const [showManual, setShowManual] = useState(false);
 
+  // Shared by the FIT upload and the manual entry.
+  const requestFeedback = async (id: number) => {
+    setFeedback(null);
+    setFeedbackError(false);
+    setFeedbackPending(true);
+    try {
+      setFeedback(await tipsApi.getPostSession('cardio', id));
+    } catch {
+      setFeedbackError(true); // best-effort, but say so
+    } finally {
+      setFeedbackPending(false);
+    }
+  };
+
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       setRecentUploads((prev) => [{ filename: file.name, status: 'uploading' }, ...prev]);
@@ -37,26 +51,15 @@ export function CardioTab() {
     },
     onSuccess: async (result) => {
       setRecentUploads((prev) => [
-        { filename: result.filename || 'activity.fit', status: 'success', message: 'Uploaded' },
+        { filename: result.filename || 'activite.fit', status: 'success', message: 'Importé' },
         ...prev,
       ]);
       invalidateAfterSession(queryClient);
-      if (result.activity_id) {
-        setFeedback(null);
-        setFeedbackError(false);
-        setFeedbackPending(true);
-        try {
-          setFeedback(await tipsApi.getPostSession('cardio', result.activity_id));
-        } catch {
-          setFeedbackError(true); // best-effort, but say so
-        } finally {
-          setFeedbackPending(false);
-        }
-      }
+      if (result.activity_id) await requestFeedback(result.activity_id);
     },
     onError: (error) => {
       setRecentUploads((prev) => [
-        { filename: 'upload', status: 'error', message: readableError(error) },
+        { filename: 'import', status: 'error', message: readableError(error) },
         ...prev,
       ]);
     },
@@ -119,7 +122,11 @@ export function CardioTab() {
       )}
 
       <RecentSessions />
-      <ManualCardioModal open={showManual} onClose={() => setShowManual(false)} />
+      <ManualCardioModal
+        open={showManual}
+        onClose={() => setShowManual(false)}
+        onCreated={(id) => void requestFeedback(id)}
+      />
     </div>
   );
 }

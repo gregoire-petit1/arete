@@ -1,7 +1,8 @@
 """Personalized Banister model coefficient fitting.
 
-Fits athlete-specific k1/k2/baseline parameters from training history
-using cardiac efficiency (HR / speed) as the performance proxy.
+Fits athlete-specific k1/k2/baseline parameters from training history,
+with speed per heartbeat (the inverse of cardiac cost) as the performance
+proxy: Banister's performance rises with fitness and falls with fatigue.
 """
 
 from __future__ import annotations
@@ -52,6 +53,17 @@ def compute_efficiency(avg_hr: float, avg_speed_mps: float) -> float:
     return avg_hr / speed_kmh
 
 
+def compute_performance_proxy(avg_hr: float, avg_speed_mps: float) -> float:
+    """Metres per hour per beat per minute, x1000: higher = better.
+
+    ``1000 / compute_efficiency``: 12 km/h at 150 bpm gives 80. The Banister
+    equation (baseline + k1*CTL - k2*ATL) models a performance that fitness
+    raises and fatigue lowers; regressing the cardiac cost instead, which
+    fitness lowers, made both clamped coefficients 0 on real data.
+    """
+    return 1000.0 / compute_efficiency(avg_hr, avg_speed_mps)
+
+
 def _ridge(
     X: np.ndarray, y: np.ndarray, alpha: float
 ) -> tuple[np.ndarray, float, float]:
@@ -94,14 +106,14 @@ def fit_coefficients(sessions: list[dict]) -> dict | None:
         ]
     )
     y = np.array(
-        [compute_efficiency(s["avg_hr"], s["avg_speed_mps"]) for s in sessions]
+        [compute_performance_proxy(s["avg_hr"], s["avg_speed_mps"]) for s in sessions]
     )
 
     coef, intercept, r2 = _ridge(X, y, alpha=1.0)
 
-    # Model: efficiency = baseline + k1*CTL - k2*ATL
+    # Model: proxy = baseline + k1*CTL - k2*ATL (fitness helps, fatigue hurts)
     k1 = max(0.0, float(coef[0]))
-    k2 = max(0.0, -float(coef[1]))  # Negate: ATL should decrease efficiency
+    k2 = max(0.0, -float(coef[1]))
     baseline = float(intercept)
 
     return {

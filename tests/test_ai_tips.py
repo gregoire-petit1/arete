@@ -113,9 +113,13 @@ def _make_actual_session(
     calories=650,
     sport="running",
     duration_sec=3600,
+    start_time=None,
+    name="Footing",
 ):
     session = MagicMock()
     session.sport = sport
+    session.start_time = start_time
+    session.name = name
     session.duration_sec = duration_sec
     session.avg_hr = avg_hr
     session.max_hr = max_hr
@@ -146,6 +150,43 @@ class TestPostSessionCardio:
         assert "running" in data["feedback"].lower()
         assert any("bpm" in h for h in data["highlights"])
         assert any("/km" in h for h in data["highlights"])
+
+    @patch("arete.services.coaching_rules.GarminRepository")
+    def test_two_same_named_runs_of_a_day_get_two_journal_titles(self, mock_repo_cls):
+        from datetime import datetime
+
+        from arete.services.coaching_rules import _generate_cardio_feedback
+
+        repo = mock_repo_cls.return_value
+        titles = []
+        for hour in (7, 18, 18):
+            repo.get_actual_session.return_value = _make_actual_session(
+                start_time=datetime(2026, 10, 1, hour, 5)
+            )
+            titles.append(_generate_cardio_feedback(42)[1].title)
+        assert titles[0] != titles[1]  # morning and evening: two entries
+        assert titles[1] == titles[2]  # the same run twice: one entry
+        assert titles[0] == "running — Footing (07:05)"
+
+    @patch("arete.services.coaching_rules.GarminRepository")
+    def test_the_rule_feedback_says_tu(self, mock_repo_cls, client):
+        repo = mock_repo_cls.return_value
+        for session in (
+            _make_actual_session(
+                avg_hr=None,
+                max_hr=None,
+                avg_pace_sec_km=None,
+                distance_m=None,
+                calories=None,
+            ),
+            _make_actual_session(avg_hr=175, max_hr=190),
+        ):
+            repo.get_actual_session.return_value = session
+            data = client.post(
+                "/tips/post-session", json={"session_type": "cardio", "session_id": 1}
+            ).json()
+            text = " ".join([data["feedback"], *data["highlights"]])
+            assert "vous" not in text.lower() and "continuez" not in text.lower()
 
     @patch("arete.services.coaching_rules.GarminRepository")
     def test_cardio_not_found(self, mock_repo_cls, client):
@@ -187,6 +228,29 @@ class TestTipUsesSettings:
         tip, priority = generate_daily_tip(1.0, 0.0, 82.0, fatigue_threshold=75)
         assert "82/100" in tip and "75" in tip
         assert priority == "info"
+
+    def test_the_tip_names_where_the_readiness_comes_from(self):
+        from arete.services.coaching_rules import generate_daily_tip
+
+        garmin, _ = generate_daily_tip(
+            1.0, 0.0, 88.0, fatigue_threshold=85, readiness_source="garmin"
+        )
+        estimated, _ = generate_daily_tip(1.0, 0.0, 88.0, fatigue_threshold=85)
+        assert "Préparation Garmin à 88/100" in garmin
+        assert "Préparation estimée à 88/100" in estimated
+
+    def test_rule_facts_carry_the_garmin_readiness(self):
+        from unittest.mock import patch
+
+        from arete.services.coaching_rules import rule_facts
+        from arete.services.metrics import Readiness
+
+        day = date(2031, 3, 4)
+        readiness = Readiness(score=77.0, source="garmin", measured_on=day)
+        with patch("arete.services.metrics.load_form", return_value=(None, readiness)):
+            facts = rule_facts(day)
+        assert (facts.readiness_score, facts.readiness_source) == (77.0, "garmin")
+        assert facts.readiness_measured_on == day
 
     def test_readiness_below_threshold_falls_through(self):
         from arete.services.coaching_rules import generate_daily_tip

@@ -60,6 +60,74 @@ class ActivitySource(str, Enum):
     MANUAL = "manual"
 
 
+#: The sport names Arete stores. Garmin, Strava, FIT files, the planning page
+#: and the coach each spell sports their own way; matching a planned session
+#: to a realised one compares ``sport`` exactly, so every write path goes
+#: through :func:`canonical_sport`. The raw source type stays in
+#: ``session_type`` (trail runs keep ``trail_running`` / ``TrailRun`` there).
+CANONICAL_SPORTS: tuple[str, ...] = (
+    "running",
+    "cycling",
+    "swimming",
+    "strength",
+    "walking",
+    "hiking",
+    "rowing",
+    "yoga",
+    "other",
+)
+
+SPORT_ALIASES: dict[str, str] = {
+    # Running (Garmin typeKeys and lowercased Strava types)
+    "run": "running",
+    "trail_run": "running",
+    "trailrun": "running",
+    "trail_running": "running",
+    "treadmill_running": "running",
+    "track_running": "running",
+    "virtual_run": "running",
+    "virtualrun": "running",
+    # Cycling
+    "ride": "cycling",
+    "virtual_ride": "cycling",
+    "virtualride": "cycling",
+    "indoor_cycling": "cycling",
+    "road_biking": "cycling",
+    "mountain_biking": "cycling",
+    "mountainbikeride": "cycling",
+    "gravel_cycling": "cycling",
+    "gravelride": "cycling",
+    "ebikeride": "cycling",
+    # Swimming
+    "swim": "swimming",
+    "lap_swimming": "swimming",
+    "open_water_swimming": "swimming",
+    # Strength
+    "weight_training": "strength",
+    "weighttraining": "strength",
+    "strength_training": "strength",
+    "crossfit": "strength",
+    "training": "strength",
+    # Walking / hiking
+    "walk": "walking",
+    "hike": "hiking",
+    # Rowing
+    "indoor_rowing": "rowing",
+    # Everything Arete has no family for
+    "workout": "other",
+    "elliptical": "other",
+    "generic": "other",
+}
+
+
+def canonical_sport(raw: str | None) -> str:
+    """One spelling per sport, whatever the source called it."""
+    key = (raw or "").strip().lower()
+    if key in CANONICAL_SPORTS:
+        return key
+    return SPORT_ALIASES.get(key, "other")
+
+
 @dataclass
 class PlannedSession:
     """A planned training session."""
@@ -77,6 +145,10 @@ class PlannedSession:
     source: str = "manual"  # 'manual', 'llm', 'coach'
     status: SessionStatus = SessionStatus.PENDING
     created_at: datetime | None = None
+    structure_json: str | None = None  # explicit workout steps, see workout_structure
+    garmin_workout_id: str | None = None  # the copy scheduled on Garmin's calendar
+    garmin_schedule_id: str | None = None
+    garmin_pushed_at: datetime | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for DB insertion."""

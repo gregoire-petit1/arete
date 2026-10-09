@@ -232,6 +232,30 @@ class TestFitnessEndpoint:
         response = client.get("/metrics/fitness?days=5")
         assert response.status_code == 422
 
+    def test_every_surface_reads_one_form(self) -> None:
+        """/metrics/fitness, the dashboard bar and the Analytics chart agree."""
+        from arete.dataio.db import connect
+
+        con = connect()
+        con.execute(
+            "INSERT INTO app.actual_sessions (user_id, date, sport, duration_sec, rpe, source)"
+            " SELECT 1, CURRENT_DATE - CAST(i AS INTEGER), 'running', 3600, 6, 'test-one'"
+            " FROM range(1, 150) t(i) WHERE i % 3 <> 0"
+        )
+        con.close()
+        try:
+            fitness = client.get("/metrics/fitness").json()
+            stats = client.get("/metrics/player-stats").json()
+            pmc = client.get("/analytics/overview?period=7d").json()["cards"]["pmc"]
+        finally:
+            con = connect()
+            con.execute("DELETE FROM app.actual_sessions WHERE source = 'test-one'")
+            con.close()
+        assert fitness["readiness_source"] in ("garmin", "model")
+        assert fitness["ctl"] == pmc["headline"]["value"]
+        assert fitness["tsb"] == pmc["secondary"][0]["value"]
+        assert stats["mp"]["detail"] == f"TSB {fitness['tsb']:+.1f}"
+
 
 class TestRecommendationsEndpoint:
     """Tests for GET /metrics/recommendations."""
@@ -403,7 +427,19 @@ class TestPlayerStatsSemantics:
         def counting_connect(*args, **kwargs):
             return statement_log.wrap(db.connect(*args, **kwargs))
 
-        for module in (metrics, settings, banister, readiness):
-            monkeypatch.setattr(module, "connect", counting_connect)
-        metrics.get_player_stats()
+        # One loaded day, so the model runs and reads the Banister coefficients.
+        con = db.connect()
+        con.execute(
+            "INSERT INTO app.actual_sessions (user_id, date, sport, duration_sec, rpe, source)"
+            " VALUES (1, CURRENT_DATE - 3, 'running', 3600, 6, 'test-count')"
+        )
+        con.close()
+        try:
+            for module in (metrics, settings, banister, readiness):
+                monkeypatch.setattr(module, "connect", counting_connect)
+            metrics.get_player_stats()
+        finally:
+            con = db.connect()
+            con.execute("DELETE FROM app.actual_sessions WHERE source = 'test-count'")
+            con.close()
         assert len(statement_log) == 4

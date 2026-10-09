@@ -178,7 +178,9 @@ def callback(code: str, scope: str = ""):
 
     # Redirect back to the frontend Settings page after successful OAuth
     frontend_url = config.frontend_url
-    return RedirectResponse(url=f"{frontend_url}/settings?strava=connected")
+    return RedirectResponse(
+        url=f"{frontend_url}/settings?tab=connections&strava=connected"
+    )
 
 
 @router.post("/sync")
@@ -248,7 +250,7 @@ def sync(body: SyncRequest | None = None):
                 merged += 1
             else:
                 actual_id = repo.create_actual_session(session)
-                auto_match(repo, actual_id, session)
+                auto_match(repo, actual_id, session, zone_model)
                 imported += 1
 
             # Rate limiting: pause briefly between detail calls

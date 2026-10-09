@@ -29,3 +29,7 @@ def test_shared_and_mission_prompts_name_no_tool(prompt):
     # The core reaches tool-less missions; a tool named there is one they lack.
     for tool in ("get_page_context", "append_journal", "read_file", "get_workload"):
         assert tool not in prompt
+
+
+def test_briefing_prompt_tells_the_model_not_to_contradict_the_decision():
+    assert "ne la contredis pas" in BRIEFING_PROMPT

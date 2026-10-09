@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from arete.features.hr_zones import ZoneModel
 from arete.garmin.models import (
     ActualSession,
     MatchConfidence,
@@ -46,13 +47,18 @@ class SessionMatcher:
     3. Return best match with confidence level
     """
 
-    def __init__(self, config: MatchingConfig | None = None):
+    def __init__(
+        self, config: MatchingConfig | None = None, zones: ZoneModel | None = None
+    ):
         """Initialize matcher.
 
         Args:
             config: Matching configuration. Uses defaults if None.
+            zones: The athlete's HR zones, which a planned "Z2" refers to.
+                Defaults to the max-HR model, for callers without settings.
         """
         self.config = config or MatchingConfig()
+        self.zones = zones or ZoneModel.from_reference()
 
     def find_match(
         self,
@@ -223,26 +229,12 @@ class SessionMatcher:
         if not actual.avg_hr or not planned.target_hr_zone:
             return None
 
-        # Map zones to typical HR percentages
-        zone_to_hr_pct = {
-            "Z1": 0.55,
-            "Z2": 0.65,
-            "Z3": 0.75,
-            "Z4": 0.85,
-            "Z5": 0.95,
-        }
-
         planned_zone = planned.target_hr_zone.upper()
-        if planned_zone not in zone_to_hr_pct:
+        if planned_zone not in ("Z1", "Z2", "Z3", "Z4", "Z5"):
             return None
 
-        # TODO: HR max should come from user profile, not hardcoded
-        # Hardcoded value can significantly skew intensity calculations
-        hr_max = 190
-        actual_hr_pct = actual.avg_hr / hr_max
-        planned_hr_pct = zone_to_hr_pct[planned_zone]
-
-        return (actual_hr_pct - planned_hr_pct) / planned_hr_pct
+        target_hr = _zone_midpoint(self.zones, int(planned_zone[1]) - 1)
+        return (actual.avg_hr - target_hr) / target_hr
 
     def _score_to_confidence(self, score: float) -> MatchConfidence:
         """Convert match score to confidence level."""
@@ -266,3 +258,9 @@ class SessionMatcher:
         ]
 
         return any(type1 in group and type2 in group for group in similar_groups)
+
+
+def _zone_midpoint(zones: ZoneModel, index: int) -> float:
+    """Middle heart rate of zone ``index`` (0-4) in the athlete's model."""
+    low, high = zones.target_range(index + 1)
+    return (low + high + 1) / 2

@@ -14,6 +14,54 @@ from arete.garmin.models import (
     SessionType,
 )
 
+PLANNED_COLUMNS = (
+    "id, user_id, date, sport, session_type, target_duration_min, "
+    "target_distance_km, target_hr_zone, target_intensity, description, source, "
+    "status, created_at, structure_json, garmin_workout_id, garmin_schedule_id, "
+    "garmin_pushed_at"
+)
+
+#: What a plan edit (coach, daily adaptation, Garmin push) may overwrite.
+PLANNED_EDITABLE = frozenset(
+    {
+        "date",
+        "sport",
+        "session_type",
+        "target_duration_min",
+        "target_distance_km",
+        "target_hr_zone",
+        "target_intensity",
+        "description",
+        "status",
+        "structure_json",
+        "garmin_workout_id",
+        "garmin_schedule_id",
+        "garmin_pushed_at",
+    }
+)
+
+
+def _planned_from_row(row: tuple) -> PlannedSession:
+    return PlannedSession(
+        id=row[0],
+        user_id=row[1],
+        date=row[2],
+        sport=row[3],
+        session_type=SessionType(row[4]) if row[4] else SessionType.ENDURANCE,
+        target_duration_min=row[5],
+        target_distance_km=row[6],
+        target_hr_zone=row[7],
+        target_intensity=row[8],
+        description=row[9],
+        source=row[10],
+        status=SessionStatus(row[11]) if row[11] else SessionStatus.PENDING,
+        created_at=row[12],
+        structure_json=row[13],
+        garmin_workout_id=row[14],
+        garmin_schedule_id=row[15],
+        garmin_pushed_at=row[16],
+    )
+
 
 class GarminRepository:
     """Repository for planned and actual sessions CRUD operations."""
@@ -76,10 +124,8 @@ class GarminRepository:
         """Get a planned session by ID."""
         conn = self._get_connection()
         result = conn.execute(
-            """
-            SELECT id, user_id, date, sport, session_type, target_duration_min,
-                   target_distance_km, target_hr_zone, target_intensity,
-                   description, source, status, created_at
+            f"""
+            SELECT {PLANNED_COLUMNS}
             FROM planned_sessions WHERE id = ?
             """,
             [session_id],
@@ -89,21 +135,7 @@ class GarminRepository:
         if not result:
             return None
 
-        return PlannedSession(
-            id=result[0],
-            user_id=result[1],
-            date=result[2],
-            sport=result[3],
-            session_type=SessionType(result[4]) if result[4] else SessionType.ENDURANCE,
-            target_duration_min=result[5],
-            target_distance_km=result[6],
-            target_hr_zone=result[7],
-            target_intensity=result[8],
-            description=result[9],
-            source=result[10],
-            status=SessionStatus(result[11]) if result[11] else SessionStatus.PENDING,
-            created_at=result[12],
-        )
+        return _planned_from_row(result)
 
     def list_planned_sessions(
         self,
@@ -111,14 +143,17 @@ class GarminRepository:
         end_date: date | None = None,
         status: SessionStatus | None = None,
         limit: int = 50,
+        ascending: bool = False,
     ) -> list[PlannedSession]:
-        """List planned sessions with optional date filter."""
+        """List planned sessions with optional date filter.
+
+        Newest first by default (the HTTP list); ``ascending`` returns the
+        earliest first, so a limit keeps the sessions closest to the start.
+        """
         conn = self._get_connection()
 
-        query = """
-            SELECT id, user_id, date, sport, session_type, target_duration_min,
-                   target_distance_km, target_hr_zone, target_intensity,
-                   description, source, status, created_at
+        query = f"""
+            SELECT {PLANNED_COLUMNS}
             FROM planned_sessions WHERE 1=1
         """
         params: list = []
@@ -133,30 +168,14 @@ class GarminRepository:
             query += " AND status = ?"
             params.append(status.value)
 
-        query += " ORDER BY date DESC LIMIT ?"
+        order = "ASC" if ascending else "DESC"
+        query += f" ORDER BY date {order}, id {order} LIMIT ?"
         params.append(limit)
 
         results = conn.execute(query, params).fetchall()
         conn.close()
 
-        return [
-            PlannedSession(
-                id=row[0],
-                user_id=row[1],
-                date=row[2],
-                sport=row[3],
-                session_type=SessionType(row[4]) if row[4] else SessionType.ENDURANCE,
-                target_duration_min=row[5],
-                target_distance_km=row[6],
-                target_hr_zone=row[7],
-                target_intensity=row[8],
-                description=row[9],
-                source=row[10],
-                status=SessionStatus(row[11]) if row[11] else SessionStatus.PENDING,
-                created_at=row[12],
-            )
-            for row in results
-        ]
+        return [_planned_from_row(row) for row in results]
 
     def update_planned_session_status(
         self, session_id: int, status: SessionStatus
@@ -168,6 +187,28 @@ class GarminRepository:
             [status.value, session_id],
         ).fetchone()
         conn.close()
+        return result is not None
+
+    def update_planned_session_fields(self, session_id: int, **fields: Any) -> bool:
+        """Overwrite some fields of a planned session (whitelisted columns)."""
+        unknown = set(fields) - PLANNED_EDITABLE
+        if unknown:
+            raise ValueError(f"Not editable on a planned session: {sorted(unknown)}")
+        if not fields:
+            return self.get_planned_session(session_id) is not None
+        values = [
+            v.value if isinstance(v, SessionType | SessionStatus) else v
+            for v in fields.values()
+        ]
+        conn = self._get_connection()
+        try:
+            result = conn.execute(
+                f"UPDATE planned_sessions SET {', '.join(f'{k} = ?' for k in fields)} "
+                "WHERE id = ? RETURNING id",
+                [*values, session_id],
+            ).fetchone()
+        finally:
+            conn.close()
         return result is not None
 
     def delete_planned_session(self, session_id: int) -> bool:
@@ -531,6 +572,23 @@ class GarminRepository:
         result = conn.execute("SELECT COUNT(*) FROM actual_sessions").fetchone()
         conn.close()
         return int(result[0]) if result else 0
+
+    def last_garmin_import(self) -> tuple[date | None, datetime | None]:
+        """(date of the newest Garmin activity, when it was imported).
+
+        Garmin rows only: a newer Strava or manual session must not move the
+        next Garmin sync's start past activities it has not fetched yet.
+        """
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                "SELECT MAX(date), MAX(created_at) FROM actual_sessions "
+                "WHERE source = ?",
+                [ActivitySource.GARMIN_CONNECT.value],
+            ).fetchone()
+        finally:
+            conn.close()
+        return (row[0], row[1]) if row else (None, None)
 
     # ─────────────────────────────────────────────────────────────────────
     # Matching Operations

@@ -157,19 +157,21 @@ def get_training_advice(sport_type: str = "mixed") -> str:
 
 @tool
 def get_personal_records(sport: str = "running") -> str:
-    """All-time best efforts, from 400m to 50K (400m, 1/2 mile, 1K, 1 mile,
-    2 mile, 5K, 10K, 15K, 10 mile, 20K, half-marathon, 30K, marathon, 50K),
-    ordered by distance, with the date and session of each.
+    """Personal records (best efforts) are not available to the coach: they
+    come from Strava, whose data may not reach an AI. Call it to tell the
+    athlete where to find them (the Analytics page).
 
     Args:
         sport: Sport group, e.g. running or cycling (default running).
     """
-    try:
-        from arete.services.analytics import get_records
-
-        return _out(get_records(sport=sport))
-    except Exception as exc:
-        return _error(f"{type(exc).__name__}: {exc}")
+    # Best efforts are imported from Strava, whose data may not reach a model.
+    return _out(
+        {
+            "records": [],
+            "unavailable": "Les records viennent de Strava, dont les données ne "
+            "peuvent pas être transmises au coach. Ils sont sur la page Analyses.",
+        }
+    )
 
 
 @tool
@@ -190,7 +192,7 @@ def list_recent_sessions(limit: int = 20, offset: int = 0) -> str:
     try:
         from arete.services.analytics import list_sessions
 
-        return _out(list_sessions(limit=limit, offset=offset))
+        return _out(list_sessions(limit=limit, offset=offset, for_model=True))
     except Exception as exc:
         return _error(f"{type(exc).__name__}: {exc}")
 

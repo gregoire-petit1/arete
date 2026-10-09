@@ -31,7 +31,8 @@ class TestStravaToActualSession:
         session = strava_activity_to_actual_session(SAMPLE_ACTIVITY)
         assert session.source == ActivitySource.STRAVA
         assert session.garmin_activity_id == "123456789"
-        assert session.sport == "run"
+        assert session.sport == "running"
+        assert session.session_type == "Run"
         assert session.duration_sec == 3600
         assert session.distance_m == 10000.0
 
@@ -83,17 +84,23 @@ class TestStravaToActualSession:
 
     def test_sport_type_mapping(self):
         for strava_type, expected in [
-            ("Run", "run"),
-            ("TrailRun", "trail_run"),
-            ("Ride", "ride"),
-            ("Swim", "swim"),
-            ("Hike", "hike"),
-            ("Walk", "walk"),
-            ("WeightTraining", "weight_training"),
+            ("Run", "running"),
+            ("TrailRun", "running"),
+            ("VirtualRun", "running"),
+            ("Ride", "cycling"),
+            ("VirtualRide", "cycling"),
+            ("Swim", "swimming"),
+            ("Hike", "hiking"),
+            ("Walk", "walking"),
+            ("WeightTraining", "strength"),
+            ("Yoga", "yoga"),
+            ("Kitesurf", "other"),
         ]:
             activity = {**SAMPLE_ACTIVITY, "type": strava_type}
             session = strava_activity_to_actual_session(activity)
             assert session.sport == expected, f"{strava_type} -> {session.sport}"
+            # The source's own type survives, so trail runs stay recognisable.
+            assert session.session_type == strava_type
 
 
 def test_maps_detail_fields():

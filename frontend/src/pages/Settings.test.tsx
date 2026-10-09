@@ -2,6 +2,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { SettingsProvider } from '@/contexts/SettingsContext';
 import { settingsApi } from '@/lib/api';
 import { initializeTheme } from '@/lib/theme';
@@ -25,13 +26,17 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function openAppearance() {
+function openAppearance(path = '/settings') {
   const view = render(
     <QueryClientProvider client={client}>
-      <SettingsProvider><SettingsPage /></SettingsProvider>
+      <MemoryRouter initialEntries={[path]}>
+        <SettingsProvider><SettingsPage /></SettingsProvider>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
-  fireEvent.click(screen.getByRole('button', { name: 'APPARENCE' }));
+  if (path === '/settings') {
+    fireEvent.click(screen.getByRole('button', { name: 'APPARENCE' }));
+  }
   fireEvent.click(screen.getByRole('button', { name: 'CLAIR' }));
   return view;
 }
@@ -44,6 +49,16 @@ it('previews light immediately and restores the saved theme on exit', () => {
   view.unmount();
   expect(document.documentElement.dataset.theme).toBe('dark');
   initializeTheme();
+  expect(document.documentElement.dataset.theme).toBe('dark');
+});
+
+it('opens the appearance deep link and keeps the preview while switching tabs', () => {
+  const view = openAppearance('/settings?tab=appearance');
+  fireEvent.click(screen.getByRole('button', { name: 'PROFIL' }));
+  expect(document.documentElement.dataset.theme).toBe('light');
+  fireEvent.click(screen.getByRole('button', { name: 'APPARENCE' }));
+  expect(screen.getByRole('button', { name: 'CLAIR' }).getAttribute('aria-pressed')).toBe('true');
+  view.unmount();
   expect(document.documentElement.dataset.theme).toBe('dark');
 });
 

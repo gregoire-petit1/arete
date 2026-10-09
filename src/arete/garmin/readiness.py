@@ -104,14 +104,15 @@ def _baseline_stats(rows: Sequence[tuple]) -> dict | None:
 def fetch_window(
     con: duckdb.DuckDBPyConnection, end: date, days: int = BASELINE_DAYS + 1
 ) -> list[tuple]:
-    """(date, hrv, sleep, bb, stress, rhr) rows from ``end - days`` to ``end``.
+    """(date, hrv, sleep, bb, stress, rhr, Garmin Training Readiness) rows
+    from ``end - days`` to ``end``.
 
     The default covers ``end`` and the day before, each with its baseline.
     """
     return con.execute(
         """
         SELECT date, hrv_last_night, sleep_duration_sec, body_battery_high,
-               stress_avg, resting_hr
+               stress_avg, resting_hr, training_readiness_score
         FROM app.daily_metrics
         WHERE user_id = 1 AND date >= ? AND date <= ?
         """,
@@ -121,13 +122,25 @@ def fetch_window(
 
 def readiness_from_rows(target_date: date, rows: Sequence[tuple]) -> int | None:
     """``compute_readiness`` over rows already read by ``fetch_window``."""
-    day_row = next((r[1:] for r in rows if r[0] == target_date), None)
+    width = len(_DAY_FIELDS) + 1
+    day_row = next((r[1:width] for r in rows if r[0] == target_date), None)
     start = target_date - timedelta(days=BASELINE_DAYS)
     baseline_rows = [
-        r[1:] for r in rows if start <= r[0] < target_date and r[1] is not None
+        r[1:width] for r in rows if start <= r[0] < target_date and r[1] is not None
     ]
     day = dict(zip(_DAY_FIELDS, day_row, strict=True)) if day_row else None
     return _score(day, _baseline_stats(baseline_rows))
+
+
+def training_readiness_from_rows(
+    target_date: date, rows: Sequence[tuple]
+) -> int | None:
+    """Garmin's own morning Training Readiness for that day, from ``fetch_window``."""
+    width = len(_DAY_FIELDS) + 1
+    for r in rows:
+        if r[0] == target_date and len(r) > width and r[width] is not None:
+            return int(r[width])
+    return None
 
 
 def compute_readiness(

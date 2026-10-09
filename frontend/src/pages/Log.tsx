@@ -35,10 +35,8 @@ export function LogPage() {
     queryFn: () => strengthApi.getMuscleStats(MUSCLE_WINDOW_DAYS),
   });
 
-  const sessionsQuery = useQuery({
-    ...strengthSessionsQuery,
-    select: (data) => data.slice(0, 10),
-  });
+  // The whole list: the weekly volume needs every session of the week, the list shows 5.
+  const sessionsQuery = useQuery(strengthSessionsQuery);
 
   const deleteSessionMutation = useMutation({
     mutationFn: (sessionId: number) => strengthApi.deleteSession(sessionId),

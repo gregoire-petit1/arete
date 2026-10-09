@@ -78,6 +78,7 @@ def is_due(hour: int, now: datetime, last_run: date | None) -> bool:
 def daily_sync() -> dict[str, str]:
     """Run every configured sync once. Returns a short status per source."""
     status: dict[str, str] = {}
+    imported = 0  # new sessions from any source, for the notification
 
     from arete.garmin.client import GarminClient
 
@@ -89,6 +90,7 @@ def daily_sync() -> dict[str, str]:
 
         try:
             result = GarminSyncClient(client=garmin).sync_activities(download_fit=True)
+            imported += result.activities_synced
             status["garmin_activities"] = (
                 f"{result.activities_synced} synced, {len(result.errors)} errors"
             )
@@ -105,17 +107,39 @@ def daily_sync() -> dict[str, str]:
     else:
         status["garmin"] = "no tokens"
 
+    # After the health data, before the briefing that explains it. Runs without
+    # Garmin too: the readiness then comes from the load model.
+    try:
+        from arete.services.plan_adaptation import adapt_today
+
+        decisions = adapt_today(respect_setting=True)
+        kinds = ", ".join(sorted({d.decision for d in decisions})) or "none"
+        status["plan"] = f"{len(decisions)} decisions ({kinds})"
+    except Exception as e:  # noqa: BLE001 - background job must not die
+        status["plan"] = f"failed: {e}"
+
+    # After the decisions, so a session they changed goes out changed.
+    if garmin.has_tokens():
+        from arete.services.plan_adaptation import push_today
+
+        status["garmin_push"] = push_today(garmin)
+
     from arete.api.strava import SyncRequest, _get_strava_tokens, sync
 
     if _get_strava_tokens():
         try:
             result = sync(SyncRequest(days=7))
+            imported += int(result["imported"])
             status["strava"] = f"{result['imported']} imported"
         except Exception as e:  # noqa: BLE001
             status["strava"] = f"failed: {e}"
     else:
         status["strava"] = "not connected"
 
+    if imported:
+        from arete.services.notifications import notify
+
+        notify("Arete", f"{imported} séance(s) importée(s)", "/log?tab=cardio")
     logger.info("Daily sync: %s", status)
     _last_status.clear()
     _last_status.update(status)
@@ -131,15 +155,25 @@ def write_daily_briefing() -> str:
     """
     from arete.coaching import generate_briefing
     from arete.services.briefing import briefing_enabled
+    from arete.services.coaching_repository import BriefingRepository
 
     if not briefing_enabled():
         return "disabled"
+    # A briefing the dashboard asked for before the sync is rewritten: it was
+    # read off last night's missing data. One this job already wrote (a cron
+    # that fires twice) is kept: the second run would pay for the same text.
+    existing = BriefingRepository().get_for_day(date.today())
+    if existing is not None and existing.trigger == "scheduler":
+        return existing.source
     try:
         briefing = generate_briefing(trigger="scheduler")
     except Exception as e:  # noqa: BLE001 - background job must not die
         logger.warning("Daily briefing failed: %s", e)
         return f"failed: {e}"
     logger.info("Daily briefing: %s", briefing.source)
+    from arete.services.notifications import first_sentence, notify
+
+    notify("Briefing du coach", first_sentence(briefing.text), "/")
     return briefing.source
 
 

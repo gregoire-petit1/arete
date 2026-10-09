@@ -1,30 +1,23 @@
 import { clsx, type ClassValue } from "clsx";
+import type { ZoneKind } from "./fr";
 
 export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
-// Zone color mapping
-export function getZoneColor(
-  zone?: string
-): "green" | "orange" | "red" | "cyan" {
-  switch (zone) {
-    case "optimal":
-    case "fresh":
-    case "high":
-      return "green";
-    case "high_risk":
-    case "grey":
-    case "moderate":
-      return "orange";
-    case "danger":
-    case "fatigued":
-    case "exhausted":
-    case "low":
-      return "red";
-    default:
-      return "cyan";
-  }
+export type ZoneColor = "green" | "orange" | "red" | "cyan";
+
+const ZONE_COLOR: Record<ZoneKind, Record<string, ZoneColor>> = {
+  acwr: { undertrained: "cyan", optimal: "green", caution: "orange", danger: "red" },
+  form: { freshest: "cyan", fresh: "green", neutral: "green", tired: "orange", exhausted: "red" },
+  readiness: { optimal: "green", good: "green", moderate: "orange", low: "red", critical: "red" },
+  monotony: { ideal: "green", acceptable: "orange", high: "red" },
+  strain: { low: "cyan", optimal: "green", high: "orange", critical: "red" },
+};
+
+// Zone color mapping; unknown or missing zones stay neutral cyan.
+export function getZoneColor(kind: ZoneKind, zone?: string | null): ZoneColor {
+  return (zone && ZONE_COLOR[kind][zone]) || "cyan";
 }
 
 // Format duration from seconds to human readable ("1h 5m", "12m 30s")
