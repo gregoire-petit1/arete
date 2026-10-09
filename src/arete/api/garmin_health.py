@@ -55,6 +55,18 @@ class DailyMetricsResponse(BaseModel):
     readiness_score: int | None = None
     source: str | None = None
     fetched_at: str | None = None
+    # Garmin's own training metrics
+    training_readiness_score: int | None = None
+    training_readiness_level: str | None = None
+    training_readiness_feedback: str | None = None
+    training_status: str | None = None
+    vo2max_run: float | None = None
+    race_5k_sec: int | None = None
+    race_10k_sec: int | None = None
+    race_half_sec: int | None = None
+    race_marathon_sec: int | None = None
+    endurance_score: int | None = None
+    hill_score: int | None = None
 
 
 @router.post("/sync", response_model=SyncResultResponse)
@@ -111,7 +123,11 @@ def get_daily_metrics(
                    body_battery_charged, body_battery_drained,
                    body_battery_high, body_battery_low,
                    resting_hr, stress_avg, stress_max, steps, intensity_minutes,
-                   readiness_score, source, fetched_at
+                   readiness_score, source, fetched_at,
+                   training_readiness_score, training_readiness_level,
+                   training_readiness_feedback, training_status, vo2max_run,
+                   race_5k_sec, race_10k_sec, race_half_sec, race_marathon_sec,
+                   endurance_score, hill_score
             FROM app.daily_metrics
             WHERE user_id = 1 AND date = ?
             """,
@@ -154,6 +170,17 @@ def get_daily_metrics(
         readiness_score=row[19],
         source=row[20],
         fetched_at=_to_str(row[21]),
+        training_readiness_score=row[22],
+        training_readiness_level=row[23],
+        training_readiness_feedback=row[24],
+        training_status=row[25],
+        vo2max_run=row[26],
+        race_5k_sec=row[27],
+        race_10k_sec=row[28],
+        race_half_sec=row[29],
+        race_marathon_sec=row[30],
+        endurance_score=row[31],
+        hill_score=row[32],
     )
 
 

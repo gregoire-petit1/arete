@@ -109,3 +109,22 @@ def test_sport_names_are_canonicalised_once(tmp_path, monkeypatch):
     assert actual == ["running", "cycling", "walking", "running", "running"]
     assert planned == "running"
     assert latest == init_duckdb.MIGRATIONS[-1][0]
+
+
+def test_m10_adds_performance_columns_to_a_legacy_table(tmp_path, monkeypatch):
+    path = tmp_path / "perf.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = duckdb.connect(str(path))
+    for name in init_duckdb.GARMIN_PERFORMANCE_COLUMNS:
+        con.execute(f"ALTER TABLE app.daily_metrics DROP COLUMN {name}")
+    con.execute("DELETE FROM app.schema_version WHERE version >= 10")
+    con.close()
+
+    init_duckdb.main()
+    init_duckdb.main()
+
+    con = duckdb.connect(str(path), read_only=True)
+    cols = {r[0] for r in con.execute("DESCRIBE app.daily_metrics").fetchall()}
+    con.close()
+    assert set(init_duckdb.GARMIN_PERFORMANCE_COLUMNS) <= cols
