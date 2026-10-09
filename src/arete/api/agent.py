@@ -89,6 +89,7 @@ class ChatMessageOut(BaseModel):
 
 class ChatResponse(BaseModel):
     message: ChatMessageOut
+    suggestion: str | None = Field(default=None, max_length=300)
     imports: list[dict] = Field(default_factory=list)
 
 
@@ -126,7 +127,7 @@ def _panel_context_source(request: ChatRequest) -> dict[str, str]:
 
 
 def _to_agent_context(
-    source: dict[str, str], thread_id: UUID | None = None
+    source: dict[str, str], thread_id: UUID | None = None, *, suggest_reply: bool
 ) -> AgentContext:
     """Coerce the raw source dict into the declared context schema.
 
@@ -134,7 +135,11 @@ def _to_agent_context(
     passed at invoke time (verified: ``request.runtime.context`` arrives as
     ``None``), so the router builds the dataclass itself.
     """
-    return AgentContext(source=source, thread_id=str(thread_id) if thread_id else None)
+    return AgentContext(
+        source=source,
+        thread_id=str(thread_id) if thread_id else None,
+        suggest_reply=suggest_reply,
+    )
 
 
 def _document_state(context: AgentContext) -> tuple[dict, dict[str, int]]:
@@ -191,7 +196,7 @@ async def chat(body: ChatRequest) -> ChatResponse:
     source = _panel_context_source(body)
     from anyio import to_thread
 
-    context = _to_agent_context(source, body.thread_id)
+    context = _to_agent_context(source, body.thread_id, suggest_reply=True)
     context.document_ids = (
         tuple(str(i) for i in body.document_ids)
         if body.document_ids is not None
@@ -223,6 +228,7 @@ async def chat(body: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=502, detail="Agent returned no messages")
     final = messages[-1]
     return ChatResponse(
+        suggestion=result.get("suggestion"),
         imports=await to_thread.run_sync(_changed_imports, context, previous),
         message=ChatMessageOut(
             role="assistant",
@@ -233,6 +239,10 @@ async def chat(body: ChatRequest) -> ChatResponse:
 
 class StreamRequest(ChatRequest):
     """Body of POST /agent/chat/stream — same contract, SSE response."""
+
+    # Cached clients reject unknown SSE events; only spend a model call when
+    # the caller can consume the optional draft.
+    supports_suggestions: bool = Field(default=False, strict=True)
 
 
 def _sse(event: dict) -> str:
@@ -255,7 +265,11 @@ async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
     try:
         graph = get_agent()
         history = [_to_langchain(m.role, m.content) for m in body.messages]
-        context = _to_agent_context(_panel_context_source(body), body.thread_id)
+        context = _to_agent_context(
+            _panel_context_source(body),
+            body.thread_id,
+            suggest_reply=body.supports_suggestions,
+        )
         context.document_ids = (
             tuple(str(i) for i in body.document_ids)
             if body.document_ids is not None

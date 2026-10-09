@@ -421,3 +421,166 @@ export interface CardioSession {
 export interface CardioSessionsResponse {
   sessions: CardioSession[];
 }
+
+// ========================= //
+// RACE GOALS AND PLAN       //
+// ========================= //
+
+export type GoalPriority = "A" | "B" | "C";
+export type GoalStatus = "active" | "done" | "cancelled";
+
+/** A goal race the plan is built towards (GET /goals). */
+export interface Goal {
+  id: number;
+  name: string;
+  race_date: string;
+  distance_km: number;
+  target_time_sec: number | null;
+  priority: GoalPriority;
+  status: GoalStatus;
+  /** Days until race day, from the server's today. */
+  days_left: number;
+  created_at: string | null;
+}
+
+export interface GoalCreate {
+  name: string;
+  race_date: string;
+  distance_km: number;
+  target_time_sec?: number | null;
+  priority: GoalPriority;
+}
+
+export type PlanPhase = "base" | "build" | "specific" | "taper" | "race";
+
+export interface PlanSessionDraft {
+  date: string;
+  session_type: string;
+  duration_min: number | null;
+  hr_zone: string | null;
+  intensity: string | null;
+  description: string;
+  distance_km: number | null;
+}
+
+export interface PlanWeek {
+  /** Monday of the week. */
+  start: string;
+  phase: PlanPhase;
+  minutes: number;
+  recovery: boolean;
+  sessions: PlanSessionDraft[];
+}
+
+/** POST /goals/{id}/plan/preview: the plan as it would be written. */
+export interface PlanPreview {
+  goal: Goal;
+  inputs: {
+    weekly_minutes_now: number;
+    sessions_per_week: number;
+    /** Monday is 0. */
+    rest_days: number[];
+    vdot: number | null;
+  };
+  weeks: PlanWeek[];
+}
+
+export interface PlanWriteResult {
+  created: number;
+  replaced: number;
+  skipped_days: string[];
+  weeks: PlanWeek[];
+}
+
+export interface ProjectionPoint {
+  date: string;
+  ctl: number;
+  atl: number;
+  tsb: number;
+  tss: number;
+  /** True from the first day whose load comes from the plan. */
+  planned: boolean;
+}
+
+/** GET /goals/{id}/projection: fitness and form until race day. */
+export interface GoalProjection {
+  goal: Goal;
+  series: ProjectionPoint[];
+  race_day: { ctl: number | null; tsb: number | null };
+  peak_ctl: number | null;
+  planned_sessions: number;
+}
+
+// ========================= //
+// TRAINING PACES            //
+// ========================= //
+
+export type RaceKey = "5k" | "10k" | "half" | "marathon";
+
+/** GET /metrics/paces: Daniels paces in seconds per km, equivalents in seconds. */
+export interface TrainingPaces {
+  vdot: number | null;
+  source: "garmin_prediction" | "threshold_pace" | null;
+  paces: {
+    vdot: number;
+    /** [slow, fast] */
+    easy: [number, number];
+    marathon: number;
+    threshold: number;
+    interval: number;
+    repetition: number;
+  } | null;
+  equivalents: Record<RaceKey, number> | null;
+  /** French sentence when there is no VDOT. */
+  reason: string | null;
+}
+
+// ========================= //
+// ATHLETE FACTS             //
+// ========================= //
+
+export type FactKind = "injury" | "constraint" | "preference" | "goal" | "other";
+
+/** A durable fact the coach keeps about the athlete (GET /athlete-facts). */
+export interface AthleteFact {
+  id: number;
+  kind: FactKind;
+  /** At most 300 characters. */
+  text: string;
+  since: string;
+  status: "active" | "resolved";
+  source: "coach" | "athlete";
+  updated_at: string | null;
+}
+
+// ========================= //
+// WEEKLY REVIEW             //
+// ========================= //
+
+export interface ReviewProposal {
+  index: number;
+  planned_session_id: number;
+  date: string;
+  /** What is planned now, in French. */
+  session: string;
+  change: Record<string, unknown>;
+  before: Record<string, unknown>;
+  reason: string;
+}
+
+/** Last week's review and its proposals for the days ahead (GET /plan/review). */
+export interface WeeklyReview {
+  id: number;
+  week_start: string;
+  text: string;
+  source: "agent" | "rules";
+  proposals: ReviewProposal[];
+  applied: number[];
+  created_at: string | null;
+  applied_at: string | null;
+}
+
+export interface ReviewApplyResult {
+  applied: number[];
+  stale: number[];
+}

@@ -261,15 +261,48 @@ def test_callback_lands_on_the_connections_tab(router_client):
         "expires_at": 9999999999,
         "athlete": {"id": 42, "firstname": "Greg"},
     }
+    from arete.api import strava
+    from arete.services import oauth_state
+
+    state = oauth_state.issue(strava._state_secret())
     with (
         patch("arete.api.strava._get_strava_client", return_value=client),
         patch("arete.api.strava._save_strava_tokens") as save,
     ):
         resp = router_client(router).get(
-            "/strava/callback?code=abc", follow_redirects=False
+            f"/strava/callback?code=abc&state={state}", follow_redirects=False
         )
     assert resp.status_code in (302, 307)
     assert resp.headers["location"].endswith(
         "/settings?tab=connections&strava=connected"
     )
     save.assert_called_once()
+
+
+def test_callback_without_our_state_stores_nothing(router_client):
+    client = MagicMock()
+    with (
+        patch("arete.api.strava._get_strava_client", return_value=client),
+        patch("arete.api.strava._save_strava_tokens") as save,
+    ):
+        missing = router_client(router).get("/strava/callback?code=abc")
+        forged = router_client(router).get("/strava/callback?code=abc&state=1.2.3")
+    assert missing.status_code == 400 and forged.status_code == 400
+    client.exchange_code.assert_not_called()
+    save.assert_not_called()
+
+
+def test_authorize_url_carries_a_signed_state(router_client):
+    from urllib.parse import parse_qs, urlparse
+
+    from arete.api import strava
+    from arete.services import oauth_state
+
+    client = MagicMock()
+    client.get_authorize_url.side_effect = (
+        lambda state=None: f"https://strava/?state={state}"
+    )
+    with patch("arete.api.strava._get_strava_client", return_value=client):
+        url = router_client(router).get("/strava/authorize").json()["url"]
+    state = parse_qs(urlparse(url).query)["state"][0]
+    assert oauth_state.verify(strava._state_secret(), state)

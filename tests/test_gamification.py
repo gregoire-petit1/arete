@@ -3,6 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import duckdb
 import pytest
@@ -22,6 +23,11 @@ def game_db(tmp_path, monkeypatch):
     main()
 
 
+def athlete_today() -> date:
+    # Fixtures use the athlete's calendar, independently of the CI runner's zone.
+    return datetime.now(ZoneInfo("Europe/Paris")).date()
+
+
 def enable():
     p = game.preference()
     return game.set_preference(game.Preference(enabled=True, version=p["version"]))
@@ -29,7 +35,7 @@ def enable():
 
 def evidence(key, day=None, valid=True):
     with transaction() as con:
-        capture(con, key, day or date.today(), "Course", valid)
+        capture(con, key, day or athlete_today(), "Course", valid)
 
 
 def fund(shards=390):
@@ -80,15 +86,15 @@ def test_weekly_cap_and_replay(game_db):
 def test_invalid_old_and_future_evidence_is_not_rewarded(game_db):
     enable()
     evidence("invalid", valid=False)
-    evidence("past", date.today() - timedelta(days=15))
-    evidence("future", date.today() + timedelta(days=1))
+    evidence("past", athlete_today() - timedelta(days=15))
+    evidence("future", athlete_today() + timedelta(days=1))
     assert game.sync()["xp"] == 0
 
 
 def test_capture_rollback_is_atomic(game_db):
     enable()
     with pytest.raises(RuntimeError), transaction() as con:
-        capture(con, "rollback", date.today(), "Course", True)
+        capture(con, "rollback", athlete_today(), "Course", True)
         raise RuntimeError("abort source transaction")
     assert game.sync()["xp"] == 0
 
@@ -96,7 +102,7 @@ def test_capture_rollback_is_atomic(game_db):
 def test_source_repository_captures_evidence(game_db):
     enable()
     session = ActualSession(
-        date=date.today(), sport="running", duration_sec=1800, source="manual"
+        date=athlete_today(), sport="running", duration_sec=1800, source="manual"
     )
     ident = GarminRepository().create_actual_session(session)
     with db_connection() as con:
@@ -170,11 +176,11 @@ def test_kill_switch_preserves_queue(game_db, monkeypatch):
 def test_import_on_activation_day_without_time_is_ambiguous(game_db):
     enable()
     with transaction() as con:
-        capture(con, "import", date.today(), "Import", True, manual=False)
+        capture(con, "import", athlete_today(), "Import", True, manual=False)
         capture(
             con,
             "timed",
-            date.today(),
+            athlete_today(),
             "Import",
             True,
             manual=False,
@@ -202,7 +208,7 @@ def test_deletion_preserves_auditable_correction(game_db):
     repo = GarminRepository()
     ident = repo.create_actual_session(
         ActualSession(
-            date=date.today(), sport="running", duration_sec=100, source="manual"
+            date=athlete_today(), sport="running", duration_sec=100, source="manual"
         )
     )
     assert game.sync()["shards"] == 10
@@ -231,12 +237,12 @@ def test_week_goal_is_frozen_and_rest_is_not_an_activity(game_db):
     with transaction() as con:
         con.execute(
             "INSERT INTO app.planned_sessions (date,sport,session_type,description) VALUES (?,'running','endurance','Rest adapted')",
-            [date.today()],
+            [athlete_today()],
         )
         planned = con.execute("SELECT max(id) FROM app.planned_sessions").fetchone()[0]
         con.execute(
             "INSERT INTO app.plan_decisions (user_id,date,planned_session_id,decision,reason,applied_at) VALUES (1,?,?,'rest','Prescribed',CURRENT_TIMESTAMP)",
-            [date.today(), planned],
+            [athlete_today(), planned],
         )
     previous_version = game.snapshot()["version"]
     state = game.sync()
@@ -248,8 +254,8 @@ def test_week_goal_is_frozen_and_rest_is_not_an_activity(game_db):
 def test_canonical_source_identity_is_rewarded_once(game_db):
     enable()
     with transaction() as con:
-        capture(con, "actual:1", date.today(), "Run", True, canonical="garmin:42")
-        capture(con, "actual:2", date.today(), "Run", True, canonical="garmin:42")
+        capture(con, "actual:1", athlete_today(), "Run", True, canonical="garmin:42")
+        capture(con, "actual:2", athlete_today(), "Run", True, canonical="garmin:42")
     state = game.sync()
     assert (state["sessions"], state["xp"], state["shards"]) == (1, 50, 10)
 
@@ -266,10 +272,12 @@ def test_unknown_timezone_is_rejected():
 def test_duplicate_during_opt_out_does_not_erase_earned_reward(game_db):
     enable()
     with transaction() as con:
-        capture(con, "actual:1", date.today(), "Run", True, canonical="garmin:42")
+        capture(con, "actual:1", athlete_today(), "Run", True, canonical="garmin:42")
     state = game.sync()
     game.set_preference(game.Preference(enabled=False, version=state["version"]))
     with transaction() as con:
-        capture(con, "actual:2", date.today(), "Duplicate", True, canonical="garmin:42")
+        capture(
+            con, "actual:2", athlete_today(), "Duplicate", True, canonical="garmin:42"
+        )
     state = game.sync()
     assert (state["sessions"], state["xp"], state["shards"]) == (1, 50, 10)

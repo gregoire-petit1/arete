@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react';
+import { lazy, Suspense, type MouseEvent } from 'react';
 import { NavLink } from 'react-router-dom';
 import {
   BarChart3,
@@ -14,6 +14,12 @@ import { useGamePreference } from '@/lib/gamification';
 import { ChironPortrait } from './ChironPortrait';
 import { User } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuthState } from '@/components/auth/authState';
+
+// Clerk's account menu lives in the lazily loaded auth chunk; it only renders when sign-in is on.
+const AccountButton = lazy(() =>
+  import('@/components/auth/ClerkGate').then((m) => ({ default: m.AccountButton }))
+);
 
 const navItems = [
   { path: '/', label: 'Tableau de bord', icon: LayoutDashboard },
@@ -41,6 +47,7 @@ export function Navigation({
   const profile = { path: '/profile', label: 'Profil', icon: User };
   const desktopItems = rpg ? [...navItems.slice(0, 4), profile, navItems[4]] : navItems;
   const mobileItems = rpg ? [...navItems.slice(0, 4), profile] : navItems;
+  const auth = useAuthState();
   return (
     <>
       {/* Desktop top nav — hidden on mobile */}
@@ -79,27 +86,34 @@ export function Navigation({
               ))}
             </div>
 
-            <button
-              onClick={onToggleAgent}
-              aria-controls="coach-panel"
-              aria-expanded={agentOpen}
-              aria-label={agentOpen ? 'Masquer le coach' : 'Ouvrir le coach'}
-              className={cn(
-                'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors',
-                agentOpen
-                  ? 'border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan'
-                  : 'border-text-muted/20 text-text-secondary hover:border-neon-cyan/30 hover:text-neon-cyan'
+            <div className="flex items-center gap-3">
+              <button
+                onClick={onToggleAgent}
+                aria-controls="coach-panel"
+                aria-expanded={agentOpen}
+                aria-label={agentOpen ? 'Masquer le coach' : 'Ouvrir le coach'}
+                className={cn(
+                  'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors',
+                  agentOpen
+                    ? 'border-neon-cyan/30 bg-neon-cyan/10 text-neon-cyan'
+                    : 'border-text-muted/20 text-text-secondary hover:border-neon-cyan/30 hover:text-neon-cyan'
+                )}
+              >
+                {agentBusy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : agentOpen ? (
+                  <PanelRightClose className="size-4" />
+                ) : (
+                  rpg ? <ChironPortrait size={24} /> : <Bot className="size-4" />
+                )}
+                <span>{rpg ? 'Chiron' : 'Coach'}</span>
+              </button>
+              {auth.enabled && (
+                <Suspense fallback={null}>
+                  <AccountButton />
+                </Suspense>
               )}
-            >
-              {agentBusy ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : agentOpen ? (
-                <PanelRightClose className="size-4" />
-              ) : (
-                rpg ? <ChironPortrait size={24} /> : <Bot className="size-4" />
-              )}
-              <span>{rpg ? 'Chiron' : 'Coach'}</span>
-            </button>
+            </div>
           </div>
         </div>
       </nav>

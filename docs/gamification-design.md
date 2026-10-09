@@ -41,7 +41,7 @@ flowchart TD
 
 | Owner | Responsibility |
 | --- | --- |
-| `dataio/game_schema.py` | Additive migration 14; seven game tables, no activity backfill |
+| `dataio/game_schema.py` | Additive migration 19; seven game tables, no activity backfill |
 | `dataio/game_events.py` | Capture immutable eligibility evidence in the source transaction |
 | `services/gamification.py` | Rules, projection, settings, purchase, appearance and equipment |
 | `api/gamification.py` | HTTP validation and visible 409 conflict responses |
@@ -108,7 +108,7 @@ Reward calculation, settings, purchase and equipment use **zero model requests**
 
 ## 5. Rollout
 
-Migration 14 creates empty game tables and a profile with `enabled=false`. No existing XP-looking TSS field is migrated. The user activates **Réglages → Gamification → Activer la gamification**. A separate endpoint prevents an older general-settings PUT from resetting this choice. BroadcastChannel invalidation and focus refetch update other browser tabs.
+Migration 19 creates empty game tables and a profile with `enabled=false`. No existing XP-looking TSS field is migrated. The user activates **Réglages → Gamification → Activer la gamification**. A separate endpoint prevents an older general-settings PUT from resetting this choice. BroadcastChannel invalidation and focus refetch update other browser tabs.
 
 `GAMIFICATION_ENABLED=false` is the deployment kill switch. It hides the effective experience and rejects projection/purchase/equipment/appearance; persisted opt-in and evidence remain intact. Re-enabling it can settle retained evidence. Opt-out closes the account interval and excludes new activity evidence, while valid pre-opt-out evidence remains settleable. General appearance themes remain available independently.
 

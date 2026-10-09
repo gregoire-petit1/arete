@@ -94,3 +94,23 @@ export const DECISION_LABEL: Record<string, string> = {
 /** "08:05" in the browser's time zone, from an ISO timestamp. */
 export const formatClock = (iso: string): string =>
   new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+
+/** Periodisation phases of a generated plan (features/plan_generator.py). */
+export const PHASE_LABEL: Record<string, string> = {
+  base: 'Base',
+  build: 'Développement',
+  specific: 'Spécifique',
+  taper: 'Affûtage',
+  race: 'Course',
+};
+
+export const phaseLabel = (phase: string): string => PHASE_LABEL[phase] ?? phase;
+
+/** Kinds of durable athlete facts (services/athlete_facts.py). */
+export const FACT_KIND_LABEL: Record<string, string> = {
+  injury: 'blessure',
+  constraint: 'contrainte',
+  preference: 'préférence',
+  goal: 'objectif',
+  other: 'autre',
+};

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type ZoneKind, zoneLabel } from './fr';
+import { FACT_KIND_LABEL, phaseLabel, type ZoneKind, zoneLabel } from './fr';
 import { getZoneColor } from './utils';
 
 // Exact enum values of src/arete/features/workload.py and features/fitness.py.
@@ -47,5 +47,32 @@ describe('zone colors', () => {
   it('keeps unknown zones neutral', () => {
     expect(getZoneColor('acwr', 'unknown')).toBe('cyan');
     expect(getZoneColor('form', undefined)).toBe('cyan');
+  });
+});
+
+describe('plan and fact labels', () => {
+  // Exact values of features/plan_generator.py Phase.
+  it.each([
+    ['base', 'Base'],
+    ['build', 'Développement'],
+    ['specific', 'Spécifique'],
+    ['taper', 'Affûtage'],
+    ['race', 'Course'],
+  ])('names phase %s in French', (phase, label) => {
+    expect(phaseLabel(phase)).toBe(label);
+  });
+
+  it('keeps an unknown phase readable', () => {
+    expect(phaseLabel('transition')).toBe('transition');
+  });
+
+  it('labels every fact kind of services/athlete_facts.py', () => {
+    expect(FACT_KIND_LABEL).toEqual({
+      injury: 'blessure',
+      constraint: 'contrainte',
+      preference: 'préférence',
+      goal: 'objectif',
+      other: 'autre',
+    });
   });
 });

@@ -71,6 +71,24 @@ def test_empty_and_oversized_stream_fail_explicitly():
         stream.events(token("Too long", "m"))
 
 
+@pytest.mark.parametrize("text", [None, "", " ", "x" * 301, "🏃" * 301])
+def test_invalid_optional_suggestion_preserves_the_answer(text, caplog):
+    stream = StreamProjection()
+    stream.events(token("Réponse", "answer"))
+    assert (
+        stream.events({"type": "custom", "data": {"type": "suggestion", "text": text}})
+        == []
+    )
+    assert stream.done()["message"]["content"] == "Réponse"
+    assert "draft omitted" in caplog.text
+
+
+def test_suggestion_limit_counts_unicode_code_points():
+    stream = StreamProjection()
+    event = {"type": "suggestion", "text": "🏃" * 300}
+    assert stream.events({"type": "custom", "data": event}) == [event]
+
+
 @pytest.mark.parametrize(
     "result",
     [
@@ -132,6 +150,7 @@ def test_system_skill_catalog_and_loaded_instructions_reach_every_model_call(
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 
     from arete.agent.capabilities.registry import CAPABILITIES
+    from arete.agent.profiles.catalog import get_profile
     from arete.agent.prompts.coach import SYSTEM_SKILL
     from arete.agent.runtime.context import AgentContext
     from arete.coaching import get_agent
@@ -187,8 +206,10 @@ def test_system_skill_catalog_and_loaded_instructions_reach_every_model_call(
         assert SYSTEM_SKILL in prompt
         assert prompt.count("Skills disponibles") == 1
     # The catalog lists what is left to load, never what already is.
-    for tk in CAPABILITIES.values():
-        assert tk.description in seen[0]
+    for capability in get_profile("chat").capabilities:
+        assert CAPABILITIES[capability].description in seen[0]
+    # Optional integrations must not be advertised before server configuration.
+    assert CAPABILITIES["calendar"].description not in seen[0]
     assert CAPABILITIES["analytics"].description not in seen[1]
     assert CAPABILITIES["planning"].description in seen[1]
     assert all("read_file" in tools for tools in bound_tools)

@@ -97,6 +97,7 @@ it('creates a thread without erasing the old one and retains a stream when hidde
   expect(stream.signal?.aborted).toBe(false);
   await act(async () => {
     stream.emit?.({ type: 'message', id: 'm1', text: '**Réponse au trail**' });
+    stream.emit?.({ type: 'suggestion', text: 'Prépare la première semaine.' });
     stream.emit?.({
       type: 'done',
       message: { role: 'assistant', content: '**Réponse au trail**' },
@@ -119,26 +120,66 @@ it('creates a thread without erasing the old one and retains a stream when hidde
     'Préparer mon trail'
   );
   expect(screen.getByText('Réponse au trail').tagName).toBe('STRONG');
+  expect((screen.getByRole('textbox', { name: 'Message au coach' }) as HTMLTextAreaElement).value).toBe('Prépare la première semaine.');
 });
 
-it('offers page follow-ups only once the answer is done, and sends one', async () => {
+it('puts one contextual suggestion in the composer without sending it', async () => {
   render(<Harness />);
   fireEvent.click(screen.getAllByRole('button', { name: 'Ouvrir le coach' })[0]);
-  fireEvent.change(screen.getByRole('textbox', { name: 'Message au coach' }), {
-    target: { value: 'Ma forme ?' },
-  });
+  const input = screen.getByRole('textbox', { name: 'Message au coach' }) as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: 'Ma forme ?' } });
   fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
-  expect(screen.queryByRole('group', { name: 'Suggestions de suivi' })).toBeNull();
-  expect(screen.queryByLabelText('Suggestions de suivi')).toBeNull();
+  await act(async () => {
+    stream.emit?.({ type: 'message', id: 'answer', text: 'Repos aujourd’hui.' });
+    stream.emit?.({ type: 'suggestion', text: 'Comment reprendre demain ?' });
+  });
+  expect(input.value).toBe('');
   await act(async () => {
     stream.emit?.({ type: 'done', message: { role: 'assistant', content: 'Repos aujourd’hui.' } });
     stream.resolve?.();
   });
-  const followUps = screen.getByLabelText('Suggestions de suivi');
-  const [first] = within(followUps).getAllByRole('button');
-  const question = first.textContent ?? '';
-  fireEvent.click(first);
-  expect(screen.getAllByText(question).length).toBeGreaterThan(0);
+  expect(screen.queryByLabelText('Suggestions de suivi')).toBeNull();
+  expect(input.value).toBe('Comment reprendre demain ?');
+  expect(screen.getAllByRole('article', { name: 'Ton message' })).toHaveLength(1);
+  // Persist as a normal editable draft, not as a generated conversation turn.
+  fireEvent(window, new Event('pagehide'));
+  cleanup();
+  render(<Harness />);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ouvrir le coach' })[0]);
+  const restored = screen.getByRole('textbox', { name: 'Message au coach' }) as HTMLTextAreaElement;
+  expect(restored.value).toBe('Comment reprendre demain ?');
+  fireEvent.change(restored, { target: { value: 'Et après-demain ?' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
+  expect(screen.getAllByRole('article', { name: 'Ton message' }).at(-1)?.textContent).toBe('Et après-demain ?');
+});
+
+it.each(['Mon brouillon', ''])('preserves typing while a suggestion is in flight: %j', async (draft) => {
+  render(<Harness />);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ouvrir le coach' })[0]);
+  const input = screen.getByRole('textbox', { name: 'Message au coach' }) as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: 'Demain ?' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
+  fireEvent.change(input, { target: { value: 'Texte commencé' } });
+  fireEvent.change(input, { target: { value: draft } });
+  await act(async () => {
+    stream.emit?.({ type: 'suggestion', text: 'Oui, prépare cette séance.' });
+    stream.emit?.({ type: 'done', message: { role: 'assistant', content: 'Une séance facile ?' } });
+    stream.resolve?.();
+  });
+  expect(input.value).toBe(draft);
+});
+
+it('discards suggestions when the stream is interrupted', async () => {
+  render(<Harness />);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Ouvrir le coach' })[0]);
+  const input = screen.getByRole('textbox', { name: 'Message au coach' }) as HTMLTextAreaElement;
+  fireEvent.change(input, { target: { value: 'Demain ?' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Envoyer' }));
+  await act(async () => {
+    stream.emit?.({ type: 'suggestion', text: 'Oui, prépare cette séance.' });
+    fireEvent.click(screen.getByRole('button', { name: 'Arrêter la réponse' }));
+  });
+  expect(input.value).toBe('');
 });
 
 it('asks the same question again on retry, without the failed answer', async () => {

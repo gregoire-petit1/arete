@@ -9,7 +9,7 @@ the health sync, before the briefing) and by ``POST /plan/today/adapt``.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from arete.dataio.settings import athlete_zone_model, get_user_settings
@@ -228,38 +228,22 @@ def push_session(client: GarminClient, session_id: int) -> dict[str, Any]:
     Garmin's own errors propagate. Never retried automatically: a failed
     upload may still have created the workout.
     """
-    from arete.garmin.workouts import build_payload, remove, upload_and_schedule
+    from arete.services import garmin_export
 
-    repo = GarminRepository()
-    session = repo.get_planned_session(session_id)
+    session = GarminRepository().get_planned_session(session_id)
     if session is None:
         raise LookupError(f"planned session {session_id}")
-    blocks = structure(session)
-    if session.garmin_workout_id or session.garmin_schedule_id:
-        remove(client, session.garmin_workout_id, session.garmin_schedule_id)
-        repo.update_planned_session_fields(
-            session_id, garmin_workout_id=None, garmin_schedule_id=None
-        )
-    text = describe_fr(blocks)
-    payload = build_payload(
-        blocks,
-        name=f"Arete — {session.description or text}",
-        description=text,
-        sport=session.sport,
-    )
-    workout_id, schedule_id = upload_and_schedule(client, payload, session.date)
-    pushed_at = datetime.now()
-    repo.update_planned_session_fields(
-        session_id,
-        garmin_workout_id=workout_id,
-        garmin_schedule_id=schedule_id,
-        garmin_pushed_at=pushed_at,
-    )
-    logger.info("Planned session %s scheduled on Garmin as %s", session_id, workout_id)
+    # Daily adaptation must never rewrite an explicitly prescribed workout.
+    structure(session)
+    result = garmin_export.export(session_id, client=client)
+    if result["state"] not in {"scheduled", "transfer_requested"}:
+        raise ValueError(result["error"] or "Export Garmin non confirmé.")
+    updated = GarminRepository().get_planned_session(session_id)
+    assert updated and updated.garmin_pushed_at
     return {
-        "garmin_workout_id": workout_id,
-        "garmin_schedule_id": schedule_id,
-        "garmin_pushed_at": pushed_at.isoformat(),
+        "garmin_workout_id": str(result["workout_id"]),
+        "garmin_schedule_id": str(result["schedule_id"]),
+        "garmin_pushed_at": updated.garmin_pushed_at.isoformat(),
     }
 
 
@@ -309,17 +293,17 @@ def push_today(client: GarminClient, target_date: date | None = None) -> str:
 
 
 def _withdraw(client: GarminClient, session: PlannedSession) -> None:
-    from arete.garmin.workouts import remove
+    from arete.services import garmin_export
 
     assert session.id is not None
+    # The daily cancellation is explicit domain policy for skipped legacy plans.
     try:
-        remove(client, session.garmin_workout_id, session.garmin_schedule_id)
-    except Exception:  # noqa: BLE001 - leave the ids for the next attempt
-        logger.warning("Could not withdraw session %s from Garmin", session.id)
-        return
-    GarminRepository().update_planned_session_fields(
-        session.id,
-        garmin_workout_id=None,
-        garmin_schedule_id=None,
-        garmin_pushed_at=None,
-    )
+        result = garmin_export.withdraw_skipped(session.id, client=client)
+        if result["state"] != "removed":
+            logger.warning(
+                "Garmin withdrawal unconfirmed for %s: %s", session.id, result["error"]
+            )
+    except Exception:
+        logger.warning(
+            "Could not withdraw session %s from Garmin", session.id, exc_info=True
+        )

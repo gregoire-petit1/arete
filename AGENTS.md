@@ -67,9 +67,10 @@ responsibility a testable owner. Do not create empty architectural scaffolding.
   DDL needs a migration: boots on a current schema skip the DDL.
 - Async model clients belong to the server event loop. Sync API/scheduler work uses
   AnyIO workers and `invoke_agent_sync`; never add a fresh `asyncio.run()` per job.
-- Follow-up suggestions are fixed page-aware lists in the browser; no model
-  request runs after an answer. Keep the HTTP, SSE, parser and browser-storage
-  contracts aligned when adding event fields.
+- Empty threads use fixed page-aware starters. Interactive chat may make one bounded,
+  measured, tool-free auto-suggestion call after the answer and emit a `suggestion`
+  event for the editable draft. Never overwrite user typing or send it automatically.
+  Keep HTTP, SSE, parser and browser-storage contracts aligned.
 - Preserve optional LangSmith tracing across async invocation and stream closure.
   Forward callbacks to dynamically executed tools and retain thread metadata. The
   context builder owns bounded journal injection and the current chat date.
@@ -122,3 +123,20 @@ do not add tests that merely repeat an implementation. Live model evaluations in
 - Be critical and concise. Verify claims against code or runs, reuse existing domain
   logic, and explain trade-offs. Bound new loops/retries/fan-out; assert programmer
   invariants and report operating errors explicitly.
+
+<!-- OPENWIKI:START -->
+
+## OpenWiki
+
+This repository has a generated `openwiki/` evidence index. It is optional just-in-time context, not required startup reading.
+
+- Do not enumerate, preload, or search wikis at task start. Use retrieval when the user asks for it, when unfamiliar architecture or dependency behavior materially affects the task, or when source inspection leaves an important uncertainty. Stop once the question is grounded.
+- When those conditions apply and OpenWiki retrieval tools are available, use `openwiki_search` for just-in-time context and `openwiki_read` for the relevant complete sections. If search returns `workspace_required`, ask which listed workspace to use and retry with its ID.
+- Use `openwiki_list_workspaces` or `openwiki_list_wikis` when workspace membership itself needs to be discovered.
+- If the retrieval tools are unavailable, read `openwiki/quickstart.md` and follow its links to the relevant pages.
+- Treat source code and tests as authoritative. A brief's unknowns and review items are verification gaps, not automatic requirements.
+- Prefer the narrowest quiet validation that proves the changed behavior. Preserve complete failure output.
+
+The scheduled OpenWiki GitHub Actions workflow refreshes the repository wiki. Do not hand-edit generated OpenWiki pages unless explicitly asked; prefer updating source code/docs and letting OpenWiki regenerate.
+
+<!-- OPENWIKI:END -->

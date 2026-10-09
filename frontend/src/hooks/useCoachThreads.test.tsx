@@ -320,3 +320,27 @@ it('refuses an over-limit document request before clearing the draft', () => {
   expect(result.current.active.draft).toBe('À conserver');
   expect(result.current.error).toContain('20 documents');
 });
+
+it('refreshes the athlete facts after the coach remembers one', async () => {
+  queryClient.setQueryData(qk.athleteFacts, []);
+  queryClient.setQueryData(qk.planned(), []);
+  const { result } = renderHook(() => useCoachThreads(context), { wrapper });
+  act(() => {
+    result.current.send('J’ai mal au tendon d’Achille');
+  });
+  act(() => {
+    runs[0].emit({
+      type: 'tool_end',
+      id: 'fact',
+      name: 'remember_fact',
+      status: 'done',
+      output: { text: '{}', truncated: false },
+      elapsed_ms: 5,
+    });
+  });
+  expect(queryClient.getQueryState(qk.athleteFacts)?.isInvalidated).toBe(true);
+  expect(queryClient.getQueryState(qk.planned())?.isInvalidated).toBe(false);
+  await act(async () => {
+    runs[0].resolve();
+  });
+});

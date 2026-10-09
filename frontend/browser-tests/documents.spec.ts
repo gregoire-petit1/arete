@@ -103,7 +103,7 @@ test('textual, scanned and mixed PDF pages retain all source pages', async ({ pa
   expect(pages(3).map((b: { text: string }) => b.text).join(' ')).toContain('100');
 });
 
-test('Garmin export is a separate reviewed action and never claims watch delivery', async ({ page }) => {
+test('Garmin export is an explicit selected action and never claims watch delivery', async ({ page }) => {
   const day = new Date().toISOString().slice(0, 10);
   const session = { id: 42, date: day, sport: 'running', session_type: 'endurance', description: 'Footing de référence', source: 'coach', status: 'pending', revision: 1, prescription: { version: 1, steps: [{ kind: 'effort', duration_kind: 'seconds', value: 1800, steps: [] }] } };
   let sent = 0;
@@ -111,28 +111,28 @@ test('Garmin export is a separate reviewed action and never claims watch deliver
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/garmin/planned')) return route.fulfill({ json: [session] });
+    if (path.endsWith('/42/workout')) return route.fulfill({ json: { session: { ...session, exportable: true, summary: '30 min' }, export: statuses[0] ?? null } });
     if (path.endsWith('/workout-devices')) return route.fulfill({ json: [{ id: 10, name: 'fēnix 8', sports: ['running'], compatibility: 'documented' }, { id: 11, name: 'Modèle inconnu', sports: [], compatibility: 'unknown' }] });
     if (path.endsWith('/garmin/exports')) return route.fulfill({ json: statuses });
-    if (path.endsWith('/42/export')) {
-      expect(route.request().postDataJSON()).toEqual({ device_id: 10 });
+    if (path.endsWith('/exports/batch')) {
+      expect(route.request().postDataJSON()).toEqual({ session_ids: [42], revisions: [1], device_id: 10 });
       sent++;
       statuses = [{ session_id: 42, state: 'transfer_requested', error: null, workout_id: 50, schedule_id: 60, deleted: false }];
-      return route.fulfill({ json: statuses[0] });
+      return route.fulfill({ json: { results: statuses, not_attempted: [] } });
     }
     return route.fulfill({ json: [] });
   });
   await page.goto('/planning');
-  await page.getByRole('button', { name: 'Séances structurées et Garmin Connect' }).click();
   const panel = page.getByRole('region', { name: 'Envoi des séances vers Garmin' });
-  await panel.getByLabel(`${day} · Footing de référence`).check();
-  await panel.getByLabel('Destination').selectOption('10');
+  await panel.getByLabel('Sélectionner Footing de référence').check();
+  await panel.getByLabel('Demander aussi le transfert vers une montre').check();
+  await panel.getByLabel('Montre Garmin').selectOption('10');
   await expect(panel.getByRole('option', { name: /Modèle inconnu/ })).toHaveJSProperty('disabled', true);
-  const send = panel.getByRole('button', { name: 'Envoyer 1 séance(s) vers Garmin' });
-  await expect(send).toBeDisabled();
+  const send = panel.getByRole('button', { name: 'Envoyer vers Garmin' });
+  await expect(send).toBeEnabled();
   expect(sent).toBe(0);
-  await panel.getByLabel('J’ai vérifié les dates et le contenu des séances sélectionnées.').check();
   await send.click();
-  await expect(panel.getByText('Transfert demandé — synchronise la montre', { exact: true })).toBeVisible();
+  await expect(panel.getByText('Transfert demandé · synchronise la montre', { exact: true })).toBeVisible();
   expect(sent).toBe(1);
   await expect(panel.getByText('Reçu sur la montre', { exact: true })).toHaveCount(0);
 });

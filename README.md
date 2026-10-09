@@ -37,7 +37,7 @@ make docker    # copies .env.example to .env if missing (compose reads env_file 
 # frontend: http://localhost:3080   backend: http://localhost:8001 (8000 is often taken)
 ```
 
-Docker and Vercel share one MotherDuck database (`ARETE_DB=md:arete`, token `MOTHERDUCK_TOKEN` from `vercel env pull`); files that are not the database (Garmin tokens, coach memory) stay in the repo's `./data`, bind-mounted at `/app/data`, and are mirrored into it (`dataio/mirror.py`). `make dev` keeps the local `data/arete.duckdb` file unless `ARETE_DB` says otherwise. The daily sync runs on Vercel Cron at 08:00 UTC (`GET /api/cron/daily-sync`, `CRON_SECRET`), after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up. `ARETE_AUTO_SYNC_HOUR` still arms the in-process scheduler for a backend that stays up without Vercel. The compose file sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
+Docker and Vercel share one MotherDuck database (`ARETE_DB=md:arete`; the token `MOTHERDUCK_TOKEN` comes from motherduck.com → Settings → Access tokens, the Vercel copy is sensitive and cannot be pulled); files that are not the database (Garmin tokens, coach memory) stay in the repo's `./data`, bind-mounted at `/app/data`, and are mirrored into it (`dataio/mirror.py`). `make dev` keeps the local `data/arete.duckdb` file unless `ARETE_DB` says otherwise. The daily sync runs on Vercel Cron at 08:00 UTC (`GET /api/cron/daily-sync`, `CRON_SECRET`), after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up. `ARETE_AUTO_SYNC_HOUR` still arms the in-process scheduler for a backend that stays up without Vercel. The compose file sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
 
 ## Configuration
 
@@ -67,10 +67,11 @@ drafts. Threads are saved in this browser (up to 30), while the coach’s memory
 ledger remains shared across conversations. Hiding the panel or switching threads
 keeps the current response running in its original thread; one response runs at a time.
 
-Below the last answer, up to three French follow-up questions suited to the open
-page; clicking one sends it as the next message. They are fixed lists in the
-browser: no model request after an answer, and the input unlocks as soon as the
-answer ends.
+After each chat answer, the coach can propose one contextual next message directly
+in the composer. Edit it or send it yourself; it is never sent automatically and
+never overwrites typing. This costs one additional model request, bounded to five
+seconds and 512 output tokens with no SDK retries. Failure leaves the answer intact.
+Empty conversations still offer fixed questions suited to the open page.
 
 Chat, daily briefings and session feedback share a five-minute execution deadline,
 8 main model calls and 32 tool calls per run, with at most four concurrent tools.
@@ -130,6 +131,26 @@ it a list; OpenRouter accepts three models at most. Each run logs one
 `Agent run:` line with its model calls, tool calls, time to first token and the
 models that actually answered.
 
+## Your own assistant on your data (MCP)
+
+`scripts/arete_mcp.py` is a read-only MCP server over the HTTP API: overview,
+form, sessions, health, plan, race goals with their projection, paces, the
+coach's facts and the weekly review. A stronger assistant you already use
+(Claude, ChatGPT…) can then analyse the same data as the in-app coach, at no
+cost to the app. Only GET requests; Strava sessions and records stay out.
+
+```bash
+claude mcp add arete \
+  --env ARETE_API_URL=https://<your-deployment>.vercel.app/api \
+  --env ARETE_API_BYPASS=<Protection Bypass for Automation secret> \
+  -- uv run --directory /path/to/arete --extra mcp python scripts/arete_mcp.py
+```
+
+`ARETE_API_URL` defaults to a local `make dev` (`http://127.0.0.1:8000`). Behind
+Vercel Authentication, create a bypass secret in Settings → Deployment
+Protection and keep it out of the repository. With sign-in enforced, add
+`--env ARETE_API_KEY=<the instance's API key>`.
+
 ## Project layout
 
 ```
@@ -172,9 +193,31 @@ Interactive docs at `/docs`. Routers and their prefixes:
 | `/tips` | `daily` (GET), `post-session` (POST) |
 | `/agent` | `chat` (POST), `chat/stream` (POST, SSE), `memory` (GET, the coach's ledger) |
 
-## Single-user by design
+## Who can use it
 
-Arete assumes one athlete: `user_id = 1` everywhere, no authentication on the API, Strava tokens stored in DuckDB and Garmin session tokens on disk in clear text. Run it on your own machine or behind something that authenticates (VPN, reverse proxy with auth). Do not expose port 8000 to the internet as is.
+Out of the box Arete is one athlete with no sign-in: `user_id = 1` everywhere,
+Strava tokens in DuckDB and Garmin session tokens on disk in clear text. Run it
+on your own machine or behind something that authenticates (VPN, reverse proxy,
+Vercel Authentication). Do not expose it to the internet as is.
+
+To require a Google (or other) sign-in, provision Clerk from the Vercel
+Marketplace (`vercel integration add clerk`), which sets `CLERK_SECRET_KEY` and
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, then:
+
+| Variable | Purpose |
+| --- | --- |
+| `ARETE_AUTH=clerk` | Enforce sign-in: every API route except `/health`, `/auth/config`, the Strava callback, the cron and the schema needs a Clerk session token |
+| `ARETE_OWNER_EMAIL` | The address that is the athlete; comma-separated when you sign in with several accounts. Any other account can sign up but sees a waiting page: attaching more athletes is not done yet |
+| `ARETE_API_KEY` | Long-lived key for scripts and the MCP server (`Authorization: Bearer`), treated as the athlete |
+| `ARETE_AUTH_ORIGINS` | Optional comma-separated browser origins allowed to hold a session (the token's `azp`); leave unset for Vercel previews |
+
+Turn it on in Preview first, sign in there, then in Production. Once the app
+signs users in, Vercel Authentication can be switched off for Production so the
+installed PWA no longer asks for a Vercel login; keep it on for Previews. With
+Google as the sign-in method, the user's Google token (and the Calendar scopes
+configured in the Clerk dashboard) is available server-side through
+`services/google_tokens.py`: one consent at sign-in, nothing of Google's stored
+in Arete.
 
 ## Development
 
@@ -182,6 +225,52 @@ Start coding sessions with [AGENTS.md](AGENTS.md) (shared instructions) or
 [CLAUDE.md](CLAUDE.md) (Claude entrypoint). The [architecture guide](docs/architecture.md)
 explains ownership, allowed dependencies, profiles and runtime limits. Changes to
 these boundaries must update the guide and the dependency tests together.
+
+### Automated repository wiki
+
+[OpenWiki](https://docs.langchain.com/oss/openwiki/automate-updates) maintains
+generated reference documentation and source-grounded claims in `openwiki/`.
+The [workflow](.github/workflows/openwiki-update.yml) runs daily at 05:23 UTC or
+manually from **Actions → OpenWiki Update → Run workflow**, always against `main`.
+It creates the initial wiki automatically; [the brief](openwiki/INSTRUCTIONS.md)
+defines its scope. Existing guides in `docs/` remain manually maintained.
+
+Add `OPENROUTER_API_KEY` as a **repository Actions secret** (Settings → Secrets
+and variables → Actions). Enable **Allow GitHub Actions to create and approve
+pull requests** in Settings → Actions → General. The workflow uses the built-in
+`GITHUB_TOKEN` to maintain one `openwiki/update` PR and arms auto-merge; `main`
+must require the existing CI checks. Review the generated documentation and
+select **Approve workflows to run** in the PR merge box: GitHub gates CI for
+[PRs created with `GITHUB_TOKEN`](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+Inference uses only [`openrouter/free`](https://openrouter.ai/openrouter/free),
+with 8,192 output tokens per request and one page worker. The CI-only
+[HTTP transport](scripts/openwiki/transport.mjs) spaces inference attempts at least
+6 seconds apart (10/minute), with at most 4 attempts per request and 120 HTTP
+attempts per run. It retries 408/429/500/502/503/504 and network failures (and
+preserves OpenWiki's specific transient provider-404 handling), with
+30/60/120-second backoff plus jitter (at least 60 seconds for a 429), honoring
+`Retry-After` and `X-RateLimit-Reset`. Each attempt, including its response body,
+has a 120-second timeout. A cooldown over 3 minutes, a 23-minute HTTP run budget,
+permanent errors or exhausted daily quota stops generation explicitly. Terminal
+errors also stop SDK retries, so retry counts do not multiply. Only inference is
+retried; tool execution and the whole agent run are never replayed by this wrapper.
+
+The generation step allows 25 minutes and the job 35 minutes. Free-model capacity,
+context windows and account-wide quotas still vary: this cannot guarantee a
+successful run, especially when other applications share the account. Failures
+publish no partial documentation PR and never switch to a paid model. OpenWiki's
+page checkpoints are cached against the exact source commit, allowing a later
+scheduled or manual run to resume completed pages; an evicted cache starts fresh.
+The job summary and HTTP attempt logs explain failures without logging prompts
+or credentials. OpenWiki 0.7.1 exposes no OpenRouter temperature setting.
+Timestamp-only updates do not open a PR.
+Installation resolves dependencies published before 2026-10-07 UTC, immediately
+after OpenWiki 0.7.1's release, to avoid a newer AWS SDK dependency that references
+an unpublished package version. Update this cutoff with the OpenWiki version and
+verify a clean install before shipping either change.
+
+### Checks
 
 ```bash
 uv run ruff check src tests && uv run ruff format --check src tests

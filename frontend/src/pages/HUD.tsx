@@ -2,11 +2,12 @@ import { PlayerSummary } from '@/components/PlayerSummary';
 import { useGamePreference } from '@/lib/gamification';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Bot, Calendar, Dumbbell, Loader2, Zap } from 'lucide-react';
+import { ArrowRight, Bot, Calendar, Dumbbell, Flag, Loader2, Zap } from 'lucide-react';
 import { LoadingState, MetricCard, OffPlanRow, SessionCard, strengthAsActual } from '@/components';
 import { Panel } from '@/components/ui';
-import { ApiError, garminApi, garminHealthApi, metricsApi, planApi, settingsApi, tipsApi } from '@/lib/api';
+import { ApiError, garminApi, garminHealthApi, goalsApi, metricsApi, planApi, settingsApi, tipsApi } from '@/lib/api';
 import { formatHoursMinutes } from '@/lib/fr';
+import { goalCountdown } from '@/lib/race';
 import { cn } from '@/lib/utils';
 import { toLocalISODate } from '@/lib/dates';
 import { invalidateAfterSession, qk, strengthSessionsQuery } from '@/lib/queryKeys';
@@ -105,6 +106,7 @@ export function DashboardPage() {
   const today = toLocalISODate();
 
   const { data: userSettings } = useQuery({ queryKey: qk.settings, queryFn: settingsApi.get });
+  const { data: nextGoal } = useQuery({ queryKey: qk.nextGoal, queryFn: goalsApi.next });
   const fatigueThreshold = userSettings?.fatigue_threshold ?? 85;
 
   const { data: allPlanned, isLoading: plannedLoading } = useQuery({
@@ -172,14 +174,23 @@ export function DashboardPage() {
   return (
     <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
       <div className="max-w-5xl mx-auto space-y-6">
-        <header className="flex justify-between items-center animate-fade-down">
-          <div>
+        <header className="flex justify-between items-center gap-3 animate-fade-down">
+          <div className="min-w-0">
             <h1 className="text-lg sm:text-2xl font-sans font-bold text-text-primary tracking-wider">
               Bonjour, <span className="text-neon-cyan">{userSettings?.display_name || 'Athlète'}</span>
             </h1>
             <p className="text-xs font-mono text-text-muted mt-0.5">
               {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
             </p>
+            {nextGoal && (
+              <Link
+                to="/planning"
+                className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded border border-neon-gold/30 bg-neon-gold/10 px-2 py-0.5 text-[11px] font-mono text-neon-gold hover:bg-neon-gold/20 transition-colors"
+              >
+                <Flag className="w-3 h-3 shrink-0" />
+                <span className="truncate">{goalCountdown(nextGoal)}</span>
+              </Link>
+            )}
           </div>
           {playerStats && (
             <div className="text-right">

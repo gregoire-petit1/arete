@@ -177,6 +177,23 @@ def write_daily_briefing() -> str:
     return briefing.source
 
 
+def write_weekly_review(today: date | None = None) -> str:
+    """On Mondays, review the week that just ended. Never raises."""
+    today = today or date.today()
+    if today.weekday() != 0:
+        return "not monday"
+    try:
+        from arete.coaching import generate_weekly_review
+        from arete.services.notifications import first_sentence, notify
+
+        review = generate_weekly_review()
+        notify("Bilan de la semaine", first_sentence(review.text), "/planning")
+    except Exception as e:  # noqa: BLE001 - background job must not die
+        logger.warning("Weekly review failed: %s", e)
+        return f"failed: {e}"
+    return f"{review.source}, {len(review.proposals)} proposals"
+
+
 async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
     logger.info(
         "Automatic sync armed for %02d:00 local, checked every %d min (last run: %s)",
@@ -196,6 +213,7 @@ async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
             from anyio import to_thread
 
             await to_thread.run_sync(write_daily_briefing)
+            await to_thread.run_sync(write_weekly_review)
         await asyncio.sleep(tick_seconds)
 
 

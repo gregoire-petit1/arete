@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 
 load_dotenv()
 
@@ -24,6 +24,35 @@ class Config:
     def gamification_available(self) -> bool:
         """Deployment kill switch; the athlete still has to opt in."""
         return (_env("GAMIFICATION_ENABLED", "true") or "").lower() == "true"
+
+    @property
+    def google_calendar_connector(self) -> str:
+        return _env("GOOGLE_CALENDAR_CONNECTOR", "") or ""
+
+    @property
+    def google_calendar_subject(self) -> str:
+        return _env("GOOGLE_CALENDAR_SUBJECT", "arete-athlete-1") or "arete-athlete-1"
+
+    @property
+    def google_calendar_environment(self) -> str:
+        return _env("VERCEL_ENV", "development") or "development"
+
+    @property
+    def google_calendar_configured(self) -> bool:
+        # An operator must verify external access protection before enabling writes.
+        return (
+            bool(self.google_calendar_connector)
+            and _env("GOOGLE_CALENDAR_ACCESS_PROTECTED") == "true"
+        )
+
+    @property
+    def vercel_connect_credential(self) -> str:
+        return (
+            _env("VERCEL_OIDC_TOKEN")
+            or _env("VERCEL_CONNECT_ACCESS_TOKEN")
+            or dotenv_values(".env.local").get("VERCEL_OIDC_TOKEN")
+            or ""
+        )
 
     # --- storage -----------------------------------------------------------
     @property
@@ -221,6 +250,45 @@ class Config:
     def web_push_subject(self) -> str:
         """Contact the push services can reach (``mailto:`` or https URL)."""
         return _env("WEB_PUSH_SUBJECT", "mailto:admin@localhost") or ""
+
+    # --- authentication ----------------------------------------------------
+    @property
+    def auth_provider(self) -> str:
+        """``clerk`` makes every API route require a signed-in user; empty
+        (the default) leaves the API open, as a self-hosted instance behind
+        its own network or Vercel Authentication runs it."""
+        return (_env("ARETE_AUTH", "") or "").strip().lower()
+
+    @property
+    def clerk_secret_key(self) -> str:
+        return _env("CLERK_SECRET_KEY", "") or ""
+
+    @property
+    def clerk_publishable_key(self) -> str:
+        """The Marketplace provisions it under the Next.js name; both are read."""
+        return (
+            _env("CLERK_PUBLISHABLE_KEY")
+            or _env("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "")
+            or ""
+        )
+
+    @property
+    def auth_origins(self) -> tuple[str, ...]:
+        """Browser origins allowed to hold a session (the token's ``azp``);
+        empty = not checked, which Vercel preview URLs need."""
+        raw = _env("ARETE_AUTH_ORIGINS", "") or ""
+        return tuple(o.strip().rstrip("/") for o in raw.split(",") if o.strip())
+
+    @property
+    def owner_emails(self) -> tuple[str, ...]:
+        """Addresses that are the athlete, comma-separated; others get no data."""
+        raw = _env("ARETE_OWNER_EMAIL", "") or ""
+        return tuple(e.strip().lower() for e in raw.split(",") if e.strip())
+
+    @property
+    def api_key(self) -> str:
+        """A long-lived key for scripts and the MCP server, acting as the owner."""
+        return _env("ARETE_API_KEY", "") or ""
 
     @property
     def log_level(self) -> str:

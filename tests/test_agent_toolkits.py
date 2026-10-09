@@ -46,6 +46,8 @@ def test_planning_toolkit_registered():
     assert tk.id == "planning"
     assert {t.name for t in tk.tools} == {
         "list_planned",
+        "inspect_planned_session",
+        "update_session_prescription",
         "create_planned_session",
         "update_planned_status",
         "update_planned_session",
@@ -593,7 +595,7 @@ def test_update_planned_session_rejects_bad_input():
         assert word in out["error"]
 
 
-@pytest.mark.parametrize("profile", ["briefing", "feedback"])
+@pytest.mark.parametrize("profile", ["briefing", "feedback", "review"])
 def test_background_profiles_cannot_move_a_session(profile):
     from arete.agent.runtime.policy import resolve_policy
 

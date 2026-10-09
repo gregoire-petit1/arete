@@ -19,7 +19,7 @@ PLANNED_COLUMNS = (
     "id, user_id, date, sport, session_type, target_duration_min, "
     "target_distance_km, target_hr_zone, target_intensity, description, source, "
     "status, created_at, structure_json, garmin_workout_id, garmin_schedule_id, "
-    "garmin_pushed_at, prescription, provenance, revision"
+    "garmin_pushed_at, prescription, provenance, revision, goal_id"
 )
 
 #: What a plan edit (coach, daily adaptation, Garmin push) may overwrite.
@@ -38,6 +38,7 @@ PLANNED_EDITABLE = frozenset(
         "garmin_workout_id",
         "garmin_schedule_id",
         "garmin_pushed_at",
+        "goal_id",
     }
 )
 
@@ -64,6 +65,7 @@ def _planned_from_row(row: tuple) -> PlannedSession:
         prescription=json.loads(row[17]) if row[17] else None,
         provenance=json.loads(row[18]) if row[18] else None,
         revision=row[19],
+        goal_id=row[20],
     )
 
 
@@ -96,8 +98,8 @@ class GarminRepository:
             INSERT INTO planned_sessions (
                 user_id, date, sport, session_type, target_duration_min,
                 target_distance_km, target_hr_zone, target_intensity,
-                description, source, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                description, source, status, created_at, prescription, provenance, goal_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             """,
             [
@@ -117,6 +119,9 @@ class GarminRepository:
                 if isinstance(session.status, SessionStatus)
                 else session.status,
                 datetime.now(),
+                json.dumps(session.prescription) if session.prescription else None,
+                json.dumps(session.provenance) if session.provenance else None,
+                session.goal_id,
             ],
         ).fetchone()
         conn.close()
@@ -185,13 +190,7 @@ class GarminRepository:
         self, session_id: int, status: SessionStatus
     ) -> bool:
         """Update the status of a planned session."""
-        conn = self._get_connection()
-        result = conn.execute(
-            "UPDATE planned_sessions SET status = ? WHERE id = ? RETURNING id",
-            [status.value, session_id],
-        ).fetchone()
-        conn.close()
-        return result is not None
+        return self.update_planned_session_fields(session_id, status=status)
 
     def update_planned_session_fields(self, session_id: int, **fields: Any) -> bool:
         """Overwrite some fields of a planned session (whitelisted columns)."""

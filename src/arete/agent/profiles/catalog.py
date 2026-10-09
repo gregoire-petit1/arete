@@ -4,18 +4,19 @@ from arete.agent.profiles.models import AgentProfile, ProfileId
 from arete.agent.prompts.briefing import BRIEFING_PROMPT
 from arete.agent.prompts.coach import CHAT_INSTRUCTIONS
 from arete.agent.prompts.session_feedback import FEEDBACK_PROMPT
+from arete.agent.prompts.weekly_review import REVIEW_PROMPT
 
 PROFILES: dict[ProfileId, AgentProfile] = {
     "chat": AgentProfile(
         "chat",
         "arete_coach",
         CHAT_INSTRUCTIONS,
-        ("analytics", "planning", "strength"),
+        ("analytics", "planning", "strength", "garmin"),
         # Loading a toolkit cost one model request per turn (the loaded set
         # lives in the run's state); on a free tier requests are the budget,
         # tokens are not. Binding is not authorization: RunPolicy still
         # filters what each profile may execute.
-        preloaded=("analytics", "planning", "strength"),
+        preloaded=("analytics", "planning", "strength", "garmin"),
         training_writes=True,
         page_context=True,
         journal_tools=True,
@@ -24,6 +25,7 @@ PROFILES: dict[ProfileId, AgentProfile] = {
     # no tool is bound, the server reads the data and files the journal.
     "briefing": AgentProfile("briefing", "arete_briefing", BRIEFING_PROMPT, ()),
     "feedback": AgentProfile("feedback", "arete_session_feedback", FEEDBACK_PROMPT, ()),
+    "review": AgentProfile("review", "arete_weekly_review", REVIEW_PROMPT, ()),
 }
 
 

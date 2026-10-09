@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS app.planned_sessions (
     structure_json  VARCHAR,                   -- explicit workout steps (optional)
     garmin_workout_id  VARCHAR,                -- copy scheduled on Garmin's calendar
     garmin_schedule_id VARCHAR,
-    garmin_pushed_at   TIMESTAMP
+    garmin_pushed_at   TIMESTAMP,
+    goal_id         INTEGER                    -- set on sessions a goal's plan generated
 );
 
 -- Actual training sessions (imported from Garmin/FIT files)
@@ -333,6 +334,66 @@ CREATE TABLE IF NOT EXISTS app.plan_decisions (
 -- ============================================================
 -- Web Push subscriptions (one per browser that accepted notifications)
 -- ============================================================
+CREATE SEQUENCE IF NOT EXISTS app.goals_seq START 1;
+
+-- Goal races: what the periodised plan is built towards
+CREATE TABLE IF NOT EXISTS app.goals (
+    id               INTEGER PRIMARY KEY DEFAULT nextval('app.goals_seq'),
+    user_id          INTEGER NOT NULL DEFAULT 1,
+    name             VARCHAR NOT NULL,
+    race_date        DATE NOT NULL,
+    distance_km      DOUBLE NOT NULL,
+    target_time_sec  INTEGER,                 -- optional finishing time
+    priority         VARCHAR NOT NULL DEFAULT 'A',      -- 'A', 'B', 'C'
+    status           VARCHAR NOT NULL DEFAULT 'active', -- 'active', 'done', 'cancelled'
+    created_at       TIMESTAMP DEFAULT now()
+);
+
+CREATE SEQUENCE IF NOT EXISTS app.athlete_facts_seq START 1;
+
+-- What the coach knows for good about the athlete, editable by the athlete
+CREATE TABLE IF NOT EXISTS app.athlete_facts (
+    id          INTEGER PRIMARY KEY DEFAULT nextval('app.athlete_facts_seq'),
+    user_id     INTEGER NOT NULL DEFAULT 1,
+    kind        VARCHAR NOT NULL,      -- 'injury', 'constraint', 'preference', 'goal', 'other'
+    text        VARCHAR NOT NULL,
+    since       DATE NOT NULL,
+    status      VARCHAR NOT NULL DEFAULT 'active',  -- 'active', 'resolved'
+    source      VARCHAR NOT NULL DEFAULT 'coach',   -- 'coach', 'athlete'
+    created_at  TIMESTAMP DEFAULT now(),
+    updated_at  TIMESTAMP DEFAULT now()
+);
+
+CREATE SEQUENCE IF NOT EXISTS app.weekly_reviews_seq START 1;
+
+-- One review per finished week: the coach's text and the rules' proposals
+CREATE TABLE IF NOT EXISTS app.weekly_reviews (
+    id              INTEGER PRIMARY KEY DEFAULT nextval('app.weekly_reviews_seq'),
+    user_id         INTEGER NOT NULL DEFAULT 1,
+    week_start      DATE NOT NULL,          -- Monday of the week reviewed
+    text            VARCHAR NOT NULL,
+    source          VARCHAR NOT NULL,       -- 'agent', 'rules'
+    facts           VARCHAR,                -- what the text was written from
+    proposals_json  VARCHAR NOT NULL,       -- changes proposed for the days ahead
+    applied_json    VARCHAR,                -- which ones the athlete applied
+    created_at      TIMESTAMP DEFAULT now(),
+    applied_at      TIMESTAMP,
+    UNIQUE (user_id, week_start)
+);
+
+CREATE SEQUENCE IF NOT EXISTS app.users_seq START 1;
+
+-- Signed-in accounts (Clerk): athlete_id links an account to its data
+CREATE TABLE IF NOT EXISTS app.users (
+    id              INTEGER PRIMARY KEY DEFAULT nextval('app.users_seq'),
+    clerk_user_id   VARCHAR NOT NULL UNIQUE,
+    email           VARCHAR NOT NULL,
+    name            VARCHAR,
+    athlete_id      INTEGER,                   -- NULL until an athlete is attached
+    created_at      TIMESTAMP DEFAULT now(),
+    last_seen_at    TIMESTAMP DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS app.push_subscriptions (
     endpoint         VARCHAR PRIMARY KEY,
     p256dh           VARCHAR NOT NULL,
@@ -500,6 +561,32 @@ def _m12_push_subscriptions(con) -> None:
     con.execute(DDL[start : DDL.index(");", start) + 2])
 
 
+def _m14_goals(con) -> None:
+    """Goal races, and the link from a generated session to its goal."""
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.goals_seq")
+    con.execute(DDL[start : DDL.index(");", DDL.index("app.goals (")) + 2])
+    if "goal_id" not in _columns(con, "planned_sessions"):
+        con.execute("ALTER TABLE app.planned_sessions ADD COLUMN goal_id INTEGER")
+
+
+def _m15_athlete_facts(con) -> None:
+    """Structured, editable facts about the athlete (injuries, constraints…)."""
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.athlete_facts_seq")
+    con.execute(DDL[start : DDL.index(");", DDL.index("app.athlete_facts (")) + 2])
+
+
+def _m16_weekly_reviews(con) -> None:
+    """The weekly review and the plan changes it proposes."""
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.weekly_reviews_seq")
+    con.execute(DDL[start : DDL.index(");", DDL.index("app.weekly_reviews (")) + 2])
+
+
+def _m18_users(con) -> None:
+    """Signed-in accounts, and which one is the athlete."""
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.users_seq")
+    con.execute(DDL[start : DDL.index(");", DDL.index("app.users (")) + 2])
+
+
 #: Append-only. A database at the last version skips the DDL entirely on boot
 #: (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
@@ -510,7 +597,15 @@ def _m13_document_imports(con) -> None:
     migrate(con)
 
 
-def _m14_gamification(con) -> None:
+def _m17_google_calendar(con) -> None:
+    from arete.services.calendar_repository import CALENDAR_DDL
+
+    for statement in CALENDAR_DDL.strip().split(";"):
+        if statement.strip():
+            con.execute(statement)
+
+
+def _m19_gamification(con) -> None:
     from arete.dataio.game_schema import migrate
 
     migrate(con)
@@ -530,7 +625,12 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (11, _m11_plan_adaptation),
     (12, _m12_push_subscriptions),
     (13, _m13_document_imports),
-    (14, _m14_gamification),
+    (14, _m14_goals),
+    (15, _m15_athlete_facts),
+    (16, _m16_weekly_reviews),
+    (17, _m17_google_calendar),
+    (18, _m18_users),
+    (19, _m19_gamification),
 ]
 
 

@@ -7,6 +7,7 @@ import { ErrorState, LoadingState } from '@/components';
 import { Button, Spinner } from '@/components/ui';
 import { settingsApi, type UserSettings } from '@/lib/api';
 import { GamificationTab } from './settings/GamificationTab';
+import { qk } from '@/lib/queryKeys';
 import { applyTheme } from '@/lib/theme';
 import {
   AppearanceTab,
@@ -82,6 +83,8 @@ export function SettingsPage() {
     onSuccess: (saved) => {
       queryClient.setQueryData(['settings'], saved);
       queryClient.invalidateQueries({ queryKey: ['settings'] });
+      // The threshold pace feeds the VDOT when Garmin has no race prediction.
+      queryClient.invalidateQueries({ queryKey: qk.paces });
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     },
