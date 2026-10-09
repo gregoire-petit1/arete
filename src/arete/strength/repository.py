@@ -419,116 +419,18 @@ class StrengthRepository:
     def get_session(self, session_id: int) -> StrengthSession | None:
         """Get a strength session with all exercises and sets."""
         conn = self._get_connection()
-
-        # Get session
-        session_row = conn.execute(
-            """
-            SELECT id, user_id, date, name, program, duration_min,
-                   overall_rpe, fatigue_level, sleep_quality, notes, created_at,
-                   actual_session_id
-            FROM app.strength_sessions WHERE id = ?
-            """,
-            [session_id],
-        ).fetchone()
-
-        if not session_row:
+        try:
+            row = conn.execute(
+                f"SELECT {_SESSION_COLUMNS} FROM app.strength_sessions WHERE id = ?",
+                [session_id],
+            ).fetchone()
+            if not row:
+                return None
+            session = _session_from_row(row)
+            self._load_exercises(conn, [session])
+            return session
+        finally:
             conn.close()
-            return None
-
-        session = StrengthSession(
-            id=session_row[0],
-            user_id=session_row[1],
-            date=session_row[2],
-            name=session_row[3],
-            program=session_row[4],
-            duration_min=session_row[5],
-            overall_rpe=session_row[6],
-            fatigue_level=session_row[7],
-            sleep_quality=session_row[8],
-            notes=session_row[9],
-            created_at=session_row[10],
-            actual_session_id=session_row[11],
-        )
-
-        # Get exercises
-        exercise_rows = conn.execute(
-            """
-            SELECT se.id, se.exercise_id, se.exercise_order,
-                   se.target_sets, se.target_reps, se.target_rpe, se.notes,
-                   e.id, e.name, e.category, e.primary_muscle, e.secondary_muscles_json,
-                   e.equipment, e.is_unilateral, e.notes
-            FROM app.session_exercises se
-            LEFT JOIN app.exercises e ON se.exercise_id = e.id
-            WHERE se.session_id = ?
-            ORDER BY se.exercise_order
-            """,
-            [session_id],
-        ).fetchall()
-
-        for ex_row in exercise_rows:
-            exercise = None
-            if ex_row[7]:  # Has exercise data
-                secondary = json.loads(ex_row[11]) if ex_row[11] else []
-                exercise = Exercise(
-                    id=ex_row[7],
-                    name=ex_row[8],
-                    category=ExerciseCategory(ex_row[9])
-                    if ex_row[9]
-                    else ExerciseCategory.OTHER,
-                    primary_muscle=MuscleGroup(ex_row[10])
-                    if ex_row[10]
-                    else MuscleGroup.FULL_BODY,
-                    secondary_muscles=[MuscleGroup(m) for m in secondary],
-                    equipment=ex_row[12],
-                    is_unilateral=ex_row[13],
-                    notes=ex_row[14],
-                )
-
-            session_exercise = SessionExercise(
-                id=ex_row[0],
-                session_id=session_id,
-                exercise_id=ex_row[1],
-                exercise=exercise,
-                order=ex_row[2],
-                target_sets=ex_row[3],
-                target_reps=ex_row[4],
-                target_rpe=ex_row[5],
-                notes=ex_row[6],
-            )
-
-            # Get sets for this exercise
-            set_rows = conn.execute(
-                """
-                SELECT id, set_number, reps, weight_kg, rpe, rir,
-                       rest_sec, tempo, is_warmup, is_failure, notes
-                FROM app.exercise_sets
-                WHERE session_exercise_id = ?
-                ORDER BY set_number
-                """,
-                [ex_row[0]],
-            ).fetchall()
-
-            for set_row in set_rows:
-                exercise_set = ExerciseSet(
-                    id=set_row[0],
-                    session_exercise_id=ex_row[0],
-                    set_number=set_row[1],
-                    reps=set_row[2],
-                    weight_kg=set_row[3],
-                    rpe=set_row[4],
-                    rir=set_row[5],
-                    rest_sec=set_row[6],
-                    tempo=set_row[7],
-                    is_warmup=set_row[8],
-                    is_failure=set_row[9],
-                    notes=set_row[10],
-                )
-                session_exercise.sets.append(exercise_set)
-
-            session.exercises.append(session_exercise)
-
-        conn.close()
-        return session
 
     def list_sessions(
         self,
@@ -536,15 +438,15 @@ class StrengthRepository:
         end_date: date | None = None,
         program: str | None = None,
         limit: int = 50,
+        include_details: bool = False,
     ) -> list[StrengthSession]:
-        """List strength sessions (without full exercise details)."""
+        """List strength sessions, with exercises and sets if ``include_details``.
+
+        Details cost two statements for the whole list, not two per session.
+        """
         conn = self._get_connection()
 
-        query = """
-            SELECT id, user_id, date, name, program, duration_min,
-                   overall_rpe, fatigue_level, sleep_quality, notes, created_at
-            FROM app.strength_sessions WHERE 1=1
-        """
+        query = f"SELECT {_SESSION_COLUMNS} FROM app.strength_sessions WHERE 1=1"
         params: list = []
 
         if start_date:
@@ -560,27 +462,56 @@ class StrengthRepository:
         query += " ORDER BY date DESC LIMIT ?"
         params.append(limit)
 
-        results = conn.execute(query, params).fetchall()
-        conn.close()
-
-        sessions = []
-        for row in results:
-            sessions.append(
-                StrengthSession(
-                    id=row[0],
-                    user_id=row[1],
-                    date=row[2],
-                    name=row[3],
-                    program=row[4],
-                    duration_min=row[5],
-                    overall_rpe=row[6],
-                    fatigue_level=row[7],
-                    sleep_quality=row[8],
-                    notes=row[9],
-                    created_at=row[10],
-                )
-            )
+        try:
+            sessions = [
+                _session_from_row(row) for row in conn.execute(query, params).fetchall()
+            ]
+            if include_details:
+                self._load_exercises(conn, sessions)
+        finally:
+            conn.close()
         return sessions
+
+    def _load_exercises(
+        self, conn: duckdb.DuckDBPyConnection, sessions: list[StrengthSession]
+    ) -> None:
+        """Attach exercises and their sets to ``sessions``: two statements at most."""
+        if not sessions:
+            return
+        by_id = {session.id: session for session in sessions}
+        exercise_rows = conn.execute(
+            f"""
+            SELECT se.session_id, se.id, se.exercise_id, se.exercise_order,
+                   se.target_sets, se.target_reps, se.target_rpe, se.notes,
+                   e.id, e.name, e.category, e.primary_muscle, e.secondary_muscles_json,
+                   e.equipment, e.is_unilateral, e.notes
+            FROM app.session_exercises se
+            LEFT JOIN app.exercises e ON se.exercise_id = e.id
+            WHERE se.session_id IN ({", ".join("?" * len(by_id))})
+            ORDER BY se.session_id, se.exercise_order
+            """,
+            list(by_id),
+        ).fetchall()
+
+        exercises: dict[int, SessionExercise] = {}
+        for row in exercise_rows:
+            session_exercise = _session_exercise_from_row(row[0], row[1:])
+            exercises[row[1]] = session_exercise
+            by_id[row[0]].exercises.append(session_exercise)
+        if not exercises:
+            return
+        set_rows = conn.execute(
+            f"""
+            SELECT session_exercise_id, id, set_number, reps, weight_kg, rpe, rir,
+                   rest_sec, tempo, is_warmup, is_failure, notes
+            FROM app.exercise_sets
+            WHERE session_exercise_id IN ({", ".join("?" * len(exercises))})
+            ORDER BY session_exercise_id, set_number
+            """,
+            list(exercises),
+        ).fetchall()
+        for row in set_rows:
+            exercises[row[0]].sets.append(_set_from_row(row[0], row[1:]))
 
     def delete_session(self, session_id: int) -> bool:
         """Delete a strength session and all related data."""
@@ -880,6 +811,72 @@ class StrengthRepository:
         )
         conn.close()
         return True
+
+
+_SESSION_COLUMNS = """id, user_id, date, name, program, duration_min,
+    overall_rpe, fatigue_level, sleep_quality, notes, created_at,
+    actual_session_id"""
+
+
+def _session_from_row(row: tuple) -> StrengthSession:
+    return StrengthSession(
+        id=row[0],
+        user_id=row[1],
+        date=row[2],
+        name=row[3],
+        program=row[4],
+        duration_min=row[5],
+        overall_rpe=row[6],
+        fatigue_level=row[7],
+        sleep_quality=row[8],
+        notes=row[9],
+        created_at=row[10],
+        actual_session_id=row[11],
+    )
+
+
+def _session_exercise_from_row(session_id: int, row: tuple) -> SessionExercise:
+    exercise = None
+    if row[7]:  # Has exercise data
+        secondary = json.loads(row[11]) if row[11] else []
+        exercise = Exercise(
+            id=row[7],
+            name=row[8],
+            category=ExerciseCategory(row[9]) if row[9] else ExerciseCategory.OTHER,
+            primary_muscle=MuscleGroup(row[10]) if row[10] else MuscleGroup.FULL_BODY,
+            secondary_muscles=[MuscleGroup(m) for m in secondary],
+            equipment=row[12],
+            is_unilateral=row[13],
+            notes=row[14],
+        )
+    return SessionExercise(
+        id=row[0],
+        session_id=session_id,
+        exercise_id=row[1],
+        exercise=exercise,
+        order=row[2],
+        target_sets=row[3],
+        target_reps=row[4],
+        target_rpe=row[5],
+        notes=row[6],
+    )
+
+
+def _set_from_row(session_exercise_id: int, row: tuple) -> ExerciseSet:
+    return ExerciseSet(
+        id=row[0],
+        session_exercise_id=session_exercise_id,
+        set_number=row[1],
+        reps=row[2],
+        weight_kg=row[3],
+        rpe=row[4],
+        rir=row[5],
+        rest_sec=row[6],
+        tempo=row[7],
+        is_warmup=row[8],
+        is_failure=row[9],
+        notes=row[10],
+    )
 
 
 def _parse_secondary(raw) -> list[str]:

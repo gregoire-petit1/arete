@@ -324,6 +324,58 @@ class TestStrengthRepository:
         # Cleanup
         strength_repo.delete_session(session_id)
 
+    def _seed_sessions(self, repo, count: int) -> list[int]:
+        ids = []
+        for n in range(count):
+            exercises = []
+            for order in (1, 2):
+                exercise_id = repo.create_exercise(
+                    Exercise(
+                        name=f"Test List Exercise {n}-{order}",
+                        category=ExerciseCategory.SQUAT,
+                        primary_muscle=MuscleGroup.QUADS,
+                        secondary_muscles=[MuscleGroup.GLUTES],
+                    )
+                )
+                exercise = SessionExercise(exercise_id=exercise_id, order=order)
+                exercise.sets = [
+                    ExerciseSet(set_number=i, reps=5 + i, weight_kg=50 + 10 * n)
+                    for i in (1, 2, 3)
+                ]
+                exercises.append(exercise)
+            session = StrengthSession(date=date(2030, 1, 1 + n), name=f"List {n}")
+            session.exercises = exercises
+            ids.append(repo.create_session(session))
+        return ids
+
+    def test_list_with_details_matches_get_session(self, strength_repo):
+        ids = self._seed_sessions(strength_repo, 3)
+        listed = strength_repo.list_sessions(
+            start_date=date(2030, 1, 1), include_details=True
+        )
+        assert listed == [strength_repo.get_session(i) for i in reversed(ids)]
+        assert all(len(s.exercises) == 2 for s in listed)
+
+    def test_list_with_details_costs_three_statements(self, strength_repo):
+        self._seed_sessions(strength_repo, 3)
+        statements: list[str] = []
+        connect = strength_repo._get_connection
+
+        class Counting:
+            def __init__(self, con):
+                self._con = con
+
+            def execute(self, sql, *args):
+                statements.append(sql)
+                return self._con.execute(sql, *args)
+
+            def __getattr__(self, name):
+                return getattr(self._con, name)
+
+        strength_repo._get_connection = lambda: Counting(connect())
+        strength_repo.list_sessions(start_date=date(2030, 1, 1), include_details=True)
+        assert len(statements) == 3
+
     def test_exercise_history(self, strength_repo):
         """Test getting exercise history."""
         # Create exercise
