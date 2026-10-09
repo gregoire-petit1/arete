@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Check, LogOut, Target, Watch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { garminApi, stravaApi } from '@/lib/api';
@@ -9,6 +10,7 @@ import { invalidateAfterSession } from '@/lib/queryKeys';
 export function ConnectionsTab() {
   const queryClient = useQueryClient();
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const { data: syncStatus } = useQuery({
     queryKey: ['syncStatus'],
@@ -22,14 +24,21 @@ export function ConnectionsTab() {
     retry: false,
   });
 
-  // Coming back from the Strava OAuth redirect: clean the URL and refresh the status.
+  // Coming back from the Strava OAuth redirect: drop only the `strava` flag (the
+  // tab stays selected) and refresh the status.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('strava') === 'connected') {
-      window.history.replaceState({}, '', window.location.pathname);
+    if (searchParams.get('strava') === 'connected') {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete('strava');
+          return next;
+        },
+        { replace: true }
+      );
       queryClient.invalidateQueries({ queryKey: ['stravaStatus'] });
     }
-  }, [queryClient]);
+  }, [searchParams, setSearchParams, queryClient]);
 
   const connectMutation = useMutation({
     mutationFn: stravaApi.getAuthorizeUrl,
@@ -37,17 +46,19 @@ export function ConnectionsTab() {
       window.location.href = url;
     },
     onError: (err) =>
-      setSyncResult(`Strava: ${err instanceof Error ? err.message : 'could not start authorization'}`),
+      setSyncResult(`Strava : ${err instanceof Error ? err.message : 'autorisation impossible à lancer'}`),
   });
 
   const syncMutation = useMutation({
     mutationFn: () => stravaApi.sync(30),
     onSuccess: (result) => {
-      setSyncResult(`${result.imported} imported, ${result.merged} merged into Garmin sessions, ${result.skipped} skipped`);
+      setSyncResult(
+        `${result.imported} importée(s), ${result.merged} fusionnée(s) avec des séances Garmin, ${result.skipped} ignorée(s)`
+      );
       queryClient.invalidateQueries({ queryKey: ['stravaStatus'] });
       invalidateAfterSession(queryClient);
     },
-    onError: (err) => setSyncResult(`Sync failed: ${err instanceof Error ? err.message : err}`),
+    onError: (err) => setSyncResult(`Échec de la synchro : ${err instanceof Error ? err.message : err}`),
   });
 
   const disconnectMutation = useMutation({

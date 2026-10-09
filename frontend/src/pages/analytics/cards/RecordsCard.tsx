@@ -1,12 +1,22 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Trophy } from 'lucide-react';
 import { analyticsApi } from '@/lib/api';
+import { cn } from '@/lib/utils';
+
+/** Sport groups the backend's /analytics/records accepts. */
+const RECORD_SPORTS = [
+  { value: 'running', label: 'COURSE' },
+  { value: 'cycling', label: 'VÉLO' },
+] as const;
+type RecordSport = (typeof RECORD_SPORTS)[number]['value'];
 
 /** All-time bests, independent of the selected period. */
 export function RecordsCard() {
+  const [sport, setSport] = useState<RecordSport>('running');
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['analytics', 'records'],
-    queryFn: () => analyticsApi.getRecords(),
+    queryKey: ['analytics', 'records', sport],
+    queryFn: () => analyticsApi.getRecords(sport),
     staleTime: 5 * 60 * 1000,
   });
   const records = data?.records ?? [];
@@ -16,6 +26,24 @@ export function RecordsCard() {
       <header className="flex items-center gap-2">
         <Trophy className="w-4 h-4 text-neon-gold" aria-hidden />
         <h3 className="text-sm font-mono text-neon-cyan uppercase tracking-wider">Records</h3>
+        <div className="flex gap-1 ml-auto" role="group" aria-label="Sport des records">
+          {RECORD_SPORTS.map((s) => (
+            <button
+              key={s.value}
+              type="button"
+              onClick={() => setSport(s.value)}
+              aria-pressed={sport === s.value}
+              className={cn(
+                'px-2 py-0.5 text-[10px] font-mono rounded border transition-colors',
+                sport === s.value
+                  ? 'bg-neon-cyan/20 text-neon-cyan border-neon-cyan/50'
+                  : 'bg-abyss text-text-secondary border-text-muted/30'
+              )}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </header>
 
       {isLoading ? (

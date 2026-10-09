@@ -5,7 +5,7 @@ import { LoadingState, MetricCard, OffPlanRow, SessionCard, strengthAsActual } f
 import { Panel } from '@/components/ui';
 import { garminApi, garminHealthApi, metricsApi, settingsApi, tipsApi } from '@/lib/api';
 import { formatHoursMinutes } from '@/lib/fr';
-import { cn, getZoneColor } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { toLocalISODate } from '@/lib/dates';
 import { qk, strengthSessionsQuery } from '@/lib/queryKeys';
 import { linkDay } from '@/lib/sessionMatch';
@@ -140,7 +140,7 @@ export function DashboardPage() {
           ) : (
             <div className="text-center py-4">
               <p className="text-sm font-mono text-text-muted mb-2">Repos — aucune séance prévue</p>
-              <Link to="/planning" className="text-xs font-mono text-neon-cyan hover:underline">
+              <Link to="/planning?new=1" className="text-xs font-mono text-neon-cyan hover:underline">
                 + Ajouter une séance
               </Link>
             </div>
@@ -193,16 +193,16 @@ export function DashboardPage() {
             <MetricCard
               title="Charge (ACWR)"
               value={workload?.acwr?.toFixed(2) ?? '—'}
-              zone={workload?.acwr_zone ?? 'unknown'}
-              zoneColor={getZoneColor(workload?.acwr_zone)}
+              kind="acwr"
+              zone={workload?.acwr_zone}
             />
             <MetricCard
               title="Fraîcheur (TSB)"
               value={
                 fitness?.tsb != null ? `${fitness.tsb > 0 ? '+' : ''}${fitness.tsb.toFixed(1)}` : '—'
               }
-              zone={fitness?.form_zone ?? 'unknown'}
-              zoneColor={getZoneColor(fitness?.form_zone)}
+              kind="form"
+              zone={fitness?.form_zone}
             />
           </div>
         </Panel>
@@ -270,7 +270,7 @@ export function DashboardPage() {
           ) : (
             <p className="text-sm font-mono text-text-muted">
               Pas de données santé aujourd&apos;hui.{' '}
-              <Link to="/settings" className="text-neon-cyan hover:underline">
+              <Link to="/settings?tab=system" className="text-neon-cyan hover:underline">
                 Synchroniser
               </Link>
             </p>

@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { EmptyState, LoadingState } from '@/components';
 import { Modal, ModalHeader, RPE_TEXT, rpeTone } from '@/components/ui';
 import { strengthApi } from '@/lib/api';
+import { parseLocalDate } from '@/lib/dates';
 
 interface SessionDetailModalProps {
   sessionId: number | null;
@@ -49,14 +50,14 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
           <div className="flex items-center justify-between border-b border-text-muted/20 pb-4">
             <div>
               <div className="text-sm font-mono text-text-muted">
-                {new Date(session.date).toLocaleDateString('fr-FR', {
+                {parseLocalDate(session.date).toLocaleDateString('fr-FR', {
                   weekday: 'long',
                   day: 'numeric',
                   month: 'long',
                   year: 'numeric',
                 })}
               </div>
-              <div className="text-xl font-mono text-text-primary mt-1">{session.name || 'Session'}</div>
+              <div className="text-xl font-mono text-text-primary mt-1">{session.name || 'Séance'}</div>
             </div>
             <div className="text-right">
               {session.duration_min && (
@@ -88,9 +89,9 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
                   <div key={idx} className="p-3 bg-abyss rounded border border-text-muted/20">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-mono text-text-primary">
-                        {ex.exercise?.name || `Exercise #${ex.exercise_id}`}
+                        {ex.exercise?.name || `Exercice n°${ex.exercise_id}`}
                       </span>
-                      <span className="text-xs font-mono text-text-muted">{ex.sets?.length || 0} sets</span>
+                      <span className="text-xs font-mono text-text-muted">{ex.sets?.length || 0} séries</span>
                     </div>
                     {ex.sets && ex.sets.length > 0 && (
                       <div className="flex flex-wrap gap-2">
@@ -103,7 +104,7 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
                             )}
                           >
                             {set.weight_kg && `${set.weight_kg}kg × `}
-                            {set.reps !== null ? `${set.reps}` : 'failure'}
+                            {set.reps !== null ? `${set.reps}` : 'échec'}
                             {set.rpe && ` @${set.rpe}`}
                           </div>
                         ))}
@@ -125,7 +126,7 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
           <div className="border-t border-text-muted/20 pt-4">
             <h3 className="text-sm font-mono text-text-muted uppercase tracking-wider mb-3 flex items-center gap-2">
               <Link className="w-4 h-4" />
-              Garmin Sync
+              Synchro Garmin
             </h3>
 
             {session.garmin_activity_id ? (
@@ -133,7 +134,7 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
                 <div className="flex items-center gap-2">
                   <Check className="w-4 h-4 text-success-green" />
                   <span className="text-sm font-mono text-success-green">
-                    Linked to Garmin #{session.garmin_activity_id}
+                    Liée à l'activité Garmin n°{session.garmin_activity_id}
                   </span>
                 </div>
                 <button
@@ -149,7 +150,9 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
             ) : garminCandidates?.candidates && garminCandidates.candidates.length > 0 ? (
               <div className="space-y-2">
                 <p className="text-xs text-text-muted font-mono mb-2">
-                  Found {garminCandidates.candidates.length} matching Garmin activity(s):
+                  {garminCandidates.candidates.length === 1
+                    ? '1 activité Garmin correspondante :'
+                    : `${garminCandidates.candidates.length} activités Garmin correspondantes :`}
                 </p>
                 {garminCandidates.candidates.map((candidate) => (
                   <button
@@ -166,14 +169,14 @@ export function SessionDetailModal({ sessionId, onClose }: SessionDetailModalPro
                           ({Math.round(candidate.duration_seconds / 60)} min)
                         </span>
                       </div>
-                      <span className="text-xs font-mono text-neon-cyan uppercase">[LINK]</span>
+                      <span className="text-xs font-mono text-neon-cyan uppercase">[LIER]</span>
                     </div>
                   </button>
                 ))}
               </div>
             ) : (
               <div className="p-3 bg-abyss rounded border border-text-muted/20">
-                <p className="text-sm font-mono text-text-muted text-center">No matching Garmin activities found</p>
+                <p className="text-sm font-mono text-text-muted text-center">Aucune activité Garmin correspondante</p>
               </div>
             )}
           </div>

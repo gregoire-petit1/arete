@@ -28,7 +28,7 @@ export function RecentSessions() {
   const [editNotes, setEditNotes] = useState('');
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { rpe?: number; notes?: string } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { rpe?: number | null; notes?: string } }) =>
       analyticsApi.updateSession(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk.cardioSessions });
@@ -46,7 +46,8 @@ export function RecentSessions() {
     if (editingId === null) return;
     updateMutation.mutate({
       id: editingId,
-      data: { rpe: editRpe ?? undefined, notes: editNotes },
+      // null clears the RPE; undefined would vanish from the JSON body.
+      data: { rpe: editRpe, notes: editNotes },
     });
   };
 
@@ -79,7 +80,7 @@ export function RecentSessions() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-mono text-text-muted">{s.date}</span>
-                      <span className="text-sm font-mono text-text-primary truncate">{s.name || 'Untitled'}</span>
+                      <span className="text-sm font-mono text-text-primary truncate">{s.name || 'Sans titre'}</span>
                     </div>
                     <div className="text-xs font-mono text-text-muted mt-0.5 flex flex-wrap gap-x-3">
                       <span>{formatDurationCompact(s.duration_sec)}</span>
@@ -158,7 +159,7 @@ export function RecentSessions() {
                   </div>
                   <div className="flex gap-2 justify-end">
                     <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>
-                      CANCEL
+                      ANNULER
                     </Button>
                     <Button size="sm" strong onClick={saveEdit} loading={updateMutation.isPending}>
                       {updateMutation.isPending ? 'ENREGISTREMENT…' : 'ENREGISTRER'}

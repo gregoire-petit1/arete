@@ -2,6 +2,7 @@ import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StrengthIcon } from '@/components';
 import { RpeBadge } from '@/components/ui';
+import { parseLocalDate } from '@/lib/dates';
 import type { StrengthSession } from '@/types';
 
 export function SessionRow({
@@ -26,7 +27,7 @@ export function SessionRow({
       <div className="flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-mono text-text-primary">
-            {new Date(session.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+            {parseLocalDate(session.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
           </span>
           <span className="text-text-muted">—</span>
           <span className="text-sm font-mono text-text-secondary">{session.name || 'Séance'}</span>
