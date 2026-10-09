@@ -7,8 +7,9 @@ Builds the real chat graph with a stand-in model that records each request
 instead of sending it, then prints:
 
 - the fixed cost of every model call (system prompt, tool schemas, context),
-- what each page read adds,
-- what loading each toolkit adds to every later call of the turn,
+  with the Dashboard open,
+- what each open page adds to the system prompt (its data rides along, so a
+  question about the screen needs no tool call),
 - what the analytics toolkit's narrow reads cost.
 
 No network, no model. Point ``ARETE_DB`` at a **copy**: the schema is migrated
@@ -31,7 +32,6 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 
 _ENCODING = tiktoken.get_encoding("o200k_base")
 PAGES = ("dashboard", "analytics", "planning", "log", "settings")
-TOOLKITS = ("planning", "analytics", "strength")
 
 
 def tokens(text: str) -> int:
@@ -114,34 +114,21 @@ def main() -> None:
     print(f"  tool schemas ({len(first['tools'])})       {tool_total:7d}")
     for name, cost in sorted(first["tools"].items(), key=lambda kv: -kv[1]):
         print(f"      {name:22s} {cost:7d}")
-    print(f"  user message + stamp   {first['messages']:7d}")
+    print(f"  user message           {first['messages']:7d}")
     print(
         f"  total                  {first['system'] + tool_total + first['messages']:7d}"
     )
 
-    print("\nPAGE READS — get_page_context")
+    print("\nOPEN PAGE — system prompt with that page open")
+    for page in PAGES:
+        system = call_cost(record_turn(page, [AIMessage(content="ok")])[0])["system"]
+        print(f"  {page:10s} {system:7d}")
+
+    print("\nOTHER PAGE READS — get_page_context")
     for page in PAGES:
         out = get_page_context.invoke({"page": page})
         flag = "   REFUSED" if out.startswith('{"error"') else ""
         print(f"  {page:10s} {tokens(out):7d}{flag}")
-
-    print("\nTOOLKITS — added to every later call once loaded")
-    for toolkit in TOOLKITS:
-        before, after = (
-            call_cost(c)
-            for c in record_turn(
-                "dashboard",
-                [
-                    _tool_call("load_toolkit", {"toolkit_id": toolkit}),
-                    AIMessage(content="ok"),
-                ],
-            )[:2]
-        )
-        schemas = sum(after["tools"].values()) - sum(before["tools"].values())
-        instructions = after["system"] - before["system"]
-        print(
-            f"  {toolkit:10s} schemas {schemas:+6d}   instructions {instructions:+6d}"
-        )
 
     print("\nANALYTICS TOOLKIT READS")
     for label, tool, args in (

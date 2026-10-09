@@ -1,4 +1,4 @@
-"""Measure the model boundary after context assembly and compaction."""
+"""Measure the model boundary after context assembly."""
 
 from time import monotonic
 

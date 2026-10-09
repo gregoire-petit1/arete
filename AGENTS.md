@@ -15,8 +15,8 @@ Read [docs/architecture.md](docs/architecture.md) before changing the coaching s
   events. Keep clients, credentials, deadlines and concurrency primitives out of
   conversation state. Browser threads remain authoritative; do not introduce server
   persistence implicitly.
-- `agent/context/` owns final request ordering, typed contributions, compaction and
-  complete-request token accounting. Contribute context here instead of appending
+- `agent/context/` owns final request ordering, typed contributions (including the
+  open page's data) and complete-request token accounting. Contribute context here instead of appending
   prompts independently in another middleware. Preserve the current objective and
   raw history; never silently truncate a request to fit.
 - `agent/models/` owns model routes, configured limits and provider clients. Construct
@@ -47,7 +47,9 @@ responsibility a testable owner. Do not create empty architectural scaffolding.
 
 ## Runtime contracts to preserve
 
-- Chat may write training data after loading the appropriate toolkit. Briefings
+- Chat preloads its toolkits and may write training data; model requests, not
+  tokens, are the free tier's budget, so do not reintroduce per-turn loading or
+  auxiliary calls without measuring them (`Agent run:` log line). Briefings
   preload read-only analytics; feedback uses supplied facts and memory. Background
   jobs can maintain the ledger but cannot alter training plans or log workouts.
 - Each invocation has named call, concurrency and time limits. SDK retries and

@@ -207,8 +207,7 @@ def test_concurrent_profiles_keep_instructions_and_traces_isolated(
         assert TASK_INSTRUCTIONS[task] in prompt
         for other in set(tasks) - {task}:
             assert TASK_INSTRUCTIONS[other] not in prompt
-        has_panel = any("Application page metadata" in str(m.content) for m in messages)
-        assert has_panel == (task == "chat")
+        assert ("Page ouverte par l'athlète" in prompt) == (task == "chat")
     runs, roots = assert_trace_tree(recorder, roots=3)
     assert {r["extra"]["metadata"]["task"] for r in roots} == set(tasks)
     for root in roots:
@@ -311,63 +310,6 @@ def test_inference_errors_close_the_root_and_model_spans(
     runs, roots = assert_trace_tree(recorder)
     assert "inference unavailable" in roots[0]["error"]
     assert any(r["run_type"] == "llm" and r.get("error") for r in runs)
-
-
-@pytest.mark.parametrize("task", ["chat", "briefing", "session_feedback"])
-@pytest.mark.parametrize("streaming", [False, True])
-def test_summarization_is_chat_only_and_nested(monkeypatch, recorder, task, streaming):
-    from deepagents.backends import FilesystemBackend
-    from deepagents.middleware import SummarizationMiddleware
-
-    from arete.agent.context.compaction import transcripts_root
-
-    model, _ = install_model(
-        monkeypatch, [AIMessage(content="summary"), AIMessage(content="answer")]
-    )
-    summary = SummarizationMiddleware(
-        model,
-        backend=FilesystemBackend(root_dir=transcripts_root()),
-        trigger=("messages", 4),
-        keep=("messages", 2),
-    )
-    monkeypatch.setattr(agent, "build_summarization", lambda *a, **kw: summary)
-    history = {
-        "messages": [
-            m
-            for i in range(4)
-            for m in (HumanMessage(f"question {i}"), AIMessage(content=f"reply {i}"))
-        ]
-        + [HumanMessage("now?")]
-    }
-    if streaming:
-
-        async def consume():
-            return [
-                p
-                async for p in stream_run(
-                    history,
-                    context=AgentContext(
-                        profile="feedback" if task == "session_feedback" else task
-                    ),
-                )
-            ]
-
-        asyncio.run(consume())
-    else:
-        invoke(
-            history,
-            context=AgentContext(
-                profile="feedback" if task == "session_feedback" else task
-            ),
-        )
-    runs, _ = assert_trace_tree(recorder)
-    llms = [r for r in runs if r["run_type"] == "llm"]
-    summaries = [
-        r for r in llms if r["extra"]["metadata"].get("lc_source") == "summarization"
-    ]
-    assert len(llms) == (2 if task == "chat" else 1)
-    assert len(summaries) == (1 if task == "chat" else 0)
-    assert bool(list(transcripts_root().rglob("*.md"))) == (task == "chat")
 
 
 def test_disabled_tracing_overrides_legacy_environment(monkeypatch):

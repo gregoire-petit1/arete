@@ -84,8 +84,11 @@ are never automatically replayed.
 Background briefings receive read-only analytics already loaded. Session feedback
 uses supplied facts and the memory ledger only. Both can maintain coaching memory,
 but neither can change the training plan or log workouts. The server checks these
-permissions at execution as well as filtering tool schemas. Chat retains direct
-training writes after the corresponding toolkit has been loaded.
+permissions at execution as well as filtering tool schemas. Chat has its three
+toolkits preloaded and retains direct training writes; the page the athlete has
+open is read by the server and placed in the prompt, so a question about the
+screen costs one model request. The browser sends the last 30 messages of a
+thread; the coach's journal is its long-term memory.
 
 To trace the coach, set `LANGSMITH_TRACING=true` and `LANGSMITH_API_KEY` in the
 backend `.env`, then restart. This key is separate from inference credentials.

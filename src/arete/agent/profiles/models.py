@@ -15,5 +15,4 @@ class AgentProfile:
     preloaded: tuple[str, ...] = ()
     training_writes: bool = False
     page_context: bool = False
-    compact: bool = False
     suggestions: bool = False

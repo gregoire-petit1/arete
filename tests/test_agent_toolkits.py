@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
+import pytest
 from langchain_core.messages import SystemMessage
 
 from arete.agent.capabilities.discovery import (
@@ -138,6 +139,7 @@ class _Request:
         )
 
 
+@pytest.mark.usefixtures("progressive_chat")
 def test_toolkit_tools_not_in_primary_request_until_loaded():
     seen: list[list[str]] = []
 
@@ -164,6 +166,7 @@ def test_wrap_model_call_leaves_caller_request_untouched():
     assert request.tools == []
 
 
+@pytest.mark.usefixtures("progressive_chat")
 def test_two_interleaved_runs_keep_their_own_toolkits():
     """The reason the loaded set lives in graph state and not on the middleware.
 
@@ -200,6 +203,7 @@ def test_two_interleaved_runs_keep_their_own_toolkits():
     assert "create_planned_session" not in seen[3]
 
 
+@pytest.mark.usefixtures("progressive_chat")
 def test_interleaved_runs_keep_their_own_instructions():
     seen: list[str] = []
 
@@ -219,6 +223,7 @@ def test_interleaved_runs_keep_their_own_instructions():
     assert PLANNING_INSTRUCTIONS not in seen[1]
 
 
+@pytest.mark.usefixtures("progressive_chat")
 def test_pinned_instructions_reach_the_system_message_after_load():
     """The point of a toolkit: loading it must teach the model how to use it.
 

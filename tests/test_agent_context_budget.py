@@ -12,5 +12,5 @@ def test_the_budget_script_runs_against_the_suite_database(capsys, monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     runpy.run_path(str(SCRIPT), run_name="__main__")
     out = capsys.readouterr().out
-    for section in ("FIXED COST", "PAGE READS", "TOOLKITS", "ANALYTICS TOOLKIT READS"):
+    for section in ("FIXED COST", "OPEN PAGE", "PAGE READS", "ANALYTICS TOOLKIT READS"):
         assert section in out

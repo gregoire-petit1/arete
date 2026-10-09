@@ -14,7 +14,7 @@ class ContextBuilderMiddleware(AgentMiddleware):
 
 
 class ContextBudgetMiddleware(AgentMiddleware):
-    """Final preflight after all contributions and compaction."""
+    """Final preflight after all contributions."""
 
     def __init__(self, *, context_tokens: int, output_tokens: int):
         self.context_tokens = context_tokens

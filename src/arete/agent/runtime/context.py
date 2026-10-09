@@ -56,6 +56,8 @@ class AgentContext:
     current_date: date = field(default_factory=date.today)
     deadline: float | None = field(default=None, init=False)
     stats: RunStats = field(default_factory=RunStats, init=False, repr=False)
+    # The open page's data, read once per run (it costs SQL, unlike the journal).
+    page_section: str | None = field(default=None, init=False, repr=False)
     # Async ToolNode uses gather(), ignoring RunnableConfig concurrency.
     tool_slots: asyncio.Semaphore = field(
         default_factory=lambda: asyncio.Semaphore(MAX_TOOL_CONCURRENCY),

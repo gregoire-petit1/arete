@@ -52,20 +52,6 @@ def test_execution_policy_is_independent_of_framework_hooks():
         resolve_policy("client_admin")
 
 
-def test_small_model_window_compacts_earlier(tmp_path, monkeypatch):
-    from arete.agent.context.compaction import build_summarization
-    from arete.agent.models.providers import build_chat_model
-
-    monkeypatch.setenv("ARETE_DB", str(tmp_path / "db.duckdb"))
-    monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    middleware = build_summarization(
-        build_chat_model(), context_tokens=8192, output_tokens=4096
-    )
-    messages = [HumanMessage("hi")]
-    assert middleware._should_summarize(messages, 3000)
-    assert not middleware._should_summarize(messages, 1000)
-
-
 def test_compiled_background_profile_rejects_chat_policy_before_model_execution():
     from arete.agent.middlewares.policy import ProfilePolicyMiddleware
 

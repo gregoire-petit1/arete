@@ -28,10 +28,8 @@ def build_agent(
     context_tokens: int,
     output_tokens: int,
     filesystem: AgentMiddleware[Any, Any, Any],
-    compaction: AgentMiddleware[Any, Any, Any] | None = None,
     suggestions: AgentMiddleware[Any, Any, Any] | None = None,
 ):
-    assert profile.compact == (compaction is not None), "Compaction dependency mismatch"
     assert profile.suggestions == (suggestions is not None), (
         "Suggestion dependency mismatch"
     )
@@ -39,8 +37,6 @@ def build_agent(
     if profile.page_context:
         middleware.append(ToolEventMiddleware())
     middleware.extend([ToolkitMiddleware(), filesystem, ContextBuilderMiddleware()])
-    if compaction is not None:
-        middleware.append(compaction)
     middleware.append(
         ContextBudgetMiddleware(
             context_tokens=context_tokens, output_tokens=output_tokens

@@ -10,7 +10,6 @@ from threading import Lock
 from typing import Literal
 
 from arete.agent.backends.memory import build_memory_filesystem
-from arete.agent.context.compaction import build_summarization
 from arete.agent.factory import build_agent
 from arete.agent.middlewares.autosuggestion import AutoSuggestionMiddleware
 from arete.agent.models.providers import build_chat_model
@@ -56,13 +55,6 @@ def _assemble(profile_id: str):
         context_tokens=route.context_tokens,
         output_tokens=AGENT_MAX_TOKENS,
         filesystem=build_memory_filesystem(),
-        compaction=build_summarization(
-            model,
-            context_tokens=route.context_tokens,
-            output_tokens=AGENT_MAX_TOKENS,
-        )
-        if profile.compact
-        else None,
         suggestions=AutoSuggestionMiddleware(
             SuggestionGenerator(
                 build_chat_model(
