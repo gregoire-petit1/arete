@@ -206,7 +206,7 @@ Marketplace (`vercel integration add clerk`), which sets `CLERK_SECRET_KEY` and
 | Variable | Purpose |
 | --- | --- |
 | `ARETE_AUTH=clerk` | Enforce sign-in: every API route except `/health`, `/auth/config`, the Strava callback, the cron and the schema needs a Clerk session token |
-| `ARETE_OWNER_EMAIL` | The account that is the athlete. Any other account can sign up but sees a waiting page: attaching more athletes is not done yet |
+| `ARETE_OWNER_EMAIL` | The address that is the athlete; comma-separated when you sign in with several accounts. Any other account can sign up but sees a waiting page: attaching more athletes is not done yet |
 | `ARETE_API_KEY` | Long-lived key for scripts and the MCP server (`Authorization: Bearer`), treated as the athlete |
 | `ARETE_AUTH_ORIGINS` | Optional comma-separated browser origins allowed to hold a session (the token's `azp`); leave unset for Vercel previews |
 

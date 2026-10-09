@@ -246,10 +246,10 @@ class Config:
         return tuple(o.strip().rstrip("/") for o in raw.split(",") if o.strip())
 
     @property
-    def owner_email(self) -> str | None:
-        """The account that is the athlete; other sign-ins get no data."""
-        value = (_env("ARETE_OWNER_EMAIL", "") or "").strip().lower()
-        return value or None
+    def owner_emails(self) -> tuple[str, ...]:
+        """Addresses that are the athlete, comma-separated; others get no data."""
+        raw = _env("ARETE_OWNER_EMAIL", "") or ""
+        return tuple(e.strip().lower() for e in raw.split(",") if e.strip())
 
     @property
     def api_key(self) -> str:

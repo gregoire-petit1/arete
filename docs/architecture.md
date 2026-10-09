@@ -159,7 +159,7 @@ so the coach's stream is not buffered) and the `/auth/config` and `/auth/me`
 routes. Off by default; with `ARETE_AUTH=clerk` every non-public request
 carries a Clerk session token or the instance's API key, verified in a worker
 thread. `services/users.py` owns the accounts table and the one rule that
-attaches an account to the athlete: the owner's e-mail. Services never import
+attaches an account to the athlete: its e-mail is one of the owner's. Services never import
 `arete.api.auth`; the athlete's data stays `user_id = 1`, so nothing below the
 boundary changed. `services/google_tokens.py` reads the signed-in user's Google
 token from Clerk for integrations that need it (Calendar), and

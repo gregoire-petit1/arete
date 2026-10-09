@@ -124,15 +124,18 @@ def test_an_identity_provider_outage_is_a_503_not_a_leak(client, enforced, monke
 
 
 class TestUsers:
-    def test_the_owner_e_mail_binds_once_and_never_steals(self, monkeypatch):
-        monkeypatch.setenv("ARETE_OWNER_EMAIL", "Owner@Example.com")
+    def test_every_owner_address_gets_the_athlete(self, monkeypatch):
+        # One person, two Google accounts: both addresses are the athlete.
+        monkeypatch.setenv("ARETE_OWNER_EMAIL", "Owner@Example.com, me@home.example")
         first = users.upsert_user("u1", "owner@example.com", "Greg")
         assert first.athlete_id == 1 and first.is_owner
         again = users.upsert_user("u1", "OWNER@example.com", None)
         assert (again.athlete_id, again.name) == (1, "Greg")
-        other = users.upsert_user("u2", "owner@example.com", "Imposter")
+        home = users.upsert_user("u2", "ME@home.example", None)
+        assert home.athlete_id == 1
+        other = users.upsert_user("u3", "other@example.com", "Someone")
         assert other.athlete_id is None
-        assert [u.clerk_user_id for u in users.list_users()] == ["u1", "u2"]
+        assert [u.clerk_user_id for u in users.list_users()] == ["u1", "u2", "u3"]
 
     def test_the_owner_e_mail_falls_back_to_settings(self, monkeypatch):
         monkeypatch.delenv("ARETE_OWNER_EMAIL", raising=False)

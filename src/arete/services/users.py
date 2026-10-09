@@ -1,23 +1,21 @@
 """Signed-in accounts (``app.users``) and which one is the athlete.
 
 Arete's data belongs to one athlete, ``user_id = 1`` everywhere. Sign-up is
-open, so an account gets that athlete only when its e-mail is the owner's
-(``ARETE_OWNER_EMAIL``, else the e-mail in Settings); every other account is
+open, so an account gets that athlete only when its e-mail is one of the
+owner's (``ARETE_OWNER_EMAIL``, comma-separated for someone with several
+Google accounts, else the e-mail in Settings); every other account is
 recorded and waits with no data access. Attaching more athletes is the
 multi-athlete work, not this module's.
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from datetime import datetime
 
 from arete.config import config
 from arete.dataio.db import connect
 from arete.dataio.settings import get_user_settings
-
-logger = logging.getLogger(__name__)
 
 OWNER_ATHLETE_ID = 1
 _COLUMNS = "id, clerk_user_id, email, name, athlete_id"
@@ -50,13 +48,13 @@ API_KEY_USER = AppUser(
 )
 
 
-def owner_email() -> str | None:
-    """The e-mail that is the athlete: the environment first, then Settings."""
-    if config.owner_email:
-        return config.owner_email
+def owner_emails() -> frozenset[str]:
+    """The addresses that are the athlete: the environment first, then Settings."""
+    if config.owner_emails:
+        return frozenset(config.owner_emails)
     settings = get_user_settings(user_id=OWNER_ATHLETE_ID) or {}
     value = (settings.get("email") or "").strip().lower()
-    return value or None
+    return frozenset({value}) if value else frozenset()
 
 
 def _from_row(row: tuple) -> AppUser:
@@ -74,16 +72,8 @@ def get_user(clerk_user_id: str) -> AppUser | None:
     return _from_row(row) if row else None
 
 
-def _athlete_taken(con, athlete_id: int, except_clerk_id: str) -> bool:
-    row = con.execute(
-        "SELECT 1 FROM app.users WHERE athlete_id = ? AND clerk_user_id <> ?",
-        [athlete_id, except_clerk_id],
-    ).fetchone()
-    return row is not None
-
-
 def upsert_user(clerk_user_id: str, email: str, name: str | None = None) -> AppUser:
-    """Record a sign-in; the owner's e-mail gets the athlete, once."""
+    """Record a sign-in; an owner address gets the athlete."""
     email = email.strip().lower()
     con = connect()
     try:
@@ -93,21 +83,12 @@ def upsert_user(clerk_user_id: str, email: str, name: str | None = None) -> AppU
             "name = COALESCE(EXCLUDED.name, app.users.name), last_seen_at = ?",
             [clerk_user_id, email, name, datetime.now()],
         )
-        owner = owner_email()
-        if owner and email == owner:
-            if _athlete_taken(con, OWNER_ATHLETE_ID, clerk_user_id):
-                logger.warning(
-                    "Owner e-mail %s signed in as %s but the athlete is already "
-                    "attached to another account",
-                    email,
-                    clerk_user_id,
-                )
-            else:
-                con.execute(
-                    "UPDATE app.users SET athlete_id = ? WHERE clerk_user_id = ? "
-                    "AND athlete_id IS NULL",
-                    [OWNER_ATHLETE_ID, clerk_user_id],
-                )
+        if email in owner_emails():
+            con.execute(
+                "UPDATE app.users SET athlete_id = ? WHERE clerk_user_id = ? "
+                "AND athlete_id IS NULL",
+                [OWNER_ATHLETE_ID, clerk_user_id],
+            )
         row = con.execute(
             f"SELECT {_COLUMNS} FROM app.users WHERE clerk_user_id = ?", [clerk_user_id]
         ).fetchone()
