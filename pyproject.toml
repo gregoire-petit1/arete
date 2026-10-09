@@ -45,6 +45,9 @@ dev = [
     "pytest>=9.0.1",
     "ruff>=0.14.7,<0.15",
 ]
+mcp = [
+    "mcp>=2.3",
+]
 
 [tool.ruff]
 target-version = "py312"
