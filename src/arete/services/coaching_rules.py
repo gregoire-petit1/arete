@@ -251,6 +251,7 @@ def _generate_strength_feedback(
         # The id keeps two same-named sessions of one day apart in the journal
         # (it files each heading once), while the same session stays one entry.
         title=f"musculation — {session.name or 'séance'} (#{session_id})",
+        session_ref=f"strength:{session_id}",
         rpe=session.overall_rpe,
         notes=session.notes,
     )
@@ -346,6 +347,7 @@ def _generate_cardio_feedback(
                 else f"(#{session_id})"
             )
         ),
+        session_ref=f"actual:{session_id}",
         rpe=session.rpe,
         notes=session.notes,
     )

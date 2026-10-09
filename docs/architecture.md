@@ -203,3 +203,17 @@ an action ID. Browser storage keeps that ID; cards reload the authoritative
 proposal and outcome from the API. Settings changes invalidate pending actions,
 ETags protect existing events, and ambiguous writes are never replayed.
 See [Google Calendar setup](google-calendar.md) for activation and live testing.
+
+## Personal memory
+
+Migration 19 versions athlete facts and distinguishes explicit declarations,
+coach hypotheses and legacy evidence. Active, currently valid facts are mandatory
+context; missing reads and oversized contexts fail explicitly. Settings and the
+coach use optimistic revisions, and deleting a fact removes its history.
+
+Chat adds bounded BM25 retrieval of existing facts, journals, session text and
+thread-scoped document blocks through the central context builder. Reads run in
+workers, with a fresh corpus at each model boundary and no extra model request.
+Optional traversal follows only authoritative source links and remains disabled
+pending behavior evaluations. See [personal memory](personal-memory.md) for
+contracts, bounds, migration compatibility and the synthetic evaluation harness.

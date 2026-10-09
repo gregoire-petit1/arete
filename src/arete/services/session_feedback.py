@@ -36,6 +36,7 @@ class SessionEvidence:
     title: str
     rpe: float | None = None
     notes: str | None = None
+    session_ref: str | None = None
 
 
 def _facts(
@@ -77,7 +78,14 @@ def enrich_session_feedback(
         logger.warning("Session feedback agent run failed", exc_info=True)
         text, source = rule_feedback, "rules"
     if evidence is not None:
-        body = facts + (f"\n\nRetour du coach : {text}" if source == "agent" else "")
+        reference = (
+            f"Source séance : {evidence.session_ref}\n" if evidence.session_ref else ""
+        )
+        body = (
+            reference
+            + facts
+            + (f"\n\nRetour du coach : {text}" if source == "agent" else "")
+        )
         try:
             append_entry(SESSIONS_LEDGER, evidence.title, body, when=evidence.date)
         except OSError:

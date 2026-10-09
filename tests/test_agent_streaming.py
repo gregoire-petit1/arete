@@ -156,6 +156,9 @@ def test_system_skill_catalog_and_loaded_instructions_reach_every_model_call(
     from arete.coaching import get_agent
 
     monkeypatch.setenv("ARETE_DB", str(tmp_path / "isolated.duckdb"))
+    from arete.dataio.init_duckdb import main as init_db
+
+    init_db()  # Exercise the real schema now that missing facts cannot be hidden.
     seen = []
     bound_tools = []
 
