@@ -347,7 +347,7 @@ export const analyticsApi = {
     fetchAPI<import("@/types").CardioSessionsResponse>(
       `/analytics/sessions?limit=${limit}&offset=${offset}`
     ),
-  updateSession: (id: number, data: { rpe?: number; notes?: string }) =>
+  updateSession: (id: number, data: { rpe?: number | null; notes?: string }) =>
     fetchAPI<{ success: boolean }>(`/analytics/sessions/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),

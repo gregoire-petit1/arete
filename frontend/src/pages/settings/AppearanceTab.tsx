@@ -1,7 +1,8 @@
+import { applyTheme } from '@/lib/theme';
 import { cn } from '@/lib/utils';
 import type { LocalSettings, SettingsTabProps } from './types';
 
-// Swatches mirror THEME_COLORS.void in contexts/SettingsContext.tsx
+// Swatches mirror THEME_COLORS.void in lib/theme.ts
 const THEMES: { value: LocalSettings['theme']; label: string; color: string }[] = [
   { value: 'dark', label: 'SOMBRE', color: 'bg-[#0A0A0F]' },
   { value: 'darker', label: 'PLUS SOMBRE', color: 'bg-[#050508]' },
@@ -20,7 +21,11 @@ export function AppearanceTab({ settings, updateSetting }: SettingsTabProps) {
             <button
               key={theme.value}
               type="button"
-              onClick={() => updateSetting('theme', theme.value)}
+              onClick={() => {
+                // Preview at once; Settings restores the saved theme if this is not saved.
+                applyTheme(theme.value);
+                updateSetting('theme', theme.value);
+              }}
               className={cn(
                 'flex flex-col items-center gap-2 p-3 rounded border transition-all',
                 settings.theme === theme.value

@@ -1,28 +1,45 @@
 /** Shared French labels for values the backend sends as snake_case enums. */
 
-export const ZONE_LABEL: Record<string, string> = {
-  // ACWR
-  undertraining: 'sous-entraînement',
-  optimal: 'optimal',
-  caution: 'prudence',
-  high_risk: 'risque élevé',
-  danger: 'danger',
-  // Form (TSB)
-  exhausted: 'épuisé',
-  fatigued: 'fatigué',
-  neutral: 'neutre',
-  fresh: 'frais',
-  peak: 'pic de forme',
-  // Readiness
-  poor: 'faible',
-  moderate: 'moyen',
-  good: 'bon',
-  excellent: 'excellent',
-  unknown: 'inconnu',
+/** Metric families whose zone values share spellings ("optimal", "high"…). */
+export type ZoneKind = 'acwr' | 'form' | 'readiness' | 'monotony' | 'strain';
+
+/** French labels keyed by the backend's exact values (features/workload.py, features/fitness.py). */
+export const ZONE_LABEL: Record<ZoneKind, Record<string, string>> = {
+  acwr: {
+    undertrained: 'charge basse',
+    optimal: 'optimale',
+    caution: 'prudence',
+    danger: 'zone à risque',
+  },
+  form: {
+    freshest: 'très frais',
+    fresh: 'frais',
+    neutral: 'neutre',
+    tired: 'fatigué',
+    exhausted: 'épuisé',
+  },
+  readiness: {
+    optimal: 'optimale',
+    good: 'bonne',
+    moderate: 'moyenne',
+    low: 'faible',
+    critical: 'critique',
+  },
+  monotony: {
+    ideal: 'idéale',
+    acceptable: 'correcte',
+    high: 'élevée',
+  },
+  strain: {
+    low: 'faible',
+    optimal: 'optimale',
+    high: 'élevée',
+    critical: 'critique',
+  },
 };
 
-export const zoneLabel = (zone: string | null | undefined): string =>
-  zone ? (ZONE_LABEL[zone] ?? zone.replace(/_/g, ' ')) : ZONE_LABEL.unknown;
+export const zoneLabel = (kind: ZoneKind, zone: string | null | undefined): string =>
+  !zone || zone === 'unknown' ? 'inconnu' : (ZONE_LABEL[kind][zone] ?? zone.replace(/_/g, ' '));
 
 /** "7h12" from seconds, for sleep durations. */
 export function formatHoursMinutes(seconds: number): string {

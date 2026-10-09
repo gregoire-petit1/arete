@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Check, ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
 import { AdherenceBar, CalendarWeek, ErrorState, LoadingState, strengthAsActual } from '@/components';
 import { Button, Field, Input, Modal, ModalHeader, Panel, Textarea } from '@/components/ui';
 import { garminApi, settingsApi, type PlannedSessionCreate } from '@/lib/api';
-import { toLocalISODate } from '@/lib/dates';
+import { parseLocalDate, toLocalISODate } from '@/lib/dates';
 import { qk, strengthSessionsQuery } from '@/lib/queryKeys';
 import { weekStats } from '@/lib/sessionMatch';
 import { cn } from '@/lib/utils';
@@ -86,7 +87,20 @@ const CHIP_IDLE = 'bg-abyss border-text-muted/30 text-text-muted hover:border-te
 export function PlanningPage() {
   const queryClient = useQueryClient();
   const [weekOffset, setWeekOffset] = useState(0);
-  const [showNewQuest, setShowNewQuest] = useState(false);
+  // `?new=1` (the dashboard's "Ajouter une séance") opens the form once, then leaves the URL.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [showNewQuest, setShowNewQuest] = useState(() => searchParams.get('new') === '1');
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return;
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete('new');
+        return next;
+      },
+      { replace: true }
+    );
+  }, [searchParams, setSearchParams]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [newQuest, setNewQuest] = useState<PlannedSessionCreate>(emptyQuest());
   const [toDelete, setToDelete] = useState<PlannedSession | null>(null);
@@ -95,14 +109,14 @@ export function PlanningPage() {
   const today = toLocalISODate();
   const weekStart = getWeekStart(weekOffset);
   const weekEnd = useMemo(() => {
-    const end = new Date(weekStart);
+    const end = parseLocalDate(weekStart);
     end.setDate(end.getDate() + 6);
     return toLocalISODate(end);
   }, [weekStart]);
   const days = useMemo(
     () =>
       Array.from({ length: 7 }, (_, i) => {
-        const d = new Date(weekStart);
+        const d = parseLocalDate(weekStart);
         d.setDate(d.getDate() + i);
         return toLocalISODate(d);
       }),
@@ -228,9 +242,9 @@ export function PlanningPage() {
           </button>
           <div className="flex items-center gap-3">
             <span className="font-mono text-xs sm:text-sm text-text-secondary">
-              {new Date(weekStart).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+              {parseLocalDate(weekStart).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
               {' — '}
-              {new Date(weekEnd).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+              {parseLocalDate(weekEnd).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
             </span>
             {weekOffset !== 0 && (
               <button
@@ -489,7 +503,7 @@ export function PlanningPage() {
         <ModalHeader title="SUPPRIMER LA SÉANCE" onClose={() => setToDelete(null)} className="mb-4" />
         <p className="text-sm font-mono text-text-secondary mb-6">
           Supprimer la séance prévue le{' '}
-          {toDelete && new Date(toDelete.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} ?
+          {toDelete && parseLocalDate(toDelete.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} ?
         </p>
         <div className="flex gap-3 justify-end">
           <Button variant="ghost" onClick={() => setToDelete(null)}>

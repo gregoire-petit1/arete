@@ -13,10 +13,10 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.png", "apple-touch-icon.png"],
       manifest: {
-        name: "Arete - Training Assistant",
+        name: "Arete — Assistant d’entraînement",
         short_name: "Arete",
         description:
-          "Intelligent training assistant powered by AI and personal data",
+          "Assistant d’entraînement intelligent, nourri par l’IA et tes données personnelles",
         theme_color: "#0A0A0F",
         background_color: "#0A0A0F",
         display: "standalone",

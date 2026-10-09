@@ -3,7 +3,7 @@ import { SESSION_TYPE_LABEL } from '@/components/SessionCard';
 import { linkDay } from '@/lib/sessionMatch';
 import { getSportColor, getSportIconComponent } from '@/lib/sport';
 import type { ActualSession, PlannedSession } from '@/types';
-import { toLocalISODate } from '@/lib/dates';
+import { parseLocalDate, toLocalISODate } from '@/lib/dates';
 
 interface CalendarDayProps {
   date: string;
@@ -15,8 +15,8 @@ interface CalendarDayProps {
 }
 
 function CalendarDay({ date, planned, actual, isToday, today, onClick }: CalendarDayProps) {
-  const dayOfWeek = new Date(date).toLocaleDateString('fr-FR', { weekday: 'short' }).toUpperCase().slice(0, 3);
-  const dayNum = new Date(date).getDate();
+  const dayOfWeek = parseLocalDate(date).toLocaleDateString('fr-FR', { weekday: 'short' }).toUpperCase().slice(0, 3);
+  const dayNum = parseLocalDate(date).getDate();
 
   const link = linkDay(date, planned, actual, today);
   const allSessions = [
@@ -111,7 +111,7 @@ export function CalendarWeek({ startDate, plannedSessions, actualSessions, onDay
   const today = toLocalISODate();
 
   const days = Array.from({ length: 7 }, (_, i) => {
-    const date = new Date(startDate);
+    const date = parseLocalDate(startDate);
     date.setDate(date.getDate() + i);
     return toLocalISODate(date);
   });

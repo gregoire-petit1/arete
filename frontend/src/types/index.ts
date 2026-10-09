@@ -19,22 +19,37 @@ export interface PlayerStats {
   weekly_goal_tss: number;
 }
 
+// Zone values sent by the backend (features/workload.py, features/fitness.py).
+export type AcwrZone = "undertrained" | "optimal" | "caution" | "danger" | "unknown";
+export type FormZone = "freshest" | "fresh" | "neutral" | "tired" | "exhausted";
+export type ReadinessLevel = "optimal" | "good" | "moderate" | "low" | "critical";
+export type MonotonyZone = "ideal" | "acceptable" | "high" | "unknown";
+export type StrainZone = "low" | "optimal" | "high" | "critical" | "unknown";
+
 export interface FitnessMetrics {
   ctl: number;
   atl: number;
   tsb: number;
-  form_zone: "fresh" | "optimal" | "grey" | "fatigued" | "exhausted";
+  form_zone: FormZone;
   readiness_score: number;
-  readiness_level: "high" | "moderate" | "low";
+  readiness_level: ReadinessLevel;
+  readiness_source: "garmin" | "model";
+  readiness_measured_on: string | null;
+  ramp_rate: number | null;
+  days_analyzed: number;
 }
 
 export interface WorkloadMetrics {
   acute_load: number;
-  chronic_load: number;
-  acwr: number;
-  acwr_zone: "undertraining" | "optimal" | "high_risk" | "danger";
-  monotony: number;
-  strain: number;
+  chronic_load: number | null;
+  acwr: number | null;
+  acwr_zone: AcwrZone | null;
+  acwr_ewma: number | null;
+  monotony: number | null;
+  monotony_zone: MonotonyZone | null;
+  strain: number | null;
+  strain_zone: StrainZone | null;
+  days_analyzed: number;
 }
 
 // ========================= //
