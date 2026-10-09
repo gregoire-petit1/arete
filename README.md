@@ -111,10 +111,15 @@ The coach receives the backend's current date on each chat invocation, and the
 UI refreshes session data after successful coach writes.
 
 For free hosted inference, set `LLM_PROVIDER=openrouter` and `OPENROUTER_API_KEY`,
-and leave `LLM_MODEL` unset (or set it to `openrouter/free`). The
-[Free Models Router](https://openrouter.ai/openrouter/free) selects an available
-free model supporting the request's tools. Rate limits, latency and model quality
-can vary. Set `LLM_MODEL` to pin a specific model; Arete sends no fallback list.
+and leave `LLM_MODEL` unset. Arete then asks for two free tool-calling models
+measured fast (`agent/models/registry.py`) and lets OpenRouter fall back, in the
+same request, to the next one and finally to the
+[Free Models Router](https://openrouter.ai/openrouter/free) when a model is
+rate-limited or down. Free availability changes weekly: set `LLM_MODEL` to pin a
+model (never rerouted then) and `LLM_MODEL_FALLBACKS` (comma-separated) to give
+it a list; OpenRouter accepts three models at most. Each run logs one
+`Agent run:` line with its model calls, tool calls, time to first token and the
+models that actually answered.
 
 ## Project layout
 

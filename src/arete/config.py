@@ -73,6 +73,12 @@ class Config:
         return _env("LLM_MODEL")
 
     @property
+    def llm_model_fallbacks(self) -> tuple[str, ...]:
+        """Comma-separated OpenRouter model ids tried after LLM_MODEL."""
+        raw = _env("LLM_MODEL_FALLBACKS", "") or ""
+        return tuple(m.strip() for m in raw.split(",") if m.strip())
+
+    @property
     def llm_context_tokens(self) -> int:
         # Deployment contract: especially for routers/local servers, the model
         # name alone does not establish the actual configured context window.

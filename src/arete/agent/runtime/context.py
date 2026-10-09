@@ -30,6 +30,17 @@ PANEL_PAGES = frozenset({"dashboard", "planning", "analytics", "log", "settings"
 
 
 @dataclass
+class RunStats:
+    """What one run cost: model requests are the scarce resource on a free tier."""
+
+    model_calls: int = 0
+    tool_calls: int = 0
+    model_ms: int = 0
+    first_token_ms: int | None = None
+    served_models: list[str] = field(default_factory=list)
+
+
+@dataclass
 class AgentContext:
     """Per-run context handed to ``create_agent(context_schema=...)``.
 
@@ -44,6 +55,7 @@ class AgentContext:
     thread_id: str | None = None
     current_date: date = field(default_factory=date.today)
     deadline: float | None = field(default=None, init=False)
+    stats: RunStats = field(default_factory=RunStats, init=False, repr=False)
     # Async ToolNode uses gather(), ignoring RunnableConfig concurrency.
     tool_slots: asyncio.Semaphore = field(
         default_factory=lambda: asyncio.Semaphore(MAX_TOOL_CONCURRENCY),
