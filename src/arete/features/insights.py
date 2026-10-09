@@ -163,6 +163,58 @@ def pace_insight(slope_sec_km_per_month: float | None, n_runs: int) -> Insight:
     return _insight("Allure stable sur la période.")
 
 
+# --- Terrain & foulée -----------------------------------------------------
+FLAT_M_PER_KM = 10.0
+HILLY_M_PER_KM = 25.0
+ELEVATION_SPIKE_PCT = 50.0
+
+
+def elevation_insight(
+    climb_m: float, prev_climb_m: float | None, m_per_km: float | None
+) -> Insight:
+    if climb_m <= 0:
+        return _insight("Aucun dénivelé enregistré sur la période.")
+    base = f"{climb_m:.0f} m D+"
+    if m_per_km is not None:
+        terrain = (
+            "plat"
+            if m_per_km < FLAT_M_PER_KM
+            else "vallonné"
+            if m_per_km < HILLY_M_PER_KM
+            else "montagneux"
+        )
+        base += f", terrain {terrain} en course ({m_per_km:.0f} m/km)"
+    if prev_climb_m:
+        change = (climb_m - prev_climb_m) / prev_climb_m * 100
+        if change > ELEVATION_SPIKE_PCT:
+            return _insight(
+                f"{base}. Dénivelé en forte hausse ({_pct(change)}) : "
+                "ménage mollets et quadriceps.",
+                "warn",
+            )
+    return _insight(f"{base}.")
+
+
+LOW_CADENCE = 160
+CADENCE_SHIFT = 3
+
+
+def cadence_insight(median: float | None, prev: float | None, n_runs: int) -> Insight:
+    if median is None:
+        return _insight("Aucune cadence de course enregistrée sur la période.")
+    plural = "s" if n_runs > 1 else ""
+    base = f"Cadence médiane {median:.0f} pas/min sur {n_runs} sortie{plural}"
+    if median < LOW_CADENCE:
+        return _insight(
+            f"{base} : plutôt basse, une foulée plus courte allège les impacts.",
+            "warn",
+        )
+    if prev is not None and abs(median - prev) >= CADENCE_SHIFT:
+        trend = "en hausse" if median > prev else "en baisse"
+        return _insight(f"{base}, {trend} ({median - prev:+.0f}).")
+    return _insight(f"{base}.")
+
+
 # --- Récupération ---------------------------------------------------------
 def readiness_insight(mean: float | None, prev_mean: float | None) -> Insight:
     if mean is None:

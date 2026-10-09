@@ -197,6 +197,8 @@ class OverviewRow(NamedTuple):
     avg_pace_sec_km: int | None
     avg_hr: int | None
     rpe: int | None
+    ascent_m: float | None
+    avg_cadence: int | None  # steps/min on runs
     tss: float
 
 
@@ -207,7 +209,7 @@ def overview_rows(
     rows = con.execute(
         f"""
         SELECT date, sport, COALESCE(duration_sec, 0), distance_m, hr_zones_json,
-               avg_pace_sec_km, avg_hr, rpe, {TSS_EXPR}
+               avg_pace_sec_km, avg_hr, rpe, ascent_m, avg_cadence, {TSS_EXPR}
         FROM app.actual_sessions
         WHERE date >= ? AND date <= ? AND user_id = ?
         ORDER BY date ASC, id ASC

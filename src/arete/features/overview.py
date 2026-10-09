@@ -529,6 +529,158 @@ def build_pace_card(
 
 
 # --------------------------------------------------------------------------- #
+# Terrain & foulée
+# --------------------------------------------------------------------------- #
+def build_elevation_card(
+    rows: Sequence[tuple[date, str, float | None, float | None]],
+    window: PeriodWindow,
+    running_sports: Sequence[str],
+) -> Card:
+    """rows: (date, sport, distance_m, ascent_m) for foot sports, both windows.
+
+    Climbing is stacked running / walking; m per km reads the runs alone so a
+    hike does not make the running terrain look hillier.
+    """
+    cur, prev = _split(rows, window)
+
+    def total(subset) -> float:
+        return sum(r[3] or 0 for r in subset)
+
+    def per_km(subset) -> float | None:
+        runs = [r for r in subset if r[1] in running_sports and r[2]]
+        km = sum(r[2] for r in runs) / 1000
+        return sum(r[3] or 0 for r in runs) / km if km else None
+
+    def biggest(subset) -> float | None:
+        return max((r[3] for r in subset if r[3]), default=None)
+
+    climb, prev_climb = total(cur), total(prev) if prev else None
+    m_per_km, prev_m_per_km = per_km(cur), per_km(prev)
+    top, prev_top = biggest(cur), biggest(prev)
+
+    buckets: dict[str, dict[str, float]] = {
+        key: {"run_m": 0.0, "walk_m": 0.0, "run_km": 0.0}
+        for key in bucket_keys(window.start, window.end, window.bucket)
+    }
+    for day, sport, distance_m, ascent_m in cur:
+        slot = buckets.get(bucket_key(day, window.bucket))
+        if slot is None:
+            continue
+        if sport in running_sports:
+            slot["run_m"] += ascent_m or 0
+            slot["run_km"] += (distance_m or 0) / 1000
+        else:
+            slot["walk_m"] += ascent_m or 0
+
+    return {
+        "headline": headline(
+            round(climb), "m", f"{climb:.0f} m D+", prev_climb, "neutral"
+        ),
+        "secondary": [
+            headline(
+                round(m_per_km, 1) if m_per_km is not None else None,
+                "m/km",
+                f"{m_per_km:.0f} m/km" if m_per_km is not None else "—",
+                round(prev_m_per_km, 1) if prev_m_per_km is not None else None,
+                "neutral",
+            ),
+            headline(
+                round(top) if top else None,
+                "m",
+                f"{top:.0f} m" if top else "—",
+                round(prev_top) if prev_top else None,
+                "neutral",
+            ),
+        ],
+        "insight": insights.elevation_insight(climb, prev_climb, m_per_km),
+        "series": [
+            {
+                "bucket": key,
+                "run_m": round(vals["run_m"]),
+                "walk_m": round(vals["walk_m"]),
+                "m_per_km": round(vals["run_m"] / vals["run_km"], 1)
+                if vals["run_km"]
+                else None,
+            }
+            for key, vals in buckets.items()
+        ],
+    }
+
+
+#: Steps/min outside this range are sensor noise or a per-leg value.
+MIN_RUN_CADENCE = 120
+MAX_RUN_CADENCE = 230
+
+
+def build_cadence_card(
+    rows: Sequence[tuple[date, int, int | None]], window: PeriodWindow
+) -> Card:
+    """rows: (date, avg_cadence steps/min, avg_pace_sec_km) for runs, both windows.
+
+    Stride length (metres per step) is speed over cadence: with the cadence it
+    tells whether a faster pace comes from quicker or longer steps.
+    """
+
+    def keep(subset):
+        return [r for r in subset if MIN_RUN_CADENCE <= r[1] <= MAX_RUN_CADENCE]
+
+    def stride_m(cadence: int, pace: int | None) -> float | None:
+        if not pace or not MIN_PACE_SEC_KM <= pace <= MAX_PACE_SEC_KM:
+            return None
+        return 60_000 / (pace * cadence)
+
+    def median(values: Sequence[float]) -> float | None:
+        return float(np.median(values)) if values else None
+
+    cur, prev = _split(rows, window)
+    cur, prev = keep(cur), keep(prev)
+
+    def strides(subset) -> list[float]:
+        return [s for r in subset if (s := stride_m(r[1], r[2])) is not None]
+
+    med, prev_med = median([r[1] for r in cur]), median([r[1] for r in prev])
+    stride, prev_stride = median(strides(cur)), median(strides(prev))
+
+    by_bucket: dict[str, list[tuple[date, int, int | None]]] = defaultdict(list)
+    for row in cur:
+        by_bucket[bucket_key(row[0], window.bucket)].append(row)
+    points = []
+    for key in bucket_keys(window.start, window.end, window.bucket):
+        runs = by_bucket.get(key, [])
+        cadence = median([r[1] for r in runs])
+        step = median(strides(runs))
+        points.append(
+            {
+                "bucket": key,
+                "cadence": round(cadence) if cadence is not None else None,
+                "stride_m": round(step, 2) if step is not None else None,
+                "n_runs": len(runs),
+            }
+        )
+
+    return {
+        "headline": headline(
+            round(med) if med is not None else None,
+            "pas/min",
+            f"{med:.0f} pas/min" if med is not None else "—",
+            round(prev_med) if prev_med is not None else None,
+            "neutral",
+        ),
+        "secondary": [
+            headline(
+                round(stride, 2) if stride is not None else None,
+                "m",
+                f"{stride:.2f} m" if stride is not None else "—",
+                round(prev_stride, 2) if prev_stride is not None else None,
+                "neutral",
+            )
+        ],
+        "insight": insights.cadence_insight(med, prev_med, len(cur)),
+        "series": points,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Récupération
 # --------------------------------------------------------------------------- #
 def build_health_card(

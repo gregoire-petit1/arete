@@ -7,6 +7,8 @@ from datetime import date, timedelta
 
 from arete.features.fitness import DailyTSS
 from arete.features.overview import (
+    build_cadence_card,
+    build_elevation_card,
     build_health_card,
     build_pace_card,
     build_pmc_card,
@@ -164,6 +166,67 @@ class TestPaceCard:
 
     def test_empty(self):
         card = build_pace_card([], window())
+        assert card["headline"]["value"] is None
+        assert len(card["series"]) == 30
+
+
+class TestElevationCard:
+    def rows(self):
+        return [
+            (TODAY - timedelta(days=1), "running", 10000.0, 150.0),
+            (TODAY - timedelta(days=3), "hiking", 8000.0, 600.0),
+            (TODAY - timedelta(days=40), "running", 10000.0, 100.0),  # previous
+        ]
+
+    def test_totals_stack_walking_but_ratio_reads_runs(self):
+        card = build_elevation_card(self.rows(), window(), RUNNING)
+        assert card["headline"]["value"] == 750
+        assert card["headline"]["previous"] == 100.0
+        assert card["secondary"][0]["value"] == 15.0  # 150 m over 10 km of running
+        assert card["secondary"][1]["value"] == 600  # the hike
+        assert sum(p["run_m"] for p in card["series"]) == 150
+        assert sum(p["walk_m"] for p in card["series"]) == 600
+
+    def test_spike_warns(self):
+        assert (
+            build_elevation_card(self.rows(), window(), RUNNING)["insight"]["tone"]
+            == "warn"
+        )
+
+    def test_empty(self):
+        card = build_elevation_card([], window(), RUNNING)
+        assert card["headline"]["value"] == 0
+        assert card["secondary"][0]["value"] is None
+        assert len(card["series"]) == 30
+        assert all(p["m_per_km"] is None for p in card["series"])
+
+
+class TestCadenceCard:
+    def test_median_and_stride(self):
+        rows = [
+            (TODAY - timedelta(days=1), 170, 300),
+            (TODAY - timedelta(days=2), 176, 300),
+            (TODAY - timedelta(days=40), 166, 300),  # previous
+        ]
+        card = build_cadence_card(rows, window())
+        assert card["headline"]["value"] == 173
+        assert card["headline"]["previous"] == 166
+        # 1000 m in 300 s at 173 steps/min: 60000 / (300 * 173)
+        assert card["secondary"][0]["value"] == 1.16
+        assert "en hausse" in card["insight"]["text"]
+
+    def test_implausible_cadence_dropped(self):
+        rows = [
+            (TODAY - timedelta(days=1), 85, 300),  # strides/min, not steps
+            (TODAY - timedelta(days=2), 172, None),  # no pace: cadence only
+        ]
+        card = build_cadence_card(rows, window())
+        assert card["headline"]["value"] == 172
+        assert card["secondary"][0]["value"] is None
+        assert sum(p["n_runs"] for p in card["series"]) == 1
+
+    def test_empty(self):
+        card = build_cadence_card([], window())
         assert card["headline"]["value"] is None
         assert len(card["series"]) == 30
 

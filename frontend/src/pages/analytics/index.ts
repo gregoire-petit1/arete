@@ -8,5 +8,7 @@ export { ZonesCard } from './cards/ZonesCard';
 export { SportsCard } from './cards/SportsCard';
 export { EfficiencyCard } from './cards/EfficiencyCard';
 export { PaceCard } from './cards/PaceCard';
+export { ElevationCard } from './cards/ElevationCard';
+export { CadenceCard } from './cards/CadenceCard';
 export { RecoveryCard } from './cards/RecoveryCard';
 export { RecordsCard } from './cards/RecordsCard';

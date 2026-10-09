@@ -4,7 +4,9 @@ import type { Period } from '@/types';
 import { analyticsApi } from '@/lib/api';
 import { CHART, COLORS } from '@/lib/chartTheme';
 import {
+  CadenceCard,
   EfficiencyCard,
+  ElevationCard,
   LoadCard,
   PaceCard,
   PeriodSelector,
@@ -97,6 +99,11 @@ export function AnalyticsPage() {
       </Section>
 
       <Section def={SECTIONS[3]}>
+        <ElevationCard card={cards?.elevation} {...state} />
+        <CadenceCard card={cards?.cadence} {...state} />
+      </Section>
+
+      <Section def={SECTIONS[4]}>
         <RecoveryCard
           title="Préparation"
           question="La montre dit-elle que le corps est prêt ?"

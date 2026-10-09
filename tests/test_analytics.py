@@ -22,6 +22,8 @@ CARD_KEYS = {
     "sports",
     "decoupling",
     "pace",
+    "elevation",
+    "cadence",
     "readiness",
     "hrv",
     "sleep",
@@ -61,6 +63,8 @@ def _row(day: date, sport: str = "running", duration_sec: int = 3600, **kw):
         "avg_pace_sec_km": None,
         "avg_hr": None,
         "rpe": None,
+        "ascent_m": None,
+        "avg_cadence": None,
         "tss": 0.0,
     }
     return OverviewRow(day, sport, duration_sec, **(fields | kw))
@@ -117,6 +121,22 @@ class TestOverview:
         card = client.get("/analytics/overview?period=30d").json()["cards"]["sports"]
         assert card["headline"]["value"] == 8.0
         assert card["headline"]["previous"] == 4.0
+
+    def test_terrain_cards_read_foot_sports_and_runs(self, client, stub_queries):
+        stub_queries["overview_rows"].return_value = [
+            _row(
+                TODAY - timedelta(days=1),
+                distance_m=10000.0,
+                ascent_m=120.0,
+                avg_cadence=174,
+                avg_pace_sec_km=300,
+            ),
+            _row(TODAY - timedelta(days=2), "hiking", ascent_m=500.0, avg_cadence=110),
+            _row(TODAY - timedelta(days=3), "cycling", ascent_m=900.0, avg_cadence=88),
+        ]
+        cards = client.get("/analytics/overview?period=30d").json()["cards"]
+        assert cards["elevation"]["headline"]["value"] == 620
+        assert cards["cadence"]["headline"]["value"] == 174
 
     def test_no_data_still_renders_cards(self, client, stub_queries):
         cards = client.get("/analytics/overview?period=7d").json()["cards"]

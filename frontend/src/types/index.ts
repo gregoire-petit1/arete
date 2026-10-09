@@ -285,6 +285,8 @@ export type CardKey =
   | 'sports'
   | 'decoupling'
   | 'pace'
+  | 'elevation'
+  | 'cadence'
   | 'readiness'
   | 'hrv'
   | 'sleep'
