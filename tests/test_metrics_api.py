@@ -392,29 +392,18 @@ class TestPlayerStatsSemantics:
         by_date = {monday - timedelta(days=14): 400.0}  # then an empty week
         assert metrics._week_history(300.0, by_date, today) == (0, 1)
 
-    def test_player_stats_reads_the_database_in_four_statements(self, monkeypatch):
+    def test_player_stats_reads_the_database_in_four_statements(
+        self, monkeypatch, statement_log
+    ):
         from arete.dataio import db, settings
         from arete.features import banister
         from arete.garmin import readiness
         from arete.services import metrics
 
-        statements: list[str] = []
-
-        class Counting:
-            def __init__(self, con):
-                self._con = con
-
-            def execute(self, sql, *args):
-                statements.append(sql)
-                return self._con.execute(sql, *args)
-
-            def __getattr__(self, name):
-                return getattr(self._con, name)
-
         def counting_connect(*args, **kwargs):
-            return Counting(db.connect(*args, **kwargs))
+            return statement_log.wrap(db.connect(*args, **kwargs))
 
         for module in (metrics, settings, banister, readiness):
             monkeypatch.setattr(module, "connect", counting_connect)
         metrics.get_player_stats()
-        assert len(statements) == 4
+        assert len(statement_log) == 4

@@ -36,6 +36,34 @@ def setup_test_db() -> Generator[None, None, None]:
         db_path.unlink()
 
 
+class _CountingConnection:
+    """A DuckDB connection that records every statement it runs."""
+
+    def __init__(self, con, log: list[str]):
+        self._con = con
+        self._log = log
+
+    def execute(self, sql, *args):
+        self._log.append(sql)
+        return self._con.execute(sql, *args)
+
+    def __getattr__(self, name):
+        return getattr(self._con, name)
+
+
+class StatementLog(list):
+    """Statements run through the connections it wrapped."""
+
+    def wrap(self, con):
+        return _CountingConnection(con, self)
+
+
+@pytest.fixture
+def statement_log() -> StatementLog:
+    """Count round trips: wrap the connections a code path opens."""
+    return StatementLog()
+
+
 @pytest.fixture
 def client() -> Generator[TestClient, None, None]:
     """Create a test client for the FastAPI app."""
