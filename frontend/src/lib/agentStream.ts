@@ -80,12 +80,18 @@ function isPreview(value: unknown): value is Preview {
   );
 }
 
-/** Fail explicitly on malformed events; losing one can leave a tool running forever. */
-export function parseEvent(data: string): StreamEvent {
+/** Fail on malformed required events; optional drafts may be omitted with a warning. */
+export function parseEvent(data: string): StreamEvent | null {
   const e: unknown = JSON.parse(data);
   if (!record(e)) throw new Error('Événement du coach invalide.');
   if (isWorkoutUpdate(e)) return e;
-  if (e.type === 'suggestion' && typeof e.text === 'string' && e.text.trim() && e.text.length <= MAX_SUGGESTION_CHARS) return e as StreamEvent;
+  if (e.type === 'suggestion') {
+    // Match Python's Unicode code-point limit, including emoji. An optional
+    // draft must never turn a completed answer into a retryable failure.
+    if (typeof e.text === 'string' && e.text.trim() && Array.from(e.text).length <= MAX_SUGGESTION_CHARS) return e as StreamEvent;
+    console.warn('Suggestion du coach invalide : brouillon ignoré.');
+    return null;
+  }
   if (e.type === 'import_preview' && typeof e.id === 'string' && /^[0-9a-f-]{36}$/i.test(e.id) && Number.isInteger(e.version) && Number(e.version) > 0) return e as StreamEvent;
   const identified = typeof e.id === 'string' && e.id.length > 0;
   if (
@@ -226,6 +232,7 @@ export async function consumeStream(
         if (++events > MAX_STREAM_EVENTS)
           throw new Error('Trop d’événements dans la réponse.');
         const event = parseEvent(data);
+        if (!event) continue;
         if (event.type === 'error') throw new Error(event.detail);
         onEvent(event);
         if (event.type === 'done') return;
@@ -257,6 +264,7 @@ export async function runAgentStream(
     body: JSON.stringify({
       messages: history.map(({ role, content }) => ({ role, content })),
       thread_id: threadId,
+      supports_suggestions: true,
       panel_context,
     }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]),

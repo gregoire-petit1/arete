@@ -103,6 +103,10 @@ After an interactive answer, `AutoSuggestionMiddleware` invokes one tool-free
 completion through `runtime/autosuggestion.py`, using the complete latest user/coach
 exchange assembled and budgeted by the context builder. It emits one `suggestion`
 custom event before `done`; non-streaming chat exposes the same optional field.
+Streaming clients opt in with `supports_suggestions: true`; older cached clients
+receive no unfamiliar event and incur no auxiliary model call. Invalid optional
+draft events are logged and omitted without failing the answer. The 300-character
+limit counts Unicode code points in both Python and the browser.
 The browser inserts the suggestion as an editable draft only on successful completion
 and only if the athlete has not edited the originating thread's draft meanwhile.
 Drafts use the existing browser storage; generated text never enters message history

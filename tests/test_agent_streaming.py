@@ -71,6 +71,24 @@ def test_empty_and_oversized_stream_fail_explicitly():
         stream.events(token("Too long", "m"))
 
 
+@pytest.mark.parametrize("text", [None, "", " ", "x" * 301, "🏃" * 301])
+def test_invalid_optional_suggestion_preserves_the_answer(text, caplog):
+    stream = StreamProjection()
+    stream.events(token("Réponse", "answer"))
+    assert (
+        stream.events({"type": "custom", "data": {"type": "suggestion", "text": text}})
+        == []
+    )
+    assert stream.done()["message"]["content"] == "Réponse"
+    assert "draft omitted" in caplog.text
+
+
+def test_suggestion_limit_counts_unicode_code_points():
+    stream = StreamProjection()
+    event = {"type": "suggestion", "text": "🏃" * 300}
+    assert stream.events({"type": "custom", "data": event}) == [event]
+
+
 @pytest.mark.parametrize(
     "result",
     [

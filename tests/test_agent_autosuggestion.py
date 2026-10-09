@@ -42,7 +42,11 @@ def model(text=DRAFT):
 def test_http_returns_draft_separate_from_answer(client, endpoint):
     with patch("arete.api.agent.get_agent", return_value=graph(model())):
         response = client.post(
-            endpoint, json={"messages": [{"role": "user", "content": "Demain ?"}]}
+            endpoint,
+            json={
+                "messages": [{"role": "user", "content": "Demain ?"}],
+                "supports_suggestions": True,
+            },
         )
     assert response.status_code == 200
     if endpoint.endswith("/stream"):
@@ -61,6 +65,36 @@ def test_http_returns_draft_separate_from_answer(client, endpoint):
     else:
         assert response.json()["suggestion"] == DRAFT
         assert response.json()["message"]["content"] == ANSWER
+
+
+@pytest.mark.parametrize("capabilities", [{}, {"supports_suggestions": False}])
+def test_older_stream_clients_finish_without_an_unknown_event_or_extra_call(
+    client, capabilities
+):
+    suggestion = model()
+    with (
+        patch("arete.api.agent.get_agent", return_value=graph(suggestion)),
+        patch.object(
+            suggestion, "_generate", side_effect=AssertionError("No draft call")
+        ),
+    ):
+        response = client.post(
+            "/agent/chat/stream",
+            json={
+                "messages": [{"role": "user", "content": "Demain ?"}],
+                **capabilities,
+            },
+        )
+    events = [
+        json.loads(line[6:])
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert events[-1] == {
+        "type": "done",
+        "message": {"role": "assistant", "content": ANSWER},
+    }
+    assert all(e["type"] in {"token", "message", "done"} for e in events)
 
 
 def test_suggestion_is_one_measured_request_after_the_answer(caplog):

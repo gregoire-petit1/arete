@@ -36,6 +36,7 @@ it('does not retry an upload or confirmation after a failed response', async () 
 
 it('preserves import preview references through SSE and browser restoration', () => {
   const event = parseEvent(JSON.stringify({ type: 'import_preview', id: '11111111-1111-4111-8111-111111111111', version: 2 }));
+  if (!event) throw new Error('Expected import preview event');
   const message = applyEvent({ role: 'assistant', content: 'Aperçu prêt' }, event);
   expect(restoreConversation(JSON.stringify([message]))[0].imports).toEqual(message.imports);
   expect(() => parseEvent(JSON.stringify({ type: 'import_preview', id: 'fake', version: -1 }))).toThrow();
