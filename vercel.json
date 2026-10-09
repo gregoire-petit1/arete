@@ -4,7 +4,8 @@
     "backend": {
       "root": ".",
       "framework": "fastapi",
-      "entrypoint": "asgi.py"
+      "entrypoint": "asgi.py",
+      "buildCommand": "python scripts/bundle_duckdb_extensions.py"
     },
     "frontend": {
       "root": "frontend",

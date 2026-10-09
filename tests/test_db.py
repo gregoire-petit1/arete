@@ -83,3 +83,24 @@ def test_local_data_dir_sits_beside_the_database(monkeypatch, tmp_path):
     monkeypatch.delenv("ARETE_DATA_DIR", raising=False)
     assert config.data_dir == tmp_path
     assert config.fit_dir == tmp_path / "fit_files"
+
+
+def test_bundled_extensions_are_seeded_once(tmp_path, monkeypatch):
+    bundled = tmp_path / "bundle"
+    (bundled / "v1.4.2/linux_amd64").mkdir(parents=True)
+    (bundled / "v1.4.2/linux_amd64/motherduck.duckdb_extension").write_bytes(b"x")
+    monkeypatch.setattr(db, "BUNDLED_EXTENSIONS", bundled)
+    monkeypatch.setattr(db, "REMOTE_HOME", tmp_path / "home")
+    db._seed_extensions()
+    seeded = tmp_path / "home/.duckdb/extensions/v1.4.2/linux_amd64"
+    assert (seeded / "motherduck.duckdb_extension").read_bytes() == b"x"
+    (seeded / "motherduck_impl.duckdb_extension").write_bytes(b"later")
+    db._seed_extensions()  # an existing directory is left as it is
+    assert (seeded / "motherduck_impl.duckdb_extension").exists()
+
+
+def test_without_a_bundle_nothing_is_seeded(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "BUNDLED_EXTENSIONS", tmp_path / "missing")
+    monkeypatch.setattr(db, "REMOTE_HOME", tmp_path / "home")
+    db._seed_extensions()
+    assert not (tmp_path / "home/.duckdb").exists()

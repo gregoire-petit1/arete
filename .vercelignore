@@ -9,6 +9,7 @@
 !/.python-version
 !/vercel.json
 !/asgi.py
+!/scripts
 !/README.md
 
 **/__pycache__
