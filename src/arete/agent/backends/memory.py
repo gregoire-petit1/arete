@@ -1,5 +1,7 @@
 """Deep Agents filesystem adapter, restricted to the coaching ledger."""
 
+from typing import Literal
+
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
 from deepagents.backends.protocol import DeleteResult, EditResult
 from deepagents.middleware.filesystem import (
@@ -70,6 +72,11 @@ class PortableGlob(GlobSchema):
 class PortableGrep(GrepSchema):
     path: str = "/"
     glob: str = "**/*"
+    # A filename alone wastes a model round when the attachment path is known.
+    output_mode: Literal["files_with_matches", "content", "count"] = Field(
+        default="content",
+        description="Matching lines by default, with file and line numbers.",
+    )
     max_count: int = Field(default=100, ge=1, le=100)
 
 

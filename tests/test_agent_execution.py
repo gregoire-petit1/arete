@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import tool
@@ -20,6 +21,7 @@ from arete.agent.runtime.execution import (
     RUN_LIMIT_ERRORS,
     invoke_agent,
     run_config,
+    stream_agent,
 )
 
 
@@ -144,6 +146,94 @@ def test_model_budget_stops_loop():
                 graph, {"messages": [HumanMessage("loop")]}, context=AgentContext()
             )
         )
+
+
+@pytest.mark.parametrize("mode", ["sync", "async", "stream"])
+def test_last_model_call_answers_with_all_results_and_no_tools(
+    mode, monkeypatch, tmp_path
+):
+    from arete.agent.backends.memory import build_memory_filesystem
+    from arete.api.agent_streaming import StreamProjection
+
+    monkeypatch.setattr("arete.agent.backends.memory.memory_root", lambda: tmp_path)
+    requests = []
+    executed = []
+
+    @tool
+    def record(value: int) -> str:
+        """Record an operation once."""
+        executed.append(value)
+        return f"Recorded {value}"
+
+    class Capture(AgentMiddleware):
+        def wrap_model_call(self, request, handler):
+            requests.append(request)
+            return handler(request)
+
+        async def awrap_model_call(self, request, handler):
+            requests.append(request)
+            return await handler(request)
+
+    answer = "Travail incomplet : les opérations confirmées sont conservées."
+    responses = [
+        call("record", {"value": i}, str(i)) for i in range(MAX_MODEL_CALLS - 1)
+    ] + [AIMessage(content=answer)]
+    graph = create_agent(
+        Model(messages=iter(responses * 2), disable_streaming=True),
+        tools=[record],
+        middleware=[
+            *execution_limits(),
+            ToolkitMiddleware(),
+            build_memory_filesystem(),
+            ContextBuilderMiddleware(),
+            Capture(),
+        ],
+        context_schema=AgentContext,
+    )
+    history = [
+        HumanMessage("Objectif initial"),
+        AIMessage(content="Historique"),
+        HumanMessage("Continue"),
+    ]
+
+    async def run(context):
+        if mode == "async":
+            result = await invoke_agent(graph, {"messages": history}, context=context)
+            return result["messages"][-1].text
+        projection = StreamProjection()
+        async for part in stream_agent(graph, {"messages": history}, context=context):
+            projection.events(part)
+        return projection.done()["message"]["content"]
+
+    # The same compiled graph must have a fresh budget on the next invocation.
+    for _ in range(2):
+        context = AgentContext()
+        if mode == "sync":
+            result = graph.invoke(
+                {"messages": history}, context=context, config=run_config()
+            )
+            text = result["messages"][-1].text
+        else:
+            text = asyncio.run(run(context))
+        assert text == answer
+        turn = requests[-MAX_MODEL_CALLS:]
+        assert len(turn) == MAX_MODEL_CALLS
+        assert all(
+            {"record", "read_file", "list_planned"} <= {t.name for t in r.tools}
+            for r in turn[:-1]
+        )
+        final = turn[-1]
+        assert final.tools == []
+        assert final.tool_choice is None
+        assert "Dernier appel du budget" in final.system_message.text
+        assert all(
+            "Dernier appel du budget" not in r.system_message.text for r in turn[:-1]
+        )
+        assert final.messages[: len(history)] == history
+        assert [m.content for m in final.messages if m.type == "tool"] == [
+            f"Recorded {i}" for i in range(MAX_MODEL_CALLS - 1)
+        ]
+    assert executed == list(range(MAX_MODEL_CALLS - 1)) * 2
 
 
 def test_oversized_tool_batch_executes_nothing():

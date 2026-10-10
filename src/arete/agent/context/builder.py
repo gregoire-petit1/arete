@@ -17,6 +17,7 @@ from arete.agent.capabilities.discovery import (
     tool_instructions_suffix,
 )
 from arete.agent.context.sections import ContextSection, page_section
+from arete.agent.runtime.budget import MAX_MODEL_CALLS
 from arete.agent.runtime.context import AgentContext
 from arete.agent.runtime.policy import ProfileSpec, resolve_policy
 from arete.agent.tools.toolkits import META_TOOLS
@@ -69,8 +70,14 @@ def build_context(
     """Build a new request; never accumulate injected context in graph state."""
     profile_id = _profile(getattr(request, "runtime", None))
     profile = resolve_policy(profile_id).profile
-    loaded = _loaded(getattr(request, "state", {}), profile_id)
+    state = getattr(request, "state", {})
+    loaded = _loaded(state, profile_id)
     tools = _augment_tools(getattr(request, "tools", []), loaded, profile_id)
+    # Reserve the last allowed request for an answer using the complete evidence.
+    # Otherwise a successful last tool call strands its result behind the hard cap.
+    completed_calls = state.get("run_model_call_count", 0)
+    assert isinstance(completed_calls, int) and completed_calls >= 0
+    final_call = completed_calls >= MAX_MODEL_CALLS - 1
     system = getattr(request, "system_message", None)
     loadable = _loadable(loaded, profile_id)
     catalog = (
@@ -94,6 +101,17 @@ def build_context(
     sections = [
         ContextSection("harness", system.text if system else "", "server"),
         ContextSection("profile", instructions, "server"),
+        ContextSection(
+            "execution_budget",
+            "Dernier appel du budget : réponds maintenant sans outil à la demande "
+            "en utilisant les résultats déjà reçus. Si le travail est incomplet, "
+            "dis-le explicitement : distingue les actions confirmées, les échecs "
+            "et ce qui reste à faire. Ne prétends pas avoir vérifié des données "
+            "non lues ni effectué une action sans résultat confirmé."
+            if final_call
+            else "",
+            "server",
+        ),
         ContextSection("catalog", catalog, "registry"),
         ContextSection("capabilities", tool_instructions_suffix(loaded), "registry"),
         ContextSection(
@@ -115,9 +133,11 @@ def build_context(
         ),
     ]
     base = request.override(
-        tools=tools,
+        tools=[] if final_call else tools,
         system_message=SystemMessage("\n\n".join(s.text for s in sections if s.text)),
     )
+    if final_call:
+        base = base.override(tool_choice=None)
     if not isinstance(context, AgentContext) or profile.id != "chat":
         return base
     # Mandatory preferences/history are checked first, never displaced by retrieval.
