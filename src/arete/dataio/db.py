@@ -34,6 +34,7 @@ BUNDLED_EXTENSIONS = pathlib.Path(__file__).resolve().parents[3] / "duckdb_exten
 
 _remote: duckdb.DuckDBPyConnection | None = None
 _remote_lock = threading.Lock()
+_local_connect_lock = threading.Lock()
 
 
 def get_db_path() -> pathlib.Path:
@@ -57,7 +58,10 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     db_path = get_db_path()
     if not read_only:
         db_path.parent.mkdir(parents=True, exist_ok=True)
-    con = duckdb.connect(str(db_path), read_only=read_only)
+    # Concurrent opens can race DuckDB's instance-cache cleanup when the last
+    # connection closes. Serialize opening only; queries keep separate connections.
+    with _local_connect_lock:
+        con = duckdb.connect(str(db_path), read_only=read_only)
     con.execute("PRAGMA threads=4;")
     con.execute(f"PRAGMA temp_directory='{db_path.parent}';")
     configure_athlete(con)
