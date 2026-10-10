@@ -359,9 +359,12 @@ def test_read_file_tool_path_leaves_no_fixture_sentence_in_the_scrubbed_trace(
     )
     assert result["messages"][-1].content == "Finished."
 
-    # The read_file tool run itself: what would be sent to LangSmith for it,
-    # scrubbed, carries no fixture sentence in either its args or its result.
+    # The tracer itself already redacted the tool run's result by name,
+    # before the client ever saw it: proof _ScrubbingTracer, not some other
+    # LangChainTracer, received this run's callbacks.
     read_file_run = next(r for r in runs.values() if r["name"] == "read_file")
+    assert read_file_run["outputs"] == {"output": "[REDACTED:read_file]"}
+
     scrubbed = {
         "inputs": scrub(read_file_run["inputs"]),
         "outputs": scrub(read_file_run["outputs"]),
