@@ -445,14 +445,20 @@ def test_coach_move_marks_export_dirty_without_rewriting_prescription(planned):
 
     garmin = Garmin()
     service.export(planned, client=garmin)
-    result = json.loads(planning.update_planned_session(planned, date_str="2027-01-13"))
+    result = json.loads(
+        planning.update_planned_session(
+            planned, 1, planning.SessionChanges(date_str="2027-01-13")
+        )
+    )
     assert result["updated"]
     session = GarminRepository().get_planned_session(planned)
     assert session.date == date(2027, 1, 13)
     assert session.revision == 2
     assert service.statuses()[0]["state"] == "dirty"
     result = json.loads(
-        planning.update_planned_session(planned, target_duration_min=40)
+        planning.update_planned_session(
+            planned, 2, planning.SessionChanges(target_duration_min=40)
+        )
     )
     assert "prescription" in result["error"]
     assert (
@@ -472,7 +478,7 @@ def test_daily_session_cannot_change_steps_during_upload(planned):
     garmin = Garmin()
 
     def concurrent_edit():
-        with pytest.raises(DocumentError, match="Vérifie l’export"):
+        with pytest.raises(DocumentError, match="Réconcilie l’export"):
             service.update_session(
                 planned,
                 1,
@@ -508,7 +514,7 @@ def test_conversation_creates_structured_session_without_import(planned):
             "2027-01-14",
             "intervals",
             "6 × 400 m",
-            prescription_json=json.dumps(
+            prescription=Prescription.model_validate(
                 {
                     "version": 1,
                     "steps": [
@@ -611,20 +617,42 @@ def test_invalid_batch_is_rejected_before_remote_io(ids, planned):
 def test_prescription_edit_checks_revision_and_dirties_export(planned):
     garmin = Garmin()
     service.export(planned, client=garmin)
-    from arete.agent.tools.garmin import update_session_prescription
+    from arete.agent.tools.planning import update_planned_session
 
     args = dict(
         session_id=planned,
         revision=1,
         date_str="2027-01-13",
         description="40 minutes",
-        prescription_json='{"steps":[{"kind":"effort","duration_kind":"seconds","value":2400}]}',
+        prescription={
+            "steps": [{"kind": "effort", "duration_kind": "seconds", "value": 2400}]
+        },
     )
-    result = json.loads(update_session_prescription.invoke(args))
+    result = json.loads(
+        update_planned_session.invoke(
+            {
+                "session_id": args["session_id"],
+                "revision": args["revision"],
+                "changes": {
+                    k: v for k, v in args.items() if k not in {"session_id", "revision"}
+                },
+            }
+        )
+    )
     assert result["session"]["revision"] == 2
-    assert result["export"]["state"] == "dirty"
+    assert service.inspect_session(planned)["export"]["state"] == "dirty"
     count = len(garmin.calls)
-    assert json.loads(update_session_prescription.invoke(args))["error"]
+    assert json.loads(
+        update_planned_session.invoke(
+            {
+                "session_id": args["session_id"],
+                "revision": args["revision"],
+                "changes": {
+                    k: v for k, v in args.items() if k not in {"session_id", "revision"}
+                },
+            }
+        )
+    )["error"]
     assert len(garmin.calls) == count
 
 
@@ -641,10 +669,12 @@ def test_daily_and_chat_share_export_reservation(planned):
     def concurrent_push():
         with pytest.raises(DocumentError, match="déjà en cours"):
             plan_adaptation.push_session(garmin, planned)
+        from arete.services import planning
+
         result = json.loads(
-            __import__(
-                "arete.services.planning", fromlist=["update_planned_status"]
-            ).update_planned_status(planned, "skipped")
+            planning.update_planned_session(
+                planned, 1, planning.SessionChanges(status="skipped")
+            )
         )
         assert result["error"]
 
@@ -676,7 +706,11 @@ def test_strength_prescription_requires_grammar_source(planned):
             "2027-01-15",
             "strength",
             sport="strength",
-            prescription_json='{"steps":[{"kind":"effort","duration_kind":"reps","value":8,"exercise":"Squat"}]}',
+            prescription=Prescription(
+                steps=[
+                    Step(kind="effort", duration_kind="reps", value=8, exercise="Squat")
+                ]
+            ),
         )
     )
     assert "texte exact" in result["error"]
@@ -689,6 +723,7 @@ def test_graph_streams_domain_progress_before_final_answer(planned, monkeypatch)
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain_core.messages import AIMessage
 
+    from arete.agent.capabilities.discovery import authorized_tools
     from arete.agent.middlewares.capabilities import ToolkitMiddleware
     from arete.agent.middlewares.events import ToolEventMiddleware
     from arete.agent.runtime.context import AgentContext
@@ -723,6 +758,7 @@ def test_graph_streams_domain_progress_before_final_answer(planned, monkeypatch)
                     ]
                 ),
             ),
+            tools=authorized_tools("chat"),
             middleware=[ToolkitMiddleware(), ToolEventMiddleware()],
             context_schema=AgentContext,
         )
@@ -750,21 +786,6 @@ def test_graph_streams_domain_progress_before_final_answer(planned, monkeypatch)
         if e["type"] == "message" and e["text"] == "La séance est programmée."
     )
     assert len(garmin.workouts) == 1
-
-
-def test_pending_document_import_cannot_use_new_writes():
-    from types import SimpleNamespace
-
-    from arete.agent.capabilities.execution import _resolve_tool
-    from arete.agent.runtime.context import AgentContext
-
-    for name in ("update_session_prescription", "export_garmin_sessions"):
-        request = SimpleNamespace(
-            tool_call={"name": name, "id": "blocked"},
-            state={},
-            runtime=SimpleNamespace(context=AgentContext(document_import_pending=True)),
-        )
-        assert _resolve_tool(request).status == "error"
 
 
 def test_workout_http_detail_and_batch_revision_contract(

@@ -1,6 +1,6 @@
 # Coaching stack: responsibilities and dependencies
 
-Arete gives each behavior one owner, with one coaching runtime and three
+Arete gives each behavior one owner, with one coaching runtime and four
 server-selected profiles. Browser-owned conversations, HTTP endpoints, tool names,
 DuckDB tables and ledger paths remain compatible. There are no placeholder layers
 for delegation, MCP, authentication or providers Arete does not use.
@@ -13,7 +13,7 @@ arete/
 │   ├── runtime/             Invocation context, conversation state, policy, limits, events
 │   ├── context/             Ordered sections, open-page data and request accounting
 │   ├── models/              Deployment envelope, route selection, provider adapter
-│   ├── capabilities/        One catalog, discovery and execution resolution
+│   ├── capabilities/        One catalog, native tools and execution policy
 │   ├── tools/               Model schemas and domain-service adapters
 │   ├── middlewares/         Framework interception/completion hooks
 │   ├── backends/            Deep Agents memory filesystem adapter and permissions
@@ -41,8 +41,8 @@ import the factory. The runtime receives an already-compiled graph; it never
 compiles another agent. Briefing and feedback services receive typed callbacks
 rather than reaching back into the factory.
 
-The browser sends human/assistant history. `runtime/state.py` owns invocation
-messages and loaded capabilities. `runtime/context.py` owns
+The browser sends human/assistant history. Native graph state owns invocation
+messages. `runtime/context.py` owns
 server-selected profile, request metadata, deadline and concurrency gate. Clients,
 semaphores and credentials do not enter conversation state.
 
@@ -52,21 +52,17 @@ across short-lived event loops. Async callers use `invoke_agent` directly.
 
 The execution envelope is five minutes, 24 main graph model turns (the last binds
 no tools and asks for an answer stating any incomplete work), 96 tool calls,
-and four simultaneous tool executions per invocation. Interactive chat may add one
-optional next-message completion (512 output tokens, five seconds, zero SDK retries). Framework recursion is a
+and four simultaneous tool executions per invocation. There is no auxiliary suggestion call. Framework recursion is a
 separate 200-step backstop. A model call gives up after 60 s, or 30 s without a
 streamed chunk. Native LangChain `ModelFallbackMiddleware` tries the configured
 candidates in order (at most three, including the primary). The composition root
 constructs each fallback candidate with zero SDK retries and no provider-side fallback list,
-so one graph turn costs at most three requests, 72 per run before the optional
-suggestion. Completions with neither visible text nor a valid tool call are
+so one graph turn costs at most three requests, 72 per run. Completions with neither visible text nor a valid tool call are
 rejected inside that same fallback boundary, including reasoning-only output
 that exhausts the token allowance. With no usable candidate the run fails
 explicitly; no empty answer is committed. Each attempt retains its usage and is
 measured separately. Context validation precedes
-fallback, cancellation propagates, and no tool or entire run is replayed. The
-optional suggestion keeps provider-side fallback inside its single bounded call.
-With a pinned model and no alternatives, the existing two SDK retries remain;
+fallback, cancellation propagates, and no tool or entire run is replayed. With a pinned model and no alternatives, the existing two SDK retries remain;
 these share the deadline and appear as one boundary call in telemetry.
 ToolRetryMiddleware permits one retry
 after 250 ms for ConnectionError/TimeoutError from catalog-declared read-only
@@ -84,10 +80,13 @@ Discovery, binding, policy checks and structural tests consume the same catalog.
 Tools call services; they do not import HTTP handlers. New tools are unavailable
 to background missions until explicitly classified as read-only.
 
-Chat preloads analytics, planning, strength and Garmin capabilities: loading one cost a
-model request per turn, and requests are the free tier's budget. The on-demand
-loading machinery (catalog, `load_toolkit`, load-before-execute) stays for
-profiles that do not preload. The briefing and the session feedback bind no tool:
+Chat binds analytics, planning, strength and Garmin tools natively at graph construction.
+Calendar is added only by server configuration. No discovery/load tool or loaded
+state exists: every current profile either has its tools immediately or has none.
+The native ToolNode validates arguments, injects ToolRuntime and executes tools.
+Capability middleware checks server policy again, counts attempts, invalidates page
+context after writes and emits progress; it never invokes a tool itself.
+The briefing and the session feedback bind no tool:
 `services/briefing.py` and `services/session_feedback.py` compute their facts
 (load, form, recovery, today's plan, recent sessions, yesterday's briefing; or the
 session's numbers, RPE and notes) and the model answers in one request. An
@@ -107,7 +106,7 @@ Archives and `/attachments/` remain read-only, with an explicit deny for every
 other write path. New entries still use `append_journal`; arbitrary file creation
 is not exposed. Appends, rotation, edits and deletion share a bounded process-local
 lock so overlapping turns in one server cannot overwrite each other's writes.
-Model-generated loaded state and client page metadata cannot change these policies.
+Client messages and page metadata cannot change these policies.
 
 System skills live in `agent/skills/system/<name>/SKILL.md`, versioned with Git.
 Migration 38 creates the shared `app.system_skills` table (no athlete data).
@@ -116,42 +115,24 @@ idempotently and reads it back from the database. Its content digest identifies
 the release, so overlapping deployments cannot replace each other's instructions.
 The graph holds a read-only snapshot at `/skills/system/`; both filesystem
 permissions and the backend deny edits, deletion, creation and uploads. Graph
-state cannot shadow those files. Native Deep Agents skills discovery runs once
-per invocation; an adapter rejects incomplete discovery instead of silently
-dropping malformed skills. Its native `before_agent` hook then invokes a local
-LangChain retriever once, with callbacks forwarded into the run trace. Skills opt
-into preloading through `metadata.preload-keywords` and may require attachments
-with `metadata.preload-requires: attachments`. BM25 ranks these server-declared
-activation terms against the latest human message (accent-insensitive); document
-contents and older messages do not activate instructions. This lexical selection
-adds no model/embedding request or external I/O, but can miss paraphrases.
-The complete catalog stays available by name, description and read-only path,
-including skills without activation metadata and retrieval misses.
+state cannot shadow those files. Native Deep Agents skills discovery runs once per invocation; its adapter rejects
+incomplete discovery instead of silently omitting malformed server files. Only names,
+descriptions and paths enter the system catalog. Attachment bodies likewise remain out of SYSTEM: the manifest lists paths and sizes, with content read through filesystem tools. Skill bodies enter conversation
+messages through real `read_file` tool results, never through lexical retrieval or
+system-prompt preloading. An attachment adds an explicit instruction to consult
+`document-planning`; it does not itself load the body or grant any permission.
 
-The composer lists the catalog through `GET /agent/skills` when the athlete types
-`/`, with filtering and keyboard/mouse selection before sending. It inserts a
-leading `/skill-name` command into the ordinary persisted draft, so thread changes,
-reloads and explicit retries retain it without a second browser-state contract.
-Only commands in the latest human message select skills. The server resolves
-names against native discovery and prioritizes their complete bodies over BM25
-matches, bypassing relevance but never permissions or budgets. Unknown names and
-explicit selections that exceed the count/token limits fail visibly instead of
-being silently reduced to metadata. Listing builds no model and needs no model key.
-
-At most three complete skill files and 2,048 estimated tokens are preloaded;
-budget omissions are explicit and their files remain readable on demand. The
-context builder places this stable contribution before the profile's current date
-and dynamic evidence, includes it in complete-request accounting, and never
-reselects during the run. This preserves the skill prefix for provider caching;
-it does not guarantee a cache hit. Selection belongs to the invocation context,
-never shared graph state or client-supplied files. Skills grant no permissions and
-are unavailable to background missions. The bundle allows at most 32 skills of
-32 KiB each. Publication adds no model request; the first bundled skill covers
-reading a requested day or week in an attached training plan.
+The composer lists `GET /agent/skills` when the athlete types `/`, preserving keyboard
+selection and the ordinary browser draft. Up to three leading `/skill-name` commands
+resolve against trusted metadata. Unknown names fail explicitly. Read bodies and
+references only as needed, reusing results already present in the invocation.
+The browser persists user/assistant history, not tool results: a later user turn
+must read a relevant skill again. No thread persistence is introduced.
+The bundle remains bounded to 32 skills of 32 KiB each; filesystem reads are bounded
+to 200 lines per call and complete requests are budgeted without silent truncation.
 
 The context builder combines the harness/filesystem contribution, mission
-instructions, the current date for chat, the catalog of toolkits still loadable,
-loaded instructions, a bounded journal excerpt and, for chat, the open page: its
+instructions, the current date for chat, the skill catalog and authorized toolkit instructions, a bounded journal excerpt and, for chat, the attachment manifest and open page: its
 data read by the server at the first model boundary (`context/sections.py`, through
 `services/pages.py`) and its route/URL parameters labelled as untrusted client data.
 The Log selection includes the selected strength session or the cardio detail digest.
@@ -173,29 +154,29 @@ keeps the whole thread locally) and the journal in `data/agent/memory` is the
 long-term memory. Summarizing per request cost a model request on every turn of a
 long thread, since nothing persists the summary between requests.
 
+## Native training operations
+
+The planning tools are list, inspect, create, update and delete. The update takes
+`session_id`, `revision` and a typed `changes` object. Omission preserves fields;
+zero or empty clears optional scalar fields; explicit null is refused. Prescription
+replacements clear stale scalar targets and structured workouts reject conflicting
+target edits. Browser and coach prescription edits share repository transactions,
+revision checks and Garmin reservation checks. Domain rules remain in services and
+repositories, not in tool adapters.
+
+`save_workout` parses and saves completed strength work in one call. Unknown exercises
+or unparsed lines reject the entire coach save and report corrections. The Log page
+retains its explicit preview behavior. Session/exercise/set persistence is transactional.
+A skill describes how to interpret documents; planning owns creation; Garmin owns
+export. Google Calendar still requires approval through its existing HTTP/UI cards.
+
 ## Completion, transport and observability
 
 Empty conversations use fixed, page-aware starters (`frontend/src/lib/coachPrompts.ts`).
-After an interactive answer, `AutoSuggestionMiddleware` invokes one tool-free
-completion through `runtime/autosuggestion.py`, using the complete latest user/coach
-exchange assembled and budgeted by the context builder. It emits one `suggestion`
-custom event before `done`; non-streaming chat exposes the same optional field.
-Streaming clients opt in with `supports_suggestions: true`; older cached clients
-receive no unfamiliar event and incur no auxiliary model call. Invalid optional
-draft events are logged and omitted without failing the answer. The 300-character
-limit counts Unicode code points in both Python and the browser.
-The browser inserts the suggestion as an editable draft only on successful completion
-and only if the athlete has not edited the originating thread's draft meanwhile.
-Drafts use the existing browser storage; generated text never enters message history
-until the athlete sends it. There are no follow-up cards during a conversation.
-The auxiliary call shares the run trace (a `coach_autosuggestion` LLM child span)
-and is included in total model calls, timing and `suggestion_calls` telemetry.
-OpenRouter reasoning is disabled for this short completion so it cannot consume
-the entire output reservation before writing the draft. The exchange is serialized
-as user data; a trailing assistant message would be interpreted as a prefill by some providers.
-It has five seconds and no SDK retries; provider failures or invalid/oversized output
-are logged and leave the answer intact. Near the run deadline it is skipped.
-Briefings, feedback and reviews never request a suggestion.
+Answers make no auxiliary completion and never fill the composer automatically.
+Manual drafts and existing browser histories are preserved. Old clients may send
+`supports_suggestions`; it is ignored. New clients ignore retired suggestion events
+during rolling upgrades and never turn them into drafts.
 
 Runtime tool events are projected into the existing SSE protocol by
 `api/agent_streaming.py`. Workout events carry session ID/revision, tool call,
@@ -206,9 +187,10 @@ inspection remain model data, never interactive cards. The capability middleware
 enforces this for returned results and progress callbacks. Cards consume these events
 before `done`, independently of truncated tool previews.
 Optional LangSmith tracing remains invocation-scoped, including stream
-cancellation cleanup, dynamic tool spans and browser thread IDs. Run metadata
+cancellation cleanup, native tool spans and browser thread IDs. Run metadata
 names the scoped athlete (`athlete_id`), so model requests can be counted per
-athlete. Provider usage logs
+athlete. Run logs include skill read count, latency and approximate result tokens separately
+from model calls. Provider usage logs
 retain reported cache/input/output details and model timing without logging the
 athlete's prompts. Opt-in LangSmith traces include full inputs, outputs and tool
 results; setup and exported data are described in the
@@ -216,6 +198,9 @@ results; setup and exported data are described in the
 unknown, not zero.
 Each invocation also logs one `Agent run:` line (`RunStats` on the run context):
 model calls, tool calls, model time, time to first token and served models.
+`first_result_ms` measures the first successful domain tool result, or completion
+of an answer when no domain tool succeeds. Preparatory file reads and narration do
+not count as a useful domain result; it is a latency proxy, not a quality score.
 
 Completed chat answers carry their `trace_id` and a signed feedback receipt
 in both HTTP and SSE `done`. The runtime supplies that UUID as the graph's
@@ -273,30 +258,33 @@ run reservation per athlete, not conversation text. Failed ambiguous runs stay
 reserved for operator review and are never replayed. See [Slack setup](slack.md)
 for limits, installation, crash behavior and recovery.
 
-## Document imports and outbound workouts
+## Documents, direct session creation and outbound workouts
 
-Conversation messages remain browser-owned. Document originals, extracted blocks,
-import drafts and outbound Garmin operation records are deliberately durable in
-DuckDB/MotherDuck (migration 13). `services/documents.py` and `services/imports.py`
-own these lifecycles. API chat hydration builds an invocation-local StateBackend
-view at `/attachments/` before the first model call and rejects missing or unfinished
-selected files. The context builder derives a bounded source preview from that same
-state, with explicit partial flags and paths for reading the complete extraction.
-Browser attachment references survive the message request window.
+Conversation messages remain browser-owned. Document originals, extracted blocks
+and outbound Garmin operation records are durable in DuckDB/MotherDuck (migration 13).
+`services/documents.py` owns documents. API chat hydration builds an invocation-local
+StateBackend view at `/attachments/` before the first model call and rejects missing
+or unfinished selected files. The context builder derives a bounded source manifest
+from that same state, with sizes and paths for reading the complete extraction. Browser attachment references survive the message request window.
 The filesystem composes that read-only view with the existing ledger backend.
-The model can propose a draft but has no confirmation tool; pending imports block
-ordinary coach planning writes. Human confirmation commits selected sessions once.
 
-`services/prescriptions.py` owns versioned steps and provenance. Garmin conversion
-lives in `garmin/workouts.py`; `services/garmin_export.py` owns both interactive
-and daily export, reconciliation and removal with durable reservations and no
-ambiguous write replay. Chat can create coach prescriptions without a document;
-explicit prescriptions remain excluded from automatic daily adaptation/export.
+`create_planned_session` writes directly through `services/planning.py`, using typed
+dates, sport/type enums, bounded targets, a `Prescription` object and optional typed
+source references. Source quotes are checked against documents in the server-selected
+thread before persistence. Attachments do not block planning or Garmin tools. There
+are no import tools, approval cards, import endpoints or import SSE events. Historical
+`coach_imports` rows remain inert; existing migrations and saved sessions are retained.
+
+`services/prescriptions.py` owns versioned steps and provenance. The tool schema adapter
+unrolls the existing two-repeat-level bound so provider conversion preserves the
+nested argument types without changing the HTTP schema. Strength still uses the grammar. Garmin conversion lives in
+`garmin/workouts.py`; `services/garmin_export.py` owns interactive and daily export,
+reconciliation and removal with durable reservations and no ambiguous write replay.
+Explicit prescriptions remain excluded from automatic daily adaptation/export.
 Legacy sessions use deterministic conversion, and existing Garmin identifiers must
 be verified before adoption. Updates require the current revision and mark the
-export dirty without transmitting it. See [conversational workouts](conversational-workouts.md)
-for UI, limits and verification.
-Only `GarminClient` touches the remote service. See [document imports](document-imports.md)
+export dirty without transmitting it. See [conversational workouts](conversational-workouts.md).
+Only `GarminClient` touches the remote service. See [documents](document-imports.md)
 for resource bounds, frontend worker assets, unsupported conversions and acceptance.
 
 ## Session page, kept streams and sync feedback
@@ -365,7 +353,7 @@ token from Clerk for Calendar, and
 ## Google Calendar
 
 With sign-in on, the composition root adds Calendar to the chat's resolved
-capabilities/preloads and compiles a calendar factory into the policy
+capabilities and compiles a calendar factory into the policy
 middleware. Each run gets the caller's own service, built from the Clerk user id
 the API stamps on the invocation context from the verified identity; the API key
 and background profiles get none. A resolved profile is server-owned and cannot
@@ -401,8 +389,9 @@ coach hypotheses and legacy evidence. Active, currently valid facts are mandator
 context; missing reads and oversized contexts fail explicitly. Settings and the
 coach use optimistic revisions, and deleting a fact removes its history.
 
-Chat adds bounded BM25 retrieval of existing facts, journals, session text and
-thread-scoped document blocks through the central context builder. Reads run in
+Chat adds bounded BM25 retrieval of existing facts, journals and session text
+through the central context builder. Document blocks remain accessible through
+filesystem tools rather than being injected again as retrieved system context. Reads run in
 workers, with a fresh corpus at each model boundary and no extra model request.
 Optional traversal follows only authoritative source links and remains disabled
 pending behavior evaluations. See [personal memory](personal-memory.md) for

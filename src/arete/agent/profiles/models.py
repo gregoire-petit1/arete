@@ -12,7 +12,6 @@ class AgentProfile:
     name: str
     instructions: str
     capabilities: tuple[str, ...]
-    preloaded: tuple[str, ...] = ()
     training_writes: bool = False
     page_context: bool = False
     #: Filesystem tools on the coach's journal; missions get it in the prompt

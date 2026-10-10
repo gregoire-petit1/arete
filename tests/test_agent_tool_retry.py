@@ -87,7 +87,10 @@ def test_transient_read_retries_once_without_extra_model_call(
     [
         ("get_workload", {"days": 5}),
         ("list_planned", {"start_date": "invalid"}),
-        ("load_toolkit", {"toolkit_id": "invalid"}),
+        (
+            "create_planned_session",
+            {"date_str": "invalid", "session_type": "endurance"},
+        ),
     ],
 )
 def test_domain_and_static_tool_errors_are_visible_to_model(async_mode, name, args):
@@ -132,7 +135,11 @@ def test_unhandled_write_timeout_is_never_replayed(monkeypatch, async_mode):
     from arete.agent.tools.garmin import export_garmin_sessions
 
     write = Mock(side_effect=TimeoutError("committed remotely"))
-    monkeypatch.setattr(export_garmin_sessions, "func", write)
+
+    def fail(session_ids, runtime, device_id=None):
+        return write(session_ids)
+
+    monkeypatch.setattr(export_garmin_sessions, "func", fail)
     with pytest.raises(TimeoutError, match="committed remotely"):
         run(graph_for("export_garmin_sessions", {"session_ids": [113]}), async_mode)
     assert write.call_count == 1
@@ -177,13 +184,11 @@ def test_reconciliation_error_keeps_card_and_emits_failed_tool_event(monkeypatch
 
 def test_error_command_preserves_other_state_and_original_payload():
     message = ToolMessage(content='{"error":"invalid"}', tool_call_id="call")
-    command = Command(
-        update={"messages": [message], "loaded_toolkits": ["planning"]}, goto="model"
-    )
+    command = Command(update={"messages": [message], "files": {}}, goto="model")
     result = enforce_tool_status(command)
     assert result.update["messages"][0].status == "error"
     assert result.update["messages"][0].content == message.content
-    assert result.update["loaded_toolkits"] == ["planning"] and result.goto == "model"
+    assert result.update["files"] == {} and result.goto == "model"
     assert message.status == "success"
 
 

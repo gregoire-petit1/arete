@@ -69,7 +69,4 @@ l'extrait du journal.
 - Entretiens le contexte quand c'est pertinent : `edit_file` pour corriger ou \
 retirer une observation erronée, obsolète ou en double dans le journal ; \
 `delete` seulement si le fichier entier doit être oublié. Ces outils ne \
-modifient ni les faits durables ni les séances enregistrées.
-- Pour enregistrer réellement une séance de musculation dictée: \
-`read_workout` puis `save_workout`. Ne dis jamais qu'une séance est \
-enregistrée si `save_workout` ne l'a pas fait."""
+modifient ni les faits durables ni les séances enregistrées."""

@@ -10,7 +10,6 @@ from time import monotonic
 from typing import Any
 from uuid import uuid4
 
-from arete.dataio import plan_changes
 from arete.dataio.db import db_connection, transaction
 from arete.garmin.workouts import canonical, convert, matches
 from arete.services.documents import DocumentError
@@ -808,32 +807,28 @@ def update_session(
     description: str,
     prescription: Prescription,
 ) -> None:
-    with transaction() as con:
-        current = con.execute(
-            "SELECT prescription,garmin_workout_id,garmin_schedule_id FROM app.visible_planned_sessions WHERE id=?",
-            [session_id],
-        ).fetchone()
-        # All writers share the durable reservation, including legacy adoption.
-        state = _get(con, session_id)
-        if current and (current[1] or current[2]) and not state:
-            raise DocumentError(
-                "Vérifie d’abord l’ancien export avec un envoi Garmin avant de modifier ses étapes."
-            )
-        if state and state["state"] in {"working", "uncertain", "conflict"}:
-            raise DocumentError("Vérifie l’export Garmin avant de modifier la séance.")
-        changed = con.execute(
-            "UPDATE app.planned_sessions SET date=?,description=?,prescription=?,revision=revision+1 WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id=? AND revision=?) RETURNING id",
-            [day, description, prescription.model_dump_json(), session_id, revision],
-        ).fetchone()
-        if not changed:
-            raise DocumentError(
-                "La séance a changé ou n’existe plus. Recharge le planning."
-            )
-        con.execute(
-            "UPDATE app.garmin_exports SET state='dirty',updated_at=current_timestamp WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (session_id=? AND state<>'removed') ",
-            [session_id],
+    # Browser and coach edits share revision/export checks in the repository.
+    from arete.garmin.repository import GarminRepository
+
+    try:
+        changed = GarminRepository().update_planned_session_fields(
+            session_id,
+            expected_revision=revision,
+            date=day,
+            description=description,
+            prescription=prescription.model_dump(mode="json"),
+            garmin_pushed_at=None,
+            target_duration_min=None,
+            target_distance_km=None,
+            target_hr_zone=None,
+            target_intensity=None,
         )
-    plan_changes.touch()
+    except ValueError as exc:
+        raise DocumentError(str(exc)) from exc
+    if not changed:
+        raise DocumentError(
+            "La séance a changé ou n’existe plus. Recharge le planning."
+        )
 
 
 def export_batch(

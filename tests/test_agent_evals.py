@@ -47,7 +47,6 @@ DATA_TOOLS = {
     "get_workload",
     "get_fitness",
     "get_training_advice",
-    "get_personal_records",
     "list_recent_sessions",
     "list_planned",
 }
@@ -55,7 +54,7 @@ DATA_TOOLS = {
 #: Tools that change something. A question must never reach these.
 WRITE_TOOLS = {
     "create_planned_session",
-    "update_planned_status",
+    "update_planned_session",
     "delete_planned_session",
     "save_workout",
 }
@@ -276,21 +275,15 @@ def test_a_capability_that_does_not_exist_is_not_invented():
 # ---------------------------------------------------------------------------
 
 
-def test_a_dictated_session_is_read_before_it_is_saved():
-    """The drop has to reach the transcript before anything is written.
-
-    `save_workout` keeps only the exercises the catalog matched. Saving first
-    and reporting later means the athlete learns what was lost after it is
-    gone — if at all.
-    """
+def test_a_dictated_session_uses_one_strict_save():
     run = ask(
-        "Note ma séance de muscu d'aujourd'hui : 3x10 à 80 kg au développé "
+        "Note ma séance de muscu d’aujourd’hui : 3x10 à 80 kg au développé "
         "couché, puis 4x12 à 40 kg en zercher goblet thruster machine.",
         page="log",
     )
-    assert run.called("read_workout", "save_workout"), f"nothing logged: {run}"
-    if run.called("save_workout"):
-        assert run.order("read_workout", "save_workout"), f"saved blind: {run}"
+    assert run.called("save_workout"), f"parser not consulted: {run}"
+    assert not run.called("read_workout"), str(run)
+    assert run.model_calls <= 3, str(run)
 
 
 def test_an_exercise_the_catalog_refused_is_named_to_the_athlete():

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from typing import Literal
+from typing import Annotated, Literal
 
-from langchain_core.tools import tool
+from pydantic import Field
 
+from arete.agent.tools.validation import typed_tool
 from arete.services import athlete_facts
 from arete.services.memory import append_entry
 
@@ -15,9 +16,12 @@ MAX_TITLE_CHARS = 120
 MAX_BODY_CHARS = 2_000
 
 
-@tool
+@typed_tool
 def append_journal(
-    file: Literal["sessions.md", "notes.md"], title: str, body: str, day: str = ""
+    file: Literal["sessions.md", "notes.md"],
+    title: Annotated[str, Field(min_length=1, max_length=MAX_TITLE_CHARS)],
+    body: Annotated[str, Field(min_length=1, max_length=MAX_BODY_CHARS)],
+    day: str = "",
 ) -> str:
     """Ajoute une entrée datée à ton journal. `sessions.md`: une séance dont
     vous avez parlé (faits marquants, ressenti, décision). `notes.md`: une
@@ -46,15 +50,15 @@ def append_journal(
     )
 
 
-@tool
+@typed_tool
 def remember_fact(
     kind: Literal["injury", "constraint", "preference", "goal", "other"],
-    text: str,
-    fact_id: int = 0,
+    text: Annotated[str, Field(min_length=1, max_length=athlete_facts.MAX_TEXT)],
+    fact_id: Annotated[int, Field(ge=0)] = 0,
     status: Literal["active", "resolved"] = "active",
     evidence: Literal["explicit", "hypothesis"] = "hypothesis",
-    expected_revision: int | None = None,
-    source_ref: str = "",
+    expected_revision: Annotated[int, Field(ge=1)] | None = None,
+    source_ref: Annotated[str, Field(max_length=athlete_facts.MAX_SOURCE_REF)] = "",
     since: str = "",
     valid_until: str = "",
 ) -> str:

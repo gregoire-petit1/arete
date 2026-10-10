@@ -26,12 +26,6 @@ export interface WorkoutStep {
 }
 export interface Prescription { version: 1; steps: WorkoutStep[]; pool_length_m?: number | null }
 export interface Provenance { document_id: string; locator: string; quote: string }
-export interface ImportedSession {
-  date: string | null; sport: string; session_type: string; description: string;
-  prescription: Prescription; provenance: Provenance[]; strength_text: string; uncertainties: string[];
-}
-export interface ImportItem { batch_duplicates?: number[]; session: ImportedSession; problems: string[]; ocr: boolean; sources: (Provenance & { ocr: boolean; file_name?: string })[]; duplicates: { id: number; description: string }[] }
-export interface ImportDraft { id: string; version: number; status: 'draft' | 'confirmed' | 'discarded'; sessions: ImportItem[]; session_ids: number[] }
 export interface GarminExport { operation_id?: string; updated_at?: string; phase?: string; session_id: number; state: string; error: string | null; deleted: boolean; workout_id: number | null; schedule_id: number | null }
 export interface GarminDevice { id: number; name: string; sports: string[]; compatibility: string; documentation: string | null }
 
@@ -53,13 +47,9 @@ export async function documentRequest<T>(path: string, init: RequestInit = {}, t
 const root = (thread: string) => `/agent/threads/${encodeURIComponent(thread)}`;
 export const documentsApi = {
   list: (thread: string) => documentRequest<CoachDocument[]>(`${root(thread)}/documents`),
-  discard: (thread: string, draft: ImportDraft) => documentRequest(`${root(thread)}/imports/${draft.id}?version=${draft.version}`, { method: 'DELETE' }),
-  drafts: (thread: string) => documentRequest<ImportDraft[]>(`${root(thread)}/imports`),
   delete: (thread: string, id: string) => documentRequest(`${root(thread)}/documents/${id}`, { method: 'DELETE' }),
   deleteThread: (thread: string) => documentRequest(`${root(thread)}`, { method: 'DELETE' }),
   extraction: (thread: string, id: string, signal?: AbortSignal) => documentRequest<Extraction>(`${root(thread)}/documents/${id}/extraction`, { signal }),
-  update: (thread: string, draft: ImportDraft, sessions: ImportedSession[]) => documentRequest<ImportDraft>(`${root(thread)}/imports/${draft.id}`, { method: 'PUT', body: JSON.stringify({ version: draft.version, sessions }) }),
-  confirm: (thread: string, draft: ImportDraft, selected: number[], key: string) => documentRequest<{ session_ids: number[] }>(`${root(thread)}/imports/${draft.id}/confirm`, { method: 'POST', body: JSON.stringify({ version: draft.version, selected, key, reviewed: true }) }),
 };
 
 export async function uploadDocument(thread: string, file: File, signal: AbortSignal, progress: (message: string) => void): Promise<CoachDocument> {

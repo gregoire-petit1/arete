@@ -14,8 +14,8 @@ from langchain_core.tools import BaseTool
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import Timeout as RequestsTimeout
 
+from arete.agent.capabilities.discovery import authorized_tools
 from arete.agent.capabilities.registry import CAPABILITIES
-from arete.agent.middlewares.autosuggestion import AutoSuggestionMiddleware
 from arete.agent.middlewares.capabilities import ToolkitMiddleware
 from arete.agent.middlewares.context import (
     ContextBudgetMiddleware,
@@ -49,7 +49,6 @@ def build_agent(
     output_tokens: int,
     filesystem: AgentMiddleware[Any, Any, Any],
     calendar: CalendarFactory | None = None,
-    suggestion_model: BaseChatModel | None = None,
     fallback_models: tuple[BaseChatModel, ...] = (),
     skills: AgentMiddleware[Any, Any, Any] | None = None,
 ):
@@ -60,7 +59,7 @@ def build_agent(
     ]
     if profile.page_context:
         middleware.append(ToolEventMiddleware())
-    # Wrap dynamic execution, but never replay writes or infer retryability
+    # Wrap native execution, but never replay writes or infer retryability
     # from error strings. Each attempt still traverses ToolkitMiddleware's budget.
     retry_tools: list[BaseTool | str] = [
         name
@@ -109,15 +108,10 @@ def build_agent(
         middleware.append(ModelFallbackMiddleware(*fallback_models))
     middleware.append(ModelTelemetryMiddleware())
     middleware.append(ModelResponseMiddleware())
-    if profile.id == "chat" and suggestion_model is not None:
-        middleware.append(
-            AutoSuggestionMiddleware(
-                model=suggestion_model, context_tokens=context_tokens
-            )
-        )
     return create_agent(
         model,
         tools=[
+            *authorized_tools(profile),
             *([append_journal, remember_fact] if profile.journal_tools else []),
         ],
         middleware=middleware,

@@ -25,26 +25,27 @@ test('real OCR uses local resources and preserves numeric training instructions'
   expect(extraction.blocks.every((block: { method: string }) => block.method === 'ocr')).toBe(true);
 });
 
-test('file drop produces a preview and requires human confirmation before planning', async ({ page }) => {
+test('file drop creates sessions directly and preserves attachments on reload', async ({ page }) => {
   const docId = '11111111-1111-4111-8111-111111111111';
-  const draftId = '22222222-2222-4222-8222-222222222222';
   let documentReady = false;
-  let draftReady = false;
-  let confirmations = 0;
+  const importRequests: string[] = [];
   const doc = { id: docId, name: 'plan.md', size: 18, sha256: '0'.repeat(64), status: 'ready' };
-  const draft = { id: draftId, version: 1, status: 'draft', session_ids: [] as number[], sessions: [{ session: { date: '2027-01-12', sport: 'running', session_type: 'endurance', description: 'Footing 30 minutes', prescription: { version: 1, steps: [{ kind: 'effort', duration_kind: 'seconds', value: 1800, steps: [] }] }, provenance: [{ document_id: docId, locator: 'lignes 1-1', quote: 'Footing 30 minutes' }], strength_text: '', uncertainties: [] }, problems: [], sources: [{ document_id: docId, file_name: 'plan.md', locator: 'lignes 1-1', quote: 'Footing 30 minutes', ocr: false }], ocr: false, duplicates: [] }] };
   await page.route('**/api/**', async route => {
     const url = new URL(route.request().url());
     const method = route.request().method();
+    if (url.pathname.includes('/imports')) { importRequests.push(url.pathname); return route.fulfill({ status: 404 }); }
     if (url.pathname.endsWith('/documents') && method === 'POST') return route.fulfill({ json: doc });
     if (url.pathname.includes('/chunks/')) return route.fulfill({ json: { uploaded: true } });
     if (url.pathname.endsWith('/finalize')) { documentReady = true; return route.fulfill({ json: doc }); }
     if (url.pathname.endsWith('/documents')) return route.fulfill({ json: documentReady ? [doc] : [] });
-    if (url.pathname.endsWith('/imports')) return route.fulfill({ json: draftReady ? [draft] : [] });
-    if (url.pathname.endsWith('/confirm')) { confirmations++; draft.status = 'confirmed'; draft.session_ids = [1]; return route.fulfill({ json: { session_ids: [1] } }); }
     if (url.pathname.endsWith('/chat/stream')) {
-      draftReady = true;
-      const events = [{ type: 'import_preview', id: draftId, version: 1 }, { type: 'done', message: { role: 'assistant', content: 'Vérifie les séances dans l’aperçu.' } }];
+      expect(route.request().postDataJSON().messages.at(-1).content).toBe('Crée cette séance');
+      const events = [
+        { type: 'tool_start', id: 'create-1', name: 'create_planned_session', args: { text: '2027-01-12, endurance', truncated: false } },
+        { type: 'tool_end', id: 'create-1', name: 'create_planned_session', status: 'done', output: { text: 'Séance 42 créée', truncated: false }, elapsed_ms: 20 },
+        { type: 'message', id: 'answer', text: 'Séance créée dans le planning.' },
+        { type: 'done', message: { role: 'assistant', content: 'Séance créée dans le planning.' } },
+      ];
       return route.fulfill({ contentType: 'text/event-stream', body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join('') });
     }
     if (url.pathname.includes('/settings')) return route.fulfill({ json: {} });
@@ -59,22 +60,15 @@ test('file drop produces a preview and requires human confirmation before planni
   });
   await page.locator('aside').filter({ has: page.getByLabel('Documents du coach') }).dispatchEvent('drop', { dataTransfer: transfer });
   await expect(page.getByText('Prêt', { exact: true })).toBeVisible();
-  await page.getByLabel('Message au coach').fill('Prépare ces séances');
+  await page.getByLabel('Message au coach').fill('Crée cette séance');
   await page.getByRole('button', { name: 'Envoyer', exact: true }).click();
-  await page.getByRole('button', { name: /Vérifier 1 séance/ }).click();
-  const confirm = page.getByRole('button', { name: 'Ajouter 1 séance(s) au Planning' });
-  await expect(confirm).toBeDisabled();
-  await expect(page.getByText('12 janvier 2027', { exact: true })).toBeVisible();
-  expect(confirmations).toBe(0);
-  await page.getByLabel('J’ai vérifié les sources, les dates, les unités et les doublons possibles.').check();
-  await page.getByText('Étapes et objectifs (1)', { exact: true }).click();
-  await page.screenshot({ path: '../.context/import-preview.png', fullPage: true });
-  await confirm.click();
-  await expect.poll(() => confirmations).toBe(1);
+  await expect(page.getByText('Séance créée dans le planning.')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Vérifier.*séance/ })).toHaveCount(0);
   await page.reload();
   await page.getByRole('button', { name: 'Ouvrir le coach' }).first().click();
   await expect(page.getByText('plan.md', { exact: true })).toBeVisible();
-  await expect(page.getByText('1 séance(s) ajoutée(s) — voir le Planning')).toBeVisible();
+  await expect(page.getByText('Séance créée dans le planning.')).toBeVisible();
+  expect(importRequests).toEqual([]);
 });
 
 

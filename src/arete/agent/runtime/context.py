@@ -39,13 +39,16 @@ class RunStats:
     """What one run cost: model requests are the scarce resource on a free tier."""
 
     model_calls: int = 0
-    suggestion_calls: int = 0
+    skill_reads: int = 0
+    skill_read_ms: int = 0
+    skill_read_tokens_approx: int = 0
     memory_searches: int = 0
     memory_ms: int = 0
     memory_tokens: int = 0
     tool_calls: int = 0
     model_ms: int = 0
     first_token_ms: int | None = None
+    first_result_ms: int | None = None
     served_models: list[str] = field(default_factory=list)
 
 
@@ -69,22 +72,17 @@ class AgentContext:
     # Clerk user id from the verified request identity, never from the body.
     account_id: str = ""
     document_ids: tuple[str, ...] | None = None
-    # Only interactive HTTP chat requests need a next-message draft.
-    suggest_reply: bool = False
     # Slack only: who reads the answer. None for the browser and missions.
     slack_visibility: Literal["private", "public"] | None = None
     attachment_paths: tuple[str, ...] = ()
-    document_import_pending: bool = False
     current_date: date = field(default_factory=date.today)
     deadline: float | None = field(default=None, init=False)
+    started_at: float | None = field(default=None, init=False)
     stats: RunStats = field(default_factory=RunStats, init=False, repr=False)
     # The open page's data, cached per run and invalidated after domain actions.
     page_section: str | None = field(default=None, init=False, repr=False)
-    # Selected once by native skills discovery, stable for all model boundaries.
-    preloaded_skills: dict[str, str] = field(
-        default_factory=dict, init=False, repr=False
-    )
-    skills_preload_limited: bool = field(default=False, init=False)
+    # Paths only: skill bodies enter messages through read_file results.
+    requested_skills: tuple[str, ...] = field(default=(), init=False)
     # Async ToolNode uses gather(), ignoring RunnableConfig concurrency.
     tool_slots: asyncio.Semaphore = field(
         default_factory=lambda: asyncio.Semaphore(MAX_TOOL_CONCURRENCY),

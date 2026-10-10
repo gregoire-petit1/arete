@@ -459,15 +459,8 @@ class TestBuildChatModel:
             coaching._assemble("chat")
         models = assemble.call_args.kwargs
         coach_payload = self._payload(models["model"])
-        draft_payload = self._payload(models["suggestion_model"])
+        assert "suggestion_model" not in models
         assert "reasoning" not in coach_payload["extra_body"]
-        assert draft_payload["extra_body"]["reasoning"] == {"enabled": False}
-        assert draft_payload["max_completion_tokens"] == 512
-        assert (
-            draft_payload["extra_body"]["provider"]
-            == coach_payload["extra_body"]["provider"]
-        )
-        assert models["suggestion_model"].max_retries == 0
         # Main graph fallback owns candidate selection, with one attempt each.
         candidates = [models["model"], *models["fallback_models"]]
         assert len(candidates) == 3

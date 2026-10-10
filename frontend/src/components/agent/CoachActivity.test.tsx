@@ -29,10 +29,10 @@ it('acknowledges immediately, waits for transport acceptance and keeps the timer
 it('reports the actual tool, distinguishes reads from writes and confirms only tool_end', () => {
   message = applyEvent(message, { type: 'tool_start', id: 'read', name: 'read_file', args: preview });
   const { rerender } = render(<CoachActivity message={message} />);
-  expect(screen.getByRole('status').textContent).toBe('Lecture de tes notes');
+  expect(screen.getByRole('status').textContent).toBe('Lecture d’un fichier');
   message = applyEvent(message, { type: 'tool_end', id: 'read', name: 'read_file', status: 'done', output: preview, elapsed_ms: 15 });
   rerender(<CoachActivity message={message} />);
-  expect(screen.getByRole('status').textContent).toBe('Notes consultées · préparation de la réponse');
+  expect(screen.getByRole('status').textContent).toBe('Fichier consulté · préparation de la réponse');
   message = applyEvent(message, { type: 'tool_start', id: 'edit', name: 'edit_file', args: preview });
   rerender(<CoachActivity message={message} />);
   expect(screen.getByRole('status').textContent).toBe('Mise à jour de tes notes');
@@ -45,7 +45,7 @@ it('does not let one completed parallel action conceal another pending or failed
   for (const id of ['one', 'two']) message = applyEvent(message, { type: 'tool_start', id, name: 'read_file', args: preview });
   message = applyEvent(message, { type: 'tool_end', id: 'two', name: 'read_file', status: 'done', output: preview, elapsed_ms: 5 });
   const { rerender } = render(<CoachActivity message={message} />);
-  expect(screen.getByRole('status').textContent).toBe('Lecture de tes notes');
+  expect(screen.getByRole('status').textContent).toBe('Lecture d’un fichier');
   message = applyEvent(message, { type: 'tool_end', id: 'one', name: 'read_file', status: 'error', output: preview, elapsed_ms: 5 });
   rerender(<CoachActivity message={message} />);
   expect(screen.getByRole('status').textContent).toBe('Une action a échoué');
@@ -96,7 +96,7 @@ it('keeps waiting after tool completion, stops motion on the first text and neve
   expect(screen.getByRole('status').textContent).toBe('Réponse en cours');
   expect(container.querySelector('.activity-orbit')).toBeNull();
   rerender(<CoachActivity message={settleMessage(message)} />);
-  expect(screen.getByRole('status').textContent).toBe('Notes consultées');
+  expect(screen.getByRole('status').textContent).toBe('Fichier consulté');
   expect(container.querySelector('.coach-confirmation')).not.toBeNull();
 });
 
@@ -119,7 +119,7 @@ it('turns the laurel while Chiron thinks and drops it once the answer is written
   message = applyEvent(message, { type: 'tool_end', id: 'read', name: 'read_file', status: 'done', output: preview, elapsed_ms: 15 });
   const { rerender } = render(<CoachActivity message={message} />);
   const status = screen.getByRole('status');
-  expect(status.textContent).toBe('Notes consultées · préparation de la réponse');
+  expect(status.textContent).toBe('Fichier consulté · préparation de la réponse');
   expect(status.querySelector('.activity-orbit')).toBeTruthy();
   expect(status.querySelector('.activity-presence .arete-mark')).toBeTruthy();
   // The message header shows the laurel from the first word on: never twice.

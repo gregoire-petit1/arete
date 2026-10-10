@@ -12,11 +12,8 @@ PROFILES: dict[ProfileId, AgentProfile] = {
         "arete_coach",
         CHAT_INSTRUCTIONS,
         ("analytics", "planning", "strength", "garmin"),
-        # Loading a toolkit cost one model request per turn (the loaded set
-        # lives in the run's state); on a free tier requests are the budget,
-        # tokens are not. Binding is not authorization: RunPolicy still
-        # filters what each profile may execute.
-        preloaded=("analytics", "planning", "strength", "garmin"),
+        # Native binding avoids discovery round trips. Permissions are still
+        # checked independently at execution, including cached graphs.
         training_writes=True,
         page_context=True,
         journal_tools=True,
