@@ -193,7 +193,19 @@ athlete. Run logs include skill read count, latency and approximate result token
 from model calls. Provider usage logs
 retain reported cache/input/output details and model timing without logging the
 athlete's prompts. Opt-in LangSmith traces include full inputs, outputs and tool
-results; setup and exported data are described in the
+results, scrubbed first by `observability/scrubbing.py`: known journal/memory
+field names (`title`, `body`, `text`, `old_string`, `new_string`, `source_ref`),
+the result of `append_journal`, `remember_fact`, `read_file`, `grep`,
+`edit_file`, `delete` and `ls` (shared with the read-only attachments and
+system-skills routes of the same filesystem middleware, so their reads are
+redacted too), and any system prompt from `facts_block()`/`journal_block()`
+onward (the context builder appends attachments, page, surface and retrieved
+memory passages after them, so this also drops those) are replaced by
+`[REDACTED:<label>]` before the client sends them. This does not scrub the
+athlete's own chat turns: a question typed straight into chat can still name
+an injury or a mood in clear, since redacting human/model conversation text
+generally would defeat tracing's purpose; setup and exported data are
+described in the
 [deployment runbook](deployment.md#langsmith-agent-tracing). Missing usage remains
 unknown, not zero.
 Each invocation also logs one `Agent run:` line (`RunStats` on the run context):
