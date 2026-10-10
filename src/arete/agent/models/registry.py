@@ -11,11 +11,11 @@ SUGGESTION_MAX_TOKENS = 512
 SUGGESTION_TIMEOUT_SEC = 5
 SUGGESTION_TEMPERATURE = 0.3
 #: A free model that hangs is not coming back: give up on the attempt after a
-#: minute, or 30 s without a streamed chunk, and let the fallback list (or one
-#: SDK retry) take over instead of burning the whole run deadline.
+#: minute, or 30 s without a streamed chunk, and let the native middleware try
+#: the next candidate instead of burning the whole run deadline.
 AGENT_TIMEOUT_SEC = 60
-#: Free-tier providers (OpenRouter :free pool) 429 often; the SDK retries
-#: 429/5xx with backoff, and OpenRouter tries the next model of the list.
+#: Retained for a pinned model without alternatives. Composition disables SDK
+#: retries for fallback chains and suggestions to avoid multiplying attempts.
 AGENT_MAX_RETRIES = 2
 AGENT_STREAM_CHUNK_TIMEOUT_SEC = 30
 
