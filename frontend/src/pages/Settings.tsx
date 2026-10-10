@@ -1,11 +1,12 @@
 import { useLayoutEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Bot, Check, Dumbbell, Palette, Save, Target, Terminal, User, Watch, X } from 'lucide-react';
+import { Bot, Check, Database, Dumbbell, Palette, Save, Target, Terminal, User, Watch, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ErrorState, LoadingState } from '@/components';
 import { Button, Spinner } from '@/components/ui';
 import { settingsApi, type UserSettings } from '@/lib/api';
+import { DataTab } from './settings/DataTab';
 import { GamificationTab } from './settings/GamificationTab';
 import { qk } from '@/lib/queryKeys';
 import { applyTheme } from '@/lib/theme';
@@ -29,6 +30,7 @@ const TABS = [
   { id: 'coach', label: 'COACH', icon: Bot },
   { id: 'gamification', label: 'GAMIFICATION', icon: Target },
   { id: 'appearance', label: 'APPARENCE', icon: Palette },
+  { id: 'data', label: 'DONNÉES', icon: Database },
   { id: 'system', label: 'SYSTÈME', icon: Terminal },
 ] as const;
 
@@ -162,6 +164,7 @@ export function SettingsPage() {
             {activeTab === 'coach' && <CoachTab {...tabProps} />}
             {activeTab === 'gamification' && <GamificationTab />}
             {activeTab === 'appearance' && <AppearanceTab {...tabProps} />}
+            {activeTab === 'data' && <DataTab />}
             {activeTab === 'system' && <SystemTab />}
           </div>
         </div>

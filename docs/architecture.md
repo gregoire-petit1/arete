@@ -235,3 +235,13 @@ workers, with a fresh corpus at each model boundary and no extra model request.
 Optional traversal follows only authoritative source links and remains disabled
 pending behavior evaluations. See [personal memory](personal-memory.md) for
 contracts, bounds, migration compatibility and the synthetic evaluation harness.
+
+## Data export and year in review
+
+`services/data_export.py` owns what leaves the database in the athlete's
+download: an allowlist of tables plus the journal files, never a credential
+table (`tests/test_data_export.py` also rejects token-like columns). Bodies are
+built in memory and refused above 4 MB, under Vercel's response limit.
+`services/year_review.py` derives a calendar year from the shared TSS estimate
+and fitness series, with no model request. Both are plain HTTP reads
+(`api/data_export.py`, `api/year_review.py`); the coach never receives them.

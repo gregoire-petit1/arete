@@ -17,6 +17,7 @@ from arete.api.analytics import router as analytics_router
 from arete.api.athlete_facts import router as athlete_facts_router
 from arete.api.auth import AuthMiddleware, auth_misconfigured
 from arete.api.auth import router as auth_router
+from arete.api.data_export import router as data_export_router
 from arete.api.documents import router as documents_router
 from arete.api.gamification import router as gamification_router
 from arete.api.garmin import router as garmin_router
@@ -31,6 +32,7 @@ from arete.api.plan import router as plan_router
 from arete.api.settings import router as settings_router
 from arete.api.strava import router as strava_router
 from arete.api.strength import router as strength_router
+from arete.api.year_review import router as year_review_router
 from arete.config import config
 from arete.dataio.db import db_connection
 from arete.dataio.init_duckdb import main as init_schema
@@ -177,5 +179,7 @@ for router in (
     notifications_router,
     goals_router,
     athlete_facts_router,
+    data_export_router,
+    year_review_router,
 ):
     app.include_router(router)

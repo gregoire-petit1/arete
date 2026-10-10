@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import type { Period } from '@/types';
 import { analyticsApi } from '@/lib/api';
 import { CHART, COLORS } from '@/lib/chartTheme';
@@ -90,7 +91,15 @@ export function AnalyticsPage() {
               </p>
             )}
           </div>
-          <PeriodSelector period={period} onChange={setPeriod} />
+          <div className="flex flex-wrap items-center gap-3">
+            <PeriodSelector period={period} onChange={setPeriod} />
+            <Link
+              to="/analytics/bilan"
+              className="px-3 py-1 text-xs font-mono uppercase tracking-wider rounded border border-neon-gold/30 text-neon-gold hover:bg-neon-gold/10"
+            >
+              Bilan annuel
+            </Link>
+          </div>
         </div>
 
         <SectionNav active={active} onJump={jump} />

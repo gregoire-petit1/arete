@@ -151,6 +151,19 @@ Vercel Authentication, create a bypass secret in Settings → Deployment
 Protection and keep it out of the repository. With sign-in enforced, add
 `--env ARETE_API_KEY=<the instance's API key>`.
 
+## Your data: export and year in review
+
+Settings → Données downloads the athlete's data as a ZIP of CSV files (one per
+table) or one JSON document: sessions done and planned, daily health, strength
+sessions and sets, goals, the coach's facts, weekly reviews and the coach's
+journal. Credentials never leave (Strava/Garmin tokens, push subscriptions,
+accounts, calendar actions). A response is capped at 4 MB, under Vercel's
+4.5 MB: past it the API answers 413 and the athlete narrows the date range,
+the tables, or switches to the ZIP, which compresses the laps and splits that
+dominate the JSON. Analyses → Bilan annuel shows a calendar year in numbers
+(totals, sports, months, standout sessions, best efforts and records, streaks,
+the CTL curve, strength volume), computed without any model request.
+
 ## Project layout
 
 ```
@@ -192,6 +205,8 @@ Interactive docs at `/docs`. Routers and their prefixes:
 | `/strava` | `authorize`, `callback`, `status`, `sync` (POST, `days` or `full: true` for the whole history), `disconnect` |
 | `/tips` | `daily` (GET), `post-session` (POST) |
 | `/agent` | `chat` (POST), `chat/stream` (POST, SSE), `memory` (GET, the coach's ledger) |
+| `/export` | `zip`, `json` (GET; `start`, `end`, repeated `tables`) |
+| `/year-review` | GET `?year=` (default: the current year) |
 
 ## Who can use it
 

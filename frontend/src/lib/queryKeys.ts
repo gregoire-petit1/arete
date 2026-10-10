@@ -26,6 +26,8 @@ export const qk = {
 
   cardioSessions: ['cardioSessions'] as const,
   analytics: ['analytics'] as const,
+  /** Under `analytics`: a logged session refreshes the year in review too. */
+  yearReview: (year: number) => ['analytics', 'year-review', year] as const,
   playerStats: ['player-stats'] as const,
   fitness: ['fitness'] as const,
   workload: ['workload'] as const,
