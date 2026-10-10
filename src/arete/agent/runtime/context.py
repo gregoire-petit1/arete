@@ -28,7 +28,7 @@ PANEL_CONTEXT_KEY = "panel_context"
 MAX_PANEL_CONTEXT_CHARS = 64_000
 
 #: Route names the frontend can send. Anything else is rejected at the API
-#: boundary so ``get_page_context`` can never be called with junk.
+#: boundary before any server-side page read.
 PANEL_PAGES = frozenset(
     {"dashboard", "planning", "analytics", "log", "settings", "profile"}
 )
@@ -76,7 +76,7 @@ class AgentContext:
     current_date: date = field(default_factory=date.today)
     deadline: float | None = field(default=None, init=False)
     stats: RunStats = field(default_factory=RunStats, init=False, repr=False)
-    # The open page's data, read once per run (it costs SQL, unlike the journal).
+    # The open page's data, cached per run and invalidated after domain actions.
     page_section: str | None = field(default=None, init=False, repr=False)
     # Async ToolNode uses gather(), ignoring RunnableConfig concurrency.
     tool_slots: asyncio.Semaphore = field(

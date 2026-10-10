@@ -16,7 +16,13 @@ ALL = {
     "review": REVIEW_PROMPT,
     **{f"toolkit:{tid}": tk.instructions for tid, tk in CAPABILITIES.items()},
 }
-REMOVED_TOOLS = ("load_toolkit", "search_toolkits", "write_file", "`ls`")
+REMOVED_TOOLS = (
+    "get_page_context",
+    "load_toolkit",
+    "search_toolkits",
+    "write_file",
+    "`ls`",
+)
 
 
 @pytest.mark.parametrize("name", ALL)

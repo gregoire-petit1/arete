@@ -805,3 +805,168 @@ def test_workout_http_detail_and_batch_revision_contract(
         json={"session_ids": list(range(1, 7)), "revisions": [1] * 6},
     )
     assert oversized.status_code == 422
+
+
+def test_strength_text_creates_and_exports_sets_weights_and_rests(planned):
+    from arete.services import planning
+
+    result = json.loads(
+        planning.create_planned_session(
+            "2027-01-15",
+            "strength",
+            "Renfo jambes",
+            sport="strength",
+            strength_text="Squat 3x10 20kg r1'30\nFentes 2x12",
+        )
+    )
+    assert result.get("created"), result
+    identifier = result["session"]["id"]
+    view = service.inspect_session(identifier)["session"]
+    assert view["exportable"] and not view["derived"], view
+    steps = view["prescription"]["steps"]
+    assert [s["value"] for s in steps if s["kind"] == "rest"] == [90, 90, 90]
+    garmin = Garmin()
+    result = service.export_batch([identifier], client=garmin)
+    assert result["results"][0]["state"] == "scheduled", result
+    workout = next(iter(garmin.workouts.values()))
+    assert workout["sportType"]["sportTypeKey"] == "strength_training"
+    exported = workout["workoutSegments"][0]["workoutSteps"]
+    efforts = [s for s in exported if s["endCondition"]["conditionTypeKey"] == "reps"]
+    assert [s["endConditionValue"] for s in efforts] == [10, 10, 10, 12, 12]
+    assert efforts[0]["exerciseName"] == "BARBELL_BACK_SQUAT"
+    assert efforts[0]["weightValue"] == 20_000  # Garmin stores grams.
+    assert efforts[-1].get("weightValue") is None
+    assert not any(s["category"] == "RUNNING" for s in efforts)
+
+
+@pytest.mark.parametrize(
+    "text", ["", "Renfo jambes", "Squat 3x10 20kg\nExercice inventé 3x10"]
+)
+def test_incomplete_strength_creation_does_not_persist(planned, text):
+    from arete.services import planning
+
+    before = planning.list_planned("2027-01-01", "2027-01-31")
+    result = json.loads(
+        planning.create_planned_session(
+            "2027-01-15",
+            "strength",
+            "Renfo jambes",
+            sport="strength",
+            strength_text=text,
+        )
+    )
+    assert "error" in result
+    assert planning.list_planned("2027-01-01", "2027-01-31") == before
+
+
+def test_unstructured_strength_explains_missing_steps_not_unsupported_sport(planned):
+    with db_connection() as con:
+        con.execute(
+            "UPDATE app.planned_sessions SET sport='strength',prescription=NULL WHERE id=?",
+            [planned],
+        )
+    view = service.inspect_session(planned)["session"]
+    assert not view["exportable"]
+    assert "exercices et séries" in view["reason"]
+    garmin = Garmin()
+    with pytest.raises(DocumentError, match="exercices et séries"):
+        service.export(planned, client=garmin)
+    assert not garmin.calls
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_read_then_strength_action_only_emits_the_created_workout(
+    planned, monkeypatch, async_mode
+):
+    import asyncio
+    from dataclasses import replace
+
+    from langchain.agents.middleware import AgentMiddleware
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    from arete.agent.context import sections
+    from arete.agent.factory import build_agent
+    from arete.agent.profiles.catalog import get_profile
+    from arete.agent.runtime.context import PANEL_CONTEXT_KEY, AgentContext
+    from arete.agent.runtime.execution import run_config
+    from arete.services import planning
+
+    page_reads = []
+
+    def page_data(page, **kwargs):
+        result = json.loads(planning.list_planned("2027-01-01", "2027-01-31"))
+        page_reads.append(result)
+        return result
+
+    monkeypatch.setattr(sections, "get_page_data", page_data)
+    seen_tools = []
+
+    class Model(GenericFakeChatModel):
+        def bind_tools(self, tools, **kwargs):
+            seen_tools.append({t.name for t in tools})
+            return self
+
+    def call(name, args, identifier):
+        return AIMessage(
+            content="", tool_calls=[{"name": name, "args": args, "id": identifier}]
+        )
+
+    graph = build_agent(
+        replace(get_profile("chat"), journal_tools=False),
+        model=Model(
+            disable_streaming=True,
+            messages=iter(
+                [
+                    call(
+                        "list_planned",
+                        {"start_date": "2027-01-01", "end_date": "2027-01-31"},
+                        "read",
+                    ),
+                    call("inspect_planned_session", {"session_id": planned}, "inspect"),
+                    call(
+                        "create_planned_session",
+                        {
+                            "date_str": "2027-01-15",
+                            "session_type": "strength",
+                            "sport": "strength",
+                            "strength_text": "Squat 3x10 20kg",
+                            "description": "Renfo jambes",
+                        },
+                        "create",
+                    ),
+                    AIMessage(content="Séance créée."),
+                ]
+            ),
+        ),
+        context_tokens=65536,
+        output_tokens=4096,
+        filesystem=AgentMiddleware(),
+    )
+    context = AgentContext(source={PANEL_CONTEXT_KEY: '{"page":"planning"}'})
+    state = {"messages": [{"role": "user", "content": "Prépare une musculation"}]}
+    config = run_config(context=context)
+
+    async def collect():
+        return [
+            event
+            async for event in graph.astream(
+                state, context=context, config=config, stream_mode="custom"
+            )
+        ]
+
+    events = (
+        asyncio.run(collect())
+        if async_mode
+        else list(
+            graph.stream(state, context=context, config=config, stream_mode="custom")
+        )
+    )
+    updates = [e for e in events if e["type"] == "workout_update"]
+    assert len(updates) == 1
+    assert updates[0]["id"] == "create" and updates[0]["session"]["sport"] == "strength"
+    assert updates[0]["session"]["id"] != planned
+    assert len(page_reads) == 2  # Initial page plus one refresh after the write.
+    assert len(page_reads[-1]["sessions"]) == len(page_reads[0]["sessions"]) + 1
+    assert all("get_page_context" not in names for names in seen_tools)
+    assert context.stats.model_calls == 4 and context.stats.tool_calls == 3

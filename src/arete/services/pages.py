@@ -1,5 +1,6 @@
 """Read the same domain data used by each UI page."""
 
+import re
 from datetime import date, timedelta
 from typing import Any
 
@@ -12,6 +13,7 @@ def _strength_sessions(**filters: Any) -> list[dict[str, Any]]:
         _without_nulls(
             {
                 "date": s.date.isoformat(),
+                "id": s.id,
                 "name": s.name,
                 "program": s.program,
                 "duration_min": s.duration_min,
@@ -178,10 +180,37 @@ _PAGE_FETCHERS = {
 }
 
 
-def get_page_data(page: str) -> dict[str, Any]:
+def _log_selection(params: dict[str, Any]) -> dict[str, Any]:
+    """Resolve only known selectors; client metadata never supplies page facts."""
+    from dataclasses import asdict
+
+    from arete.services.activity_detail import activity_detail_for_model
+    from arete.strength.repository import StrengthRepository
+
+    path = params.get("path", "")
+    match = (
+        re.fullmatch(r"/log/sessions/([0-9]{1,16})/?", path)
+        if isinstance(path, str)
+        else None
+    )
+    if match:
+        return {"activity": activity_detail_for_model(int(match[1]))}
+    result: dict[str, Any] = {
+        "active_tab": "cardio" if params.get("param_tab") == "cardio" else "force"
+    }
+    session_id = params.get("param_session")
+    if isinstance(session_id, str) and re.fullmatch(r"[0-9]{1,16}", session_id):
+        session = StrengthRepository().get_session(int(session_id))
+        result["selected_strength_session"] = asdict(session) if session else None
+    return result
+
+
+def get_page_data(page: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
     from arete.services.gamification import preference
 
     result = _PAGE_FETCHERS[page]()
+    if page == "log":
+        result.update(_log_selection(params or {}))
     if preference()["enabled"]:
         result["coach_identity"] = (
             "Chiron — Coach Arete. Mentor grec calme et exigeant, distinct du personnage joueur. Explique les faits sans inventer de récompenses."

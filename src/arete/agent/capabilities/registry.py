@@ -14,17 +14,20 @@ ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé. Règles:
 
 
 PLANNING_INSTRUCTIONS = """Toolkit `planning` chargé. Règles:
-- Avant de planifier, regarde la charge récente et ce qui est déjà prévu, pour ne pas doubler une séance.
+- Avant de planifier, utilise la charge et le planning déjà joints au contexte ; lis seulement les informations manquantes pour éviter les doublons.
 - Une séance qui ne se fera pas passe en `skipped`; ne la supprime que si l'athlète le demande.
 - Pour déplacer ou ajuster une séance prévue, `update_planned_session`: jamais supprimer puis recréer."""
 
 PLANNING_INSTRUCTIONS += """
 - Une création conversationnelle peut inclure prescription_json sans document ni aperçu d’import.
+- Pour préparer une musculation, utilise create_planned_session avec sport="strength" et strength_text (ex. « Squat 3x10 20kg ») : exercices et séries sont requis, un titre seul ne suffit pas. Tu peux composer une séance demandée ; distingue tes prescriptions des performances réellement déclarées. Sans charge connue, laisse-la non précisée.
+- strength_text porte aussi les repos (ex. r1'30). prescription_json est optionnel pour des blocs répétés ou un nom Garmin exact (exercise, garmin_exercise, weight_kg) ; ses séries doivent correspondre au texte.
 - Lis inspect_planned_session avant de remplacer les étapes avec update_session_prescription et sa révision.
 - Demande les détails indispensables manquants ; ne remplace pas une prescription explicite par des étapes dérivées.
 """
 
 GARMIN_INSTRUCTIONS = """Toolkit `garmin` chargé. Règles:
+- Garmin accepte les séances de musculation structurées : crée leurs exercices et séries via le planning, puis exporte les ids créés. Un exercice non reconnu doit être corrigé, pas remplacé silencieusement.
 - Une demande explicite de créer et envoyer suffit : crée les séances puis export_garmin_sessions, sans confirmation supplémentaire.
 - Sans demande d’export, crée ou modifie seulement dans Arete. Sélectionne les séances par leurs ids réels ; clarifie une sélection ambiguë.
 - export_garmin_sessions accepte cinq séances par appel ; respecte le bilan partiel, aucun rejeu automatique.
@@ -50,7 +53,7 @@ PLANNING_INSTRUCTIONS += """
 
 
 STRENGTH_INSTRUCTIONS = """Toolkit `strength` chargé. Règles:
-- Toujours `read_workout` d'abord, puis tu dis à l'athlète ce qui a été compris et ce qui ne l'a pas été, et seulement ensuite `save_workout`.
+- Pour consigner une séance déjà réalisée : `read_workout` d'abord, puis tu dis à l'athlète ce qui a été compris et ce qui ne l'a pas été, et seulement ensuite `save_workout`. Pour une séance future, utilise le planning.
 - Ce qui est dans `not_recognised` est perdu à l'enregistrement: cite les noms et propose les `did_you_mean`.
 - Passe le texte tel qu'il l'a dit. N'invente jamais une série, une charge ou un RPE.
 - Progression ou charge à viser sur un exercice : `get_strength_progress`, puis cite `next_session` (charge, séries, raison) tel quel.
@@ -78,6 +81,9 @@ CAPABILITIES: dict[str, Toolkit] = {
         tools=GARMIN_TOOLS,
         instructions=GARMIN_INSTRUCTIONS,
         read_tools=frozenset({"list_garmin_devices"}),
+        workout_actions=frozenset(
+            {"export_garmin_sessions", "reconcile_garmin_session"}
+        ),
     ),
     "planning": Toolkit(
         id="planning",
@@ -89,6 +95,15 @@ CAPABILITIES: dict[str, Toolkit] = {
         instructions=PLANNING_INSTRUCTIONS,
         read_tools=frozenset(
             {"list_planned", "inspect_import", "inspect_planned_session"}
+        ),
+        workout_actions=frozenset(
+            {
+                "create_planned_session",
+                "update_planned_session",
+                "update_planned_status",
+                "update_session_prescription",
+                "delete_planned_session",
+            }
         ),
     ),
     "analytics": Toolkit(
@@ -128,7 +143,6 @@ CAPABILITIES: dict[str, Toolkit] = {
 
 def validate_registry() -> None:
     names = {"search_toolkits", "load_toolkit"} | {
-        "get_page_context",
         "read_file",
         "edit_file",
         "delete",
@@ -141,6 +155,12 @@ def validate_registry() -> None:
     for tid, tk in CAPABILITIES.items():
         assert tid == tk.id, f"Toolkit id mismatch: {tid}"
         assert tk.read_tools <= {t.name for t in tk.tools}, f"Unknown read tools: {tid}"
+        assert tk.workout_actions <= {t.name for t in tk.tools}, (
+            f"Unknown workout actions: {tid}"
+        )
+        assert not tk.workout_actions & tk.read_tools, (
+            f"Read emits workout cards: {tid}"
+        )
         for tool in tk.tools:
             assert tool.name not in names, f"Duplicate tool name: {tool.name}"
             names.add(tool.name)

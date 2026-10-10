@@ -71,3 +71,15 @@ No real Garmin writes are performed by the automated suite.
 The planned comparison with the previous interface and Arthur's qualitative rating
 of 1/10/30-second waits still requires a user session. Automated visibility timings
 are not a usability study and do not validate the 100/200 ms design targets or INP.
+
+## Strength planning
+
+`create_planned_session(sport="strength", strength_text=...)` builds versioned
+steps through the existing grammar, including specified rests and optional weights.
+A title alone is rejected before persistence. The coach may compose a requested
+future workout; logging performed sets still uses `read_workout` / `save_workout`.
+Optional `prescription_json` must preserve the grammar-verified sets and may specify
+exact Garmin exercise names. Only explicit catalog equivalents are mapped; unknown
+exercises fail conversion without a remote write. `export_garmin_sessions` uses the
+same durable reservation, scheduling, verification and optional device-transfer
+workflow as other sports. No automatic retry of an ambiguous write is added.

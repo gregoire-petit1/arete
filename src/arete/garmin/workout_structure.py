@@ -83,8 +83,14 @@ def derive(
     """The session's steps; raises ``NotPushable`` with a French reason."""
     if session.structure_json:
         return from_json(session.structure_json)
+    if session.sport == "strength":
+        raise NotPushable(
+            "Ajoute les exercices et séries de musculation pour exporter cette séance vers Garmin."
+        )
     if session.sport not in PUSHABLE_SPORTS:
-        raise NotPushable("Seules la course et le vélo partent sur la montre.")
+        raise NotPushable(
+            "Ce sport exige une prescription explicite pour l’export Garmin."
+        )
     kind = session.session_type.value
     if kind in _NOT_STRUCTURED:
         raise NotPushable("Ce type de séance n'a pas de structure pour la montre.")

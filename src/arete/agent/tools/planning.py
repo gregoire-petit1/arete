@@ -48,7 +48,10 @@ def create_planned_session(
         target_distance_km: Target distance in km (0 = unset).
         target_intensity: easy, moderate or hard (empty = unset).
         prescription_json: Optional versioned JSON {"version":1,"steps":[{"kind":"effort","duration_kind":"seconds","value":1800}]}. Steps: warmup|effort|recovery|cooldown|rest|repeat. Repeat uses repeat (2..100) and steps. Duration: seconds|meters|reps|lap. Optional target/secondary_target: {kind:pace_sec_km|heart_rate_bpm|power_w|cadence_rpm|hr_zone,low,high}. Swimming requires pool_length_m. Maximum 100 steps and two repeat levels.
-        strength_text: Exact strength text; grammar verifies reps, exercises and weights.
+        strength_text: Required for strength. Workout text, e.g. "Squat 3x10 20kg r1'30".
+            The grammar builds exercises, sets, weights and rests without prescription_json.
+            For a requested new workout, compose this text; for supplied sets, preserve them.
+            Optional prescription_json must match its sets and can specify garmin_exercise.
     """
     return service.create_planned_session(
         date_str=date_str,

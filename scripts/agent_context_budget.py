@@ -91,6 +91,8 @@ def call_cost(call: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    from arete.agent.context.sections import page_section
+    from arete.agent.runtime.context import AgentContext
     from arete.agent.tools.analytics import (
         get_fitness,
         get_personal_records,
@@ -98,7 +100,6 @@ def main() -> None:
         get_workload,
         list_recent_sessions,
     )
-    from arete.agent.tools.pages import get_page_context
     from arete.dataio.init_duckdb import main as init_schema
 
     init_schema()
@@ -120,11 +121,12 @@ def main() -> None:
         system = call_cost(record_turn(page, [AIMessage(content="ok")])[0])["system"]
         print(f"  {page:10s} {system:7d}")
 
-    print("\nOTHER PAGE READS — get_page_context")
+    print("\nSERVER PAGE READS — injected context")
     for page in PAGES:
-        out = get_page_context.invoke({"page": page})
-        flag = "   REFUSED" if out.startswith('{"error"') else ""
-        print(f"  {page:10s} {tokens(out):7d}{flag}")
+        out = page_section(
+            AgentContext(source={"panel_context": json.dumps({"page": page})})
+        )
+        print(f"  {page:10s} {tokens(out):7d}")
 
     print("\nANALYTICS TOOLKIT READS")
     for label, tool, args in (

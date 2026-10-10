@@ -43,7 +43,7 @@ describe('SSE transport', () => {
       );
       expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
         messages: [{ role: 'user', content: 'Demain ?' }],
-        panel_context: { page: 'planning' },
+        panel_context: { page: 'planning', path: '/planning' },
         thread_id: 'dfe771b8-661a-46af-9cee-dce80e6bc304',
         supports_suggestions: true,
       });

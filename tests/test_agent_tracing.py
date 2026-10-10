@@ -227,7 +227,11 @@ def test_native_dynamic_and_filesystem_tools_stay_in_one_trace(
     install_model(
         monkeypatch,
         [
-            tool_call("get_page_context", {"page": "bogus"}, "page"),
+            tool_call(
+                "append_journal",
+                {"file": "notes.md", "title": "", "body": ""},
+                "journal",
+            ),
             tool_call("search_toolkits", {"query": "analytics"}, "search"),
             tool_call("load_toolkit", {"toolkit_id": "analytics"}, "load"),
             tool_call("get_workload", {"days": 0}, "dynamic"),
@@ -260,7 +264,7 @@ def test_native_dynamic_and_filesystem_tools_stay_in_one_trace(
     runs, roots = assert_trace_tree(recorder)
     tools = [r for r in runs if r["run_type"] == "tool"]
     assert {r["name"] for r in tools} == {
-        "get_page_context",
+        "append_journal",
         "search_toolkits",
         "load_toolkit",
         "get_workload",
