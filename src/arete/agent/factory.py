@@ -25,6 +25,7 @@ from arete.agent.middlewares.events import ToolEventMiddleware
 from arete.agent.middlewares.limits import execution_limits
 from arete.agent.middlewares.observability import ModelTelemetryMiddleware
 from arete.agent.middlewares.policy import ProfilePolicyMiddleware
+from arete.agent.middlewares.responses import ModelResponseMiddleware
 from arete.agent.profiles.models import AgentProfile
 from arete.agent.prompts.coach import SYSTEM_SKILL
 from arete.agent.runtime.budget import (
@@ -107,6 +108,7 @@ def build_agent(
     if fallback_models:
         middleware.append(ModelFallbackMiddleware(*fallback_models))
     middleware.append(ModelTelemetryMiddleware())
+    middleware.append(ModelResponseMiddleware())
     if profile.id == "chat" and suggestion_model is not None:
         middleware.append(
             AutoSuggestionMiddleware(

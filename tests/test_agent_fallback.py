@@ -1,6 +1,7 @@
 """Fallback retries only model boundaries and preserves completed operations."""
 
 import asyncio
+import logging
 from dataclasses import replace
 
 import pytest
@@ -11,10 +12,29 @@ from langchain_core.outputs import ChatGenerationChunk
 
 from arete.agent.capabilities.registry import CAPABILITIES
 from arete.agent.factory import build_agent
+from arete.agent.models.responses import EmptyModelResponseError
 from arete.agent.profiles.catalog import get_profile
 from arete.agent.runtime.context import AgentContext
 from arete.agent.runtime.execution import invoke_agent, run_config, stream_agent
 from arete.api.agent_streaming import StreamProjection
+
+
+def reasoning_only():
+    # Reproduce the exhausted completion from the October 10 document trace,
+    # including metadata concatenated by the streaming provider adapter.
+    return AIMessage(
+        content="",
+        response_metadata={
+            "finish_reason": "lengthlength",
+            "model_name": "reasonerreasoner",
+        },
+        usage_metadata={
+            "input_tokens": 20228,
+            "output_tokens": 4096,
+            "total_tokens": 24324,
+            "output_token_details": {"reasoning": 4096},
+        },
+    )
 
 
 class Model(GenericFakeChatModel):
@@ -63,8 +83,9 @@ def run(graph, mode, context):
 
 
 @pytest.mark.parametrize("mode", ["sync", "async", "stream"])
+@pytest.mark.parametrize("failure", [AIMessage(content="FAIL"), reasoning_only()])
 def test_fallback_after_write_does_not_replay_tool_and_counts_attempts(
-    monkeypatch, mode
+    monkeypatch, mode, failure
 ):
     writes = []
     writer = next(
@@ -85,7 +106,7 @@ def test_fallback_after_write_does_not_replay_tool_and_counts_attempts(
                     }
                 ],
             ),
-            AIMessage(content="FAIL"),
+            failure,
         ],
         [[AIMessage(content="Séance créée.")]],
     )
@@ -94,6 +115,69 @@ def test_fallback_after_write_does_not_replay_tool_and_counts_attempts(
     assert len(writes) == 1
     assert context.stats.model_calls == 3
     assert context.stats.tool_calls == 1
+
+
+@pytest.mark.parametrize("mode", ["sync", "async", "stream"])
+@pytest.mark.parametrize(
+    "empty",
+    [
+        reasoning_only(),
+        AIMessage(content=" \n", response_metadata={"finish_reason": "stop"}),
+        AIMessage(content=[{"type": "reasoning", "reasoning": "Still thinking"}]),
+    ],
+)
+def test_empty_completion_uses_next_candidate(mode, empty):
+    graph = graph_for([empty], [[AIMessage(content="Voici la séance.")]])
+    context = AgentContext()
+    assert run(graph, mode, context) == "Voici la séance."
+    assert context.stats.model_calls == 2
+    assert context.stats.tool_calls == 0
+
+
+@pytest.mark.parametrize("mode", ["sync", "async", "stream"])
+@pytest.mark.parametrize("fallback_count", [0, 2])
+def test_empty_candidates_fail_explicitly_and_retain_usage(
+    mode, fallback_count, caplog
+):
+    caplog.set_level(logging.INFO, logger="arete.observability.agent")
+    graph = graph_for(
+        [reasoning_only()], [[reasoning_only()] for _ in range(fallback_count)]
+    )
+    context = AgentContext()
+    with pytest.raises(EmptyModelResponseError, match="ni réponse ni appel"):
+        run(graph, mode, context)
+    assert context.stats.model_calls == 1 + fallback_count
+    assert context.stats.served_models == ["reasoner"] * (1 + fallback_count)
+    calls = [r.message for r in caplog.records if "Agent model call:" in r.message]
+    assert len(calls) == 1 + fallback_count
+    assert all("error=EmptyModelResponseError" in line for line in calls)
+    assert all("'reasoning': 4096" in line for line in calls)
+
+
+def test_reasoning_only_stream_falls_back_before_completing():
+    class ReasoningStream(Model):
+        def _stream(self, messages, stop=None, run_manager=None, **kwargs):
+            empty = reasoning_only()
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(
+                    content="",
+                    id="empty",
+                    response_metadata=empty.response_metadata,
+                    usage_metadata=empty.usage_metadata,
+                )
+            )
+
+    graph = build_agent(
+        replace(get_profile("chat"), journal_tools=False),
+        model=ReasoningStream(messages=iter([])),
+        fallback_models=(Model(messages=iter([AIMessage(content="Séance lue.")])),),
+        filesystem=AgentMiddleware(),
+        context_tokens=65536,
+        output_tokens=4096,
+    )
+    context = AgentContext()
+    assert run(graph, "stream", context) == "Séance lue."
+    assert context.stats.model_calls == 2
 
 
 @pytest.mark.parametrize("mode", ["sync", "async", "stream"])

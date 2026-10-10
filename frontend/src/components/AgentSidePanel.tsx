@@ -1,4 +1,5 @@
 import { MessageFeedback } from './agent/MessageFeedback';
+import { SkillInput } from './agent/SkillInput';
 import { useGamePreference } from '@/lib/gamification';
 import { AreteMark } from './AreteBrand';
 import { MessageAttachments } from './agent/MessageAttachments';
@@ -438,11 +439,12 @@ export function AgentSidePanel({
                   onClick={() => attachmentsRef.current?.choose()}
                   className="col-start-1 row-start-2 flex h-8 w-6 shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:text-text-primary focus-visible:outline-2 focus-visible:outline-neon-cyan disabled:opacity-30"
                 ><Plus className="size-4" aria-hidden="true" /></button>}
-                <textarea
-                  ref={inputRef}
+                <SkillInput
+                  key={active.id}
+                  inputRef={inputRef}
                   aria-label="Message au coach"
                   value={active.draft}
-                  onChange={(e) => coach.draft(e.target.value)}
+                  onValueChange={coach.draft}
                   onPaste={event => { if (rpg && event.clipboardData.files.length) { event.preventDefault(); if (!busy) attachmentsRef.current?.upload(Array.from(event.clipboardData.files)); } }}
                   rows={rpg ? 1 : 2}
                   wrap="soft"
@@ -458,7 +460,7 @@ export function AgentSidePanel({
                       send();
                     }
                   }}
-                  placeholder="Pose ta question…"
+                  placeholder="Pose ta question… / skills"
                   className={cn('coach-composer-input block max-h-36 min-w-0 flex-1 resize-none appearance-none overflow-x-hidden overflow-y-auto bg-transparent py-1.5 text-sm leading-relaxed outline-none', rpg ? 'col-start-2 row-start-2 w-full px-1' : 'px-2')}
                 />
                 {streaming ? (

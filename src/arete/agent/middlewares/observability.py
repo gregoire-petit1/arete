@@ -4,6 +4,7 @@ from time import monotonic
 
 from langchain.agents.middleware import AgentMiddleware
 
+from arete.agent.models.responses import EmptyModelResponseError
 from arete.observability.agent import record_model_call, served_models
 
 
@@ -33,7 +34,14 @@ class ModelTelemetryMiddleware(AgentMiddleware):
         try:
             response = handler(request)
         except Exception as exc:
-            self._record(request, started, error=type(exc).__name__)
+            self._record(
+                request,
+                started,
+                response=exc.response
+                if isinstance(exc, EmptyModelResponseError)
+                else None,
+                error=type(exc).__name__,
+            )
             raise
         self._record(request, started, response=response)
         return response
@@ -43,7 +51,14 @@ class ModelTelemetryMiddleware(AgentMiddleware):
         try:
             response = await handler(request)
         except Exception as exc:
-            self._record(request, started, error=type(exc).__name__)
+            self._record(
+                request,
+                started,
+                response=exc.response
+                if isinstance(exc, EmptyModelResponseError)
+                else None,
+                error=type(exc).__name__,
+            )
             raise
         self._record(request, started, response=response)
         return response

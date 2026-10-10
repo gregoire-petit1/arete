@@ -53,6 +53,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agent", tags=["agent"])
 router.include_router(feedback_router)
 
+
+class SystemSkillOut(BaseModel):
+    name: str
+    description: str
+    path: str
+
+
+@router.get("/skills", response_model=list[SystemSkillOut])
+def list_system_skills() -> list[dict]:
+    from arete.coaching import system_skill_catalog
+
+    return system_skill_catalog()
+
+
 #: Hard bound on history size per request (bounds the envelope; a normal turn
 #: is 2-20 messages). Over it → 413, never silent truncation.
 MAX_MESSAGES = 60
@@ -187,6 +201,7 @@ def _changed_imports(context: AgentContext, previous: dict[str, int]) -> list[di
 async def chat(body: ChatRequest, request: Request) -> ChatResponse:
     """Run the coaching agent over the client-provided history."""
     from arete.agent.context.builder import ContextBudgetExceeded
+    from arete.agent.context.skills import SkillSelectionError
     from arete.agent.runtime.execution import (
         LIMIT_MESSAGE,
         RUN_LIMIT_ERRORS,
@@ -218,6 +233,8 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
             context=context,
         )
     except DocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    except SkillSelectionError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from None
     except ContextBudgetExceeded as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from None

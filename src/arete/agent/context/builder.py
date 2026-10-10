@@ -18,6 +18,7 @@ from arete.agent.capabilities.discovery import (
 )
 from arete.agent.context.attachments import attachment_section
 from arete.agent.context.sections import ContextSection, page_section, surface_section
+from arete.agent.context.skills import preload_section
 from arete.agent.runtime.budget import MAX_MODEL_CALLS
 from arete.agent.runtime.context import AgentContext
 from arete.agent.runtime.policy import ProfileSpec, resolve_policy
@@ -63,7 +64,7 @@ MAX_RETRIEVED_TOKENS = 2_048
 logger = logging.getLogger(__name__)
 
 
-def system_skills_section(state: dict) -> str:
+def system_skills_section(state: dict, context: AgentContext | None = None) -> str:
     """Native discovery contributes metadata here, never a second prompt layer."""
     if errors := state.get("skills_load_errors"):
         raise RuntimeError(f"System skills could not be loaded: {errors}")
@@ -73,12 +74,24 @@ def system_skills_section(state: dict) -> str:
     if not skills:
         return ""
     return (
-        "Skills système disponibles (lecture seule). Lis le SKILL.md pertinent "
-        "avec read_file avant d’appliquer sa méthode. Charger un skill n’accorde "
+        "Skills système disponibles (lecture seule). Pour un skill pertinent non "
+        "préchargé ci-dessous, lis son SKILL.md avec read_file avant d’appliquer "
+        "sa méthode. Charger un skill n’accorde "
         "aucun outil ni permission.\n"
         + "\n".join(
             f"- {skill['name']}: {skill['description']} — {skill['path']}"
             for skill in skills
+        )
+        + (
+            "\n\n" + preload_section(context.preloaded_skills)
+            if context and context.preloaded_skills
+            else ""
+        )
+        + (
+            "\nCertains skills pertinents restent à lire avec read_file : "
+            "la limite de préchargement ne permet pas de joindre tous les corps complets."
+            if context and context.skills_preload_limited
+            else ""
         )
     )
 
@@ -122,6 +135,11 @@ def build_context(
         )
     sections = [
         ContextSection("harness", system.text if system else "", "server"),
+        ContextSection(
+            "system_skills",
+            system_skills_section(state, context) if profile.journal_tools else "",
+            "server",
+        ),
         ContextSection("profile", instructions, "server"),
         ContextSection(
             "execution_budget",
@@ -136,11 +154,6 @@ def build_context(
         ),
         ContextSection("catalog", catalog, "registry"),
         ContextSection("capabilities", tool_instructions_suffix(loaded), "registry"),
-        ContextSection(
-            "system_skills",
-            system_skills_section(state) if profile.journal_tools else "",
-            "server",
-        ),
         ContextSection(
             "facts",
             facts_block(
