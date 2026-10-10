@@ -83,6 +83,29 @@ def test_a_database_behind_runs_its_migrations(tmp_path, monkeypatch):
     assert latest == init_duckdb.MIGRATIONS[-1][0]
 
 
+def test_private_relations_rebuild_ignores_other_attached_databases():
+    # MotherDuck attaches the whole account: a sibling already migrated must
+    # not lend its DDL (with deleted_at) to the database being migrated.
+    from arete.dataio import tenant_schema
+
+    con = migration_connection()
+    con.execute("CREATE SCHEMA app")
+    con.execute(
+        "CREATE TABLE app.goals (id INTEGER, user_id INTEGER, deleted_at TIMESTAMP)"
+    )
+    con.execute("ATTACH ':memory:' AS preview")
+    con.execute("USE preview")
+    con.execute("CREATE SCHEMA app")
+    con.execute("CREATE TABLE app.goals (id INTEGER, user_id INTEGER)")
+    con.execute("INSERT INTO app.goals VALUES (7, NULL)")
+
+    tenant_schema._rebuild(con, "goals")
+
+    assert con.execute("SELECT id, user_id, deleted_at FROM app.goals").fetchall() == [
+        (7, 1, None)
+    ]
+
+
 def test_document_migration_preserves_version_twelve_planning(tmp_path, monkeypatch):
     path = tmp_path / "version-twelve.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
