@@ -1,0 +1,30 @@
+src/arete/observability/tracing.py
+  s_8b20e6e82c7436::t_83e1944e388a11 10-11,17-21
+  s_8b20e6e82c7436::t_9dc225109ad884 12
+  s_8b20e6e82c7436::t_81eb08c8121fd3 40-47,49-52,54-58
+  s_8b20e6e82c7436::t_413ebd0cb87d64 48,53
+  s_8b20e6e82c7436::t_6426a610e1ba5c 108-112
+  s_8b20e6e82c7436::t_22e95e539ff807 128-129
+tests/test_observability_scrubbing.py
+  s_8b20e6e82c7436::t_f55b6b83900a4f 53
+  s_8b20e6e82c7436::t_7651b5c04cfba7 30,34,37,40-41,47-52,54-56,58-69,71-81
+  s_8b20e6e82c7436::t_5410a8b4fa66c3 7,21,28-29,31-33,35-36,38-39,42-46,57,70
+src/arete/observability/scrubbing.py
+  s_8b20e6e82c7436::t_24fe49e6571885 182-194
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "70c3237aca5d6994855c657131597b49347383c4",
+  "prompts": {},
+  "sessions": {
+    "s_8b20e6e82c7436": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5a8da930-1134-4282-a86f-cc7fb07ac009",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Nicolas Edmond <nicolas@mac-1.home>"
+    }
+  }
+}
