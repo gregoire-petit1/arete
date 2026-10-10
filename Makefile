@@ -5,6 +5,7 @@
 
 BACKEND_PORT  ?= 8000
 FRONTEND_PORT ?= 5173
+BASE          ?= origin/main
 
 # 127.0.0.1, not localhost: uvicorn binds IPv4 only and Node may resolve
 # localhost to ::1 first, which turns every proxied /api call into a 502.
@@ -19,7 +20,7 @@ FRONTEND_CMD = cd frontend && node scripts/prepare-ocr.mjs && VITE_API_TARGET=ht
 	exec ./node_modules/.bin/vite --port $(FRONTEND_PORT) --strictPort
 
 .DEFAULT_GOAL := help
-.PHONY: help install hooks dev backend frontend test lint typecheck check docker
+.PHONY: help install hooks dev backend frontend test lint typecheck check check-changed review-plan docker
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -60,7 +61,7 @@ frontend: frontend/node_modules ## Vite dev server only (HMR) on FRONTEND_PORT
 	$(FRONTEND_CMD)
 
 test: .venv ## pytest
-	uv run pytest tests/ --tb=short
+	uv run pytest tests/ --tb=short --durations=20
 
 lint: .venv frontend/node_modules ## ruff + eslint
 	uv run ruff check src tests scripts/ci
@@ -75,6 +76,12 @@ check: lint typecheck test ## Static checks, unit tests and frontend build (brow
 	node --test scripts/openwiki/transport.test.mjs
 	npm --prefix frontend test
 	npm --prefix frontend run build
+
+review-plan: ## Explain affected checks against BASE, including uncommitted files
+	python3 scripts/ci/check_changed.py --base "$(BASE)"
+
+check-changed: ## Run affected PR checks (dependencies must already be installed)
+	python3 scripts/ci/check_changed.py --base "$(BASE)" --run
 
 docker: .env ## Production-like stack: frontend :3080, API :8001
 	docker compose up --build

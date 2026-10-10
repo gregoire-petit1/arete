@@ -1,7 +1,9 @@
 """Route CI by changed paths; unknown surfaces deliberately run every check."""
 
 import argparse
+import json
 import subprocess
+from pathlib import Path
 
 CHECKS = frozenset({"backend", "frontend", "transport", "preview"})
 MAX_CHANGED_FILES = 10_000
@@ -33,6 +35,11 @@ def select_checks(paths: list[str]) -> set[str]:
                 or path in FRONTEND_TEST_CONFIGS
             ):
                 selected.add("preview")
+        elif (
+            path.startswith(("scripts/ci/", ".github/", ".githooks/"))
+            or path == "Makefile"
+        ):
+            selected.update(CHECKS - {"preview"})
         elif path.startswith("scripts/openwiki/"):
             selected.add("transport")
         else:
@@ -42,16 +49,70 @@ def select_checks(paths: list[str]) -> set[str]:
     return selected
 
 
-def changed_paths(base: str) -> list[str]:
-    result = subprocess.run(
-        # Disabling rename detection includes both the old and new path, so
-        # moving code into a docs directory still tests the deleted code.
-        ["git", "diff", "--name-only", "--no-renames", "-z", base, "HEAD", "--"],
-        check=True,
-        stdout=subprocess.PIPE,
-        timeout=GIT_TIMEOUT_SECONDS,
+def git_output(*args: str) -> bytes:
+    return subprocess.run(
+        ["git", *args], check=True, stdout=subprocess.PIPE, timeout=GIT_TIMEOUT_SECONDS
+    ).stdout
+
+
+def changed_paths(base: str, *, worktree: bool = False) -> list[str]:
+    # No rename detection: moving code to docs must retain its deleted path.
+    refs = [base] if worktree else [base, "HEAD"]
+    paths = (
+        git_output("diff", "--name-only", "--no-renames", "-z", *refs, "--")
+        .decode()
+        .split("\0")[:-1]
     )
-    return result.stdout.decode("utf-8").split("\0")[:-1]
+    if worktree:
+        paths += (
+            git_output("ls-files", "--others", "--exclude-standard", "-z")
+            .decode()
+            .split("\0")[:-1]
+        )
+    return sorted(set(paths))
+
+
+def build_plan(
+    paths: list[str], *, base: str = "", full: bool = False, full_tests: bool = False
+) -> dict:
+    from affected_tests import affected_tests
+
+    selected = CHECKS if full else select_checks(paths)
+    tests, reason = [], "no backend changes"
+    if "backend" in selected:
+        if full or full_tests:
+            tests, reason = ["tests/"], "full verification (main or manual run)"
+        else:
+            tests, reason = affected_tests(paths, Path.cwd())
+    return {
+        **{check: check in selected for check in sorted(CHECKS)},
+        "base": base,
+        "head": git_output("rev-parse", "HEAD").decode().strip(),
+        "changed_paths": paths,
+        "pytest_paths": tests,
+        "pytest_reason": reason,
+    }
+
+
+def render_summary(plan: dict) -> str:
+    checks = (
+        ", ".join(check for check in sorted(CHECKS) if plan[check]) or "policy only"
+    )
+    return "\n".join(
+        [
+            "## Affected checks",
+            f"Base: `{plan['base'] or 'full run'}`; HEAD: `{plan['head']}`",
+            f"Checks: **{checks}**",
+            f"Pytest: {plan['pytest_reason']}",
+            f"Selected test files: {len(plan['pytest_paths'])} (tests/ = full suite)",
+            "```json",
+            json.dumps(
+                {"changed": plan["changed_paths"], "pytest": plan["pytest_paths"]},
+                indent=2,
+            ),
+            "```",
+        ]
+    )
 
 
 def main() -> None:
@@ -59,8 +120,23 @@ def main() -> None:
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--base")
     mode.add_argument("--all", action="store_true")
+    parser.add_argument("--full-tests", action="store_true")
+    parser.add_argument("--plan", type=Path)
+    parser.add_argument("--summary", type=Path)
     args = parser.parse_args()
-    selected = CHECKS if args.all else select_checks(changed_paths(args.base))
+    paths = [] if args.all else changed_paths(args.base)
+    # The lightweight boolean API is also used by deployment guards.
+    selected = CHECKS if args.all else select_checks(paths)
+    if args.plan or args.summary:
+        plan = build_plan(
+            paths, base=args.base or "", full=args.all, full_tests=args.full_tests
+        )
+        if args.plan:
+            args.plan.parent.mkdir(parents=True, exist_ok=True)
+            args.plan.write_text(json.dumps(plan, indent=2) + "\n")
+        if args.summary:
+            with args.summary.open("a") as output:
+                output.write(render_summary(plan) + "\n")
     for check in sorted(CHECKS):
         print(f"{check}={str(check in selected).lower()}")
 

@@ -113,11 +113,12 @@ do not add tests that merely repeat an implementation. Live model evaluations in
   scripts. A local DuckDB file (`make dev`, tests) allows one writer: a script that
   opens it while a backend runs makes the API answer 500.
 - Deployment is described in `docs/deployment.md`. In short: a PR labelled
-  `preview` gets a preview from CI; every green CI run on `main` deploys it to
-  https://arete-main-arete15.vercel.app (database
+  `preview` gets a preview from CI when deployable inputs change; green CI on
+  `main` with deployable changes deploys to https://arete-main-arete15.vercel.app (database
   `md:arete_preview`); production ships in batches through the manual **Deploy
-  production** workflow, which refuses a commit the preview does not serve
-  healthy. The boot clones a MotherDuck database before migrating it, and
+  production** workflow, which requires a healthy ancestor preview with no
+  deployable input changed since (documentation-only merges are allowed).
+  The boot clones a MotherDuck database before migrating it, and
   `/api/health` answers 503 while a migration is pending. Vercel's Git
   integration deploys nothing. By hand, use `vercel deploy --archive=tgz`:
   `.vercelignore` is an allowlist, and loose uploads hit Vercel's 5000-file daily

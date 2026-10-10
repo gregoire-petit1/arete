@@ -8,7 +8,7 @@ collaborator needs. The README stays about the product; this is the runbook.
 | Environment | URL | Database | Who deploys | Protected by |
 |---|---|---|---|---|
 | Production | https://arete-arete15.vercel.app (also `arete-two-woad`) | MotherDuck `md:arete` | **Deploy production** workflow, run by hand by anyone with write access | Clerk sign-in (`ARETE_AUTH=clerk`); the Vercel protection is off on production |
-| Preview of `main` | https://arete-main-arete15.vercel.app | MotherDuck `md:arete_preview` | **Deploy preview** workflow, after every green CI run on `main` | Vercel Authentication: a Vercel login, or the bypass key |
+| Preview of `main` | https://arete-main-arete15.vercel.app | MotherDuck `md:arete_preview` | **Deploy preview** workflow, after green CI on `main` when deployable inputs changed | Vercel Authentication: a Vercel login, or the bypass key |
 | PR preview | `https://arete-<hash>-arete15.vercel.app`, linked in a PR comment | `md:arete_preview` (shared with the main preview) | CI `preview` job, for a PR labelled `preview` once its checks pass | Vercel Authentication, same key |
 | Local | `make dev`, `make docker` | a DuckDB file under `data/`, or what `ARETE_DB` says | — | nothing |
 
@@ -72,8 +72,12 @@ the emoji is textual feedback, not an undocumented LangSmith UI reaction endpoin
 ## From a branch to production
 
 1. **Pull request.** CI runs the checks the diff needs (`scripts/ci/select_checks.py`)
-   on the branch merged into `main`. A PR with the `preview` label also gets a
-   deployment, commented on the PR and replaced on each push.
+   on the branch merged into `main`. Backend tests follow reverse imports and
+   shared fixture consumers; ambiguous inputs run the full suite. The `lint`
+   summary and `ci-plan` artifact list the files, selected tests and reason.
+   See [CI and code review](ci.md) to reproduce the plan locally. A PR with the
+   `preview` label also gets a deployment when deployable inputs changed,
+   commented on the PR and replaced on each push.
 2. **Merge.** `main` only takes pull requests; `gh pr merge --auto --merge`
    merges once the checks pass, and nobody has to approve. The checks are not
    strict (a PR green on an older `main` still merges): GitHub's merge queue,
@@ -81,15 +85,22 @@ the emoji is textual feedback, not an undocumented LangSmith UI reaction endpoin
    repositories owned by an organisation. With two people the window is short,
    and a merge that breaks `main` shows up at once as a red "Deploy preview".
    Rebase or merge `main` into a long-lived branch before merging it.
-3. **Preview of main.** Every green CI run on `main` deploys it to the fixed
-   preview URL. The deployment's first request migrates `arete_preview`; the
+3. **Preview of main.** A green CI run on `main` deploys to the fixed preview
+   URL only when its verified `ci-plan` includes a deployable change. README,
+   documentation, tests and CI tooling alone keep the existing healthy preview.
+   Application/backend changes still run the full backend suite on `main`.
+   The deployment's first request migrates `arete_preview`; the
    workflow checks `/api/health` and moves the fixed URL only onto a healthy
    build. A failed migration leaves the URL on the previous build and the
    workflow red.
 4. **Production.** Run **Deploy production** (Actions → Deploy production →
-   Run workflow, on `main`). It refuses unless the fixed preview URL serves the
-   very commit being deployed: what goes to production has already migrated and
-   served the preview database. Then it deploys, checks `/api/health` and prunes.
+   Run workflow, on `main`). The fixed preview must be READY and healthy, and
+   its tagged commit must be an ancestor of the requested release with no
+   deployable input changed since. A README-only merge can therefore ship
+   immediately using the already verified application. Code, migrations,
+   dependencies, build inputs and unknown files still require a new preview.
+   Missing tags/history or divergent commits fail closed. Then the workflow
+   deploys, checks `/api/health` and prunes.
 
 Production deploys in batches, by hand, so that several merges can be tried on
 the preview together. There is no reviewer gate: the preview is the gate.

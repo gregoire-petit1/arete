@@ -4,8 +4,8 @@ name: Deploy preview
 # on a fixed URL once CI is green, so merged work runs somewhere before a batch
 # goes to production. It is its own workflow so that a failed deployment never
 # shows as a failed CI run, and so that "Deploy production" can ask one thing:
-# did this exact commit reach the preview healthy? Only the newest main
-# preview is kept.
+# did this application's inputs reach the preview healthy? Documentation-only
+# merges retain the previous healthy preview. Only the newest preview is kept.
 on:
   workflow_run:
     workflows: [CI]
@@ -14,16 +14,48 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: deploy-preview
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  select:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      preview: ${{ steps.plan.outputs.preview }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
+          path: plan
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Read the verified deployment decision
+        id: plan
+        env:
+          EXPECTED_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          plan = json.loads(Path("plan/ci-plan.json").read_text())
+          assert plan["head"] == os.environ["EXPECTED_SHA"], "CI plan belongs to another commit"
+          assert type(plan["preview"]) is bool, "Missing deployment decision"
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"preview={str(plan['preview']).lower()}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as output:
+              output.write("Application changed: deploy preview.\n" if plan["preview"] else "No deployable change: keep the healthy preview.\n")
+          PY
+
+  deploy:
+    needs: select
+    if: needs.select.outputs.preview == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Shown as "Preview" in the repository's Deployments, with the fixed URL.
