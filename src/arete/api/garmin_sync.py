@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
+from collections.abc import Iterator
+from dataclasses import asdict
 from datetime import date
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from arete.garmin.repository import GarminRepository
@@ -183,6 +187,63 @@ def sync_activities(request: SyncRequest):
         last_activity_date=str(result.last_activity_date)
         if result.last_activity_date
         else None,
+    )
+
+
+@router.post("/activities/stream")
+def stream_activities(request: SyncRequest) -> StreamingResponse:
+    """Stream the existing sync workflow; no retries or detached worker."""
+    from arete.garmin.sync import GarminSyncClient, SyncProgress, SyncResult
+    from arete.services.session_conditions import enrich_sessions
+
+    client = GarminSyncClient(repository=_repo)
+    if not client.is_authenticated():
+        raise HTTPException(
+            status_code=409,
+            detail="Connecte Garmin dans Réglages → Connexions avant de synchroniser.",
+        )
+
+    def frame(kind: str, payload: dict) -> str:
+        return (
+            "data: "
+            + json.dumps({"type": kind, **payload}, ensure_ascii=False)
+            + "\n\n"
+        )
+
+    def events() -> Iterator[str]:
+        try:
+            # Starlette advances this iterator in its AnyIO worker pool.
+            with contextlib.closing(
+                client.iter_sync_activities(**request.model_dump())
+            ) as work:
+                for event in work:
+                    if isinstance(event, SyncResult):
+                        if event.success:
+                            yield frame("progress", asdict(SyncProgress("finalizing")))
+                            enrich_sessions(event.session_ids)
+                        payload = asdict(event)
+                        payload["last_activity_date"] = (
+                            str(event.last_activity_date)
+                            if event.last_activity_date
+                            else None
+                        )
+                        result = SyncResponse.model_validate(payload)
+                        yield frame("done", result.model_dump(mode="json"))
+                        return
+                    yield frame("progress", asdict(event))
+        except Exception:
+            logger.exception("Garmin sync stream failed")
+            yield frame(
+                "error",
+                {
+                    "detail": "Synchronisation interrompue. Des activités peuvent déjà avoir été importées. Vérifie le résultat avant de relancer."
+                },
+            )
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

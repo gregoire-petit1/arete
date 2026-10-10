@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -130,6 +130,22 @@ def test_generate_once_with_a_rule_floor_and_apply_with_stale_checks(week):
 def test_the_agent_text_is_kept(week):
     review = _generate(lambda facts: "Bonne semaine. " + str("Propositions" in facts))
     assert (review.source, review.text) == ("agent", "Bonne semaine. True")
+
+
+def test_an_empty_week_is_reviewed_by_the_rules_without_a_model_request(week):
+    produce = Mock(return_value="Semaine calme.")
+    review = _generate(
+        produce,
+        planned_due=0,
+        completed=0,
+        missed=0,
+        minutes_done=0,
+        minutes_planned=0,
+        runs_done=0,
+    )
+    produce.assert_not_called()
+    assert review.source == "rules"
+    assert review.text.startswith("Semaine passée : 0 séances faites sur 0 prévues")
 
 
 def test_the_scheduler_reviews_on_mondays_only():

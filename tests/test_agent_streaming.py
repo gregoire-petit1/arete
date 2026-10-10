@@ -208,6 +208,8 @@ def test_system_skill_catalog_and_loaded_instructions_reach_every_model_call(
     for prompt in seen:
         assert SYSTEM_SKILL in prompt
         assert prompt.count("Skills disponibles") == 1
+        assert prompt.count("Skills système disponibles") == 1
+        assert "/skills/system/document-planning/SKILL.md" in prompt
     # The catalog lists what is left to load, never what already is.
     for capability in get_profile("chat").capabilities:
         assert CAPABILITIES[capability].description in seen[0]

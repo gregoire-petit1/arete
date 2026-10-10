@@ -1,7 +1,8 @@
 import { useLayoutEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Bot, Check, Database, Dumbbell, Palette, Save, Target, Terminal, User, Users, Watch, X } from 'lucide-react';
+import { Check, Database, Dumbbell, Palette, Save, Target, Terminal, User, Users, Watch, X } from 'lucide-react';
+import { AreteMark } from '@/components/AreteBrand';
 import { cn } from '@/lib/utils';
 import { ErrorState, LoadingState } from '@/components';
 import { useAuthState } from '@/components/auth/authState';
@@ -29,7 +30,7 @@ const TABS = [
   { id: 'goals', label: 'OBJECTIFS', icon: Target },
   { id: 'workout', label: 'NOTATION', icon: Dumbbell },
   { id: 'connections', label: 'CONNEXIONS', icon: Watch },
-  { id: 'coach', label: 'COACH', icon: Bot },
+  { id: 'coach', label: 'COACH', icon: AreteMark },
   { id: 'gamification', label: 'GAMIFICATION', icon: Target },
   { id: 'appearance', label: 'APPARENCE', icon: Palette },
   { id: 'data', label: 'DONNÉES', icon: Database },
@@ -124,10 +125,10 @@ export function SettingsPage() {
   const tabProps = { settings, updateSetting };
 
   return (
-    <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
-      <div className="max-w-4xl mx-auto">
+    <div className="page-shell bg-void">
+      <div className="page-content">
         <header className="flex justify-between items-center mb-4 sm:mb-8 animate-fade-down">
-          <h1 className="text-lg sm:text-2xl font-sans font-bold text-text-primary tracking-wider">RÉGLAGES</h1>
+          <h1 className="page-title text-lg sm:text-2xl font-sans font-bold text-text-primary tracking-wider">RÉGLAGES</h1>
           {hasChanges && (
             <Button
               variant="green"
@@ -158,7 +159,7 @@ export function SettingsPage() {
                       : 'text-text-muted hover:text-text-secondary hover:bg-abyss'
                   )}
                 >
-                  <tab.icon className="w-4 h-4" />
+                  <tab.icon size={16} className="w-4 h-4" />
                   {tab.label}
                 </button>
               ))}

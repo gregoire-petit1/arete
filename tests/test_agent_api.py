@@ -436,6 +436,25 @@ class TestBuildChatModel:
             == coach_payload["extra_body"]["provider"]
         )
         assert models["suggestion_model"].max_retries == 0
+        # Main graph fallback owns candidate selection, with one attempt each.
+        candidates = [models["model"], *models["fallback_models"]]
+        assert len(candidates) == 3
+        for candidate in candidates:
+            assert candidate.max_retries == 0
+            assert "models" not in self._payload(candidate)["extra_body"]
+
+    def test_pinned_model_without_fallback_preserves_bounded_sdk_retries(
+        self, monkeypatch
+    ):
+        from arete import coaching
+
+        self._openrouter(monkeypatch, "pinned:free")
+        with patch.object(coaching, "build_agent") as assemble:
+            coaching._assemble("chat")
+        models = assemble.call_args.kwargs
+        assert models["model"].max_retries == 2
+        assert models["fallback_models"] == ()
+        assert "models" not in self._payload(models["model"])["extra_body"]
 
     @pytest.mark.parametrize("provider", ["ollama", "github"])
     def test_openrouter_reasoning_controls_do_not_reach_other_providers(

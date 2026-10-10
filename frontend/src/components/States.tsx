@@ -1,4 +1,5 @@
-import { AlertTriangle, Loader2, WifiOff } from 'lucide-react';
+import { AlertTriangle, WifiOff } from 'lucide-react';
+import { AretePresence } from './AreteBrand';
 import { cn } from '@/lib/utils';
 
 interface LoadingStateProps {
@@ -7,9 +8,9 @@ interface LoadingStateProps {
 
 export function LoadingState({ message = 'CHARGEMENT…' }: LoadingStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 animate-fade-in">
-      <Loader2 className="w-8 h-8 text-neon-cyan animate-spin" />
-      <span className="mt-4 font-mono text-sm text-neon-cyan animate-pulse">{message}</span>
+    <div role="status" className="flex flex-col items-center justify-center py-12 animate-fade-in">
+      <AretePresence size={40} />
+      <span className="mt-4 font-mono text-sm text-neon-cyan">{message}</span>
     </div>
   );
 }

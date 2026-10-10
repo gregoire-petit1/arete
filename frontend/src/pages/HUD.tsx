@@ -1,8 +1,9 @@
+import { AreteMark, AretePresence } from '@/components/AreteBrand';
 import { PlayerSummary } from '@/components/PlayerSummary';
 import { useGamePreference } from '@/lib/gamification';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Bot, Calendar, Dumbbell, Flag, Loader2, Zap } from 'lucide-react';
+import { ArrowRight, Calendar, Dumbbell, Flag, Zap } from 'lucide-react';
 import { LoadingState, MetricCard, OffPlanRow, SessionCard, strengthAsActual } from '@/components';
 import { Panel } from '@/components/ui';
 import { ApiError, garminApi, garminHealthApi, goalsApi, metricsApi, planApi, settingsApi, tipsApi } from '@/lib/api';
@@ -172,11 +173,11 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className="page-shell bg-void">
+      <div className="page-content dashboard-content space-y-6">
         <header className="flex justify-between items-center gap-3 animate-fade-down">
           <div className="min-w-0">
-            <h1 className="text-lg sm:text-2xl font-sans font-bold text-text-primary tracking-wider">
+            <h1 className="page-title text-lg sm:text-2xl font-sans font-bold text-text-primary tracking-wider">
               Bonjour, <span className="text-neon-cyan">{userSettings?.display_name || 'Athlète'}</span>
             </h1>
             <p className="text-xs font-mono text-text-muted mt-0.5">
@@ -195,7 +196,7 @@ export function DashboardPage() {
           {playerStats && (
             <div className="text-right">
               <div
-                className="w-12 h-12 ml-auto flex items-center justify-center rounded-full bg-abyss border-2 border-neon-gold font-mono text-neon-gold text-lg font-bold shadow-[0_0_12px_rgba(255,215,0,0.3)] transition-transform hover:scale-105"
+                className="w-12 h-12 ml-auto flex items-center justify-center rounded-full bg-abyss border-2 border-neon-gold font-mono text-neon-gold text-lg font-bold shadow-[0_0_12px_color-mix(in_srgb,var(--color-neon-gold)_30%,transparent)] transition-transform hover:scale-105"
                 title={`${playerStats.weeks_at_goal} semaines à l'objectif au total`}
               >
                 {playerStats.level}
@@ -209,246 +210,252 @@ export function DashboardPage() {
           )}
         </header>
 
-        {/* Block 1: Today's Plan */}
-        <Panel className="p-4">
-          <SectionHeader icon={<Calendar className="w-4 h-4 text-neon-purple" />} title="SÉANCE DU JOUR" />
-          {todayLink.planned.length > 0 || todayLink.offPlan.length > 0 ? (
-            <div className="space-y-2">
-              {todayLink.planned.map((row) => (
-                <TodaySession
-                  key={row.session.id}
-                  row={row}
-                  decision={decisionFor(row.session.id)}
-                  garminConnected={garminConnected}
-                />
-              ))}
-              {todayLink.offPlan.map((a) => (
-                <OffPlanRow key={a.id} session={a} />
-              ))}
-              <div className="flex justify-end items-center gap-4 pt-1 text-xs font-mono">
-                {adapt.data?.decisions.length === 0 && (
-                  <span className="text-text-muted">Rien à adapter aujourd&apos;hui.</span>
-                )}
-                {adapt.isError && <span className="text-danger-red">Recalcul impossible.</span>}
-                {canAdapt && adapt.data == null && (
-                  <button
-                    type="button"
-                    disabled={adapt.isPending}
-                    onClick={() => adapt.mutate()}
-                    title="Adapter la séance du jour à ta préparation et à ta charge"
-                    className="text-neon-purple hover:underline disabled:opacity-40"
-                  >
-                    {adapt.isPending ? 'Recalcul…' : 'Recalculer'}
-                  </button>
-                )}
-                <Link to="/planning" className="text-neon-cyan hover:underline">
-                  Semaine →
-                </Link>
-                <Link to="/log" className="text-neon-gold hover:text-neon-gold/80 transition-colors">
-                  Saisir la séance →
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-4">
-              <p className="text-sm font-mono text-text-muted mb-2">Repos — aucune séance prévue</p>
-              <Link to="/planning?new=1" className="text-xs font-mono text-neon-cyan hover:underline">
-                + Ajouter une séance
-              </Link>
-            </div>
-          )}
-        </Panel>
-
-        {/* Block 2: Player Status */}
-        <Panel className="p-4" delay={0.1}>
-          <SectionHeader icon={<Dumbbell className="w-4 h-4 text-neon-gold" />} title="ÉTAT DU JOUEUR" />
-          <PlayerSummary />
-
-          {statsError ? (
-            <p className="text-xs font-mono text-danger-red mb-4">
-              Statistiques indisponibles.{' '}
-              <button type="button" onClick={() => refetchStats()} className="text-neon-cyan hover:underline">
-                Réessayer
-              </button>
-            </p>
-          ) : (
-            playerStats && (
-              <div className="space-y-3 mb-4">
-                {[
-                  { stat: playerStats.hp, color: 'bg-danger-red', tag: 'HP' },
-                  { stat: playerStats.mp, color: 'bg-neon-cyan', tag: 'MP' },
-                  { stat: playerStats.xp, color: 'bg-neon-gold', tag: game.data?.enabled ? 'TSS' : 'XP' },
-                ].map(({ stat, color, tag }) => (
-                  <div key={tag} title={stat.detail ?? undefined}>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-mono text-text-muted w-8">{tag}</span>
-                      <div className="flex-1 h-3 bg-shadow rounded-full overflow-hidden">
-                        <div
-                          className={cn('h-full rounded-full transition-all duration-500', color)}
-                          style={{ width: `${Math.min(100, (stat.current / stat.max) * 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-xs font-mono text-text-secondary w-20 text-right">
-                        {Math.round(stat.current)}/{Math.round(stat.max)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between pl-11 pr-1 text-[11px] font-mono text-text-muted">
-                      <span>{stat.label}</span>
-                      {stat.detail && <span className="truncate ml-2">{stat.detail}</span>}
-                    </div>
+        <div className="dashboard-grid">
+          <div className="dashboard-primary">
+            {/* Block 1: Today's Plan */}
+            <Panel className="p-4">
+              <SectionHeader icon={<Calendar className="w-4 h-4 text-neon-purple" />} title="SÉANCE DU JOUR" />
+              {todayLink.planned.length > 0 || todayLink.offPlan.length > 0 ? (
+                <div className="space-y-2">
+                  {todayLink.planned.map((row) => (
+                    <TodaySession
+                      key={row.session.id}
+                      row={row}
+                      decision={decisionFor(row.session.id)}
+                      garminConnected={garminConnected}
+                    />
+                  ))}
+                  {todayLink.offPlan.map((a) => (
+                    <OffPlanRow key={a.id} session={a} />
+                  ))}
+                  <div className="flex justify-end items-center gap-4 pt-1 text-xs font-mono">
+                    {adapt.data?.decisions.length === 0 && (
+                      <span className="text-text-muted">Rien à adapter aujourd&apos;hui.</span>
+                    )}
+                    {adapt.isError && <span className="text-danger-red">Recalcul impossible.</span>}
+                    {canAdapt && adapt.data == null && (
+                      <button
+                        type="button"
+                        disabled={adapt.isPending}
+                        onClick={() => adapt.mutate()}
+                        title="Adapter la séance du jour à ta préparation et à ta charge"
+                        className="text-neon-purple hover:underline disabled:opacity-40"
+                      >
+                        {adapt.isPending ? 'Recalcul…' : 'Recalculer'}
+                      </button>
+                    )}
+                    <Link to="/planning" className="text-neon-cyan hover:underline">
+                      Semaine →
+                    </Link>
+                    <Link to="/log" className="text-neon-gold hover:text-neon-gold/80 transition-colors">
+                      Saisir la séance →
+                    </Link>
                   </div>
-                ))}
-              </div>
-            )
-          )}
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-shadow/30 p-4">
+                  <p className="text-sm font-mono text-text-muted">Repos — aucune séance prévue</p>
+                  <Link to="/planning?new=1" className="text-xs font-mono text-neon-cyan hover:underline">
+                    + Ajouter une séance
+                  </Link>
+                </div>
+              )}
+            </Panel>
 
-          <div className="grid grid-cols-2 gap-3">
-            <MetricCard
-              title="Charge (ACWR)"
-              value={workload?.acwr?.toFixed(2) ?? '—'}
-              kind="acwr"
-              zone={workload?.acwr_zone}
-            />
-            <MetricCard
-              title="Fraîcheur (TSB)"
-              value={
-                fitness?.tsb != null ? `${fitness.tsb > 0 ? '+' : ''}${fitness.tsb.toFixed(1)}` : '—'
-              }
-              kind="form"
-              zone={fitness?.form_zone}
-            />
-          </div>
-        </Panel>
-
-        {/* Block 3: Readiness (Garmin) */}
-        <Panel className="p-4" delay={0.2}>
-          <SectionHeader icon={<Zap className="w-4 h-4 text-neon-gold" />} title="RÉCUPÉRATION" />
-
-          {healthData && healthData.readiness_score != null ? (
-            <div className="flex items-center gap-6">
-              <div
-                className={cn(
-                  'flex-shrink-0 w-20 h-20 rounded-full bg-abyss border-2 flex items-center justify-center',
-                  readinessTone(healthData.readiness_score, fatigueThreshold)
-                )}
+            {/* Block 4: AI Tip — the first visit of the day may wait for the coach */}
+            {tipLoading && (
+              <p className="glass-panel p-4 text-sm font-mono text-text-muted flex items-center gap-2">
+                <AretePresence size={24} />
+                Le coach écrit ton briefing…
+              </p>
+            )}
+            {tip && (
+              <section
+                className={cn('glass-panel p-4 border-l-4 animate-scale-in', TIP_BORDER[tip.priority] ?? 'border-neon-cyan')}
               >
-                <span className="text-2xl font-mono font-bold">{healthData.readiness_score}</span>
-              </div>
+                <div className="flex items-start gap-3">
+                  <AreteMark size={20} className="text-text-muted mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-mono text-text-primary leading-relaxed">{tip.tip}</p>
+                    <span className="text-[11px] font-mono text-text-muted mt-2 inline-block opacity-60">
+                      {tip.source === 'agent' ? 'Briefing du coach' : 'Calculé à partir de tes métriques'}
+                      {tip.generated_at &&
+                        ` · ${new Date(tip.generated_at).toLocaleString('fr-FR', {
+                          day: 'numeric',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}`}
+                    </span>
+                  </div>
+                </div>
+              </section>
+            )}
 
-              <div className="flex-1 grid grid-cols-2 gap-x-6 gap-y-1.5">
-                {healthData.training_readiness_score != null && (
-                  <>
-                    <span className="text-xs font-mono text-text-muted">Préparation Garmin</span>
-                    <span className="text-xs font-mono text-text-primary text-right">
-                      {healthData.training_readiness_score}/100
-                    </span>
-                  </>
-                )}
-                {healthData.hrv_last_night != null && (
-                  <>
-                    <span className="text-xs font-mono text-text-muted">VFC</span>
-                    <span className="text-xs font-mono text-text-primary text-right">
-                      {healthData.hrv_last_night} ms
-                      {healthData.hrv_status && (
-                        <span className="text-[11px] text-neon-cyan ml-1">
-                          {healthData.hrv_status === 'BALANCED' ? '⚖' : healthData.hrv_status === 'LOW' ? '↓' : '↑'}
-                        </span>
-                      )}
-                    </span>
-                  </>
-                )}
-                {healthData.sleep_score != null && (
-                  <>
-                    <span className="text-xs font-mono text-text-muted">Sommeil</span>
-                    <span className="text-xs font-mono text-text-primary text-right">
-                      {healthData.sleep_score}/100
-                      {healthData.sleep_duration_sec != null && (
-                        <span className="text-[11px] text-text-muted ml-1">
-                          ({formatHoursMinutes(healthData.sleep_duration_sec)})
-                        </span>
-                      )}
-                    </span>
-                  </>
-                )}
-                {healthData.stress_avg != null && (
-                  <>
-                    <span className="text-xs font-mono text-text-muted">Stress</span>
-                    <span className={cn('text-xs font-mono text-right', stressTone(healthData.stress_avg))}>
-                      {healthData.stress_avg}
-                    </span>
-                  </>
-                )}
-                {healthData.steps != null && (
-                  <>
-                    <span className="text-xs font-mono text-text-muted">Pas</span>
-                    <span className="text-xs font-mono text-text-primary text-right">
-                      {healthData.steps.toLocaleString('fr-FR')}
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-          ) : (
-            <p className="text-sm font-mono text-text-muted">
-              Pas de données santé aujourd&apos;hui.{' '}
+            {/* Quick Actions Footer */}
+            <div className="flex gap-3 animate-fade-in" style={{ animationDelay: '0.3s' }}>
               <Link
-                to={garminConnected ? '/settings?tab=system' : '/settings?tab=connections'}
-                className="text-neon-cyan hover:underline"
+                to="/log"
+                className="flex-1 flex items-center justify-center gap-2 glass-panel px-4 py-3 text-sm font-mono text-neon-cyan hover:bg-abyss/80 transition-colors"
               >
-                {garminConnected ? 'Synchroniser' : 'Connecter Garmin'}
+                <Dumbbell className="w-4 h-4" />
+                Saisir une séance
+                <ArrowRight className="w-3 h-3" />
               </Link>
-            </p>
-          )}
-        </Panel>
-
-        {/* Block 4: AI Tip — the first visit of the day may wait for the coach */}
-        {tipLoading && (
-          <p className="glass-panel p-4 text-sm font-mono text-text-muted flex items-center gap-2">
-            <Loader2 className="w-4 h-4 animate-spin text-neon-cyan" />
-            Le coach écrit ton briefing…
-          </p>
-        )}
-        {tip && (
-          <section
-            className={cn('glass-panel p-4 border-l-4 animate-scale-in', TIP_BORDER[tip.priority] ?? 'border-neon-cyan')}
-          >
-            <div className="flex items-start gap-3">
-              <Bot className="w-5 h-5 text-text-muted mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm font-mono text-text-primary leading-relaxed">{tip.tip}</p>
-                <span className="text-[11px] font-mono text-text-muted mt-2 inline-block opacity-60">
-                  {tip.source === 'agent' ? 'Briefing du coach' : 'Calculé à partir de tes métriques'}
-                  {tip.generated_at &&
-                    ` · ${new Date(tip.generated_at).toLocaleString('fr-FR', {
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}`}
-                </span>
-              </div>
+              <Link
+                to="/planning"
+                className="flex-1 flex items-center justify-center gap-2 glass-panel px-4 py-3 text-sm font-mono text-neon-purple hover:bg-abyss/80 transition-colors"
+              >
+                <Calendar className="w-4 h-4" />
+                Voir le planning
+                <ArrowRight className="w-3 h-3" />
+              </Link>
             </div>
-          </section>
-        )}
+          </div>
+          <div className="dashboard-secondary">
+            {/* Block 2: Player Status */}
+            <Panel className="p-4" delay={0.1}>
+              <SectionHeader icon={<Dumbbell className="w-4 h-4 text-neon-gold" />} title="ÉTAT DU JOUEUR" />
+              <PlayerSummary />
 
-        {/* Quick Actions Footer */}
-        <div className="flex gap-3 animate-fade-in" style={{ animationDelay: '0.3s' }}>
-          <Link
-            to="/log"
-            className="flex-1 flex items-center justify-center gap-2 glass-panel px-4 py-3 text-sm font-mono text-neon-cyan hover:bg-abyss/80 transition-colors"
-          >
-            <Dumbbell className="w-4 h-4" />
-            Saisir une séance
-            <ArrowRight className="w-3 h-3" />
-          </Link>
-          <Link
-            to="/planning"
-            className="flex-1 flex items-center justify-center gap-2 glass-panel px-4 py-3 text-sm font-mono text-neon-purple hover:bg-abyss/80 transition-colors"
-          >
-            <Calendar className="w-4 h-4" />
-            Voir le planning
-            <ArrowRight className="w-3 h-3" />
-          </Link>
+              {statsError ? (
+                <p className="text-xs font-mono text-danger-red mb-4">
+                  Statistiques indisponibles.{' '}
+                  <button type="button" onClick={() => refetchStats()} className="text-neon-cyan hover:underline">
+                    Réessayer
+                  </button>
+                </p>
+              ) : (
+                playerStats && (
+                  <div className="space-y-3 mb-4">
+                    {[
+                      { stat: playerStats.hp, color: 'bg-danger-red', tag: 'HP' },
+                      { stat: playerStats.mp, color: 'bg-neon-cyan', tag: 'MP' },
+                      { stat: playerStats.xp, color: 'bg-neon-gold', tag: game.data?.enabled ? 'TSS' : 'XP' },
+                    ].map(({ stat, color, tag }) => (
+                      <div key={tag} title={stat.detail ?? undefined}>
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-mono text-text-muted w-8">{tag}</span>
+                          <div className="flex-1 h-3 bg-shadow rounded-full overflow-hidden">
+                            <div
+                              className={cn('h-full rounded-full transition-all duration-500', color)}
+                              style={{ width: `${Math.min(100, (stat.current / stat.max) * 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-mono text-text-secondary w-20 text-right">
+                            {Math.round(stat.current)}/{Math.round(stat.max)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between pl-11 pr-1 text-[11px] font-mono text-text-muted">
+                          <span>{stat.label}</span>
+                          {stat.detail && <span className="truncate ml-2">{stat.detail}</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <MetricCard
+                  title="Charge (ACWR)"
+                  value={workload?.acwr?.toFixed(2) ?? '—'}
+                  kind="acwr"
+                  zone={workload?.acwr_zone}
+                />
+                <MetricCard
+                  title="Fraîcheur (TSB)"
+                  value={
+                    fitness?.tsb != null ? `${fitness.tsb > 0 ? '+' : ''}${fitness.tsb.toFixed(1)}` : '—'
+                  }
+                  kind="form"
+                  zone={fitness?.form_zone}
+                />
+              </div>
+            </Panel>
+
+            {/* Block 3: Readiness (Garmin) */}
+            <Panel className="p-4" delay={0.2}>
+              <SectionHeader icon={<Zap className="w-4 h-4 text-neon-gold" />} title="RÉCUPÉRATION" />
+
+              {healthData && healthData.readiness_score != null ? (
+                <div className="flex items-center gap-6">
+                  <div
+                    className={cn(
+                      'flex-shrink-0 w-20 h-20 rounded-full bg-abyss border-2 flex items-center justify-center',
+                      readinessTone(healthData.readiness_score, fatigueThreshold)
+                    )}
+                  >
+                    <span className="text-2xl font-mono font-bold">{healthData.readiness_score}</span>
+                  </div>
+
+                  <div className="flex-1 grid grid-cols-2 gap-x-6 gap-y-1.5">
+                    {healthData.training_readiness_score != null && (
+                      <>
+                        <span className="text-xs font-mono text-text-muted">Préparation Garmin</span>
+                        <span className="text-xs font-mono text-text-primary text-right">
+                          {healthData.training_readiness_score}/100
+                        </span>
+                      </>
+                    )}
+                    {healthData.hrv_last_night != null && (
+                      <>
+                        <span className="text-xs font-mono text-text-muted">VFC</span>
+                        <span className="text-xs font-mono text-text-primary text-right">
+                          {healthData.hrv_last_night} ms
+                          {healthData.hrv_status && (
+                            <span className="text-[11px] text-neon-cyan ml-1">
+                              {healthData.hrv_status === 'BALANCED' ? '⚖' : healthData.hrv_status === 'LOW' ? '↓' : '↑'}
+                            </span>
+                          )}
+                        </span>
+                      </>
+                    )}
+                    {healthData.sleep_score != null && (
+                      <>
+                        <span className="text-xs font-mono text-text-muted">Sommeil</span>
+                        <span className="text-xs font-mono text-text-primary text-right">
+                          {healthData.sleep_score}/100
+                          {healthData.sleep_duration_sec != null && (
+                            <span className="text-[11px] text-text-muted ml-1">
+                              ({formatHoursMinutes(healthData.sleep_duration_sec)})
+                            </span>
+                          )}
+                        </span>
+                      </>
+                    )}
+                    {healthData.stress_avg != null && (
+                      <>
+                        <span className="text-xs font-mono text-text-muted">Stress</span>
+                        <span className={cn('text-xs font-mono text-right', stressTone(healthData.stress_avg))}>
+                          {healthData.stress_avg}
+                        </span>
+                      </>
+                    )}
+                    {healthData.steps != null && (
+                      <>
+                        <span className="text-xs font-mono text-text-muted">Pas</span>
+                        <span className="text-xs font-mono text-text-primary text-right">
+                          {healthData.steps.toLocaleString('fr-FR')}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm font-mono text-text-muted">
+                  Pas de données santé aujourd&apos;hui.{' '}
+                  <Link
+                    to={garminConnected ? '/settings?tab=system' : '/settings?tab=connections'}
+                    className="text-neon-cyan hover:underline"
+                  >
+                    {garminConnected ? 'Synchroniser' : 'Connecter Garmin'}
+                  </Link>
+                </p>
+              )}
+            </Panel>
+
+          </div>
         </div>
       </div>
     </div>

@@ -13,7 +13,10 @@ def settings_database(tmp_path, monkeypatch):
     init_db()
 
 
-@pytest.mark.parametrize("theme", ["light", "dark", "darker", "abyss"])
+@pytest.mark.parametrize(
+    "theme",
+    ["light", "dark", "darker", "abyss", "performance", "odyssey", "pierre", "prune"],
+)
 def test_theme_round_trip(router_client, theme):
     client = router_client(router)
     original = client.get("/settings").json()

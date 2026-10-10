@@ -23,9 +23,9 @@ class UserSettingsUpdate(BaseModel):
     coach_briefing_enabled: bool = True
     auto_adapt_enabled: bool = True
     push_to_garmin_enabled: bool = False
-    theme: Literal["light", "dark", "darker", "abyss", "performance", "odyssey"] = (
-        "dark"
-    )
+    theme: Literal[
+        "light", "dark", "darker", "abyss", "performance", "odyssey", "pierre", "prune"
+    ] = "dark"
     exercise_abbreviations: dict[str, str] = {}
     weekly_volume_target_kg: int = Field(ge=1000, le=200000, default=20000)
     lthr: int | None = Field(ge=100, le=220, default=None)
