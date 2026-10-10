@@ -53,6 +53,78 @@ async function openCoach(page: Page) {
 
 const preview = { text: '{}', truncated: false };
 
+test('Chiron composer: inline file picker, draft removal and reuse before sending', async ({ page }) => {
+  const stream = await fixture(page);
+  const doc = { id: '11111111-1111-4111-8111-111111111111', name: 'Programme semaine 42.md', size: 18, sha256: '0'.repeat(64), status: 'ready' };
+  let uploaded = false;
+  let deleted = false;
+  await page.route('**/api/agent/threads/*/documents**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (route.request().method() === 'DELETE') { deleted = true; uploaded = false; return route.fulfill({ json: {} }); }
+    if (path.endsWith('/finalize')) { uploaded = true; return route.fulfill({ json: doc }); }
+    if (path.includes('/chunks/')) return route.fulfill({ json: { uploaded: true } });
+    if (route.request().method() === 'POST') return route.fulfill({ json: doc });
+    return route.fulfill({ json: uploaded ? [doc] : [] });
+  });
+  try {
+    const panel = await openCoach(page);
+    await page.evaluate(() => document.documentElement.dataset.theme = 'performance');
+    const composer = panel.locator('footer');
+    const attach = composer.getByRole('button', { name: 'Joindre un fichier', exact: true });
+    await expect(attach).toBeVisible();
+    await expect(composer.getByRole('button', { name: /Fichiers du fil/ })).toHaveCount(0);
+    await composer.getByLabel('Message au coach').fill('Adapte ce programme à ma semaine.');
+    await panel.getByRole('button', { name: 'Agrandir la conversation' }).click();
+    // The add action must sit beside the text, never in a separate toolbar.
+    const expectInlineAttachment = async () => {
+      const button = await attach.boundingBox();
+      const input = await composer.getByLabel('Message au coach').boundingBox();
+      expect(button).not.toBeNull();
+      expect(input).not.toBeNull();
+      expect(button!.x + button!.width).toBeLessThanOrEqual(input!.x);
+      expect(button!.y).toBeGreaterThanOrEqual(input!.y);
+      expect(button!.y + button!.height).toBeLessThanOrEqual(input!.y + input!.height + 1);
+    };
+    await expectInlineAttachment();
+    await page.screenshot({ path: '../.context/chiron-composer-desktop.png' });
+    await composer.screenshot({ path: '../.context/chiron-composer-detail.png' });
+    const picker = page.waitForEvent('filechooser');
+    await attach.click();
+    await (await picker).setFiles({ name: doc.name, mimeType: 'text/markdown', buffer: Buffer.from('Footing 30 minutes') });
+    await expect(composer.getByRole('button', { name: `Consulter ${doc.name}` })).toBeVisible();
+    expect(stream.requests()).toBe(0);
+    await composer.getByRole('button', { name: `Retirer ${doc.name} du brouillon` }).click();
+    await expect(composer.getByLabel('Pièces jointes du brouillon')).toHaveCount(0);
+    expect(deleted).toBe(false);
+    const library = composer.getByRole('button', { name: 'Fichiers du fil (1)' });
+    await library.click();
+    await composer.getByRole('checkbox', { name: doc.name }).check();
+    await library.click();
+    await expect(composer.getByRole('button', { name: `Consulter ${doc.name}` })).toBeVisible();
+    await expect(composer.getByLabel('Message au coach')).toHaveValue('Adapte ce programme à ma semaine.');
+    for (const theme of ['performance', 'odyssey']) {
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
+      await expect(attach).toBeInViewport();
+      await expect(composer.getByRole('button', { name: 'Envoyer', exact: true })).toBeInViewport();
+      expect(await composer.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+      await expectInlineAttachment();
+      await page.screenshot({ path: `../.context/chiron-composer-${theme}-mobile.png` });
+    }
+    await composer.getByRole('button', { name: 'Envoyer', exact: true }).click();
+    await expect.poll(() => stream.requests()).toBe(1);
+    await expect(attach).toBeDisabled();
+    await expect(panel.getByRole('article', { name: 'Ton message' }).getByText(doc.name)).toBeVisible();
+    await composer.getByRole('button', { name: 'Arrêter la réponse' }).click();
+    await expect(attach).toBeEnabled();
+    await library.click();
+    await composer.getByRole('button', { name: `Supprimer définitivement ${doc.name}` }).click();
+    await expect(library).toHaveCount(0);
+    await expect(composer.getByRole('checkbox')).toHaveCount(0);
+    expect(deleted).toBe(true);
+  } finally { await stream.close(); }
+});
+
 test('Chiron: real SSE states, one motion cycle, immediate text and an interrupted write without replay', async ({ page }) => {
   const stream = await fixture(page);
   try {

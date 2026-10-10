@@ -31,23 +31,30 @@ async def process_message(message: SlackMessage, token: str) -> None:
     # Slack's receipt must not wait on MotherDuck or the model stack.
     from arete.coaching import run_slack_coach
     from arete.dataio import mirror
+    from arete.services.athlete_scope import athlete_scope
     from arete.services.slack import dispatch
+    from arete.services.users import OWNER_ATHLETE_ID
 
-    try:
-        if config.is_remote_db:
-            await to_thread.run_sync(mirror.hydrate)
-        async with httpx.AsyncClient(
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=httpx.Timeout(SLACK_HTTP_TIMEOUT_SECONDS),
-            follow_redirects=False,
-        ) as http:
-            await dispatch(message, client=SlackClient(http), produce=run_slack_coach)
-    except Exception:
-        # The receipt is already sent, so HTTP cannot report this failure.
-        logger.exception("Slack background processing failed: %s", message.key)
-    finally:
-        if config.is_remote_db:
-            await to_thread.run_sync(mirror.flush)
+    # The signature proves the configured Slack user, who is the owner athlete,
+    # as the API key is. AnyIO workers inherit this scope.
+    with athlete_scope(OWNER_ATHLETE_ID):
+        try:
+            if config.is_remote_db:
+                await to_thread.run_sync(mirror.hydrate)
+            async with httpx.AsyncClient(
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=httpx.Timeout(SLACK_HTTP_TIMEOUT_SECONDS),
+                follow_redirects=False,
+            ) as http:
+                await dispatch(
+                    message, client=SlackClient(http), produce=run_slack_coach
+                )
+        except Exception:
+            # The receipt is already sent, so HTTP cannot report this failure.
+            logger.exception("Slack background processing failed: %s", message.key)
+        finally:
+            if config.is_remote_db:
+                await to_thread.run_sync(mirror.flush)
 
 
 def _identifier(payload: dict, name: str) -> str:

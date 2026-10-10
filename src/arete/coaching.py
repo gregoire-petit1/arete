@@ -27,11 +27,13 @@ from arete.agent.runtime.execution import invoke_agent_sync
 from arete.calendar import get_calendar_service
 from arete.config import config
 from arete.services import briefing, coaching_rules, session_feedback, weekly_review
+from arete.services.athlete_scope import current_athlete_id, resolve_athlete_id
 from arete.services.coaching_repository import Briefing
 
 AGENT_RECURSION_LIMIT = MAX_GRAPH_STEPS
 
 
+MAX_CACHED_ATHLETES = 32
 _graph_lock = Lock()
 
 
@@ -40,7 +42,7 @@ def _serialized(factory):
     @wraps(factory)
     def get():
         with _graph_lock:
-            return factory()
+            return factory(current_athlete_id())
 
     get.cache_clear = factory.cache_clear
     return get
@@ -87,8 +89,9 @@ def _assemble(profile_id: str):
 
 
 @_serialized
-@lru_cache(maxsize=1)
-def get_agent():
+@lru_cache(maxsize=MAX_CACHED_ATHLETES)
+def get_agent(athlete_id: int):
+    assert athlete_id == current_athlete_id()
     return _assemble("chat")
 
 
@@ -106,20 +109,23 @@ async def run_slack_coach(messages: list[dict[str, str]], thread_id: str) -> str
 
 
 @_serialized
-@lru_cache(maxsize=1)
-def build_briefing_agent():
+@lru_cache(maxsize=MAX_CACHED_ATHLETES)
+def build_briefing_agent(athlete_id: int):
+    assert athlete_id == current_athlete_id()
     return _assemble("briefing")
 
 
 @_serialized
-@lru_cache(maxsize=1)
-def build_feedback_agent():
+@lru_cache(maxsize=MAX_CACHED_ATHLETES)
+def build_feedback_agent(athlete_id: int):
+    assert athlete_id == current_athlete_id()
     return _assemble("feedback")
 
 
 @_serialized
-@lru_cache(maxsize=1)
-def build_review_agent():
+@lru_cache(maxsize=MAX_CACHED_ATHLETES)
+def build_review_agent(athlete_id: int):
+    assert athlete_id == current_athlete_id()
     return _assemble("review")
 
 
@@ -180,16 +186,18 @@ def generate_weekly_review(*, refresh: bool = False) -> weekly_review.Review:
 
 
 def generate_briefing(
-    *, trigger: str = "api", target_date: date | None = None, user_id: int = 1
+    *, trigger: str = "api", target_date: date | None = None, user_id: int | None = None
 ) -> Briefing:
+    user_id = resolve_athlete_id(user_id)
     return briefing.generate_briefing(
         produce=run_briefing, trigger=trigger, target_date=target_date, user_id=user_id
     )
 
 
 def get_or_create_briefing(
-    *, trigger: str = "api", target_date: date | None = None, user_id: int = 1
+    *, trigger: str = "api", target_date: date | None = None, user_id: int | None = None
 ) -> Briefing:
+    user_id = resolve_athlete_id(user_id)
     return briefing.get_or_create_briefing(
         produce=run_briefing, trigger=trigger, target_date=target_date, user_id=user_id
     )

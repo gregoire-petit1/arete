@@ -167,13 +167,14 @@ class TestGarminSyncClient:
         with pytest.raises(ValueError, match="Garmin credentials required"):
             self._client().login()
 
-    def test_login_from_env(self, monkeypatch):
+    def test_global_credentials_cannot_connect_an_athlete(self, monkeypatch):
         monkeypatch.setenv("GARMIN_EMAIL", "env@example.com")
         monkeypatch.setenv("GARMIN_PASSWORD", "envpass")
         client = self._client()
         client.client.login.return_value = "ok"
-        client.login()
-        client.client.login.assert_called_once_with("env@example.com", "envpass")
+        with pytest.raises(ValueError, match="Garmin credentials required"):
+            client.login()
+        client.client.login.assert_not_called()
 
     def test_logout_delegates(self):
         client = self._client()

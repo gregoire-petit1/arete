@@ -46,15 +46,28 @@ def remote_database() -> str:
 
 
 def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
+    if os.getenv("VERCEL_ENV") == "preview" and config.db_target == "md:arete":
+        raise RuntimeError(
+            "Preview requires a separate ARETE_DB; production md:arete is forbidden"
+        )
     if config.is_remote_db:
-        return _remote_cursor()
+        con = _remote_cursor()
+        configure_athlete(con)
+        return con
     db_path = get_db_path()
     if not read_only:
         db_path.parent.mkdir(parents=True, exist_ok=True)
     con = duckdb.connect(str(db_path), read_only=read_only)
     con.execute("PRAGMA threads=4;")
     con.execute(f"PRAGMA temp_directory='{db_path.parent}';")
+    configure_athlete(con)
     return con
+
+
+def configure_athlete(con: duckdb.DuckDBPyConnection) -> None:
+    from arete.services.athlete_scope import database_athlete_id
+
+    con.execute("SET VARIABLE arete_athlete_id = ?", [database_athlete_id()])
 
 
 def _seed_extensions() -> None:

@@ -4,9 +4,9 @@ Off by default (``ARETE_AUTH`` unset): the API is as open as a self-hosted
 instance behind its own network. With ``ARETE_AUTH=clerk`` every request
 except the public paths needs a Clerk session token (``Authorization:
 Bearer``), or the long-lived ``ARETE_API_KEY`` that scripts and the MCP
-server use. The account is recorded in ``app.users``; only the owner's e-mail
-is attached to the athlete, every other account is refused the data (403)
-until the multi-athlete work attaches it to its own.
+server use. Each Clerk account owns a private athlete. Verified configured
+owner emails retain access to the original athlete; other accounts get empty
+training data. The scope wraps the entire response, including SSE and workers.
 
 Pure ASGI middleware, like the mirror's: the coach streams, and a
 ``BaseHTTPMiddleware`` would sit between the stream and the client. The Clerk
@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+from datetime import datetime, timedelta
 from typing import Any
 
 import anyio
@@ -26,6 +27,7 @@ from starlette.responses import JSONResponse
 
 from arete.config import config
 from arete.services import users as user_service
+from arete.services.athlete_scope import athlete_scope
 from arete.services.users import API_KEY_USER, OWNER_ATHLETE_ID, AppUser
 
 logger = logging.getLogger(__name__)
@@ -107,7 +109,7 @@ def _verify_session_token(token: str) -> dict[str, Any]:
         raise AuthError(401, "Session invalide ou expirée.") from e
 
 
-def _fetch_clerk_profile(clerk_user_id: str) -> tuple[str, str | None]:
+def _fetch_clerk_profile(clerk_user_id: str) -> tuple[str, str | None, bool]:
     """(primary e-mail, display name) of a Clerk user, once per new account."""
     from clerk_backend_api import Clerk
 
@@ -124,7 +126,18 @@ def _fetch_clerk_profile(clerk_user_id: str) -> tuple[str, str | None]:
         raise AuthError(403, "Ce compte n'a pas d'adresse e-mail.")
     parts = (getattr(user, "first_name", None), getattr(user, "last_name", None))
     name = " ".join(p for p in parts if p) or None
-    return str(email), name
+    primary = next(
+        (
+            a
+            for a in (getattr(user, "email_addresses", None) or [])
+            if getattr(a, "email_address", None) == email
+        ),
+        None,
+    )
+    verified = (
+        getattr(getattr(primary, "verification", None), "status", None) == "verified"
+    )
+    return str(email), name, verified
 
 
 def resolve_user(authorization: str | None) -> AppUser:
@@ -136,18 +149,26 @@ def resolve_user(authorization: str | None) -> AppUser:
         raise AuthError(401, "Connexion requise.")
     key = config.api_key
     if key and hmac.compare_digest(token, key):
+        if not user_service.athlete_is_active(OWNER_ATHLETE_ID):
+            raise AuthError(403, "Cet athlète a été désactivé.")
         return API_KEY_USER
     claims = _verify_session_token(token)
     subject = claims.get("sub")
     if not isinstance(subject, str) or not subject:
         raise AuthError(401, "Session invalide ou expirée.")
     user = user_service.get_user(subject)
-    if user is None:
-        email, name = _fetch_clerk_profile(subject)
-        user = user_service.upsert_user(subject, email, name)
-    elif user.athlete_id is None:
-        # The owner's e-mail may have been configured since the first sign-in.
-        user = user_service.upsert_user(subject, user.email, user.name)
+    if (
+        user is None
+        or user.profile_synced_at is None
+        or datetime.now() - user.profile_synced_at > timedelta(hours=1)
+    ):
+        email, name, verified = _fetch_clerk_profile(subject)
+        user = user_service.upsert_user(subject, email, name, verified=verified)
+    if user.deleted_at is not None or (
+        user.athlete_id is not None
+        and not user_service.athlete_is_active(user.athlete_id)
+    ):
+        raise AuthError(403, "Ce compte a été désactivé.")
     return user
 
 
@@ -199,7 +220,11 @@ class AuthMiddleware:
             await response(scope, receive, send)
             return
         scope.setdefault("state", {})["user"] = user
-        await self.app(scope, receive, send)
+        if user.athlete_id is None:
+            await self.app(scope, receive, send)
+        else:
+            with athlete_scope(user.athlete_id):
+                await self.app(scope, receive, send)
 
 
 # --------------------------------------------------------------- routes --

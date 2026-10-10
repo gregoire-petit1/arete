@@ -47,25 +47,25 @@ class ExportTable:
 TABLES: tuple[ExportTable, ...] = (
     ExportTable(
         "actual_sessions",
-        "SELECT * FROM app.actual_sessions WHERE COALESCE(user_id, 1) = 1",
+        "SELECT * FROM app.visible_actual_sessions WHERE user_id = getvariable('arete_athlete_id')",
         "date",
         "date, id",
     ),
     ExportTable(
         "planned_sessions",
-        "SELECT * FROM app.planned_sessions WHERE COALESCE(user_id, 1) = 1",
+        "SELECT * FROM app.visible_planned_sessions WHERE user_id = getvariable('arete_athlete_id')",
         "date",
         "date, id",
     ),
     ExportTable(
         "daily_metrics",
-        "SELECT * FROM app.daily_metrics WHERE user_id = 1",
+        "SELECT * FROM app.visible_daily_metrics WHERE user_id = getvariable('arete_athlete_id')",
         "date",
         "date",
     ),
     ExportTable(
         "strength_sessions",
-        "SELECT * FROM app.strength_sessions WHERE user_id = 1",
+        "SELECT * FROM app.visible_strength_sessions WHERE user_id = getvariable('arete_athlete_id')",
         "date",
         "date, id",
     ),
@@ -77,26 +77,29 @@ TABLES: tuple[ExportTable, ...] = (
                   e.name AS exercise, e.category, e.primary_muscle,
                   se.target_sets, se.target_reps, se.target_rpe,
                   es.* EXCLUDE (session_exercise_id)
-           FROM app.exercise_sets es
-           JOIN app.session_exercises se ON es.session_exercise_id = se.id
-           JOIN app.strength_sessions ss ON se.session_id = ss.id
-           LEFT JOIN app.exercises e ON e.id = se.exercise_id
-           WHERE ss.user_id = 1""",
+           FROM app.visible_exercise_sets es
+           JOIN app.visible_session_exercises se ON es.session_exercise_id = se.id
+           JOIN app.visible_strength_sessions ss ON se.session_id = ss.id
+           LEFT JOIN app.visible_exercises e ON e.id = se.exercise_id
+           WHERE ss.user_id = getvariable('arete_athlete_id')""",
         "ss.date",
         "ss.date, ss.id, se.exercise_order, es.set_number",
     ),
     ExportTable(
-        "goals", "SELECT * FROM app.goals WHERE user_id = 1", None, "race_date, id"
+        "goals",
+        "SELECT * FROM app.visible_goals WHERE user_id = getvariable('arete_athlete_id')",
+        None,
+        "race_date, id",
     ),
     ExportTable(
         "athlete_facts",
-        "SELECT * FROM app.athlete_facts WHERE user_id = 1",
+        "SELECT * FROM app.visible_athlete_facts WHERE user_id = getvariable('arete_athlete_id')",
         None,
         "since, id",
     ),
     ExportTable(
         "weekly_reviews",
-        "SELECT * FROM app.weekly_reviews WHERE user_id = 1",
+        "SELECT * FROM app.visible_weekly_reviews WHERE user_id = getvariable('arete_athlete_id')",
         "week_start",
         "week_start",
     ),

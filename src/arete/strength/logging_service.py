@@ -18,6 +18,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date as date_type
 from typing import TYPE_CHECKING
 
+from arete.services.athlete_scope import resolve_athlete_id
 from arete.strength.models import ExerciseSet, SessionExercise, StrengthSession
 from arete.strength.progression import Record, new_records
 from arete.strength.repository import StrengthRepository
@@ -64,8 +65,9 @@ class SaveOutcome:
     records: list[SessionRecord] = field(default_factory=list)
 
 
-def athlete_abbreviations(user_id: int = 1) -> dict[str, str]:
+def athlete_abbreviations(user_id: int | None = None) -> dict[str, str]:
     """The athlete's own shorthand, e.g. ``{"bp": "bench press"}``."""
+    user_id = resolve_athlete_id(user_id)
     from arete.dataio.settings import get_user_settings
 
     settings = get_user_settings(user_id=user_id)
@@ -73,13 +75,14 @@ def athlete_abbreviations(user_id: int = 1) -> dict[str, str]:
 
 
 def parse_for_athlete(
-    text: str, workout_date: date_type | None = None, user_id: int = 1
+    text: str, workout_date: date_type | None = None, user_id: int | None = None
 ) -> ParsedWorkout:
     """Read workout text with the athlete's abbreviations applied.
 
     Deterministic — Lark grammar plus catalog matching, no model. Raises
     ValueError when nothing in the text looks like an exercise.
     """
+    user_id = resolve_athlete_id(user_id)
     from arete.llm.workout_parser import parse_workout_text
 
     return parse_workout_text(

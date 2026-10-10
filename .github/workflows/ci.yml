@@ -14,10 +14,12 @@ on:
 permissions:
   contents: read
 
-# A new push supersedes the run in flight on the same ref.
+# A new push to a PR supersedes its run in flight. On main a run is never cut
+# short: it deploys the main preview, and cancelling it mid-deploy leaves the
+# fixed URL on an older build (a newer main run then waits its turn).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
@@ -134,8 +136,8 @@ jobs:
   # Previews deploy here, once every affected check above is green, and only
   # for a PR labelled `preview`: each deployment stores a ~430 MB function
   # against the plan's 10 GB. Vercel's Git integration deploys nothing
-  # (`git.deploymentEnabled` in vercel.json); production ships through the
-  # manual "Deploy production" workflow. A pull_request run checks out the
+  # (`git.deploymentEnabled` in vercel.json); main goes to Preview below and
+  # production ships through the manual "Deploy production" workflow. A pull_request run checks out the
   # merge of the branch into main, so the preview is what merging would ship;
   # a conflicting branch has no merge commit, no run, no preview.
   preview:
@@ -172,7 +174,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
       - name: Remove the PR's superseded previews
-        run: scripts/ci/prune_deployments.sh 1 --meta pr="$PR"
+        run: scripts/ci/prune_deployments.sh 1 meta-pr="$PR"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
@@ -186,3 +188,53 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
           URL: ${{ steps.deploy.outputs.url }}
+
+  # main ships to the Preview environment (its own database, `md:arete_preview`)
+  # on a fixed URL once its checks are green, so merged work can be tried before
+  # a batch goes to production. Only the newest main preview is kept.
+  main-preview:
+    if: >-
+      !cancelled() &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.lint.result == 'success' &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.typecheck.result == 'success' || needs.typecheck.result == 'skipped') &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+    needs: [lint, test, typecheck, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      MAIN_PREVIEW_ALIAS: arete-main-arete15.vercel.app
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm install --global vercel@63.1.2
+      - name: Deploy main to Preview
+        id: deploy
+        run: |
+          url=$(vercel deploy --archive=tgz --yes --token "$VERCEL_TOKEN" --meta channel=main)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      # REST, as `vercel alias set` cannot resolve `--scope` with the token.
+      - name: Point the fixed URL at it
+        run: |
+          api=https://api.vercel.com
+          id=$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "$api/v13/deployments/${URL#https://}?teamId=$VERCEL_ORG_ID" | jq -r .id)
+          curl -fsS -X POST -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"alias\":\"$MAIN_PREVIEW_ALIAS\"}" \
+            "$api/v2/deployments/$id/aliases?teamId=$VERCEL_ORG_ID" > /dev/null
+          echo "https://$MAIN_PREVIEW_ALIAS now serves $URL" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          URL: ${{ steps.deploy.outputs.url }}
+      - name: Remove the superseded main previews
+        run: scripts/ci/prune_deployments.sh 1 meta-channel=main
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

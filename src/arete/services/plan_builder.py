@@ -40,8 +40,8 @@ def _recent_running(con, today: date) -> tuple[float, int]:
     row = con.execute(
         f"""
         SELECT COALESCE(SUM(duration_sec), 0) / 60.0, COUNT(*)
-        FROM app.actual_sessions
-        WHERE user_id = 1 AND sport IN ({sql_in(RUNNING_SPORTS)})
+        FROM app.visible_actual_sessions
+        WHERE user_id = getvariable('arete_athlete_id') AND sport IN ({sql_in(RUNNING_SPORTS)})
           AND date >= ? AND date < ?
         """,
         [today - timedelta(days=HISTORY_DAYS), today],
@@ -127,8 +127,7 @@ def _delete_future(goal_id: int, start: date) -> int:
         ids = [
             r[0]
             for r in con.execute(
-                "SELECT id FROM app.planned_sessions WHERE goal_id = ? "
-                "AND status = 'pending' AND date >= ?",
+                "SELECT id FROM app.visible_planned_sessions WHERE goal_id = ? AND status = 'pending' AND date >= ?",
                 [goal_id, start],
             ).fetchall()
         ]
@@ -154,8 +153,7 @@ def apply(goal_id: int, today: date | None = None) -> dict[str, Any]:
         taken = {
             r[0]
             for r in con.execute(
-                "SELECT DISTINCT date FROM app.planned_sessions "
-                "WHERE date BETWEEN ? AND ? AND status <> 'skipped'",
+                "SELECT DISTINCT date FROM app.visible_planned_sessions WHERE date BETWEEN ? AND ? AND status <> 'skipped'",
                 [inputs.start, goal.race_date],
             ).fetchall()
         }

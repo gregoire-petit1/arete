@@ -17,6 +17,7 @@ from arete.garmin.models import PlannedSession, SessionStatus
 from arete.garmin.repository import GarminRepository
 from arete.garmin.workout_structure import NotPushable, derive, describe_fr
 from arete.services.adaptation import AdaptationInput, Decision, evaluate
+from arete.services.athlete_scope import resolve_athlete_id
 from arete.services.plan_repository import (
     AlreadyDecided,
     PlanDecision,
@@ -54,7 +55,8 @@ def _snapshot(session: PlannedSession) -> dict[str, Any]:
     }
 
 
-def auto_adapt_enabled(user_id: int = 1) -> bool:
+def auto_adapt_enabled(user_id: int | None = None) -> bool:
+    user_id = resolve_athlete_id(user_id)
     return bool((get_user_settings(user_id) or {}).get("auto_adapt_enabled", True))
 
 

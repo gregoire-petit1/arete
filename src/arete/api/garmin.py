@@ -294,7 +294,7 @@ def push_planned_session(session_id: int):
 
     client = GarminClient()
     if not client.has_tokens():
-        raise HTTPException(status_code=401, detail="Garmin n'est pas connecté")
+        raise HTTPException(status_code=409, detail="Garmin n'est pas connecté")
     try:
         return push_session(client, session_id)
     except LookupError:

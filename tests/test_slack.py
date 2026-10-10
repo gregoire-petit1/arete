@@ -341,7 +341,7 @@ def test_slack_migration_on_existing_database(ledger):
     with db_connection() as con:
         con.execute("DROP TABLE app.slack_deliveries")
         con.execute("DROP TABLE app.slack_execution")
-        con.execute("DELETE FROM app.schema_version WHERE version = 35")
+        con.execute("DELETE FROM app.schema_version WHERE version = 37")
     init_db()
     with db_connection() as con:
         assert con.execute(
@@ -398,3 +398,19 @@ def test_slack_reuses_chat_graph_and_thread_metadata(monkeypatch):
     assert args == (graph, {"messages": history})
     assert kwargs["context"].profile == "chat"
     assert kwargs["context"].thread_id == "slack:T:D:1"
+
+
+def test_background_work_runs_as_the_owner_athlete(message, monkeypatch, tmp_path):
+    from arete.services.athlete_scope import current_athlete_id
+    from arete.services.users import OWNER_ATHLETE_ID
+
+    monkeypatch.setenv("ARETE_AUTH", "clerk")  # no implicit athlete without a scope
+    monkeypatch.setenv("ARETE_DB", str(tmp_path / "scope.duckdb"))
+    seen = []
+
+    async def dispatch(*args, **kwargs):
+        seen.append(current_athlete_id())
+
+    monkeypatch.setattr(slack, "dispatch", dispatch)
+    asyncio.run(api.process_message(message, "test-token"))
+    assert seen == [OWNER_ATHLETE_ID]

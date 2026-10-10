@@ -4,7 +4,6 @@ import logging
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
 
 import duckdb
 from fastapi import FastAPI, Header, HTTPException
@@ -39,6 +38,7 @@ from arete.config import config
 from arete.dataio.db import db_connection
 from arete.dataio.init_duckdb import main as init_schema
 from arete.dataio.mirror import MirrorMiddleware
+from arete.dataio.ownership import OwnershipError
 from arete.services.documents import DocumentError
 
 logger = logging.getLogger(__name__)
@@ -101,6 +101,11 @@ async def transaction_conflict(_request, _exc):
     )
 
 
+@app.exception_handler(OwnershipError)
+async def ownership_error(_request, exc: OwnershipError):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
 @app.exception_handler(DocumentError)
 async def document_error(_request, exc: DocumentError):
     return JSONResponse(status_code=409, content={"detail": str(exc)})
@@ -156,11 +161,7 @@ def cron_daily_sync(authorization: str | None = Header(default=None)):
     expected = f"Bearer {secret}"
     if not secret or not hmac.compare_digest(authorization or "", expected):
         raise HTTPException(status_code=401, detail="Non autorisé")
-    status = scheduler.daily_sync()
-    scheduler.record_run(datetime.now())
-    status["briefing"] = scheduler.write_daily_briefing()
-    status["review"] = scheduler.write_weekly_review()
-    return status
+    return scheduler.run_scheduled_batch()
 
 
 for router in (

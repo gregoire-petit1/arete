@@ -1,3 +1,4 @@
+import { claimPushDevice } from './pushSession';
 /**
  * Session tokens for the API transports.
  *
@@ -76,6 +77,7 @@ export async function endSession(
     setTokenGetter(null);
     reset?.();
     await clearApiCache();
+    await claimPushDevice(null);
     window.location.reload();
   };
   await signOut(cleanup);

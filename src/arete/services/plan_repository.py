@@ -10,6 +10,7 @@ from typing import Any
 import duckdb
 
 from arete.dataio.db import connect
+from arete.services.athlete_scope import resolve_athlete_id
 
 _COLUMNS = (
     "id, date, planned_session_id, decision, reason, readiness_score, "
@@ -96,9 +97,10 @@ class PlanDecisionRepository:
         acwr: float | None,
         original: dict[str, Any],
         adapted: dict[str, Any] | None,
-        user_id: int = 1,
+        user_id: int | None = None,
     ) -> PlanDecision:
         """Claim the day's decision for that session; raises ``AlreadyDecided``."""
+        user_id = resolve_athlete_id(user_id)
         con = connect()
         try:
             row = con.execute(
@@ -135,19 +137,19 @@ class PlanDecisionRepository:
         con = connect()
         try:
             row = con.execute(
-                f"SELECT {_COLUMNS} FROM app.plan_decisions WHERE id = ?",
+                f"SELECT {_COLUMNS} FROM app.visible_plan_decisions WHERE id = ?",
                 [decision_id],
             ).fetchone()
         finally:
             con.close()
         return _from_row(row) if row else None
 
-    def list_for_day(self, day: date, user_id: int = 1) -> list[PlanDecision]:
+    def list_for_day(self, day: date, user_id: int | None = None) -> list[PlanDecision]:
+        user_id = resolve_athlete_id(user_id)
         con = connect()
         try:
             rows = con.execute(
-                f"SELECT {_COLUMNS} FROM app.plan_decisions "
-                "WHERE user_id = ? AND date = ? ORDER BY id",
+                f"SELECT {_COLUMNS} FROM app.visible_plan_decisions WHERE user_id = ? AND date = ? ORDER BY id",
                 [user_id, day],
             ).fetchall()
         finally:
@@ -161,7 +163,7 @@ class PlanDecisionRepository:
         con = connect()
         try:
             con.execute(
-                f"UPDATE app.plan_decisions SET {column} = ? WHERE id = ?",
+                f"UPDATE app.plan_decisions SET {column} = ? WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) ",
                 [datetime.now(), decision_id],
             )
         finally:

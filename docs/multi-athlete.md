@@ -1,0 +1,104 @@
+# Private athletes in one database
+
+Each Clerk subject maps to a login account in `app.users` and one private athlete
+in `app.athletes`. A new account receives empty training data and its own settings.
+The configured owner's verified email can claim the historical athlete (ID 1).
+Subsequent email changes update contact details without changing that mapping.
+Email is retained with its verification timestamp; storing it does not subscribe
+the account to a newsletter or implement an email delivery service.
+
+[Approved Excalidraw diagram](multi-athlete.excalidraw) ·
+[Excalidraw link](https://excalidraw.com/#json=eRirgE5b-k__cxd7rUetg,KgW6uORe5ugr29JEDThaYA)
+
+## Connect an athlete end to end
+
+1. Enable `ARETE_AUTH=clerk`, configure Clerk's public/secret keys and the verified
+   historical owner address in `ARETE_OWNER_EMAIL`. Without authentication the
+   installation remains a single, implicit athlete; it is not a public multi-user mode.
+2. Sign in to Arete. In **Réglages → Connexions**, choose **Connecter Garmin**,
+   enter that athlete's Garmin email/password, and complete MFA if requested.
+3. Choose **Synchroniser**. Imported activities, health data, training plans,
+   strength sessions, goals, analytics, game state and coaching belong to that athlete.
+   Detailed health/range sync controls remain in the System tab.
+4. **Déconnecter Garmin** removes that athlete's session, including any pending
+   login, while retaining imported workouts. It cannot disconnect another athlete.
+
+`GARMIN_EMAIL` and `GARMIN_PASSWORD` are no longer read. Existing saved tokens
+remain with athlete 1; new accounts must connect independently. The current
+integration uses the pinned `garminconnect` library, not Garmin's partner OAuth API.
+Passwords are used for the login call and are not persisted. MFA continuations
+store bounded JSON (128 KiB, at most 128 cookies) in private database rows for
+10 minutes, not live Python objects. Completion consumes the row before calling
+Garmin; an expired/failed completion requires starting the connection again.
+The serialization adapter follows SDK 0.3.17's private MFA fields, so SDK upgrades
+must exercise portal, iOS and widget continuations. This preserves cookies and
+TLS impersonation across workers without storing a password or using pickle.
+
+## Ownership contract
+
+- Authentication, signed OAuth state and the scheduler establish a trusted
+  `athlete_scope`. Request bodies and model arguments cannot choose another owner.
+- `dataio.db.connect()` sets a **connection-local** `arete_athlete_id`. Domain reads
+  use `app.visible_<table>` projections; writes explicitly filter by owner, and
+  inserts get an owner default from that connection. Authenticated connections
+  without a scope see no private rows and cannot insert a default owner.
+- Historical `user_id` columns mean athlete ID. New private columns use
+  `athlete_id`; this avoids renaming existing API fields. Natural keys such as
+  file paths, game settings and push endpoints are unique within an athlete.
+- Domain services validate referenced parents through live private projections.
+  Child projections require a live parent. This is application-enforced isolation,
+  **not DuckDB row-level security or universal composite foreign keys**. The server
+  credential is privileged. New SQL requires both a scope review and cross-account
+  behavior tests; the structural test catches literal raw private-table reads.
+- Sessions, goals and accounts use soft deletion. Account deactivation closes all
+  mapped logins and retains the login email. Explicit document deletion, forgotten
+  facts and disconnected credentials retain their existing physical purge semantics.
+- Files live under the historical root for athlete 1 and `athletes/<id>/` for
+  others. Database file mirrors, Garmin MFA and coach caches are partitioned.
+  Remote Garmin tokens are read from the database for each fresh client so another
+  worker's logout is observed. Requests already running cannot be forcibly revoked.
+- Browser conversations use athlete-specific storage keys; account changes clear
+  API/query caches and remount the app. Private API responses are network-only in
+  the service worker. Switching accounts revokes the old device push channel.
+
+## Migrations and deployment
+
+Migrations **35 and 36** are versioned in the monorepo. They preserve old account
+mappings, map null legacy owners to athlete 1, inherit child ownership from parents,
+and rebuild private tables transactionally to add non-null owners and scoped keys.
+Migration 36 is replayable after a commit interrupted before version recording.
+Missing older migration versions still run. Global IDs and existing data remain.
+
+The rollout requires a maintenance cutover: old application versions read base
+tables without filtering, and cannot safely coexist with newly onboarded athletes.
+Back up the database; stop old Docker/API processes, cron and accessible old
+production deployments; migrate and start only this version; verify the original
+account and a second empty account before reopening access. Restore the backup
+and old application together if rollback is needed. Do not run the old application
+against a migrated database containing multiple athletes.
+
+**This change has only local validation.** No production migration is applied.
+A preview with `VERCEL_ENV=preview` and `ARETE_DB=md:arete` refuses database access
+before connecting, including initialization. Configure a separate preview database
+and token/environment first. Verify MotherDuck migration and concurrent cursor
+behavior there before production rollout. Do not label a PR `preview` until that
+configuration is ready. Production uses the repository's manual deployment workflow.
+
+The scheduler claims at most five athletes per dispatch, stops starting work after
+240 seconds and uses per-athlete daily completion markers. An operation already
+started can exceed that dispatch deadline; provider/model budgets still apply.
+A failed or interrupted job retains its lease: it is never automatically replayed
+just because the lease timestamp passed. Inspect external side effects before
+clearing `sync_lease_until` for that athlete. A five-minute Vercel cron drains
+remaining work and requires a plan supporting sub-daily cron; an always-on Docker
+scheduler uses its existing five-minute tick. No queue infrastructure is introduced.
+
+## Local validation
+
+`make check` covers static checks, backend/frontend tests and the production build.
+`npm --prefix frontend run test:browser` covers browser workflows. Tests mock
+external Garmin/Clerk calls and use temporary local databases. In particular,
+`test_multi_athlete.py` exercises two independent HTTP logins, MFA across workers,
+Garmin import/disconnect, shared storage, files, documents, coach memory and jobs.
+The browser connection test covers the visible form → MFA → sync → logout flow.
+A real Garmin login and a dedicated MotherDuck preview remain rollout checks.

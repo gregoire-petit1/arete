@@ -73,7 +73,7 @@ class CalendarRepository:
                     )
                     # Serialize decisions/settings across workers through an MVCC row write.
                     con.execute(
-                        "UPDATE app.calendar_connections SET revision = revision WHERE connection_key = ?",
+                        "UPDATE app.calendar_connections SET revision = revision WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (connection_key = ?) ",
                         [self.key],
                     )
                     yield con
@@ -89,7 +89,7 @@ class CalendarRepository:
     def state(self) -> dict:
         with db_connection() as con:
             row = con.execute(
-                "SELECT enabled, revision, selection FROM app.calendar_connections WHERE connection_key = ?",
+                "SELECT enabled, revision, selection FROM app.visible_calendar_connections WHERE connection_key = ?",
                 [self.key],
             ).fetchone()
         return {
@@ -106,7 +106,7 @@ class CalendarRepository:
         with self.transaction() as con:
             if expected_revision is not None:
                 row = con.execute(
-                    "SELECT revision FROM app.calendar_connections WHERE connection_key = ?",
+                    "SELECT revision FROM app.visible_calendar_connections WHERE connection_key = ?",
                     [self.key],
                 ).fetchone()
                 if row[0] != expected_revision:
@@ -114,11 +114,11 @@ class CalendarRepository:
                         "Connexion modifiée pendant l’opération. Recommence.", 409
                     )
             con.execute(
-                "UPDATE app.calendar_connections SET enabled = ?, selection = ?, revision = revision + 1, consent_hash = NULL, consent_expires = NULL WHERE connection_key = ?",
+                "UPDATE app.calendar_connections SET enabled = ?, selection = ?, revision = revision + 1, consent_hash = NULL, consent_expires = NULL WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (connection_key = ?) ",
                 [enabled, json.dumps(selection), self.key],
             )
             con.execute(
-                "UPDATE app.calendar_actions SET status = 'invalidated', updated = ? WHERE connection_key = ? AND status = 'pending'",
+                "UPDATE app.calendar_actions SET status = 'invalidated', updated = ? WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (connection_key = ? AND status = 'pending') ",
                 [now(), self.key],
             )
 
@@ -129,7 +129,7 @@ class CalendarRepository:
             )
         with self.transaction() as con:
             state = con.execute(
-                "SELECT enabled, revision FROM app.calendar_connections WHERE connection_key = ?",
+                "SELECT enabled, revision FROM app.visible_calendar_connections WHERE connection_key = ?",
                 [self.key],
             ).fetchone()
             if not state or not state[0] or state[1] != revision:
@@ -138,14 +138,14 @@ class CalendarRepository:
                     409,
                 )
             count = con.execute(
-                "SELECT COUNT(*) FROM app.calendar_actions WHERE connection_key = ? AND status = 'pending' AND expires > ?",
+                "SELECT COUNT(*) FROM app.visible_calendar_actions WHERE connection_key = ? AND status = 'pending' AND expires > ?",
                 [self.key, now()],
             ).fetchone()[0]
             if count >= MAX_PENDING_ACTIONS:
                 raise CalendarError("Trop de propositions Calendar en attente.", 429)
             # Keep a bounded time horizon for sensitive event snapshots.
             con.execute(
-                "DELETE FROM app.calendar_actions WHERE connection_key = ? AND updated < ?",
+                "DELETE FROM app.calendar_actions WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (connection_key = ? AND updated < ?) ",
                 [self.key, now() - timedelta(days=30).total_seconds()],
             )
             con.execute(
@@ -164,7 +164,7 @@ class CalendarRepository:
     def get(self, action_id: str) -> dict:
         with db_connection() as con:
             row = con.execute(
-                "SELECT id, thread_id, payload, status, expires, updated, result, revision FROM app.calendar_actions WHERE id = ? AND connection_key = ?",
+                "SELECT id, thread_id, payload, status, expires, updated, result, revision FROM app.visible_calendar_actions WHERE id = ? AND connection_key = ?",
                 [action_id, self.key],
             ).fetchone()
         if row is None:
@@ -188,9 +188,8 @@ class CalendarRepository:
         with self.transaction() as con:
             row = con.execute(
                 """UPDATE app.calendar_actions SET status = ?, updated = ?
-                WHERE id = ? AND connection_key = ? AND status = 'pending' AND expires > ?
-                AND revision = (SELECT revision FROM app.calendar_connections WHERE connection_key = ? AND enabled)
-                RETURNING id""",
+                WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id = ? AND connection_key = ? AND status = 'pending' AND expires > ?
+                AND revision = (SELECT revision FROM app.visible_calendar_connections WHERE connection_key = ? AND enabled)) RETURNING id""",
                 [
                     "executing" if decision == "approve" else "rejected",
                     now(),
@@ -205,7 +204,7 @@ class CalendarRepository:
     def finish(self, action_id: str, status: str, result: dict) -> None:
         with db_connection() as con:
             con.execute(
-                "UPDATE app.calendar_actions SET status = ?, result = ?, updated = ? WHERE id = ? AND connection_key = ? AND status IN ('executing', 'uncertain')",
+                "UPDATE app.calendar_actions SET status = ?, result = ?, updated = ? WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id = ? AND connection_key = ? AND status IN ('executing', 'uncertain')) ",
                 [status, json.dumps(result), now(), action_id, self.key],
             )
 
@@ -223,11 +222,11 @@ class CalendarRepository:
     def plan_state(self) -> dict:
         with db_connection() as con:
             row = con.execute(
-                "SELECT enabled, selection, coalesce(plan_sync, FALSE), plan_calendar, plan_synced_at, plan_error FROM app.calendar_connections WHERE connection_key = ?",
+                "SELECT enabled, selection, coalesce(plan_sync, FALSE), plan_calendar, plan_synced_at, plan_error FROM app.visible_calendar_connections WHERE connection_key = ?",
                 [self.key],
             ).fetchone()
             (events,) = con.execute(
-                "SELECT count(*) FROM app.planned_sessions WHERE starts_with(google_event_id, ?)",
+                "SELECT count(*) FROM app.visible_planned_sessions WHERE starts_with(google_event_id, ?)",
                 [self.event_prefix()],
             ).fetchone() or (0,)
         return {
@@ -252,18 +251,18 @@ class CalendarRepository:
         with self.transaction() as con:
             if not enabled:
                 con.execute(
-                    "UPDATE app.calendar_connections SET plan_sync = FALSE WHERE connection_key = ?",
+                    "UPDATE app.calendar_connections SET plan_sync = FALSE WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (connection_key = ?) ",
                     [self.key],
                 )
                 return
             assert calendar_id and clerk_user_id, "Plan sync needs a target and account"
             # One plan, one follower: the events stored on sessions belong to it.
             others = con.execute(
-                "SELECT count(*) FROM app.calendar_connections WHERE plan_sync AND connection_key <> ?",
+                "SELECT count(*) FROM app.visible_calendar_connections WHERE plan_sync AND connection_key <> ?",
                 [self.key],
             ).fetchone()[0]
             foreign = con.execute(
-                "SELECT count(*) FROM app.planned_sessions WHERE google_event_id IS NOT NULL AND NOT starts_with(google_event_id, ?)",
+                "SELECT count(*) FROM app.visible_planned_sessions WHERE google_event_id IS NOT NULL AND NOT starts_with(google_event_id, ?)",
                 [self.event_prefix()],
             ).fetchone()[0]
             if others or foreign:
@@ -272,7 +271,7 @@ class CalendarRepository:
                     409,
                 )
             con.execute(
-                "UPDATE app.calendar_connections SET plan_sync = TRUE, plan_calendar = ?, clerk_user_id = ?, plan_error = NULL WHERE connection_key = ?",
+                "UPDATE app.calendar_connections SET plan_sync = TRUE, plan_calendar = ?, clerk_user_id = ?, plan_error = NULL WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (connection_key = ?) ",
                 [calendar_id, clerk_user_id, self.key],
             )
 
@@ -281,7 +280,7 @@ class CalendarRepository:
         """(connection key, Clerk user id) of every connection following the plan."""
         with db_connection() as con:
             rows = con.execute(
-                "SELECT connection_key, clerk_user_id FROM app.calendar_connections WHERE enabled AND plan_sync AND clerk_user_id IS NOT NULL"
+                "SELECT connection_key, clerk_user_id FROM app.visible_calendar_connections WHERE enabled AND plan_sync AND clerk_user_id IS NOT NULL"
             ).fetchall()
         return [(row[0], row[1]) for row in rows]
 
@@ -294,11 +293,11 @@ class CalendarRepository:
         try:
             with db_connection() as con:
                 con.execute(
-                    "UPDATE app.calendar_connections SET plan_requested = TRUE WHERE connection_key = ?",
+                    "UPDATE app.calendar_connections SET plan_requested = TRUE WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (connection_key = ?) ",
                     [self.key],
                 )
                 row = con.execute(
-                    "UPDATE app.calendar_connections SET plan_lease = ? WHERE connection_key = ? AND coalesce(plan_lease, 0) < ? RETURNING 1",
+                    "UPDATE app.calendar_connections SET plan_lease = ? WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (connection_key = ? AND coalesce(plan_lease, 0) < ?) RETURNING 1",
                     [now() + seconds, self.key, now()],
                 ).fetchone()
         except duckdb.TransactionException:
@@ -308,7 +307,7 @@ class CalendarRepository:
     def begin_plan_pass(self) -> None:
         with db_connection() as con:
             con.execute(
-                "UPDATE app.calendar_connections SET plan_requested = FALSE WHERE connection_key = ?",
+                "UPDATE app.calendar_connections SET plan_requested = FALSE WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (connection_key = ?) ",
                 [self.key],
             )
 
@@ -316,7 +315,7 @@ class CalendarRepository:
         """Record the outcome and free the lease; False when a pass is owed."""
         with db_connection() as con:
             row = con.execute(
-                "UPDATE app.calendar_connections SET plan_lease = NULL, plan_synced_at = ?, plan_error = ? WHERE connection_key = ?"
+                "UPDATE app.calendar_connections SET plan_lease = NULL, plan_synced_at = ?, plan_error = ? WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (connection_key = ?) "
                 + ("" if force else " AND NOT coalesce(plan_requested, FALSE)")
                 + " RETURNING 1",
                 [now(), error, self.key],
@@ -328,7 +327,7 @@ class CalendarRepository:
         """The athlete's timezone setting, which dates the plan's events."""
         with db_connection() as con:
             row = con.execute(
-                "SELECT timezone FROM app.user_settings WHERE user_id = 1"
+                "SELECT timezone FROM app.visible_user_settings WHERE user_id = getvariable('arete_athlete_id')"
             ).fetchone()
         return row[0] if row and row[0] else "Europe/Paris"
 
@@ -338,7 +337,7 @@ class CalendarRepository:
         ``recent``: older ones simply keep theirs)."""
         with db_connection() as con:
             rows = con.execute(
-                f"""SELECT {PLAN_SESSION_COLUMNS} FROM app.planned_sessions
+                f"""SELECT {PLAN_SESSION_COLUMNS} FROM app.visible_planned_sessions
                 WHERE (date BETWEEN ? AND ? AND coalesce(status, 'pending') IN ('pending', 'modified'))
                 OR (starts_with(google_event_id, ?) AND (coalesce(status, 'pending') <> 'completed' OR date >= ?))
                 ORDER BY date, id""",
@@ -351,7 +350,7 @@ class CalendarRepository:
             return {}
         with db_connection() as con:
             rows = con.execute(
-                "SELECT id, coalesce(status, 'pending') FROM app.planned_sessions WHERE list_contains(?, id)",
+                "SELECT id, coalesce(status, 'pending') FROM app.visible_planned_sessions WHERE list_contains(?, id)",
                 [ids],
             ).fetchall()
         return {row[0]: row[1] for row in rows}
@@ -360,7 +359,7 @@ class CalendarRepository:
         """(session id, event id, calendar id) of every event still recorded."""
         with db_connection() as con:
             rows = con.execute(
-                "SELECT id, google_event_id, google_calendar_id FROM app.planned_sessions WHERE starts_with(google_event_id, ?) ORDER BY date, id",
+                "SELECT id, google_event_id, google_calendar_id FROM app.visible_planned_sessions WHERE starts_with(google_event_id, ?) ORDER BY date, id",
                 [self.event_prefix()],
             ).fetchall()
         return [(row[0], row[1], row[2]) for row in rows]
@@ -376,6 +375,6 @@ class CalendarRepository:
         """What Google holds for a session; all ``None`` forgets the event."""
         with db_connection() as con:
             con.execute(
-                "UPDATE app.planned_sessions SET google_calendar_id = ?, google_event_id = ?, google_event_etag = ?, google_event_hash = ? WHERE id = ?",
+                "UPDATE app.planned_sessions SET google_calendar_id = ?, google_event_id = ?, google_event_etag = ?, google_event_hash = ? WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) ",
                 [calendar_id, event_id, etag, digest, session_id],
             )

@@ -40,6 +40,6 @@ jobs:
             "$PRODUCTION_URL/api/health" | tee -a "$GITHUB_STEP_SUMMARY"
       # The live deployment and the previous one, for an instant rollback.
       - name: Keep the two newest production deployments
-        run: scripts/ci/prune_deployments.sh 2 --environment production
+        run: scripts/ci/prune_deployments.sh 2 target=production
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

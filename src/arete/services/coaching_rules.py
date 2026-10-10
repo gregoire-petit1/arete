@@ -22,6 +22,7 @@ from arete.features.workload import compute_workload_metrics
 from arete.garmin.repository import GarminRepository
 from arete.services.activity_detail import analysis_lines
 from arete.services.analytics import MODEL_EXCLUDED_SOURCES
+from arete.services.athlete_scope import resolve_athlete_id
 from arete.services.coaching_repository import SessionFeedbackRepository
 from arete.services.session_feedback import (
     SessionEvidence,
@@ -159,7 +160,7 @@ def rule_facts(target_date: date | None = None) -> RuleFacts:
     except Exception:
         logger.warning("Failed to compute fitness metrics for tip", exc_info=True)
 
-    settings = get_user_settings(user_id=1) or {}
+    settings = get_user_settings(user_id=resolve_athlete_id()) or {}
     return RuleFacts(
         acwr=acwr,
         tsb=tsb,

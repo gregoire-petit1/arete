@@ -51,7 +51,7 @@ class Config:
         return Path(self.db_target)
 
     @property
-    def data_dir(self) -> Path:
+    def storage_root(self) -> Path:
         """Where everything that is not the database is written.
 
         Beside the database file locally. On a remote database the process may
@@ -66,9 +66,21 @@ class Config:
         return self.db_path.parent
 
     @property
+    def data_dir(self) -> Path:
+        from arete.services.athlete_scope import current_athlete_id
+
+        athlete_id = current_athlete_id()
+        root = self.storage_root
+        return root if athlete_id == 1 else root / "athletes" / str(athlete_id)
+
+    @property
     def garmin_tokens_dir(self) -> Path:
         explicit = _env("ARETE_GARMIN_TOKENS_DIR")
-        return Path(explicit) if explicit else self.data_dir / "garmin_tokens"
+        from arete.services.athlete_scope import current_athlete_id
+
+        if explicit and current_athlete_id() == 1:
+            return Path(explicit)
+        return self.data_dir / "garmin_tokens"
 
     @property
     def fit_dir(self) -> Path:
@@ -166,15 +178,6 @@ class Config:
     @property
     def stt_max_audio_mb(self) -> int:
         return int(_env("STT_MAX_AUDIO_MB", "10") or 10)
-
-    # --- Garmin ------------------------------------------------------------
-    @property
-    def garmin_email(self) -> str | None:
-        return _env("GARMIN_EMAIL")
-
-    @property
-    def garmin_password(self) -> str | None:
-        return _env("GARMIN_PASSWORD")
 
     # --- Strava ------------------------------------------------------------
     @property

@@ -4,7 +4,7 @@ DDL = """
 CREATE TABLE IF NOT EXISTS app.document_quota (
     id INTEGER PRIMARY KEY, used_bytes BIGINT NOT NULL
 );
-INSERT INTO app.document_quota SELECT 1, 0 WHERE NOT EXISTS
+INSERT INTO app.document_quota (id, used_bytes) SELECT 1, 0 WHERE NOT EXISTS
     (SELECT 1 FROM app.document_quota WHERE id = 1);
 CREATE TABLE IF NOT EXISTS app.coach_documents (
     id VARCHAR PRIMARY KEY, thread_id VARCHAR NOT NULL, name VARCHAR NOT NULL,

@@ -27,6 +27,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from arete.config import config
 from arete.dataio.db import connect
+from arete.services.athlete_scope import current_athlete_id, database_athlete_id
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +49,9 @@ CREATE TABLE IF NOT EXISTS app.files (
 """
 
 #: Digest of each file as last read from or written to the database.
-_known: dict[str, str] = {}
-_hydrated = False
+MAX_MIRRORED_ATHLETES = 256
+_known: dict[int, dict[str, str]] = {}
+_hydrated: set[int] = set()
 _lock = threading.Lock()
 
 
@@ -69,22 +71,26 @@ def _local_files(root: Path) -> Iterator[tuple[str, Path]]:
 
 def hydrate() -> int:
     """Write the stored files onto disk, once per process. Returns the count."""
-    global _hydrated
     with _lock:
-        if _hydrated:
+        athlete_id = current_athlete_id()
+        if athlete_id in _hydrated:
             return 0
+        athlete_id = current_athlete_id()
+        if athlete_id not in _known and len(_known) >= MAX_MIRRORED_ATHLETES:
+            raise RuntimeError("Mirror athlete capacity exceeded")
+        known = _known.setdefault(athlete_id, {})
         root = config.data_dir
         with closing(connect()) as con:
             con.execute(DDL)
             rows = con.execute(
-                f"SELECT path, content FROM app.files WHERE {_MIRRORED_PREDICATE}"
+                f"SELECT path, content FROM app.visible_files WHERE {_MIRRORED_PREDICATE}"
             ).fetchall()
         for relative, content in rows:
             target = root / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(content)
-            _known[relative] = _digest(content)
-        _hydrated = True
+            known[relative] = _digest(content)
+        _hydrated.add(athlete_id)
         logger.info("Hydrated %d files from the database", len(rows))
         return len(rows)
 
@@ -92,15 +98,19 @@ def hydrate() -> int:
 def flush() -> int:
     """Store the files this process created, changed or deleted. Returns the count."""
     with _lock:
+        athlete_id = current_athlete_id()
+        if athlete_id not in _known and len(_known) >= MAX_MIRRORED_ATHLETES:
+            raise RuntimeError("Mirror athlete capacity exceeded")
+        known = _known.setdefault(athlete_id, {})
         root = config.data_dir
         changed: list[tuple[str, bytes]] = []
         present: set[str] = set()
         for relative, path in _local_files(root):
             present.add(relative)
             data = path.read_bytes()
-            if _known.get(relative) != _digest(data):
+            if known.get(relative) != _digest(data):
                 changed.append((relative, data))
-        deleted = [relative for relative in _known if relative not in present]
+        deleted = [relative for relative in known if relative not in present]
         if not changed and not deleted:
             return 0
         with closing(connect()) as con:
@@ -112,20 +122,22 @@ def flush() -> int:
                     [relative, data],
                 )
             for relative in deleted:
-                con.execute("DELETE FROM app.files WHERE path = ?", [relative])
+                con.execute(
+                    "DELETE FROM app.files WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (path = ?) ",
+                    [relative],
+                )
         for relative, data in changed:
-            _known[relative] = _digest(data)
+            known[relative] = _digest(data)
         for relative in deleted:
-            del _known[relative]
+            del known[relative]
         return len(changed) + len(deleted)
 
 
 def reset() -> None:
     """Forget what this process knows (tests)."""
-    global _hydrated
     with _lock:
         _known.clear()
-        _hydrated = False
+        _hydrated.clear()
 
 
 class MirrorMiddleware:
@@ -144,13 +156,18 @@ class MirrorMiddleware:
         if scope.get("path") == "/slack/events":
             await self.app(scope, receive, send)
             return
-        if scope["type"] != "http" or not config.is_remote_db:
+        if (
+            scope["type"] != "http"
+            or not config.is_remote_db
+            or database_athlete_id() is None
+        ):
             await self.app(scope, receive, send)
             return
         try:
             await asyncio.to_thread(hydrate)
         except Exception:
             logger.exception("Could not restore the data directory")
+            raise
         try:
             await self.app(scope, receive, send)
         finally:

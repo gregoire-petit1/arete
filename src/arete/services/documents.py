@@ -46,7 +46,9 @@ class DocumentError(ValueError):
 def document_transaction():
     """Serialize document lifecycle changes across processes, including deletion."""
     with db_transaction() as con:
-        con.execute("UPDATE app.document_quota SET used_bytes=used_bytes WHERE id=1")
+        con.execute(
+            "UPDATE app.document_quota SET used_bytes=used_bytes WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id=1) "
+        )
         yield con
 
 
@@ -71,7 +73,7 @@ def _uuid(value: str) -> str:
 
 def _row(con, thread_id: str, document_id: str):
     row = con.execute(
-        "SELECT id, name, size, sha256, status, extraction FROM app.coach_documents WHERE id=? AND thread_id=?",
+        "SELECT id, name, size, sha256, status, extraction FROM app.visible_coach_documents WHERE id=? AND thread_id=?",
         [_uuid(document_id), _uuid(thread_id)],
     ).fetchone()
     if row is None:
@@ -86,7 +88,7 @@ def _metadata(row) -> dict:
 def list_documents(thread_id: str) -> list[dict]:
     with db_connection() as con:
         rows = con.execute(
-            "SELECT id, name, size, sha256, status FROM app.coach_documents WHERE thread_id=? ORDER BY created_at, id LIMIT ?",
+            "SELECT id, name, size, sha256, status FROM app.visible_coach_documents WHERE thread_id=? ORDER BY created_at, id LIMIT ?",
             [_uuid(thread_id), MAX_THREAD_FILES + 1],
         ).fetchall()
     assert len(rows) <= MAX_THREAD_FILES
@@ -113,7 +115,7 @@ def begin_upload(thread_id: str, name: str, size: int, sha256: str) -> dict:
     with document_transaction() as con:
         # Updating one quota row serializes reservations across server instances.
         reserved = con.execute(
-            "UPDATE app.document_quota SET used_bytes=used_bytes+? WHERE id=1 AND used_bytes+?<=? RETURNING id",
+            "UPDATE app.document_quota SET used_bytes=used_bytes+? WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id=1 AND used_bytes+?<=?) RETURNING id",
             [size, size, MAX_TOTAL_BYTES],
         ).fetchone()
         if not reserved:
@@ -121,7 +123,7 @@ def begin_upload(thread_id: str, name: str, size: int, sha256: str) -> dict:
                 "Stockage des documents plein (1 Gio). Supprime des fichiers."
             )
         totals = con.execute(
-            "SELECT count(*), coalesce(sum(size),0) FROM app.coach_documents WHERE thread_id=?",
+            "SELECT count(*), coalesce(sum(size),0) FROM app.visible_coach_documents WHERE thread_id=?",
             [thread_id],
         ).fetchone()
         assert totals is not None
@@ -153,7 +155,7 @@ def put_chunk(thread_id: str, document_id: str, position: int, content: bytes) -
         if len(content) != min(CHUNK_BYTES, size - position * CHUNK_BYTES):
             raise DocumentError("Taille du bloc incorrecte.")
         old = con.execute(
-            "SELECT content FROM app.coach_document_chunks WHERE document_id=? AND position=?",
+            "SELECT content FROM app.visible_coach_document_chunks WHERE document_id=? AND position=?",
             [document_id, position],
         ).fetchone()
         if old:
@@ -161,7 +163,7 @@ def put_chunk(thread_id: str, document_id: str, position: int, content: bytes) -
                 raise DocumentError("Ce bloc existe avec un contenu différent.")
             return
         con.execute(
-            "INSERT INTO app.coach_document_chunks VALUES (?,?,?)",
+            "INSERT INTO app.coach_document_chunks (document_id,position,content) VALUES (?,?,?)",
             [document_id, position, content],
         )
 
@@ -170,7 +172,7 @@ def original(thread_id: str, document_id: str) -> tuple[str, bytes]:
     with db_connection() as con:
         row = _row(con, thread_id, document_id)
         chunks = con.execute(
-            "SELECT position,content FROM app.coach_document_chunks WHERE document_id=? ORDER BY position LIMIT 8",
+            "SELECT position,content FROM app.visible_coach_document_chunks WHERE document_id=? ORDER BY position LIMIT 8",
             [document_id],
         ).fetchall()
     expected = (row[2] + CHUNK_BYTES - 1) // CHUNK_BYTES
@@ -441,7 +443,7 @@ def finalize(
         if row[4] == "ready":
             return _metadata(row)
         totals = con.execute(
-            "SELECT coalesce(sum(octet_length(encode(CAST(extraction AS VARCHAR)))),0) FROM app.coach_documents WHERE thread_id=?",
+            "SELECT coalesce(sum(octet_length(encode(CAST(extraction AS VARCHAR)))),0) FROM app.visible_coach_documents WHERE thread_id=?",
             [thread_id],
         ).fetchone()
         assert totals is not None
@@ -449,7 +451,7 @@ def finalize(
         if used + len(encoded.encode()) > MAX_THREAD_EXTRACT_BYTES:
             raise DocumentError("Les extractions de ce fil dépassent 8 Mio.")
         con.execute(
-            "UPDATE app.coach_documents SET status='ready', extraction=? WHERE id=?",
+            "UPDATE app.coach_documents SET status='ready', extraction=? WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id=?) ",
             [encoded, document_id],
         )
     return {**_metadata(row), "status": "ready"}
@@ -468,7 +470,7 @@ def filesystem(
 ) -> dict[str, str]:
     with db_connection() as con:
         rows = con.execute(
-            "SELECT id,name,extraction FROM app.coach_documents WHERE thread_id=? AND status='ready' ORDER BY created_at LIMIT ?",
+            "SELECT id,name,extraction FROM app.visible_coach_documents WHERE thread_id=? AND status='ready' ORDER BY created_at LIMIT ?",
             [_uuid(thread_id), MAX_THREAD_FILES],
         ).fetchall()
     if document_ids is not None:
@@ -499,24 +501,32 @@ def filesystem(
 
 def delete_documents(thread_id: str, document_id: str | None = None) -> None:
     with document_transaction() as con:
-        con.execute("UPDATE app.document_quota SET used_bytes=used_bytes WHERE id=1")
+        con.execute(
+            "UPDATE app.document_quota SET used_bytes=used_bytes WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id=1) "
+        )
         where = "thread_id=?" + (" AND id=?" if document_id else "")
         params = [_uuid(thread_id)] + ([_uuid(document_id)] if document_id else [])
         rows = con.execute(
-            f"SELECT id,size FROM app.coach_documents WHERE {where}", params
+            f"SELECT id,size FROM app.visible_coach_documents WHERE {where}", params
         ).fetchall()
         for identifier, _ in rows:
             con.execute(
-                "DELETE FROM app.coach_document_chunks WHERE document_id=?",
+                "DELETE FROM app.coach_document_chunks WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (document_id=?) ",
                 [identifier],
             )
-        con.execute(f"DELETE FROM app.coach_documents WHERE {where}", params)
         con.execute(
-            "UPDATE app.document_quota SET used_bytes=used_bytes-? WHERE id=1",
+            f"DELETE FROM app.coach_documents WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND ({where}) ",
+            params,
+        )
+        con.execute(
+            "UPDATE app.document_quota SET used_bytes=used_bytes-? WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id=1) ",
             [sum(r[1] for r in rows)],
         )
         if document_id is None:
-            con.execute("DELETE FROM app.coach_imports WHERE thread_id=?", [thread_id])
+            con.execute(
+                "DELETE FROM app.coach_imports WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (thread_id=?) ",
+                [thread_id],
+            )
 
 
 def manifest(thread_id: str, document_ids: tuple[str, ...] | None = None) -> str:

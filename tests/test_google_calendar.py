@@ -521,10 +521,12 @@ def test_configured_calendar_is_preloaded_only_for_chat(calendar, monkeypatch):
     from unittest.mock import patch
 
     from arete import coaching
+    from arete.services.athlete_scope import athlete_scope
 
     monkeypatch.setenv("ARETE_AUTH", "clerk")
     monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test_fake")
     with (
+        athlete_scope(1),
         patch.object(coaching, "get_calendar_service") as factory,
         patch.object(coaching, "build_chat_model"),
         patch.object(coaching, "build_agent") as build,

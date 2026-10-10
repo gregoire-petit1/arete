@@ -14,6 +14,7 @@ from datetime import date, datetime
 from typing import Any
 
 from arete.dataio.settings import get_user_settings, upsert_user_settings
+from arete.services.athlete_scope import resolve_athlete_id
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +45,12 @@ def parse_threshold(payload: dict[str, Any] | None) -> ThresholdReading | None:
     return ThresholdReading(heart_rate, pace, measured_on)
 
 
-def refresh_threshold(client: Any, user_id: int = 1) -> dict[str, Any]:
+def refresh_threshold(client: Any, user_id: int | None = None) -> dict[str, Any]:
     """Store Garmin's threshold when it is newer than the one on file.
 
     Returns what happened, so a sync can log it and the UI can show it.
     """
+    user_id = resolve_athlete_id(user_id)
     settings = get_user_settings(user_id) or {}
     stored_on = _as_date(settings.get("lthr_measured_on"))
     stored_hr = settings.get("lthr")

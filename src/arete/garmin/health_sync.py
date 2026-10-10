@@ -23,6 +23,7 @@ from typing import Any
 
 from arete.dataio.db import connect
 from arete.garmin.client import GarminAuthError, GarminClient
+from arete.services.athlete_scope import resolve_athlete_id
 
 logger = logging.getLogger(__name__)
 
@@ -257,7 +258,11 @@ def _upsert_daily_metrics(metrics: dict[str, Any]) -> None:
         placeholders = ", ".join(["?"] * (len(cols) + 2))  # +2 for user_id, date
         col_list = ", ".join(["user_id", "date", *cols])
         update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols)
-        values = [1, metrics["date"], *[metrics.get(c) for c in cols]]
+        values = [
+            resolve_athlete_id(),
+            metrics["date"],
+            *[metrics.get(c) for c in cols],
+        ]
         con.execute(
             f"""
             INSERT INTO app.daily_metrics ({col_list})

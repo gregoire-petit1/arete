@@ -144,12 +144,17 @@ export function restoreThreads(
     throw new Error('Conversation active introuvable.');
   return { version: 1, activeId: data.activeId, threads };
 }
-export function loadThreads(): LoadedThreads {
+function storageKey(athleteId: number): string {
+  if (!Number.isSafeInteger(athleteId) || athleteId < 1) throw new Error('Athlète absent.');
+  return athleteId === 1 ? THREADS_KEY : `${THREADS_KEY}.athlete.${athleteId}`;
+}
+
+export function loadThreads(athleteId = 1): LoadedThreads {
   try {
     return {
       store: restoreThreads(
-        localStorage.getItem(THREADS_KEY),
-        localStorage.getItem(LEGACY_KEY)
+        localStorage.getItem(storageKey(athleteId)),
+        athleteId === 1 ? localStorage.getItem(LEGACY_KEY) : null
       ),
       error: null,
     };
@@ -162,14 +167,14 @@ export function loadThreads(): LoadedThreads {
     };
   }
 }
-export function saveThreads(store: ThreadStore): string | null {
+export function saveThreads(store: ThreadStore, athleteId = 1): string | null {
   try {
     const raw = JSON.stringify(store);
     if (raw.length > MAX_STORAGE_CHARS)
       throw new Error('Historique trop volumineux pour la sauvegarde locale.');
-    localStorage.setItem(THREADS_KEY, raw);
+    localStorage.setItem(storageKey(athleteId), raw);
     // Retire the legacy copy only after the new store was successfully written.
-    localStorage.removeItem(LEGACY_KEY);
+    if (athleteId === 1) localStorage.removeItem(LEGACY_KEY);
     return null;
   } catch (error) {
     console.warn('Sauvegarde des conversations impossible.', error);

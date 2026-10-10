@@ -32,7 +32,7 @@ class SyncRequest(BaseModel):
     start_date: date | None = None
     end_date: date | None = None
     download_fit: bool = True
-    max_activities: int = 50
+    max_activities: int = Field(50, ge=1, le=200)
 
 
 class SyncResponse(BaseModel):
@@ -89,10 +89,9 @@ def garmin_login(request: GarminLoginRequest | None = None):
     """Authenticate with Garmin Connect.
 
     MFA flow: first call with email/password may return needs_mfa=True;
-    call again with mfa_code to complete. Credentials default to
-    GARMIN_EMAIL / GARMIN_PASSWORD. Tokens are stored on disk for later requests.
+    call again with mfa_code to complete. Only session tokens are retained,
+    under the authenticated athlete.
     """
-    from arete.config import config
     from arete.garmin.client import GarminAuthError, GarminClient
 
     client = GarminClient()
@@ -103,29 +102,29 @@ def garmin_login(request: GarminLoginRequest | None = None):
         except GarminAuthError as e:
             raise HTTPException(status_code=400, detail=str(e)) from e
         except Exception as e:
-            logger.error(f"MFA verification failed: {e}")
+            logger.warning("Garmin MFA failed (%s)", type(e).__name__)
             raise HTTPException(
-                status_code=401, detail=f"MFA verification failed: {e}"
+                status_code=400, detail="Code Garmin refusé. Recommence la connexion."
             ) from e
         return GarminLoginResponse(
             success=True, message="Successfully authenticated with Garmin Connect"
         )
 
-    email = (request.email if request else None) or config.garmin_email
-    password = (request.password if request else None) or config.garmin_password
+    email = request.email if request else None
+    password = request.password if request else None
     if not email or not password:
         raise HTTPException(
             status_code=400,
-            detail="Garmin credentials required. Set GARMIN_EMAIL and GARMIN_PASSWORD "
-            "environment variables or pass them directly.",
+            detail="Saisis ton adresse e-mail et ton mot de passe Garmin.",
         )
 
     try:
         status = client.login(email, password)
     except Exception as e:
-        logger.error(f"Garmin login failed: {e}")
+        logger.warning("Garmin login failed (%s)", type(e).__name__)
         raise HTTPException(
-            status_code=401, detail=f"Authentication failed: {e}"
+            status_code=400,
+            detail="Connexion Garmin refusée ou indisponible. Vérifie tes identifiants et réessaie.",
         ) from e
 
     if status == "needs_mfa":
@@ -152,26 +151,17 @@ def garmin_logout():
 def sync_activities(request: SyncRequest):
     """Sync activities from Garmin Connect.
 
-    Requires prior authentication via /sync/login or GARMIN_EMAIL/GARMIN_PASSWORD env vars.
+    Requires this athlete to connect Garmin through /sync/login.
     """
     from arete.garmin.sync import GarminSyncClient
 
     client = GarminSyncClient(repository=_repo)
 
     if not client.is_authenticated():
-        try:
-            if client.login() == "needs_mfa":
-                raise HTTPException(
-                    status_code=401,
-                    detail="Garmin requires an MFA code: log in from Settings first.",
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=401,
-                detail=f"Not authenticated. Login first or set GARMIN_EMAIL/GARMIN_PASSWORD: {e}",
-            ) from e
+        raise HTTPException(
+            status_code=409,
+            detail="Connecte Garmin dans Réglages → Connexions avant de synchroniser.",
+        )
 
     result = client.sync_activities(
         start_date=request.start_date,
@@ -207,7 +197,7 @@ def refresh_threshold_from_garmin():
     client = GarminSyncClient(repository=_repo)
     if not client.is_authenticated():
         raise HTTPException(
-            status_code=401, detail="Not authenticated with Garmin Connect"
+            status_code=409, detail="Connecte Garmin dans Réglages → Connexions."
         )
     return client.refresh_threshold()
 
@@ -236,6 +226,6 @@ def reprocess_synced_activities():
     client = GarminSyncClient(repository=_repo)
     if not client.is_authenticated():
         raise HTTPException(
-            status_code=401, detail="Not authenticated with Garmin Connect"
+            status_code=409, detail="Connecte Garmin dans Réglages → Connexions."
         )
     return client.reprocess_existing()

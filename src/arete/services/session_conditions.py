@@ -23,6 +23,7 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from arete.dataio.db import db_connection
+from arete.dataio.ownership import require_owned
 from arete.dataio.queries import FOOT_SPORTS, VAM_COLUMNS, sql_in
 from arete.features import terrain as tr
 from arete.garmin.models import ActivitySource, ActualSession
@@ -62,8 +63,10 @@ def _replace(table: str, columns: Sequence[str], session_id: int, values: list) 
     with db_connection() as con:
         con.execute("BEGIN TRANSACTION")
         try:
+            require_owned(con, "actual_sessions", session_id)
             con.execute(
-                f"DELETE FROM app.{table} WHERE actual_session_id = ?", [session_id]
+                f"DELETE FROM app.{table} WHERE athlete_id=getvariable('arete_athlete_id') AND actual_session_id = ?",
+                [session_id],
             )
             con.execute(
                 f"INSERT INTO app.{table} (actual_session_id, {', '.join(columns)}) "
@@ -79,7 +82,7 @@ def _replace(table: str, columns: Sequence[str], session_id: int, values: list) 
 def _select(table: str, columns: Sequence[str], session_id: int) -> tuple | None:
     with db_connection() as con:
         return con.execute(
-            f"SELECT {', '.join(columns)} FROM app.{table} WHERE actual_session_id = ?",
+            f"SELECT {', '.join(columns)} FROM app.visible_{table} WHERE actual_session_id = ?",
             [session_id],
         ).fetchone()
 
@@ -261,9 +264,9 @@ def backfill_terrain(
     assert 0 < limit <= BACKFILL_LIMIT
     repo = repo or GarminRepository()
     pending = f"""
-        FROM app.activity_streams st
-        JOIN app.actual_sessions s ON s.id = st.actual_session_id
-        LEFT JOIN app.activity_terrain t ON t.actual_session_id = s.id
+        FROM app.visible_activity_streams st
+        JOIN app.visible_actual_sessions s ON s.id = st.actual_session_id
+        LEFT JOIN app.visible_activity_terrain t ON t.actual_session_id = s.id
         WHERE s.sport IN ({sql_in(FOOT_SPORTS)})
           AND st.altitude_m IS NOT NULL
           AND (t.actual_session_id IS NULL OR t.model_version < ?)

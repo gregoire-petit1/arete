@@ -7,6 +7,7 @@ import { clearApiCache, endSession, onUnauthorized, setTokenGetter } from '@/lib
 import { AuthStateContext, type AuthState } from './authState';
 import { GateScreen, GateSpinner } from './GateScreen';
 import { SignOutButton } from './SignOutButton';
+import { claimPushDevice } from '@/lib/pushSession';
 
 // Clerk's widgets read the app's CSS tokens (index.css), so they follow the active theme.
 const appearance = {
@@ -79,7 +80,10 @@ function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishab
 
   // Signed out: nothing of a previous account may survive in the API cache.
   useEffect(() => {
-    if (isLoaded && !isSignedIn) void clearApiCache();
+    if (isLoaded && !isSignedIn) {
+      void clearApiCache();
+      void claimPushDevice(null).catch((error: unknown) => console.error(error));
+    }
   }, [isLoaded, isSignedIn]);
 
   // Signed in: every request carries the session token, then the account is looked up.
@@ -87,8 +91,13 @@ function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishab
     if (!isSignedIn) return;
     setTokenGetter(() => getTokenRef.current());
     let cancelled = false;
-    authApi.me().then(
-      (me) => {
+    clearApiCache().then(() => {
+      onSessionEnd?.();
+      return authApi.me();
+    }).then(
+      async (me) => {
+        if (cancelled) return;
+        await claimPushDevice(me.athlete_id);
         if (!cancelled) setAccount({ key, value: { status: 'ready', me } });
       },
       (error: unknown) => {
@@ -97,12 +106,14 @@ function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishab
           setAccount({ key, value: { status: 'error' } });
         }
       }
-    );
+    ).catch(() => {
+      if (!cancelled) setAccount({ key, value: { status: 'error' } });
+    });
     return () => {
       cancelled = true;
       setTokenGetter(null);
     };
-  }, [isSignedIn, key]);
+  }, [isSignedIn, key, onSessionEnd]);
 
   // The server refused the session: end it, so Clerk shows the sign-in page again.
   useEffect(
@@ -141,6 +152,7 @@ function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishab
     () => ({
       enabled: true,
       email: me?.email ?? null,
+      athleteId: me?.athlete_id ?? null,
       isOwner: me?.is_owner ?? false,
       signOut: leave,
       grantGoogleScopes,
@@ -172,7 +184,7 @@ function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishab
     );
   }
   if (current.me.athlete_id === null) return <WaitingPage email={current.me.email} signOut={leave} />;
-  return <AuthStateContext.Provider value={value}>{children}</AuthStateContext.Provider>;
+  return <AuthStateContext.Provider key={key} value={value}>{children}</AuthStateContext.Provider>;
 }
 
 function SignInPage() {

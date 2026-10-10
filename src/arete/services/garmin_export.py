@@ -30,7 +30,7 @@ SCHEDULE = "/workout-service/schedule"
 
 def _get(con, session_id: int) -> dict | None:
     cursor = con.execute(
-        "SELECT * FROM app.garmin_exports WHERE session_id=?", [session_id]
+        "SELECT * FROM app.visible_garmin_exports WHERE session_id=?", [session_id]
     )
     row = cursor.fetchone()
     if not row:
@@ -67,7 +67,7 @@ def _update(session_id: int, operation_id: str, **fields) -> dict:
         changed = con.execute(
             "UPDATE app.garmin_exports SET "
             + ",".join(f"{key}=?" for key in fields)
-            + ",updated_at=current_timestamp WHERE session_id=? AND operation_id=? RETURNING session_id",
+            + ",updated_at=current_timestamp WHERE athlete_id=getvariable('arete_athlete_id') AND deleted_at IS NULL AND session_id=? AND operation_id=? RETURNING session_id",
             [*values, session_id, operation_id],
         ).fetchone()
         if not changed:
@@ -82,7 +82,7 @@ def _update(session_id: int, operation_id: str, **fields) -> dict:
 def statuses() -> list[dict]:
     with db_connection() as con:
         rows = con.execute(
-            "SELECT session_id FROM app.garmin_exports ORDER BY updated_at DESC LIMIT ?",
+            "SELECT session_id FROM app.visible_garmin_exports ORDER BY updated_at DESC LIMIT ?",
             [MAX_STATUS_ROWS + 1],
         ).fetchall()
         if len(rows) > MAX_STATUS_ROWS:
@@ -134,7 +134,7 @@ class Exchange:
         if self.reservation:
             with db_connection() as con:
                 row = con.execute(
-                    "SELECT operation_id,state FROM app.garmin_exports WHERE session_id=?",
+                    "SELECT operation_id,state FROM app.visible_garmin_exports WHERE session_id=?",
                     [self.reservation[0]],
                 ).fetchone()
             if not row or row != (self.reservation[1], "working"):
@@ -310,7 +310,7 @@ def _adopt_legacy(
         return state
     with db_connection() as con:
         row = con.execute(
-            "SELECT garmin_workout_id,garmin_schedule_id FROM app.planned_sessions WHERE id=?",
+            "SELECT garmin_workout_id,garmin_schedule_id FROM app.visible_planned_sessions WHERE id=?",
             [session_id],
         ).fetchone()
     if not row or not any(row):
@@ -350,7 +350,7 @@ def _claim(
     with transaction() as con:
         if revision is not None:
             locked = con.execute(
-                "UPDATE app.planned_sessions SET revision=revision WHERE id=? AND revision=? RETURNING id",
+                "UPDATE app.planned_sessions SET revision=revision WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id=? AND revision=?) RETURNING id",
                 [session_id, revision],
             ).fetchone()
             if not locked:
@@ -379,7 +379,7 @@ def _claim(
             )
         if old:
             con.execute(
-                "UPDATE app.garmin_exports SET state='working',operation_id=?,updated_at=current_timestamp WHERE session_id=?",
+                "UPDATE app.garmin_exports SET state='working',operation_id=?,updated_at=current_timestamp WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (session_id=?) ",
                 [str(uuid4()), session_id],
             )
         else:
@@ -568,7 +568,7 @@ def export(
             writing = False
         with db_connection() as con:
             con.execute(
-                "UPDATE app.planned_sessions SET garmin_workout_id=?,garmin_schedule_id=?,garmin_pushed_at=current_timestamp WHERE id=? AND prescription IS NULL",
+                "UPDATE app.planned_sessions SET garmin_workout_id=?,garmin_schedule_id=?,garmin_pushed_at=current_timestamp WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id=? AND prescription IS NULL) ",
                 [str(workout_id), str(schedule_id), session_id],
             )
         return exchange.update(
@@ -755,7 +755,7 @@ def remove(session_id: int, *, client=None, _skipped: bool = False) -> dict:
             _verify_absent(exchange, f"{WORKOUT}/{workout_id}")
         with db_connection() as con:
             con.execute(
-                "UPDATE app.planned_sessions SET garmin_workout_id=NULL,garmin_schedule_id=NULL,garmin_pushed_at=NULL WHERE id=?",
+                "UPDATE app.planned_sessions SET garmin_workout_id=NULL,garmin_schedule_id=NULL,garmin_pushed_at=NULL WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id=?) ",
                 [session_id],
             )
         return _update(
@@ -786,7 +786,7 @@ def update_session(
 ) -> None:
     with transaction() as con:
         current = con.execute(
-            "SELECT prescription,garmin_workout_id,garmin_schedule_id FROM app.planned_sessions WHERE id=?",
+            "SELECT prescription,garmin_workout_id,garmin_schedule_id FROM app.visible_planned_sessions WHERE id=?",
             [session_id],
         ).fetchone()
         # All writers share the durable reservation, including legacy adoption.
@@ -798,7 +798,7 @@ def update_session(
         if state and state["state"] in {"working", "uncertain", "conflict"}:
             raise DocumentError("Vérifie l’export Garmin avant de modifier la séance.")
         changed = con.execute(
-            "UPDATE app.planned_sessions SET date=?,description=?,prescription=?,revision=revision+1 WHERE id=? AND revision=? RETURNING id",
+            "UPDATE app.planned_sessions SET date=?,description=?,prescription=?,revision=revision+1 WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id=? AND revision=?) RETURNING id",
             [day, description, prescription.model_dump_json(), session_id, revision],
         ).fetchone()
         if not changed:
@@ -806,7 +806,7 @@ def update_session(
                 "La séance a changé ou n’existe plus. Recharge le planning."
             )
         con.execute(
-            "UPDATE app.garmin_exports SET state='dirty',updated_at=current_timestamp WHERE session_id=? AND state<>'removed'",
+            "UPDATE app.garmin_exports SET state='dirty',updated_at=current_timestamp WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (session_id=? AND state<>'removed') ",
             [session_id],
         )
     plan_changes.touch()
