@@ -2,7 +2,7 @@ import { useGamePreference } from '@/lib/gamification';
 import { ChironPortrait } from './ChironPortrait';
 import { MessageAttachments } from './agent/MessageAttachments';
 import { Maximize2, Minimize2 } from 'lucide-react';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { WorkoutSelection } from './WorkoutSelection';
 import {
   ArrowDown,
@@ -45,6 +45,7 @@ const PAGE_LABELS: Record<string, string> = {
   settings: 'Paramètres',
   profile: 'Mon profil',
 };
+const MAX_COMPOSER_HEIGHT_PX = 144;
 /** On a phone, Enter inserts a new line: the keyboard has no Shift to hold. */
 const touchKeyboard = () =>
   typeof window !== 'undefined' &&
@@ -157,6 +158,19 @@ export function AgentSidePanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    if (!rpg || !input) return;
+    // Grow the draft between the inline actions, then scroll at the height limit.
+    const resize = () => {
+      input.style.height = 'auto';
+      input.style.height = `${Math.min(input.scrollHeight, MAX_COMPOSER_HEIGHT_PX)}px`;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, [active.draft, active.id, rpg, open, showHistory, expanded]);
+
   useEffect(() => {
     if (followRef.current)
       scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -217,9 +231,9 @@ export function AgentSidePanel({
         <div className={cn('flex size-9 shrink-0 items-center justify-center', !rpg && 'rounded-xl border border-neon-cyan/15 bg-neon-cyan/5')}>
           {rpg ? <ChironPortrait size={36} /> : <Bot className="size-5 text-neon-cyan" />}
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold">{rpg ? 'Chiron — Coach Arete' : 'Coach Arete'}</h2>
-          <p className="mt-0.5 text-[11px] text-text-muted">{page}</p>
+          {rpg ? <button onClick={() => setShowHistory(true)} aria-label="Changer de conversation" className="mt-0.5 flex max-w-full items-center gap-1 text-[11px] text-text-muted hover:text-text-primary"><span className="truncate">{active.title}</span><ChevronDown className="size-3 shrink-0" /></button> : <p className="mt-0.5 text-[11px] text-text-muted">{page}</p>}
         </div>
         {rpg && <button aria-label={expanded ? 'Réduire la conversation' : 'Agrandir la conversation'} onClick={() => setExpanded(!expanded)} className="ml-auto hidden md:flex size-11 items-center justify-center text-text-muted">{expanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>}
         <button
@@ -301,14 +315,14 @@ export function AgentSidePanel({
         />
       ) : (
         <>
-          <button
+          {!rpg && <button
             onClick={() => setShowHistory(true)}
             className="flex shrink-0 items-center gap-2 border-b border-text-muted/10 px-5 py-2.5 text-left text-xs text-text-secondary hover:bg-shadow/40"
             aria-label="Changer de conversation"
           >
             <span className="min-w-0 flex-1 truncate">{active.title}</span>
             <ChevronDown className="size-3.5 text-text-muted" />
-          </button>
+          </button>}
           {runningId !== null && !streaming && (
             <div
               role="status"
@@ -361,7 +375,7 @@ export function AgentSidePanel({
                       key={prompt}
                       onClick={() => send(prompt)}
                       disabled={busy}
-                      className="block w-full rounded-xl border border-text-muted/15 px-3.5 py-3 text-left text-sm text-text-secondary hover:border-neon-cyan/30 hover:bg-neon-cyan/5"
+                      className={cn('block w-full rounded-xl px-3.5 py-3 text-left text-sm text-text-secondary hover:bg-neon-cyan/5', !rpg && 'border border-text-muted/15 hover:border-neon-cyan/30')}
                     >
                       {prompt}
                     </button>
@@ -440,55 +454,64 @@ export function AgentSidePanel({
             </button>
           )}
           <footer className={cn('shrink-0 px-4 pb-4 pt-3', !rpg && 'border-t border-text-muted/15 bg-abyss')}>
-            {rpg && <DocumentAttachments key={active.id} threadId={active.id} compact selectedIds={active.attachmentIds ?? []} disabled={runningId !== null} ref={attachmentsRef} onBusy={setDocumentsBusy} onDocuments={coach.attachments} />}
-            <div className={cn('flex items-end gap-2 rounded-xl border border-text-muted/20 p-2 focus-within:border-neon-cyan/40', rpg ? 'bg-abyss' : 'bg-void/40')}>
-              <textarea
-                ref={inputRef}
-                aria-label="Message au coach"
-                value={active.draft}
-                onChange={(e) => coach.draft(e.target.value)}
-                onPaste={event => { if (rpg && event.clipboardData.files.length) { event.preventDefault(); if (!busy) attachmentsRef.current?.upload(Array.from(event.clipboardData.files)); } }}
-                rows={2}
-                maxLength={MAX_MESSAGE_CHARS}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === 'Enter' &&
-                    !e.shiftKey &&
-                    !e.nativeEvent.isComposing &&
-                    !touchKeyboard()
-                  ) {
-                    e.preventDefault();
-                    send();
-                  }
-                }}
-                placeholder="Pose ta question…"
-                className="max-h-36 min-w-0 flex-1 resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed outline-none"
-              />
-              {streaming ? (
-                <button
-                  onClick={coach.stop}
-                  className="flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-lg bg-text-muted/10 px-3 hover:bg-text-muted/20"
-                  aria-label="Arrêter la réponse"
-                >
-                  <Square className="size-4" />
-                  {rpg && <span className="text-xs">Arrêter</span>}
-                </button>
-              ) : (
-                <button
-                  onClick={() => send()}
-                  disabled={busy || !active.draft.trim()}
-                  className="rounded-lg bg-neon-cyan/15 p-2.5 text-neon-cyan hover:bg-neon-cyan/25 disabled:opacity-30"
-                  aria-label="Envoyer"
-                >
-                  <Send className="size-4" />
-                </button>
-              )}
+            <div className={cn('relative rounded-xl border border-text-muted/20 p-2 focus-within:border-neon-cyan/40', rpg ? 'bg-abyss' : 'bg-void/40')}>
+              {rpg && <DocumentAttachments key={active.id} threadId={active.id} compact selectedIds={active.attachmentIds ?? []} disabled={runningId !== null} ref={attachmentsRef} onBusy={setDocumentsBusy} onDocuments={coach.attachments} />}
+              <div className={cn('flex items-end', rpg ? 'gap-1' : 'gap-2')}>
+                {rpg && <button
+                  type="button"
+                  disabled={busy}
+                  aria-label="Joindre un fichier"
+                  title="Joindre un fichier · PDF, Excel, images, texte · 20 Mio par fichier"
+                  onClick={() => attachmentsRef.current?.choose()}
+                  className="flex h-8 w-6 shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:text-text-primary focus-visible:outline-2 focus-visible:outline-neon-cyan disabled:opacity-30"
+                ><Plus className="size-4" aria-hidden="true" /></button>}
+                <textarea
+                  ref={inputRef}
+                  aria-label="Message au coach"
+                  value={active.draft}
+                  onChange={(e) => coach.draft(e.target.value)}
+                  onPaste={event => { if (rpg && event.clipboardData.files.length) { event.preventDefault(); if (!busy) attachmentsRef.current?.upload(Array.from(event.clipboardData.files)); } }}
+                  rows={rpg ? 1 : 2}
+                  maxLength={MAX_MESSAGE_CHARS}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === 'Enter' &&
+                      !e.shiftKey &&
+                      !e.nativeEvent.isComposing &&
+                      !touchKeyboard()
+                    ) {
+                      e.preventDefault();
+                      send();
+                    }
+                  }}
+                  placeholder="Pose ta question…"
+                  className={cn('max-h-36 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed outline-none', rpg ? 'px-1' : 'px-2')}
+                />
+                {streaming ? (
+                  <button
+                    onClick={coach.stop}
+                    className={cn('flex items-center justify-center gap-2 rounded-lg bg-text-muted/10 hover:bg-text-muted/20', rpg ? 'ml-auto size-8' : 'min-h-11 min-w-11 px-3')}
+                    aria-label="Arrêter la réponse"
+                  >
+                    <Square className="size-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => send()}
+                    disabled={busy || !active.draft.trim()}
+                    className={cn('flex shrink-0 items-center justify-center rounded-lg bg-neon-cyan/15 text-neon-cyan hover:bg-neon-cyan/25 disabled:opacity-30', rpg ? 'ml-auto size-8' : 'p-2.5')}
+                    aria-label="Envoyer"
+                  >
+                    <Send className="size-4" />
+                  </button>
+                )}
+              </div>
             </div>
-            <p className="mt-2 text-center text-[10px] text-text-muted">
+            {(!rpg || streaming) && <p className="mt-2 text-center text-[10px] text-text-muted">
               {rpg && streaming ? 'Tu peux préparer ton prochain message.' : touchKeyboard()
                 ? 'Touche Envoyer pour envoyer'
                 : 'Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne'}
-            </p>
+            </p>}
           </footer>
         </>
       )}
