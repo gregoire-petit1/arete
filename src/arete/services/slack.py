@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
+import duckdb
 import httpx
 from anyio import to_thread
 
@@ -26,6 +28,8 @@ MAX_REPLY_CHARS = 39_000
 MAX_DELIVERY_RECORDS = 100_000
 MAX_JOB_SECONDS = 240
 SLACK_HTTP_TIMEOUT_SECONDS = 10
+FINISH_ATTEMPTS = 5
+FINISH_RETRY_SECONDS = 0.2
 
 FAILURE_MESSAGE = (
     "Le coach n’a pas pu terminer. Des modifications ont peut-être déjà été "
@@ -96,18 +100,27 @@ def reserve(message: SlackMessage) -> Literal["running", "duplicate", "busy"]:
 
 
 def finish(message: SlackMessage, status: str, *, release: bool) -> None:
-    with transaction() as con:
-        con.execute(
-            "UPDATE app.slack_deliveries SET status = ?, updated_at = now() "
-            "WHERE event_key = ?",
-            [status, message.key],
-        )
-        if release:
-            con.execute(
-                "UPDATE app.slack_execution SET event_key = NULL "
-                "WHERE id = 1 AND event_key = ?",
-                [message.key],
-            )
+    """Idempotent, so a write conflict is retried: a lost release would leave
+    every later message busy until an operator unblocks it."""
+    for attempt in range(1, FINISH_ATTEMPTS + 1):
+        try:
+            with transaction() as con:
+                con.execute(
+                    "UPDATE app.slack_deliveries SET status = ?, updated_at = now() "
+                    "WHERE event_key = ?",
+                    [status, message.key],
+                )
+                if release:
+                    con.execute(
+                        "UPDATE app.slack_execution SET event_key = NULL "
+                        "WHERE id = 1 AND event_key = ?",
+                        [message.key],
+                    )
+            return
+        except duckdb.TransactionException:
+            if attempt == FINISH_ATTEMPTS:
+                raise
+            time.sleep(FINISH_RETRY_SECONDS * attempt)
 
 
 class SlackClient:
@@ -207,7 +220,12 @@ async def dispatch(
     client: SlackClient,
     produce: Callable[[list[dict[str, str]], str], Awaitable[str]],
 ) -> None:
-    status = await to_thread.run_sync(reserve, message)
+    try:
+        status = await to_thread.run_sync(reserve, message)
+    except duckdb.TransactionException:
+        # A concurrent admission touched the singleton first. Nothing was
+        # recorded or executed, so say so rather than dropping the message.
+        status = "busy"
     if status == "duplicate":
         return
     if status == "busy":

@@ -59,7 +59,10 @@ before the route: validate Slack's three-second receipt deadline on the actual
 deployment, including a cold start. Slack retries are deduplicated in the database.
 
 One Slack coach run at a time across instances; overlapping requests receive a
-busy response and are not queued. Existing browser runs are independent. A turn
+busy response and are not queued. On MotherDuck two near-simultaneous
+admissions can conflict on the reservation row; the loser is answered busy
+too, and releasing a finished run retries its idempotent write up to five
+times. Existing browser runs are independent. A turn
 has a 240-second coaching/history/send deadline, up to one history fetch and one
 answer send, each HTTP call has a 10-second timeout and no retries. The existing
 8 model-call / 32 tool-call limits and complete-context token guard still apply.

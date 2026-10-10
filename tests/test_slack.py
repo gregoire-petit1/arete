@@ -414,3 +414,33 @@ def test_background_work_runs_as_the_owner_athlete(message, monkeypatch, tmp_pat
     monkeypatch.setattr(slack, "dispatch", dispatch)
     asyncio.run(api.process_message(message, "test-token"))
     assert seen == [OWNER_ATHLETE_ID]
+
+
+def test_reservation_conflict_answers_busy_without_coach(ledger, message, monkeypatch):
+    def conflict(_message):
+        raise duckdb.TransactionException("Conflict on tuple deletion!")
+
+    monkeypatch.setattr(slack, "reserve", conflict)
+    client = AsyncMock(spec=slack.SlackClient)
+    produce = AsyncMock()
+    asyncio.run(slack.dispatch(message, client=client, produce=produce))
+    produce.assert_not_awaited()
+    client.reply.assert_awaited_once_with(message, slack.BUSY_MESSAGE)
+
+
+def test_release_survives_a_transient_conflict(ledger, message, monkeypatch):
+    monkeypatch.setattr(slack, "FINISH_RETRY_SECONDS", 0)
+    assert slack.reserve(message) == "running"
+    real = slack.transaction
+    calls = []
+
+    def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise duckdb.TransactionException("Conflict on tuple update!")
+        return real()
+
+    monkeypatch.setattr(slack, "transaction", flaky)
+    slack.finish(message, "sent", release=True)
+    monkeypatch.setattr(slack, "transaction", real)
+    assert slack.reserve(replace(message, event_id="Ev2")) == "running"
