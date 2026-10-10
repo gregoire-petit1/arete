@@ -224,13 +224,14 @@ def test_deactivation_rules_and_round_trip(client, athletes):
         assert missing.status_code == 404
 
 
-def test_releasing_a_lease_says_whether_there_was_one(client, athletes):
+def test_only_a_lease_past_its_run_is_released(client, athletes):
     ana = athletes["ana-token"]
     path = f"/admin/athletes/{ana}/release-lease"
-    _set_lease(ana, "current_timestamp")
-    assert client.post(path, headers=_bearer("admin-token")).json() == {
-        "released": True
-    }
-    assert client.post(path, headers=_bearer("admin-token")).json() == {
-        "released": False
-    }
+    admin = _bearer("admin-token")
+    # A lease still ahead belongs to a run in progress: releasing it would let
+    # a second dispatch run the same athlete at the same time.
+    _set_lease(ana, "current_timestamp + INTERVAL 10 MINUTE")
+    assert client.post(path, headers=admin).json() == {"released": False}
+    _set_lease(ana, "current_timestamp - INTERVAL 1 MINUTE")
+    assert client.post(path, headers=admin).json() == {"released": True}
+    assert client.post(path, headers=admin).json() == {"released": False}

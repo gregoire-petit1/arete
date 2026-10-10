@@ -587,7 +587,8 @@ def test_a_released_lease_is_claimed_by_the_next_dispatch(athletes, monkeypatch)
     first, second = athletes
     con = connect()
     con.execute(
-        "UPDATE app.athletes SET sync_lease_until = current_timestamp WHERE id=?",
+        "UPDATE app.athletes SET sync_lease_until = current_timestamp - INTERVAL 1 SECOND "
+        "WHERE id=?",
         [second.athlete_id],
     )
     con.close()

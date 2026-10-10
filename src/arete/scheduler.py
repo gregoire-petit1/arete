@@ -326,12 +326,13 @@ def release_sync_lease(athlete_id: int) -> bool:
 
     For an administrator who has checked what that run already did outside
     (Garmin, Strava, the calendar): the day's sync starts again from the top.
-    False when the athlete held no lease.
+    A lease still within its nominal length belongs to a run in progress and
+    stays, so two runs never overlap. False when nothing was released.
     """
     with db_connection() as con:
         row = con.execute(
             "UPDATE app.athletes SET sync_lease_until=NULL "
-            "WHERE id=? AND sync_lease_until IS NOT NULL RETURNING id",
+            "WHERE id=? AND sync_lease_until < current_timestamp RETURNING id",
             [athlete_id],
         ).fetchone()
     return row is not None

@@ -79,7 +79,8 @@ athlete's private data:
   the owner deactivates an administrator's athlete.
 - **Libérer la synchro**: clears a lease kept by a failed or stopped daily run, so
   the next window runs the day again. Check first what that run already did at
-  Garmin, Strava or the calendar.
+  Garmin, Strava or the calendar. A lease within its 15 minutes belongs to a run
+  in progress and is not released.
 - **Nommer admin / Retirer admin**: the owner only, never on its own logins.
 
 A change applies at the account's next request: every request reads its row.
