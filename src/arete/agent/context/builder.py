@@ -25,6 +25,7 @@ from arete.agent.tools.toolkits import META_TOOLS
 from arete.services.athlete_facts import facts_block
 from arete.services.journal import journal_block
 from arete.services.personal_context import search_personal_context
+from arete.services.system_skills import MAX_SYSTEM_SKILLS
 
 
 def _augment_tools(
@@ -60,6 +61,26 @@ def _loadable(loaded: list[str], profile: ProfileSpec) -> list[str]:
 
 MAX_RETRIEVED_TOKENS = 2_048
 logger = logging.getLogger(__name__)
+
+
+def system_skills_section(state: dict) -> str:
+    """Native discovery contributes metadata here, never a second prompt layer."""
+    if errors := state.get("skills_load_errors"):
+        raise RuntimeError(f"System skills could not be loaded: {errors}")
+    skills = state.get("skills_metadata", [])
+    if len(skills) > MAX_SYSTEM_SKILLS:
+        raise ValueError("Too many system skills in context")
+    if not skills:
+        return ""
+    return (
+        "Skills système disponibles (lecture seule). Lis le SKILL.md pertinent "
+        "avec read_file avant d’appliquer sa méthode. Charger un skill n’accorde "
+        "aucun outil ni permission.\n"
+        + "\n".join(
+            f"- {skill['name']}: {skill['description']} — {skill['path']}"
+            for skill in skills
+        )
+    )
 
 
 def build_context(
@@ -115,6 +136,11 @@ def build_context(
         ),
         ContextSection("catalog", catalog, "registry"),
         ContextSection("capabilities", tool_instructions_suffix(loaded), "registry"),
+        ContextSection(
+            "system_skills",
+            system_skills_section(state) if profile.journal_tools else "",
+            "server",
+        ),
         ContextSection(
             "facts",
             facts_block(

@@ -84,3 +84,19 @@ it('does not persist a preview when saving fails', async () => {
   initializeTheme();
   expect(document.documentElement.dataset.theme).toBe('dark');
 });
+
+
+it.each(['pierre', 'prune'] as const)('saves %s through the settings API and restores it on reload', async theme => {
+  const updated = { ...saved, theme };
+  vi.spyOn(settingsApi, 'update').mockResolvedValue(updated);
+  vi.mocked(settingsApi.get).mockResolvedValue(updated);
+  const view = openAppearance();
+  fireEvent.click(screen.getByRole('button', { name: theme.toUpperCase() }));
+  expect(document.documentElement.dataset.theme).toBe(theme);
+  fireEvent.click(screen.getByRole('button', { name: 'ENREGISTRER' }));
+  await waitFor(() => expect(client.getQueryData(['settings'])).toEqual(updated));
+  expect(vi.mocked(settingsApi.update).mock.calls[0][0]).toEqual(expect.objectContaining({ theme }));
+  view.unmount();
+  initializeTheme();
+  expect(document.documentElement.dataset.theme).toBe(theme);
+});

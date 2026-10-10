@@ -50,15 +50,23 @@ Production sync entrypoints run in AnyIO workers and bridge model execution onto
 the server event loop. This avoids sharing the SDK's cached async HTTP connections
 across short-lived event loops. Async callers use `invoke_agent` directly.
 
-The execution envelope is five minutes, 8 main graph model calls (the last binds
-no tools and asks for an answer stating any incomplete work), 32 tool calls,
+The execution envelope is five minutes, 24 main graph model turns (the last binds
+no tools and asks for an answer stating any incomplete work), 96 tool calls,
 and four simultaneous tool executions per invocation. Interactive chat may add one
 optional next-message completion (512 output tokens, five seconds, zero SDK retries). Framework recursion is a
-separate 100-step backstop. A model call gives up after 60 s, or 30 s without a
-streamed chunk, with two SDK retries; on OpenRouter the request carries a
-fallback list of at most three models. ToolRetryMiddleware permits one retry
+separate 200-step backstop. A model call gives up after 60 s, or 30 s without a
+streamed chunk. Native LangChain `ModelFallbackMiddleware` tries the configured
+candidates in order (at most three, including the primary). The composition root
+constructs each fallback candidate with zero SDK retries and no provider-side fallback list,
+so one graph turn costs at most three requests, 72 per run before the optional
+suggestion. Each attempt is measured separately. Context validation precedes
+fallback, cancellation propagates, and no tool or entire run is replayed. The
+optional suggestion keeps provider-side fallback inside its single bounded call.
+With a pinned model and no alternatives, the existing two SDK retries remain;
+these share the deadline and appear as one boundary call in telemetry.
+ToolRetryMiddleware permits one retry
 after 250 ms for ConnectionError/TimeoutError from catalog-declared read-only
-tools. Both attempts count toward the 32-tool execution budget and share the
+tools. Both attempts count toward the 96-tool execution budget and share the
 run deadline; no additional model call is required. Returned domain errors are
 marked as error ToolMessages with their complete payload preserved. Writes,
 Garmin reconciliation (which changes local operation state), validation failures
@@ -90,6 +98,21 @@ other write path. New entries still use `append_journal`; arbitrary file creatio
 is not exposed. Appends, rotation, edits and deletion share a bounded process-local
 lock so overlapping turns in one server cannot overwrite each other's writes.
 Model-generated loaded state and client page metadata cannot change these policies.
+
+System skills live in `agent/skills/system/<name>/SKILL.md`, versioned with Git.
+Migration 38 creates the shared `app.system_skills` table (no athlete data).
+On chat graph construction, `services/system_skills.py` publishes the bundle
+idempotently and reads it back from the database. Its content digest identifies
+the release, so overlapping deployments cannot replace each other's instructions.
+The graph holds a read-only snapshot at `/skills/system/`; both filesystem
+permissions and the backend deny edits, deletion, creation and uploads. Graph
+state cannot shadow those files. Native Deep Agents skills discovery runs once
+per invocation; an adapter rejects incomplete discovery instead of silently
+dropping malformed skills. The context builder includes only names, descriptions
+and paths in its token accounting, with full bodies read on demand. Skills grant
+no permissions and are unavailable to background missions. The bundle allows at
+most 32 skills of 32 KiB each. Publication adds no model request; the first
+bundled skill covers locating a requested training week in an attached document.
 
 The context builder combines the harness/filesystem contribution, mission
 instructions, the current date for chat, the catalog of toolkits still loadable,
@@ -179,9 +202,9 @@ The emoji is a standard textual feedback, not a promise to reproduce a private
 LangSmith UI reaction API. See the [LangSmith feedback guide](https://docs.langchain.com/langsmith/attach-user-feedback)
 and [Figma proposal](https://www.figma.com/design/lnwgvzmvsutjFsuZiQ6Mzz?node-id=2-11).
 
-These bounds are not a cumulative token/spend quota: SDK retries have their own
-limit and share the run deadline. Arete has no delegated
-children to budget; a provider-side fallback stays within one model call. Conversation
+These bounds are not a cumulative token/spend quota. Model fallback attempts
+share the run deadline and do not consume additional graph turns, but each counts
+in the run's model-call telemetry. Arete has no delegated children to budget. Conversation
 history stays in browser storage; Calendar's approval registry is described below.
 
 ## Enforcement
@@ -207,7 +230,7 @@ history (other channel members labelled), responses, the per-athlete public-repl
 consent and durable delivery reservations; it receives `coaching.run_slack_coach`
 as its producer, which passes the answer's visibility as `AgentContext.slack_visibility`
 for the context builder's `surface` section. Slack threads own their history;
-browser state is unchanged. Migrations 37–38 store delivery IDs, consent and one
+browser state is unchanged. Migrations 37 and 40 store delivery IDs, consent and one
 run reservation per athlete, not conversation text. Failed ambiguous runs stay
 reserved for operator review and are never replayed. See [Slack setup](slack.md)
 for limits, installation, crash behavior and recovery.

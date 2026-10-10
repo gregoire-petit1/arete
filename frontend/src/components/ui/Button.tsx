@@ -67,9 +67,11 @@ export function Button({
   return (
     <button
       type={type}
+      data-variant={variant}
+      data-strong={strong}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded font-mono transition-all',
+        'ui-button inline-flex items-center justify-center gap-2 rounded font-mono transition-colors duration-150 motion-reduce:transition-none',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         SIZES[size],
         strong ? STRONG[variant] : TINT[variant],

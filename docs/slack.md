@@ -87,7 +87,7 @@ and unfurls disabled. No message text is stored in the delivery ledger. Existing
 optional LangSmith tracing still includes the messages and Slack thread ID.
 
 Migration 37 adds `app.slack_deliveries` (and `app.slack_execution`, unused since
-migration 38). Migration 38 adds `app.slack_athletes`: per athlete, the public-reply
+migration 40). Migration 40 adds `app.slack_athletes`: per athlete, the public-reply
 consent and the run reservation.
 The ledger stops accepting new events at 100,000 records, requiring operator
 review rather than silently forgetting duplicate IDs.

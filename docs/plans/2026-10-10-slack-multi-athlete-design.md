@@ -38,7 +38,7 @@ Chosen on 2026-10-10 over Sign in with Slack linking: simpler, no OAuth screen.
   (Réglages → Connexions), off by default; without it the answer goes to the
   athlete's DM with a short note in the thread. The context builder's `surface`
   section tells the coach who reads the answer.
-- **Concurrency.** Migration 38 adds `app.slack_athletes` (consent and run
+- **Concurrency.** Migration 40 adds `app.slack_athletes` (consent and run
   reservation per athlete), replacing the instance-wide singleton. Reservation
   conflicts on MotherDuck are answered busy; the idempotent release is retried.
 
@@ -107,6 +107,6 @@ athlete's consent, otherwise it goes to their DM. Streams follow the same rule.
 ## Delivery
 
 Three PRs: A (email identity, dedicated channel, consent, per-athlete runs,
-migration 38), B (queue), then C (streaming). Each with `make check`, the
+migration 40), B (queue), then C (streaming). Each with `make check`, the
 `preview` label on `arete_preview`, then Deploy production. Phase A's Slack app
 changes are in `slack-manifest.json`: new bot scopes and the channel events.

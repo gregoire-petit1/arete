@@ -469,6 +469,14 @@ CREATE TABLE IF NOT EXISTS app.slack_execution (
     event_key VARCHAR
 );
 INSERT INTO app.slack_execution (id) VALUES (1) ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS app.system_skills (
+    bundle VARCHAR NOT NULL,
+    path VARCHAR NOT NULL,
+    content VARCHAR NOT NULL,
+    PRIMARY KEY (bundle, path)
+);
+
 -- One row per athlete who used Slack: public-reply consent and the run reservation.
 CREATE TABLE IF NOT EXISTS app.slack_athletes (
     athlete_id     INTEGER PRIMARY KEY,
@@ -741,7 +749,14 @@ def _m37_slack_deliveries(con) -> None:
     con.execute(DDL[start:end])
 
 
-def _m38_slack_athletes(con) -> None:
+def _m38_system_skills(con) -> None:
+    # Shared server instructions contain no athlete data or credentials.
+    start = DDL.index("CREATE TABLE IF NOT EXISTS app.system_skills")
+    end = DDL.index(";", start) + 1
+    con.execute(DDL[start:end])
+
+
+def _m40_slack_athletes(con) -> None:
     """Slack serves several athletes: consent and one run per athlete."""
     start = DDL.index("CREATE TABLE IF NOT EXISTS app.slack_athletes (")
     con.execute(DDL[start : DDL.index(");", start) + 2])
@@ -774,7 +789,8 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (35, _m35_athlete_accounts),
     (36, _m36_private_relations),
     (37, _m37_slack_deliveries),
-    (38, _m38_slack_athletes),
+    (38, _m38_system_skills),
+    (40, _m40_slack_athletes),
 ]
 
 

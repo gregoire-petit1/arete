@@ -1,17 +1,14 @@
 import { lazy, Suspense, type MouseEvent } from 'react';
-import { NavLink } from 'react-router-dom';
+import { Link, NavLink } from 'react-router-dom';
 import {
   BarChart3,
-  Bot,
   CalendarDays,
   Dumbbell,
   LayoutDashboard,
-  Loader2,
-  PanelRightClose,
   Settings,
 } from 'lucide-react';
 import { useGamePreference } from '@/lib/gamification';
-import { ChironPortrait } from './ChironPortrait';
+import { AreteMark, AreteWordmark } from './AreteBrand';
 import { User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthState } from '@/components/auth/authState';
@@ -55,13 +52,11 @@ export function Navigation({
         aria-label="Navigation principale"
         className="hidden md:block sticky top-0 z-50 bg-void/95 backdrop-blur-sm border-b border-text-muted/20"
       >
-        <div className="max-w-7xl mx-auto px-4">
+        <div className="navigation-shell">
           <div className="flex items-center justify-between h-14">
-            <div className="flex items-center gap-2 animate-fade-left">
-              <span className="text-xl font-bold text-neon-cyan font-mono tracking-wider">
-                [ARETE]
-              </span>
-            </div>
+            <Link to="/" aria-label="Arete · Accueil" className="shrink-0 text-text-primary">
+              <AreteWordmark />
+            </Link>
 
             <div className="flex items-center gap-1">
               {desktopItems.map((item) => (
@@ -73,9 +68,9 @@ export function Navigation({
                   className={({ isActive }) =>
                     cn(
                       'flex items-center gap-2 px-3 py-2 rounded text-sm font-mono',
-                      'transition-all duration-200',
+                      'border border-transparent transition-colors duration-150 motion-reduce:transition-none',
                       isActive
-                        ? 'text-neon-cyan bg-neon-cyan/10 border border-neon-cyan/30'
+                        ? 'text-neon-cyan bg-neon-cyan/10 border-neon-cyan/30'
                         : 'text-text-secondary hover:text-text-primary hover:bg-abyss'
                     )
                   }
@@ -99,13 +94,10 @@ export function Navigation({
                     : 'border-text-muted/20 text-text-secondary hover:border-neon-cyan/30 hover:text-neon-cyan'
                 )}
               >
-                {agentBusy ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : agentOpen ? (
-                  <PanelRightClose className="size-4" />
-                ) : (
-                  rpg ? <ChironPortrait size={24} /> : <Bot className="size-4" />
-                )}
+                <span className="relative flex" data-busy={agentBusy || undefined}>
+                  <AreteMark size={24} />
+                  {agentBusy && <span className="absolute -right-1 top-0 size-1.5 rounded-full bg-neon-cyan" />}
+                </span>
                 <span>{rpg ? 'Chiron' : 'Coach'}</span>
               </button>
               {auth.enabled && (
@@ -134,7 +126,7 @@ export function Navigation({
               className={({ isActive }) =>
                 cn(
                   'relative flex flex-1 flex-col items-center justify-center gap-0.5 py-1 px-1 rounded-lg',
-                  'transition-all duration-200 min-w-0',
+                  'transition-colors duration-150 motion-reduce:transition-none min-w-0',
                   isActive
                     ? 'text-neon-cyan'
                     : 'text-text-muted active:text-text-secondary'
@@ -146,7 +138,7 @@ export function Navigation({
                   <item.icon
                     className={cn(
                       'w-5 h-5',
-                      isActive && 'drop-shadow-[0_0_6px_rgba(0,240,255,0.5)]'
+                      isActive && 'stroke-[2.25]'
                     )}
                   />
                   <span className="text-[9px] font-mono">
@@ -156,7 +148,7 @@ export function Navigation({
                   <span
                     aria-hidden
                     className={cn(
-                      'absolute -top-px left-2 right-2 h-0.5 bg-neon-cyan rounded-full transition-opacity duration-200',
+                      'absolute -top-px left-2 right-2 h-0.5 bg-neon-cyan rounded-full transition-opacity duration-[120ms] motion-reduce:transition-none',
                       isActive ? 'opacity-100' : 'opacity-0'
                     )}
                   />
@@ -174,13 +166,10 @@ export function Navigation({
               agentOpen ? 'bg-neon-cyan/10 text-neon-cyan' : 'text-text-muted'
             )}
           >
-            {agentBusy ? (
-              <Loader2 className="size-5 animate-spin" />
-            ) : agentOpen ? (
-              <PanelRightClose className="size-5" />
-            ) : (
-              rpg ? <ChironPortrait size={24} /> : <Bot className="size-5" />
-            )}
+            <span className="relative flex" data-busy={agentBusy || undefined}>
+              <AreteMark size={24} />
+              {agentBusy && <span className="absolute -right-1 top-0 size-1.5 rounded-full bg-neon-cyan" />}
+            </span>
             <span className="text-[9px] font-mono">{rpg ? 'Chiron' : 'Coach'}</span>
           </button>
         </div>

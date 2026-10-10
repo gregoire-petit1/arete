@@ -1,0 +1,66 @@
+import { test, expect } from '@playwright/test';
+import { DEFAULT_SETTINGS } from '../src/pages/settings/types';
+
+// Local fixtures keep layout checks independent of training data or model calls.
+test('desktop aligns the brand and content, uses the workspace and reflows beside the coach', async ({ page }) => {
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path === '/api/auth/config') return route.fulfill({ json: { enabled: false } });
+    if (path === '/api/settings') return route.fulfill({ json: { ...DEFAULT_SETTINGS, user_id: 1, theme: 'odyssey', display_name: 'HUNTER' } });
+    if (path === '/api/settings/gamification') return route.fulfill({ json: { enabled: false, available: true } });
+    if (path === '/api/plan/today') return route.fulfill({ json: { decisions: [] } });
+    if (path === '/api/metrics/player-stats') return route.fulfill({ json: {
+      level: 0, weeks_at_goal: 0,
+      hp: { current: 50, max: 100, label: 'Récupération', detail: 'Aucune donnée de charge ni mesure Garmin' },
+      mp: { current: 50, max: 100, label: 'Forme' },
+      xp: { current: 0, max: 300, label: 'Charge de la semaine', detail: 'Objectif 6 séances' },
+    } });
+    if (path === '/api/tips/daily') return route.fulfill({ json: { tip: 'Prépare tes prochaines séances.', source: 'rules', priority: 'info' } });
+    return route.fulfill({ json: [] });
+  });
+  await page.goto('/');
+  const heading = page.getByRole('heading', { name: 'Bonjour, HUNTER' });
+  await expect(heading).toBeVisible();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+
+  for (const width of [1440, 1920]) {
+    await page.setViewportSize({ width, height: 1000 });
+    const brand = (await page.getByRole('link', { name: 'Arete · Accueil' }).boundingBox())!;
+    const title = (await heading.boundingBox())!;
+    const grid = (await page.locator('.dashboard-grid').boundingBox())!;
+    const primary = (await page.locator('.dashboard-primary').boundingBox())!;
+    const secondary = (await page.locator('.dashboard-secondary').boundingBox())!;
+    expect(Math.abs(brand.x - title.x)).toBeLessThan(1);
+    expect(grid.width).toBeGreaterThan(width * .9);
+    expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+    expect(Math.abs(primary.y - secondary.y)).toBeLessThan(1);
+    expect(secondary.x).toBeGreaterThan(primary.x + primary.width);
+    await expect(page.getByRole('link', { name: 'Saisir une séance', exact: true })).toBeInViewport();
+    await expect(page.getByRole('heading', { name: 'RÉCUPÉRATION', exact: true })).toBeInViewport();
+  }
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: 'Ouvrir le coach' }).filter({ visible: true }).click();
+  const panel = page.getByRole('complementary', { name: 'Coach IA' });
+  await panel.getByLabel('Message au coach').fill('Mon brouillon reste ici.');
+  const content = (await page.locator('.dashboard-grid').boundingBox())!;
+  const coach = (await panel.boundingBox())!;
+  expect(content.x + content.width).toBeLessThan(coach.x);
+  const primary = (await page.locator('.dashboard-primary').boundingBox())!;
+  const secondary = (await page.locator('.dashboard-secondary').boundingBox())!;
+  expect(secondary.y).toBeGreaterThanOrEqual(primary.y + primary.height);
+
+  // A larger screen can retain both columns even with the same 520 px coach.
+  await page.setViewportSize({ width: 1920, height: 1000 });
+  const widePrimary = (await page.locator('.dashboard-primary').boundingBox())!;
+  const wideSecondary = (await page.locator('.dashboard-secondary').boundingBox())!;
+  expect(Math.abs(widePrimary.y - wideSecondary.y)).toBeLessThan(1);
+  expect(wideSecondary.x).toBeGreaterThan(widePrimary.x + widePrimary.width);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(panel.getByLabel('Message au coach')).toHaveValue('Mon brouillon reste ici.');
+  await panel.getByRole('button', { name: 'Masquer le coach' }).click();
+  await expect(heading).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(page.getByRole('link', { name: 'Saisir une séance', exact: true })).toBeVisible();
+});

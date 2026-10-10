@@ -76,7 +76,7 @@ export function AnalyticsPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+    <div className="page-shell space-y-6">
       {/* Stays under the app's tab bar (57 px, desktop only) while the page scrolls */}
       <div
         ref={banner}
@@ -84,7 +84,7 @@ export function AnalyticsPage() {
       >
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold font-mono text-neon-cyan tracking-wider uppercase">Analyses</h1>
+            <h1 className="page-title text-xl font-bold font-mono text-neon-cyan tracking-wider uppercase">Analyses</h1>
             {data && (
               <p className="text-xs text-text-muted font-mono mt-1">
                 Du {new Date(`${data.start}T00:00:00`).toLocaleDateString('fr-FR')} au{' '}

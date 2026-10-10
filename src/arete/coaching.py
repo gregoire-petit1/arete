@@ -7,13 +7,17 @@ plain callbacks, so they remain usable and testable without an agent framework.
 from dataclasses import replace
 from datetime import date
 from functools import lru_cache, wraps
+from pathlib import Path
 from threading import Lock
 from typing import Literal
 
 from arete.agent.backends.memory import build_memory_filesystem
+from arete.agent.backends.skills import SystemSkillsBackend
 from arete.agent.factory import build_agent
+from arete.agent.middlewares.skills import SystemSkillsMiddleware
 from arete.agent.models.providers import build_chat_model
 from arete.agent.models.registry import (
+    AGENT_MAX_RETRIES,
     AGENT_MAX_TOKENS,
     SUGGESTION_MAX_TOKENS,
     SUGGESTION_TEMPERATURE,
@@ -29,6 +33,7 @@ from arete.config import config
 from arete.services import briefing, coaching_rules, session_feedback, weekly_review
 from arete.services.athlete_scope import current_athlete_id, resolve_athlete_id
 from arete.services.coaching_repository import Briefing
+from arete.services.system_skills import publish_bundle
 
 AGENT_RECURSION_LIMIT = MAX_GRAPH_STEPS
 
@@ -59,7 +64,17 @@ def _assemble(profile_id: str):
             preloaded=(*profile.preloaded, "calendar"),
         )
     route = resolve_route()
-    model = build_chat_model(route=route)
+    # Use one explicit request per candidate: layering SDK retries and the
+    # router's fallback list would multiply requests and exhaust the deadline.
+    candidates = tuple(dict.fromkeys((route.model, *route.fallbacks)))
+    models = tuple(
+        build_chat_model(
+            route=replace(route, model=name, fallbacks=()),
+            max_retries=0 if len(candidates) > 1 else AGENT_MAX_RETRIES,
+        )
+        for name in candidates
+    )
+    model = models[0]
     suggestion_model = None
     if profile.id == "chat":
         suggestion_model = build_chat_model(
@@ -77,14 +92,32 @@ def _assemble(profile_id: str):
         suggestion_model = suggestion_model.model_copy(
             update={"disable_streaming": True}
         )
+    skills_backend = None
+    skill_files = {}
+    if profile.journal_tools:
+        skill_files = publish_bundle(
+            Path(__file__).parent / "agent" / "skills" / "system"
+        )
+        skills_backend = SystemSkillsBackend(skill_files)
+    filesystem = build_memory_filesystem(system_skills=skills_backend)
+    skills = (
+        SystemSkillsMiddleware(
+            backend=filesystem.backend,
+            paths=set(skill_files),
+        )
+        if skills_backend is not None
+        else None
+    )
     return build_agent(
         profile,
         model=model,
         context_tokens=route.context_tokens,
         output_tokens=AGENT_MAX_TOKENS,
-        filesystem=build_memory_filesystem(),
+        filesystem=filesystem,
         calendar=calendar,
         suggestion_model=suggestion_model,
+        fallback_models=models[1:],
+        skills=skills,
     )
 
 
