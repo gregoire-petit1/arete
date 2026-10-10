@@ -7,6 +7,8 @@ export interface AuthState {
   email: string | null;
   athleteId: number | null;
   isOwner: boolean;
+  /** The owner or an admin: sees the administration tab. */
+  isAdmin: boolean;
   /** Ends the session, drops the cached API answers and reloads; a no-op when sign-in is off. */
   signOut: () => Promise<void>;
   /**
@@ -23,6 +25,7 @@ export const AUTH_DISABLED: AuthState = {
   email: null,
   athleteId: 1,
   isOwner: false,
+  isAdmin: false,
   signOut: async () => {},
   grantGoogleScopes: async () => {
     throw new Error('Connexion Google indisponible : la connexion au compte est désactivée.');

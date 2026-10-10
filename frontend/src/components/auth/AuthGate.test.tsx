@@ -38,10 +38,18 @@ interface Me {
   name: string | null;
   athlete_id: number | null;
   is_owner: boolean;
+  role: 'athlete' | 'admin';
+  is_admin: boolean;
+}
+
+/** The server turning the account away, with its reason. */
+interface Refusal {
+  status: number;
+  detail: string;
 }
 
 /** Answers the two gate endpoints and records every request. */
-function server(config: unknown, me?: Me) {
+function server(config: unknown, me?: Me | Refusal) {
   const requests: { url: string; headers: Headers }[] = [];
   vi.stubGlobal(
     'fetch',
@@ -52,9 +60,10 @@ function server(config: unknown, me?: Me) {
         return new Response(JSON.stringify(config), { status: 200 });
       }
       if (url === '/api/auth/me') {
-        return me
-          ? new Response(JSON.stringify(me), { status: 200 })
-          : new Response('{"detail":"Non authentifié"}', { status: 401 });
+        if (!me) return new Response('{"detail":"Non authentifié"}', { status: 401 });
+        return 'detail' in me
+          ? new Response(JSON.stringify({ detail: me.detail }), { status: me.status })
+          : new Response(JSON.stringify(me), { status: 200 });
       }
       throw new Error(`unexpected request: ${url}`);
     })
@@ -117,6 +126,8 @@ it('shows the waiting page with the email while no athlete is attached', async (
     name: null,
     athlete_id: null,
     is_owner: false,
+    role: 'athlete',
+    is_admin: false,
   });
   mount();
   expect(await screen.findByText(/aucun athlète ne lui est encore associé/)).toBeTruthy();
@@ -129,8 +140,25 @@ it('shows the waiting page with the email while no athlete is attached', async (
 
 it('renders the app once an athlete is attached', async () => {
   clerk.signedIn = true;
-  server(enabled, { email: 'ana@exemple.fr', name: 'Ana', athlete_id: 1, is_owner: true });
+  server(enabled, {
+    email: 'ana@exemple.fr',
+    name: 'Ana',
+    athlete_id: 1,
+    is_owner: true,
+    role: 'athlete',
+    is_admin: true,
+  });
   mount();
   expect(await screen.findByText('Tableau de bord')).toBeTruthy();
   expect(await authHeaders()).toEqual({ Authorization: 'Bearer jeton' });
+});
+
+it('shows the refusal reason with a sign-out when the account is deactivated', async () => {
+  clerk.signedIn = true;
+  server(enabled, { status: 403, detail: 'Ce compte a été désactivé.' });
+  mount();
+  expect(await screen.findByText('Ce compte a été désactivé.')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Se déconnecter' })).toBeTruthy();
+  expect(screen.queryByText('Tableau de bord')).toBeNull();
+  expect(screen.queryByText('COMPTE INJOIGNABLE')).toBeNull();
 });

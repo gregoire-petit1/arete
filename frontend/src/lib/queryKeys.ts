@@ -65,6 +65,9 @@ export const qk = {
   paces: ['paces'] as const,
   athleteFacts: ['athleteFacts'] as const,
 
+  /** Every athlete and login of the instance (Settings › Administration). */
+  adminAccounts: ['admin', 'accounts'] as const,
+
   vapidKey: ['vapidPublicKey'] as const,
   /** This device's Web Push state (lib/push.ts), not a server answer. */
   pushState: ['pushState'] as const,
