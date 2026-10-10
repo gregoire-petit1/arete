@@ -227,6 +227,7 @@ class TestDailySync:
             "garmin": "no tokens",
             "plan": "0 decisions (none)",
             "strava": "not connected",
+            "google_calendar": "disabled",
         }
 
     def test_adaptation_runs_before_strava_and_failures_are_reported(

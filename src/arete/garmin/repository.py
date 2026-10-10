@@ -6,6 +6,7 @@ from typing import Any
 
 import duckdb
 
+from arete.dataio import plan_changes
 from arete.dataio.db import connect
 from arete.garmin.models import (
     ActivitySource,
@@ -127,6 +128,7 @@ class GarminRepository:
         conn.close()
         if result is None:
             raise RuntimeError("Failed to insert planned session")
+        plan_changes.touch()
         return int(result[0])
 
     def get_planned_session(self, session_id: int) -> PlannedSession | None:
@@ -241,6 +243,7 @@ class GarminRepository:
             raise
         finally:
             conn.close()
+        plan_changes.touch()
         return result is not None
 
     def delete_planned_session(self, session_id: int) -> bool:
@@ -268,6 +271,7 @@ class GarminRepository:
             raise
         finally:
             conn.close()
+        plan_changes.touch()
         return result is not None
 
     # ─────────────────────────────────────────────────────────────────────

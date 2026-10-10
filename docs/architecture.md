@@ -220,6 +220,13 @@ event carries only an action ID. Browser storage keeps that ID; cards reload the
 authoritative proposal and outcome from the API. Settings changes invalidate
 pending actions, ETags protect existing events, and ambiguous writes are never
 replayed.
+
+The training plan sync (`services/calendar_plan.py`, migration 34) is a separate,
+standing authorization from Settings, without the model. Plan writers note a
+change in a request-scoped flag (`dataio/plan_changes.py`); `PlanSyncMiddleware`
+runs a bounded sync after the response and the daily sync runs one too, both
+through `calendar.sync_training_plan`, which rebuilds the provider from the Clerk
+user id stored on the connection.
 See [Google Calendar setup](google-calendar.md) for activation and live testing.
 
 ## Personal memory

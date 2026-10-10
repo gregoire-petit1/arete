@@ -136,6 +136,12 @@ def daily_sync() -> dict[str, str]:
     else:
         status["strava"] = "not connected"
 
+    # Last: every plan change of the run (adaptation, completed sessions) is in.
+    from arete.calendar import sync_training_plan
+    from arete.services.calendar_plan import DAILY
+
+    status["google_calendar"] = sync_training_plan(DAILY)
+
     if imported:
         from arete.services.notifications import notify
 

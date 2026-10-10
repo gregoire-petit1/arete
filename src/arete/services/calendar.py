@@ -82,12 +82,18 @@ class CalendarService:
 
     def status(self) -> dict:
         state = self.repo.state()
+        plan = self.repo.plan_state()
         return {
             "configured": True,
             "connected": state["enabled"],
             "selection": state["selection"],
             # What the browser asks Google for before calling connect().
             "scopes": SCOPES,
+            # The training plan followed into one calendar (services/calendar_plan.py).
+            "plan": {
+                key: plan[key]
+                for key in ("enabled", "calendar_id", "synced_at", "error", "events")
+            },
         }
 
     def connect(self) -> dict:
@@ -109,6 +115,8 @@ class CalendarService:
 
     def disconnect(self) -> dict:
         self.repo.configure(enabled=False, selection={"readable": [], "writable": []})
+        # Its events stay in Google: without the grant Arete cannot remove them.
+        self.repo.configure_plan(enabled=False)
         try:
             with self.provider.session() as http:
                 self.provider.revoke(http)

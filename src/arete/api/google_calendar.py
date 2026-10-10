@@ -4,17 +4,24 @@ Each signed-in account has its own calendar: the service is built from the
 verified identity, never from anything the browser sends.
 """
 
+import asyncio
+import logging
 from contextlib import contextmanager
 from typing import Literal
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from arete.api.auth import clerk_account
-from arete.calendar import get_calendar_service
+from arete.calendar import get_calendar_service, sync_training_plan
 from arete.config import config
+from arete.dataio import plan_changes
 from arete.services.calendar_models import CalendarError, CalendarSelection
+from arete.services.calendar_plan import AFTER_PLAN_WRITE, PlanSync
+
+logger = logging.getLogger(__name__)
 
 
 def no_store(response: Response) -> None:
@@ -128,3 +135,46 @@ def decide(request: Request, action_id: str, body: Decision):
 def verify(request: Request, action_id: str):
     with service(request) as calendar:
         return calendar.verify(action_id)
+
+
+class PlanSyncBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool
+    calendar_id: str | None = Field(default=None, min_length=1, max_length=1024)
+
+
+@router.put("/plan-sync", dependencies=[Depends(same_origin)])
+def plan_sync(request: Request, body: PlanSyncBody):
+    """The standing authorization to follow the plan into one calendar."""
+    with service(request) as calendar:
+        return PlanSync(calendar).configure(body.enabled, body.calendar_id)
+
+
+@router.post("/plan-sync/remove", dependencies=[Depends(same_origin)])
+def remove_plan_events(request: Request):
+    with service(request) as calendar:
+        return PlanSync(calendar).remove()
+
+
+class PlanSyncMiddleware:
+    """Follow the plan into Google Calendar after a request that changed it.
+
+    Pure ASGI, like the mirror: the run starts once the whole response has
+    been sent, so neither a plan edit nor a coach's stream waits for Google.
+    The run is bounded and best effort; the daily sync catches up the rest.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        with plan_changes.watch() as changed:
+            await self.app(scope, receive, send)
+        if changed and config.google_calendar_configured:
+            try:
+                await asyncio.to_thread(sync_training_plan, AFTER_PLAN_WRITE)
+            except Exception:
+                logger.exception("Training plan calendar sync failed")
