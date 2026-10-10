@@ -463,7 +463,7 @@ def test_dynamic_tool_exception_is_traced_and_propagated(
 
 
 @pytest.mark.parametrize(
-    "task, limit", [("chat", 100), ("briefing", 100), ("session_feedback", 100)]
+    "task, limit", [("chat", 200), ("briefing", 200), ("session_feedback", 200)]
 )
 def test_task_limits_reach_both_execution_paths(monkeypatch, task, limit):
     graph = Mock()

@@ -14,6 +14,7 @@ from deepagents.middleware.filesystem import (
 from pydantic import BaseModel, Field
 
 from arete.agent.backends.attachments import ATTACHMENTS_ROUTE
+from arete.agent.backends.skills import SYSTEM_SKILLS_ROUTE, SystemSkillsBackend
 from arete.services.memory import (
     NOTES_LEDGER,
     SESSIONS_LEDGER,
@@ -23,6 +24,7 @@ from arete.services.memory import (
 
 # Permissions default to allow in Deep Agents: the trailing deny is essential.
 MEMORY_PERMISSIONS = [
+    FilesystemPermission(operations=["write"], paths=["/skills/**"], mode="deny"),
     FilesystemPermission(
         operations=["write"],
         paths=[f"/{NOTES_LEDGER}", f"/{SESSIONS_LEDGER}"],
@@ -86,7 +88,9 @@ class BoundedRead(ReadFileSchema):
     limit: int = Field(default=100, ge=1, le=200)
 
 
-def build_memory_filesystem() -> FilesystemMiddleware:
+def build_memory_filesystem(
+    *, system_skills: SystemSkillsBackend | None = None
+) -> FilesystemMiddleware:
     """Editable current ledgers and read-only archives/invocation documents."""
     root = memory_root()
     for name in (SESSIONS_LEDGER, NOTES_LEDGER):
@@ -94,13 +98,16 @@ def build_memory_filesystem() -> FilesystemMiddleware:
     middleware = FilesystemMiddleware(
         backend=CompositeBackend(
             default=LedgerBackend(root_dir=root, virtual_mode=True, max_file_size_mb=5),
-            routes={ATTACHMENTS_ROUTE: StateBackend()},
+            routes={
+                ATTACHMENTS_ROUTE: StateBackend(),
+                **({SYSTEM_SKILLS_ROUTE: system_skills} if system_skills else {}),
+            },
         ),
         tools=["read_file", "ls", "glob", "grep", "edit_file", "delete"],
         custom_tool_descriptions={
             **LEDGER_TOOL_DESCRIPTIONS,
             "read_file": LEDGER_TOOL_DESCRIPTIONS["read_file"]
-            + " Lis aussi les documents normalisés sous /attachments/ ; conserve leurs références de source.",
+            + " Lis aussi les documents normalisés sous /attachments/ et les skills sous /skills/system/. Maximum 200 lignes par appel ; conserve les références de source.",
         },
         tool_token_limit_before_evict=None,
         human_message_token_limit_before_evict=None,
