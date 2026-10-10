@@ -12,12 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langsmith import Client
 
 from arete.observability import scrubbing
-from arete.observability.scrubbing import (
-    REDACTED_TRUNCATED,
-    Sensitive,
-    scrub,
-    sensitive,
-)
+from arete.observability.scrubbing import REDACTED_TRUNCATED, scrub
 from arete.observability.tracing import _ScrubbingTracer
 from arete.services.athlete_facts import FACTS_HEADING
 from arete.services.journal import JOURNAL_HEADING
@@ -77,18 +72,6 @@ def test_unrelated_tool_bare_string_result_is_left_alone_by_the_tracer():
     assert client.recorded[str(run_id)]["outputs"] == {
         "output": "12 sessions this week"
     }
-
-
-def test_sensitive_marker_is_redacted_by_label():
-    assert scrub({"note": sensitive("journal", "secret")}) == {
-        "note": "[REDACTED:journal]"
-    }
-
-
-def test_sensitive_marker_leaves_the_wrapped_value_untouched():
-    marker = sensitive("journal", FIXTURE_SENTENCE)
-    assert marker.value == FIXTURE_SENTENCE
-    assert isinstance(marker, Sensitive)
 
 
 def test_system_prompt_is_cut_at_the_journal_heading():

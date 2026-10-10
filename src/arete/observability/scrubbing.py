@@ -7,7 +7,6 @@ third party in clear. This module is pure: no agent, API or HTTP imports.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from langchain_core.messages import BaseMessage
@@ -51,24 +50,6 @@ SENSITIVE_TOOL_NAMES = frozenset(
 )
 
 REDACTED_TRUNCATED = "[REDACTED:truncated]"
-
-
-@dataclass(frozen=True)
-class Sensitive:
-    """Carries a value that must reach the model unchanged but never a trace.
-
-    Scrubbing happens on a copy of the traced payload; the wrapped value is
-    returned to the caller untouched. Useless once a value has already been
-    serialized to a flat string (json.dumps erases the wrapper), so mark the
-    value at the point it is still a structured Python object.
-    """
-
-    label: str
-    value: Any
-
-
-def sensitive(label: str, value: Any) -> Sensitive:
-    return Sensitive(label, value)
 
 
 def _redacted(label: str) -> str:
@@ -134,8 +115,6 @@ def _walk(value: Any, *, depth: int, nodes_left: list[int]) -> Any:
         return REDACTED_TRUNCATED
     nodes_left[0] -= 1
 
-    if isinstance(value, Sensitive):
-        return _redacted(value.label)
     if isinstance(value, BaseMessage):
         return _scrubbed_message(value, depth=depth, nodes_left=nodes_left) or value
     if isinstance(value, dict):
