@@ -43,24 +43,25 @@ export function DocumentAttachments({ threadId, disabled = false, ref, onBusy, o
     try { await work(); } catch (error) { setErrors(previous => [...previous.slice(-19), error instanceof Error ? error.message : 'Opération impossible.']); }
   };
   const hasDocuments = !!query.data?.length;
-  if (compact) return <div className="space-y-2 text-xs">
+  if (compact) return <div className="flex flex-col gap-2 text-xs">
     <input ref={input} type="file" multiple accept={ACCEPTED_FILES} className="sr-only" aria-label="Joindre des documents" disabled={busy || disabled} onChange={e => { void upload(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
-    <div className="flex flex-wrap gap-2 max-h-44 overflow-y-auto" aria-label="Pièces jointes du brouillon">
+    {(selectedIds.length > 0 || hasDocuments) && <div className="flex items-start gap-2 p-1">
+    {selectedIds.length > 0 && <div className="flex min-w-0 flex-1 flex-wrap gap-2 max-h-44 overflow-y-auto" aria-label="Pièces jointes du brouillon">
       {selectedIds.map(id => {
         const doc = query.data?.find(d => d.id === id);
-        return <div key={id} className="flex min-w-0 max-w-full items-center rounded-lg border border-text-muted/20 bg-abyss px-2">
-          <button disabled={!doc || doc.status !== 'ready'} onClick={() => doc && setSource(doc)} className="min-w-0 py-3 text-left flex items-center gap-2"><FileText size={20} className="shrink-0 text-neon-cyan" /><span className="min-w-0"><span className="block max-w-48 truncate font-medium">{doc?.name ?? 'Document indisponible'}</span><span className="block mt-1 text-[10px] text-text-muted">{doc?.status === 'ready' ? 'Prêt · Aperçu ↗' : 'À vérifier ou retirer'}</span></span></button>
-          <button disabled={busy || disabled} aria-label={`Retirer ${doc?.name ?? 'le document'} du brouillon`} onClick={() => onDocuments(selectedIds.filter(key => key !== id))} className="size-11 shrink-0 text-text-muted">×</button>
+        return <div key={id} className="flex min-w-0 max-w-full items-center rounded-lg bg-text-muted/5 pl-2">
+          <button disabled={!doc || doc.status !== 'ready'} onClick={() => doc && setSource(doc)} title={doc?.status === 'ready' ? 'Ouvrir l’aperçu' : 'À vérifier ou retirer'} aria-label={`Consulter ${doc?.name ?? 'le document'}`} className="min-w-0 min-h-8 text-left flex items-center gap-2"><FileText size={14} className="shrink-0 text-text-muted" /><span className="max-w-48 truncate">{doc?.name ?? 'Document indisponible'}{doc && doc.status !== 'ready' && ' · Incomplet'}</span></button>
+          <button disabled={busy || disabled} aria-label={`Retirer ${doc?.name ?? 'le document'} du brouillon`} onClick={() => onDocuments(selectedIds.filter(key => key !== id))} className="size-8 shrink-0 rounded-lg text-text-muted hover:bg-text-muted/10">×</button>
         </div>;
       })}
-    </div>
+    </div>}
+    {hasDocuments && <button aria-label={`Fichiers du fil (${query.data?.length})`} title="Fichiers de cette conversation" aria-expanded={library} onClick={() => setLibrary(!library)} className="ml-auto flex h-8 shrink-0 items-center gap-1 rounded-lg px-1 text-text-muted hover:text-text-primary focus-visible:outline-2 focus-visible:outline-neon-cyan"><Paperclip size={14} aria-hidden="true" /><span className="text-[11px] tabular-nums">{query.data?.length}</span></button>}
+    </div>}
     {busy && <div role="status" aria-live="polite" className="flex items-center gap-2 py-2 text-text-secondary"><LoaderCircle size={14} className="animate-spin" /><span className="min-w-0 flex-1 break-words">{progress || 'Préparation…'}</span><button className="min-h-11" onClick={() => controller.current?.abort()}>Annuler</button></div>}
     {query.error && <p role="alert" className="text-danger-red">{query.error.message}</p>}
     {errors.map((error, i) => <p role="alert" key={i} className="text-danger-red break-words">{error}</p>)}
-    <div className="flex items-center gap-3"><button disabled={busy || disabled} aria-label="Joindre un fichier" onClick={() => input.current?.click()} className="flex size-11 items-center justify-center rounded-lg border border-text-muted/20 text-neon-cyan"><Plus size={20} /></button><button aria-expanded={library} onClick={() => setLibrary(!library)} className="min-h-11 text-text-muted">Fichiers du fil ({query.data?.length ?? 0})</button><span className="ml-auto text-[10px] text-text-muted">20 Mio / fichier</span></div>
-    {library && <div className="max-h-48 overflow-y-auto rounded-lg border border-text-muted/20 p-3 space-y-2">
+    {library && hasDocuments && <div className="max-h-48 overflow-y-auto rounded-lg border border-text-muted/20 p-3 space-y-2">
       <p className="text-text-muted">Sélectionne les fichiers du prochain message. Retirer du brouillon conserve l’original.</p>
-      {!query.data?.length && <p>Aucun document dans cette discussion.</p>}
       {query.data?.map(doc => <div key={doc.id} className="flex items-center gap-2"><label className="min-w-0 flex-1 flex gap-2 py-2"><input type="checkbox" disabled={busy || disabled || doc.status !== 'ready'} checked={selectedIds.includes(doc.id)} onChange={e => onDocuments(e.target.checked ? [...selectedIds, doc.id] : selectedIds.filter(id => id !== doc.id))} /><span className="truncate">{doc.name}{doc.status !== 'ready' && ' · Incomplet'}</span></label><button aria-label={`Supprimer définitivement ${doc.name}`} className="size-11 text-danger-red" disabled={busy || disabled} onClick={() => action(async () => { await documentsApi.delete(threadId, doc.id); onDocuments(selectedIds.filter(id => id !== doc.id)); await refresh(); })}><Trash2 size={16} /></button></div>)}
     </div>}
     {source && <DocumentPreview threadId={threadId} document={source} onClose={() => setSource(null)} />}
