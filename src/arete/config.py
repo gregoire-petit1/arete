@@ -232,11 +232,6 @@ class Config:
         return _env("SLACK_TEAM_ID", "") or ""
 
     @property
-    def slack_channel_id(self) -> str:
-        """The one channel where Arete answers mentions; unset = direct messages only."""
-        return _env("SLACK_CHANNEL_ID", "") or ""
-
-    @property
     def web_push_vapid_public_key(self) -> str:
         """VAPID public key (base64url) the browser subscribes with; empty = no push."""
         return _env("WEB_PUSH_VAPID_PUBLIC_KEY", "") or ""

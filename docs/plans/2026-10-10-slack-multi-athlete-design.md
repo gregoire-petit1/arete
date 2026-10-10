@@ -11,7 +11,8 @@ PR #52 (private athletes, migrations 35–36).
 - **v1 shipped first for the owner** (PR #23, athlete 1 behind `SLACK_USER_ID`),
   live since 2026-10-10. Phase A replaces that variable.
 - **Identity by Slack profile email**, matched to a verified Arete login, and a
-  dedicated channel whose public answers need each athlete's consent.
+  every channel Arete is invited to, whose public answers need each athlete's
+  consent.
 
 ## Today (PR #23)
 
@@ -31,10 +32,11 @@ Chosen on 2026-10-10 over Sign in with Slack linking: simpler, no OAuth screen.
   fixed « aucun compte » reply, no coach. `SLACK_USER_ID` is removed.
 - **Scope per message.** Each message runs in its author's athlete scope, so a
   member replying in someone else's thread is answered with their own data.
-- **Dedicated channel** (`SLACK_CHANNEL_ID`). Arete answers a mention, or a reply
+- **Channels Arete is invited to** (first one dedicated channel, `SLACK_CHANNEL_ID`;
+  widened to every invited channel the same day). Arete answers a mention, or a reply
   in one of its threads. Other members' messages are labelled in the history and
   the coach is told not to attribute or memorise them.
-- **Consent.** « Autoriser Arete à me répondre en public dans le canal Slack »
+- **Consent.** « Autoriser Arete à me répondre en public dans les canaux Slack »
   (Réglages → Connexions), off by default; without it the answer goes to the
   athlete's DM with a short note in the thread. The context builder's `surface`
   section tells the coach who reads the answer.
@@ -106,7 +108,7 @@ athlete's consent, otherwise it goes to their DM. Streams follow the same rule.
 
 ## Delivery
 
-Three PRs: A (email identity, dedicated channel, consent, per-athlete runs,
+Three PRs: A (email identity, invited channels, consent, per-athlete runs,
 migration 40), B (queue), then C (streaming). Each with `make check`, the
 `preview` label on `arete_preview`, then Deploy production. Phase A's Slack app
 changes are in `slack-manifest.json`: new bot scopes and the channel events.

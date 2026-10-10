@@ -25,7 +25,6 @@ def configured(monkeypatch):
         "SLACK_SIGNING_SECRET": "test-secret",
         "SLACK_BOT_TOKEN": "test-token",
         "SLACK_TEAM_ID": "T123",
-        "SLACK_CHANNEL_ID": "C123",
     }.items():
         monkeypatch.setenv(name, value)
     worker = AsyncMock()
@@ -102,14 +101,13 @@ def test_invalid_signatures_rejected(router_client, configured, payload, options
 @pytest.mark.parametrize(
     "changes",
     [
-        {"channel_type": "channel"},
-        {"channel": "C999", "channel_type": "channel"},
+        {"channel_type": "mpim"},
         {"bot_id": "B123"},
         {"subtype": "message_changed"},
         {"files": [{"id": "F123"}]},
     ],
 )
-def test_only_plain_text_dm_or_dedicated_channel_runs(
+def test_only_plain_text_dm_or_channel_runs(
     router_client, configured, payload, changes
 ):
     payload["event"].update(changes)
@@ -158,7 +156,7 @@ def test_any_member_dm_is_scheduled_for_resolution(
     configured.assert_awaited_once_with(replace(message, user="U999"), "test-token")
 
 
-def test_dedicated_channel_mention_is_scheduled(
+def test_mention_in_any_invited_channel_is_scheduled(
     router_client, configured, payload, message
 ):
     payload["authorizations"] = [{"is_bot": True, "user_id": "UBOT"}]
@@ -634,7 +632,6 @@ def test_preferences_are_per_athlete_and_off_by_default(
     client = router_client(api.router)
     assert client.get("/slack/preferences").json() == {
         "available": True,
-        "channel": True,
         "public_replies": False,
     }
     assert client.put("/slack/preferences", json={"public_replies": True}).json()[

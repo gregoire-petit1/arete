@@ -227,7 +227,7 @@ failures. Live model evaluations remain opt-in.
 ## Slack transport
 
 `api/slack.py` verifies Slack signatures and accepts plain text from one workspace,
-in direct messages or one dedicated channel; the Clerk gate lists it as a public
+in direct messages or any channel it was invited to; the Clerk gate lists it as a public
 path because the signature is its credential. It acknowledges first, then runs an
 attached ASGI background task. `services/slack.py` resolves the author: a full
 member's confirmed Slack address must match a verified Arete login, through
