@@ -108,6 +108,9 @@ do not add tests that merely repeat an implementation. Live model evaluations in
   push, and a PR merges once CI passes (lint, test, typecheck, frontend). Open
   it with auto-merge armed: `gh pr create … && gh pr merge --auto --merge`.
 - Use Conventional Commits with an English subject and a body explaining why.
+- A PR body fills every section of `.github/pull_request_template.md`, in order,
+  including when an agent passes `--body` or `--body-file` to `gh pr create`, which
+  skips GitHub's prefill.
 - The real data lives in the MotherDuck database `arete`, shared by Vercel and the
   Docker stack (`ARETE_DB=md:arete`). Read it through the HTTP API rather than
   scripts. A local DuckDB file (`make dev`, tests) allows one writer: a script that
