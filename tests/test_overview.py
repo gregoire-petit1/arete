@@ -5,15 +5,19 @@ from __future__ import annotations
 import json
 from datetime import date, timedelta
 
+import pytest
+
 from arete.features.fitness import DailyTSS
 from arete.features.overview import (
     build_cadence_card,
+    build_descent_card,
     build_elevation_card,
     build_health_card,
     build_pace_card,
     build_pmc_card,
     build_recovery_cards,
     build_sports_card,
+    build_vam_card,
     build_volume_card,
     build_zones_card,
     empty_card,
@@ -146,19 +150,21 @@ class TestSportsCard:
 class TestPaceCard:
     def rows(self):
         return [
-            (TODAY - timedelta(days=i * 3), 300 - i, 8000.0, 2400) for i in range(8)
+            (TODAY - timedelta(days=i * 3), 300 - i, 8000.0, 2400, i % 2 == 0)
+            for i in range(8)
         ]
 
     def test_median_and_trend(self):
         card = build_pace_card(self.rows(), window("90d"))
         assert card["secondary"][0]["value"] == 296.5
         assert card["headline"]["value"] is not None  # slope computed
+        assert sum(p["n_graded"] for p in card["series"]) == 4
 
     def test_outliers_dropped(self):
         rows = [
-            (TODAY - timedelta(days=1), 60, 8000.0, 2400),  # too fast
-            (TODAY - timedelta(days=2), 300, 500.0, 200),  # too short
-            (TODAY - timedelta(days=3), 300, 8000.0, 2400),
+            (TODAY - timedelta(days=1), 60, 8000.0, 2400, False),  # too fast
+            (TODAY - timedelta(days=2), 300, 500.0, 200, False),  # too short
+            (TODAY - timedelta(days=3), 300, 8000.0, 2400, False),
         ]
         card = build_pace_card(rows, window())
         assert card["secondary"][0]["value"] == 300.0
@@ -168,6 +174,68 @@ class TestPaceCard:
         card = build_pace_card([], window())
         assert card["headline"]["value"] is None
         assert len(card["series"]) == 30
+
+
+class TestVamCard:
+    MINUTES = (5, 10, 20, 30, 60)
+
+    def rows(self):
+        return [
+            (TODAY - timedelta(days=200), 1, "Brévent", {5: 1500, 30: 1300}),
+            (TODAY - timedelta(days=40), 2, "Flégère", {5: 1200, 30: 1000}),
+            (TODAY - timedelta(days=3), 3, "Mont Vert", {5: 1250, 30: 1100, 60: 900}),
+        ]
+
+    def test_period_best_against_the_all_time_record(self):
+        card = build_vam_card(self.rows(), window(), self.MINUTES)
+        assert card["headline"]["value"] == 1100
+        assert card["headline"]["previous"] == 1000  # the 30 days before
+        assert card["secondary"][0]["value"] == 1300  # record, 200 days ago
+        by_minutes = {p["minutes"]: p for p in card["series"]}
+        assert by_minutes[5]["period"] == 1250 and by_minutes[5]["record"] == 1500
+        assert by_minutes[5]["record_session"] == 1
+        assert by_minutes[60]["period"] == by_minutes[60]["record"] == 900
+        assert by_minutes[10]["period"] is None
+        assert "85 % du record" in card["insight"]["text"]
+
+    def test_a_new_record_says_so(self):
+        rows = [*self.rows(), (TODAY, 4, "Aiguillette", {30: 1400})]
+        card = build_vam_card(rows, window(), self.MINUTES)
+        assert card["insight"]["tone"] == "good"
+        assert "Record" in card["insight"]["text"]
+
+    def test_empty(self):
+        card = build_vam_card([], window(), self.MINUTES)
+        assert card["headline"]["display"] == "—"
+        assert "Aucune sortie" in card["insight"]["text"]
+
+
+class TestDescentCard:
+    @staticmethod
+    def bands(flat_sec, flat_m, down_sec, down_m):
+        return [
+            {"min": -2, "max": 2, "sec": flat_sec, "m": flat_m},
+            {"min": -15, "max": -10, "sec": down_sec, "m": down_m},
+        ]
+
+    def test_descent_speed_against_the_flat(self):
+        rows = [
+            (TODAY - timedelta(days=2), self.bands(600, 2000, 300, 1200)),
+            (TODAY - timedelta(days=40), self.bands(600, 2000, 300, 900)),
+        ]
+        card = build_descent_card(rows, window())
+        # flat 5:00/km, descent 4:10/km: 20 % faster
+        assert card["headline"]["value"] == pytest.approx(20.0)
+        assert card["headline"]["previous"] == pytest.approx(-10.0)
+        assert card["secondary"][0]["value"] == 300
+        steep = next(p for p in card["series"] if p["min"] == -15)
+        assert steep["pace_sec_km"] == 250 and steep["minutes"] == 5
+        assert "20 % plus vite" in card["insight"]["text"]
+
+    def test_too_little_running_shows_no_pace(self):
+        card = build_descent_card([(TODAY, self.bands(600, 2000, 30, 100))], window())
+        assert card["headline"]["value"] is None
+        assert "Pas assez de descente" in card["insight"]["text"]
 
 
 class TestElevationCard:

@@ -423,6 +423,9 @@ def upload_fit_file(
             _repo.save_activity_streams(activity_id, streams)
         except Exception:  # the session is saved; only its page loses the charts
             logger.warning("Could not store the upload's streams", exc_info=True)
+    from arete.services.session_conditions import enrich_sessions
+
+    enrich_sessions([activity_id])  # GAP, climbing speed, weather; never raises
 
     activity_dict = {
         "id": activity_id,

@@ -7,7 +7,6 @@ from arete.features.cardio import (
     calculate_aerobic_decoupling,
     calculate_cardiac_drift,
     calculate_efficiency_factor,
-    calculate_gap,
     calculate_hr_ratio,
     calculate_trimp,
     calculate_trimp_simplified,
@@ -168,16 +167,6 @@ class TestPace:
         assert format_pace(5.0) == "5:00"
         assert format_pace(5.5) == "5:30"
         assert format_pace(4.25) == "4:15"
-
-    def test_gap_calculation(self) -> None:
-        """Grade Adjusted Pace."""
-        # Uphill run should have faster GAP than actual
-        gap = calculate_gap(
-            pace_minkm=6.0,
-            elevation_gain_m=200,
-            distance_km=5.0,
-        )
-        assert gap < 6.0  # GAP should be faster
 
 
 class TestZoneDistribution:

@@ -188,6 +188,20 @@ compact digest without any stream, for the chat's read-only
 `garmin/time_series.py`: decoupling, pace fade, cadence variability, power and
 the work intervals of a structured workout (FIT lap intensity).
 
+Migration 32 stores what the streams and the start say about a session's
+conditions, once, so no page or card rescans a stream: `app.activity_terrain`
+(grade-adjusted pace on Minetti's energy cost of running on a slope, best
+climbing speed over 5 to 60 min, time per descent grade band;
+`features/terrain.py`) and `app.activity_weather` (Open-Meteo at the start's
+hour and place, `services/weather.py`). `services/session_conditions.py` fills
+both after a Garmin sync (scheduled or HTTP) and a FIT upload: the weather
+requests share a 20 s budget and nothing there can fail the import. Sessions
+kept before migration 32 get their terrain from `POST /analytics/terrain/backfill`,
+50 at most per call, from the stored streams and without network. The pace
+trend reads the GAP of hilly runs; the Terrain section adds the climbing curve
+(period against all-time record) and the descent card; the coach's digest gets
+GAP, climbing bests and weather.
+
 The daily sync hands the sessions Garmin imported to
 `coaching.write_sync_feedback`: one feedback request for up to five sessions,
 numbered sections split by `services/session_feedback.py`. A missing, failed or

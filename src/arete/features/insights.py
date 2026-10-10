@@ -195,6 +195,49 @@ def elevation_insight(
     return _insight(f"{base}.")
 
 
+def vam_insight(
+    best: int | None, record: int | None, minutes: int, n_sessions: int
+) -> Insight:
+    """``best`` is the period's best climbing speed over ``minutes``."""
+    if not n_sessions:
+        return _insight(
+            "Aucune sortie à pied avec les flux de la montre sur la période."
+        )
+    if best is None:
+        return _insight(f"Aucune montée continue de {minutes} min sur la période.")
+    if record is not None and best >= record:
+        return _insight(
+            f"Record de vitesse ascensionnelle sur {minutes} min : {best} m/h.",
+            "good",
+        )
+    if record:
+        return _insight(
+            f"Meilleure montée de {minutes} min à {best} m/h, "
+            f"{best / record * 100:.0f} % du record ({record} m/h)."
+        )
+    return _insight(f"Meilleure montée de {minutes} min à {best} m/h.")
+
+
+def descent_insight(gain_pct: float | None, descent_min: float) -> Insight:
+    """``gain_pct``: descent speed over flat speed, minus one, in percent."""
+    if gain_pct is None:
+        return _insight(
+            "Pas assez de descente courue avec les flux de la montre "
+            "pour la comparer au plat."
+        )
+    if gain_pct < 0:
+        return _insight(
+            f"En descente (pente de 5 % et plus, {descent_min:.0f} min), "
+            f"tu vas {abs(gain_pct):.0f} % moins vite que sur le plat : "
+            "la descente se travaille, technique et quadriceps.",
+            "warn",
+        )
+    return _insight(
+        f"En descente (pente de 5 % et plus, {descent_min:.0f} min), "
+        f"tu vas {gain_pct:.0f} % plus vite que sur le plat."
+    )
+
+
 LOW_CADENCE = 160
 CADENCE_SHIFT = 3
 

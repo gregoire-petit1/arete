@@ -2,7 +2,9 @@
 
 Everything is computed, deterministically, from what is stored: the session
 row, its laps (``laps_json``), Strava's metric splits (``splits_json``), its HR
-zones and, when a FIT file fed it, its kept streams. The analytics are the ones
+zones and, when a FIT file fed it, its kept streams, plus the terrain (GAP,
+climbing speeds) and start weather ``session_conditions`` stored when the
+session arrived. The analytics are the ones
 ``garmin/time_series`` always had and nothing called: decoupling, pace fade,
 cadence variability, normalized power, and the work intervals of a structured
 workout read from the FIT laps' intensity.
@@ -31,6 +33,7 @@ from arete.garmin.time_series import (
 )
 from arete.services.analytics import MODEL_EXCLUDED_SOURCES
 from arete.services.coaching_repository import SessionFeedbackRepository
+from arete.services.session_conditions import get_terrain, get_weather
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +46,8 @@ MODEL_LAPS = 15
 MODEL_INTERVALS = 20
 #: Below this the halves are too short for decoupling or fade to mean much.
 MIN_ANALYSIS_SEC = 20 * 60
+#: The terrain changed the effort by this fraction at least (GAP vs pace).
+GAP_NOTABLE = 0.03
 
 
 def _source(session: ActualSession) -> str:
@@ -280,6 +285,8 @@ def get_activity_detail(
         "streams": downsample(streams, CHART_POINTS) if streams else None,
         "route": route(streams, ROUTE_POINTS) if streams else None,
         "feedback": feedback.to_dict() if feedback else None,
+        "terrain": get_terrain(session_id),
+        "weather": get_weather(session_id),
     }
 
 
@@ -320,6 +327,19 @@ def activity_detail_for_model(
         digest["zones_min"] = {zone: round(sec / 60) for zone, sec in zones.items()}
     if metrics:
         digest["analysis"] = metrics
+    terrain = get_terrain(session_id)
+    if terrain and terrain["gap_sec_km"]:
+        digest["gap_sec_km"] = terrain["gap_sec_km"]
+        digest["grade_factor"] = terrain["grade_factor"]
+    if terrain and terrain["vam"]:
+        digest["vam_best_m_h"] = {f"{m}min": v for m, v in terrain["vam"].items()}
+    weather = get_weather(session_id)
+    if weather:
+        digest["weather"] = {
+            key: weather[key]
+            for key in ("temperature_c", "humidity_pct", "wind_kmh", "start_altitude_m")
+            if weather[key] is not None
+        }
     if intervals:
         digest["intervals"] = {
             **intervals,
@@ -356,6 +376,20 @@ def analysis_lines(
             line += f", récupération {_mmss(intervals['rest_avg_sec'])}"
         if intervals.get("pace_cv_pct") is not None:
             line += f", régularité de l'allure {intervals['pace_cv_pct']} % d'écart"
+        lines.append(line)
+    # A flat run's GAP is its pace: only the terrain's effect is worth a line.
+    if abs((digest.get("grade_factor") or 1) - 1) >= GAP_NOTABLE:
+        line = f"Allure ajustée à la pente (GAP) : {_mmss(digest['gap_sec_km'])} /km"
+        if "30min" in digest.get("vam_best_m_h", {}):
+            line += f", meilleure montée 30 min {digest['vam_best_m_h']['30min']} m/h"
+        lines.append(line)
+    weather = digest.get("weather") or {}
+    if "temperature_c" in weather:
+        line = f"Météo au départ : {weather['temperature_c']:.0f} °C"
+        if "humidity_pct" in weather:
+            line += f", humidité {weather['humidity_pct']:.0f} %"
+        if "start_altitude_m" in weather:
+            line += f", départ à {weather['start_altitude_m']:.0f} m"
         lines.append(line)
     analysis = digest.get("analysis") or {}
     if "decoupling_pct" in analysis:

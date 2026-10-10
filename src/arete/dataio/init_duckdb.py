@@ -428,6 +428,33 @@ CREATE TABLE IF NOT EXISTS app.session_feedback (
     trigger            VARCHAR NOT NULL,      -- 'api' (upload, manual entry), 'sync'
     created_at         TIMESTAMP DEFAULT now()
 );
+
+-- Terrain of a session on foot, from its kept streams (features/terrain.py)
+CREATE TABLE IF NOT EXISTS app.activity_terrain (
+    actual_session_id  INTEGER PRIMARY KEY,
+    model_version      INTEGER NOT NULL,      -- terrain.MODEL_VERSION it was computed with
+    grade_factor       DOUBLE,                -- flat-equivalent distance / distance (Minetti)
+    gap_sec_km         INTEGER,               -- grade-adjusted pace
+    vam_5min           INTEGER,               -- best net climbing speed over 5 min, m/h
+    vam_10min          INTEGER,
+    vam_20min          INTEGER,
+    vam_30min          INTEGER,
+    vam_60min          INTEGER,
+    descent_json       VARCHAR,               -- [{min, max, sec, m}] per grade band
+    created_at         TIMESTAMP DEFAULT now()
+);
+
+-- Weather at a session's start (Open-Meteo, services/weather.py)
+CREATE TABLE IF NOT EXISTS app.activity_weather (
+    actual_session_id  INTEGER PRIMARY KEY,
+    observed_at        TIMESTAMP NOT NULL,    -- the hour read, on the session's clock
+    temperature_c      DOUBLE,
+    humidity_pct       DOUBLE,
+    wind_kmh           DOUBLE,
+    start_altitude_m   DOUBLE,                -- the watch's, else the weather grid's
+    source             VARCHAR NOT NULL,      -- 'open-meteo-forecast', 'open-meteo-archive'
+    created_at         TIMESTAMP DEFAULT now()
+);
 """
 
 
@@ -659,6 +686,13 @@ def _m31_activity_streams(con) -> None:
         con.execute(DDL[start : DDL.index(");", start) + 2])
 
 
+def _m32_session_conditions(con) -> None:
+    """A session's terrain (GAP, climbing speed) and start weather."""
+    for table in ("app.activity_terrain (", "app.activity_weather ("):
+        start = DDL.index(f"CREATE TABLE IF NOT EXISTS {table}")
+        con.execute(DDL[start : DDL.index(");", start) + 2])
+
+
 def _m34_calendar_plan_sync(con) -> None:
     """The training plan followed into Google Calendar (columns only)."""
     from arete.services.calendar_repository import CALENDAR_DDL, PLAN_SYNC_DDL
@@ -690,6 +724,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (19, _m19_gamification),
     (20, _m20_personal_memory),
     (31, _m31_activity_streams),
+    (32, _m32_session_conditions),
     (34, _m34_calendar_plan_sync),
 ]
 

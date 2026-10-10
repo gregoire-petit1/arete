@@ -644,7 +644,12 @@ class GarminRepository:
                 "UPDATE app.game_events SET eligible=false,reason='removed',processed=false WHERE source_key=?",
                 [f"actual:{session_id}"],
             )
-            for table in ("activity_streams", "session_feedback"):
+            for table in (
+                "activity_streams",
+                "session_feedback",
+                "activity_terrain",
+                "activity_weather",
+            ):
                 conn.execute(
                     f"DELETE FROM {table} WHERE actual_session_id = ?", [session_id]
                 )

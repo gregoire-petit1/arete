@@ -98,6 +98,13 @@ def daily_sync() -> dict[str, str]:
             )
         except Exception as e:  # noqa: BLE001 - background job must not die
             status["garmin_activities"] = f"failed: {e}"
+        if synced_ids:  # before the feedback, which reads GAP and weather
+            from arete.services.session_conditions import enrich_sessions
+
+            conditions = enrich_sessions(synced_ids)
+            status["conditions"] = (
+                f"{conditions['terrain']} terrain, {conditions['weather']} weather"
+            )
         try:
             end = date.today()
             start = end - timedelta(days=HEALTH_LOOKBACK_DAYS)

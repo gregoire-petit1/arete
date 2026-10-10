@@ -469,12 +469,17 @@ MAX_PACE_SEC_KM = 900
 MIN_PACE_DISTANCE_M = 3000
 
 
-def build_pace_card(
-    rows: Sequence[tuple[date, int, float | None, int]], window: PeriodWindow
-) -> Card:
-    """rows: (date, avg_pace_sec_km, distance_m, duration_sec) for runs, both windows."""
+PaceRow = tuple[date, int, float | None, int, bool]
 
-    def keep(subset: Sequence[tuple[date, int, float | None, int]]):
+
+def build_pace_card(rows: Sequence[PaceRow], window: PeriodWindow) -> Card:
+    """rows: (date, pace_sec_km, distance_m, duration_sec, graded) for runs, both windows.
+
+    ``graded`` marks a pace that is the grade-adjusted one (a hilly run with
+    kept streams): the trend then compares efforts, not the terrain.
+    """
+
+    def keep(subset: Sequence[PaceRow]):
         return [
             r
             for r in subset
@@ -501,8 +506,11 @@ def build_pace_card(
             slope = float(np.polyfit(x, y, 1)[0]) * 30  # s/km per month
 
     by_bucket: dict[str, list[int]] = defaultdict(list)
-    for day, pace, _distance, _duration in cur:
-        by_bucket[bucket_key(day, window.bucket)].append(pace)
+    graded: dict[str, int] = defaultdict(int)
+    for day, pace, _distance, _duration, adjusted in cur:
+        key = bucket_key(day, window.bucket)
+        by_bucket[key].append(pace)
+        graded[key] += adjusted
     points = [
         {
             "bucket": key,
@@ -510,6 +518,7 @@ def build_pace_card(
             if key in by_bucket
             else None,
             "n_runs": len(by_bucket.get(key, [])),
+            "n_graded": graded.get(key, 0),
         }
         for key in bucket_keys(window.start, window.end, window.bucket)
     ]
@@ -531,6 +540,151 @@ def build_pace_card(
 # --------------------------------------------------------------------------- #
 # Terrain & foulée
 # --------------------------------------------------------------------------- #
+#: Duration of the climbing-speed card's headline, in minutes.
+VAM_HEADLINE_MINUTES = 30
+
+VamRow = tuple[date, int, str | None, dict[int, int | None]]
+
+
+def build_vam_card(
+    rows: Sequence[VamRow], window: PeriodWindow, minutes: Sequence[int]
+) -> Card:
+    """rows: (date, session_id, name, {minutes: best m/h}) per session on foot, all time.
+
+    A climbing curve like a power curve: per duration, the period's best and
+    the all-time record (with the session holding it).
+    """
+    cur, prev = _split(rows, window)
+
+    def best(subset: Sequence[VamRow], duration: int) -> VamRow | None:
+        ranked = [r for r in subset if r[3].get(duration)]
+        return max(ranked, key=lambda r: r[3][duration] or 0, default=None)
+
+    def value(row: VamRow | None, duration: int) -> int | None:
+        return None if row is None else row[3][duration]
+
+    series: list[dict[str, Any]] = []
+    for duration in minutes:
+        period, record = best(cur, duration), best(rows, duration)
+        series.append(
+            {
+                "bucket": str(duration),
+                "minutes": duration,
+                "period": value(period, duration),
+                "period_date": None if period is None else period[0].isoformat(),
+                "record": value(record, duration),
+                "record_date": None if record is None else record[0].isoformat(),
+                "record_session": None if record is None else record[1],
+                "record_name": None if record is None else record[2],
+            }
+        )
+
+    top = VAM_HEADLINE_MINUTES
+    period_top = value(best(cur, top), top)
+    prev_top = value(best(prev, top), top) if prev else None
+    record_top = value(best(rows, top), top)
+    shortest = minutes[0]
+    period_short = value(best(cur, shortest), shortest)
+    prev_short = value(best(prev, shortest), shortest) if prev else None
+
+    def display(v: int | None) -> str:
+        return f"{v} m/h" if v is not None else "—"
+
+    return {
+        "headline": headline(period_top, "m/h", display(period_top), prev_top, "up"),
+        "secondary": [
+            headline(record_top, "m/h", display(record_top), None, "neutral"),
+            headline(period_short, "m/h", display(period_short), prev_short, "up"),
+        ],
+        "insight": insights.vam_insight(period_top, record_top, top, len(cur)),
+        "series": series,
+    }
+
+
+#: A descent band needs this much running to show a pace.
+MIN_BAND_SEC = 60
+#: Bands at least this steep (percent, negative) count as "the descent".
+DESCENT_FROM_PCT = -5
+FLAT_BAND = (-2, 2)
+
+DescentRow = tuple[date, Sequence[dict[str, float]]]
+
+
+def _band_totals(rows: Sequence[DescentRow]) -> dict[tuple[int, int], list[float]]:
+    """[seconds, metres] per (lower, upper) grade band."""
+    out: dict[tuple[int, int], list[float]] = {}
+    for _day, bands in rows:
+        for band in bands:
+            slot = out.setdefault((int(band["min"]), int(band["max"])), [0.0, 0.0])
+            slot[0] += band["sec"]
+            slot[1] += band["m"]
+    return out
+
+
+def _band_pace(slot: list[float] | None) -> float | None:
+    if slot is None:
+        return None
+    sec, metres = slot
+    return sec / metres * 1000 if sec >= MIN_BAND_SEC and metres > 0 else None
+
+
+def _descent_gain(by_band: dict[tuple[int, int], list[float]]) -> float | None:
+    """Descent speed over flat speed, minus one, in percent."""
+    down = [v for (_lower, upper), v in by_band.items() if upper <= DESCENT_FROM_PCT]
+    flat_pace = _band_pace(by_band.get(FLAT_BAND))
+    down_pace = _band_pace([sum(v[0] for v in down), sum(v[1] for v in down)])
+    if flat_pace is None or down_pace is None:
+        return None
+    return round((flat_pace / down_pace - 1) * 100, 1)
+
+
+def build_descent_card(rows: Sequence[DescentRow], window: PeriodWindow) -> Card:
+    """rows: (date, descent bands) per run with kept streams, both windows.
+
+    Pace per grade band, summed over the period (time over distance), with
+    the flat band as reference: the headline is how much faster than on the
+    flat the athlete runs once the slope reaches 5 %.
+    """
+    cur, prev = _split(rows, window)
+    by_band = _band_totals(cur)
+    gain = _descent_gain(by_band)
+    prev_gain = _descent_gain(_band_totals(prev)) if prev else None
+    descent_min = (
+        sum(v[0] for (_lo, hi), v in by_band.items() if hi <= DESCENT_FROM_PCT) / 60
+    )
+    flat_pace = _band_pace(by_band.get(FLAT_BAND))
+
+    series: list[dict[str, Any]] = []
+    for (lower, upper), slot in sorted(by_band.items(), key=lambda item: -item[0][1]):
+        band_pace = _band_pace(slot)
+        series.append(
+            {
+                "bucket": f"{lower}:{upper}",
+                "min": lower,
+                "max": upper,
+                "pace_sec_km": None if band_pace is None else round(band_pace),
+                "minutes": round(slot[0] / 60),
+            }
+        )
+
+    return {
+        "headline": headline(
+            gain, "%", f"{gain:+.0f} %" if gain is not None else "—", prev_gain, "up"
+        ),
+        "secondary": [
+            headline(
+                None if flat_pace is None else round(flat_pace),
+                "s/km",
+                format_pace(flat_pace),
+                None,
+                "neutral",
+            )
+        ],
+        "insight": insights.descent_insight(gain, descent_min),
+        "series": series,
+    }
+
+
 def build_elevation_card(
     rows: Sequence[tuple[date, str, float | None, float | None]],
     window: PeriodWindow,
@@ -795,10 +949,12 @@ __all__ = [
     "Card",
     "Headline",
     "build_decoupling_card",
+    "build_descent_card",
     "build_pace_card",
     "build_pmc_card",
     "build_recovery_cards",
     "build_sports_card",
+    "build_vam_card",
     "build_volume_card",
     "build_zones_card",
     "sport_label",

@@ -23,12 +23,13 @@ export function PaceCard({
     bucket: p.bucket,
     pace_sec_km: p.pace_sec_km === null ? null : Number(p.pace_sec_km),
     n_runs: Number(p.n_runs ?? 0),
+    n_graded: Number(p.n_graded ?? 0),
   }));
 
   return (
     <StatCard
       title="Allure de course"
-      question="L'allure progresse-t-elle à mesure des semaines ?"
+      question="L'allure progresse-t-elle à mesure des semaines ? Les sorties vallonnées comptent leur allure ajustée à la pente (GAP)."
       card={card}
       secondaryLabels={['Allure médiane']}
       previousLabel={previousLabel}
@@ -49,10 +50,14 @@ export function PaceCard({
           />
           <ChartTooltip
             labelFormatter={bucketLabel(bucket)}
-            formatter={(value: number, _name: string, item) => [
-              `${formatPace(value)} /km · ${item?.payload?.n_runs ?? 0} sortie${(item?.payload?.n_runs ?? 0) > 1 ? 's' : ''}`,
-              'Allure médiane',
-            ]}
+            formatter={(value: number, _name: string, item) => {
+              const runs = item?.payload?.n_runs ?? 0;
+              const graded = item?.payload?.n_graded ?? 0;
+              return [
+                `${formatPace(value)} /km · ${runs} sortie${runs > 1 ? 's' : ''}${graded ? `, dont ${graded} en GAP` : ''}`,
+                'Allure médiane',
+              ];
+            }}
           />
           <Line
             type="monotone"

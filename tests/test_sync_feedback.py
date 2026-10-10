@@ -253,3 +253,35 @@ class TestDailySync:
             )
             status = scheduler.daily_sync()
         assert status["feedback"] == "failed: db down"
+
+    def test_imported_sessions_get_terrain_and_weather_before_feedback(self):
+        from contextlib import ExitStack
+
+        from arete import scheduler
+
+        calls: list[str] = []
+
+        def enrich(ids):
+            calls.append("conditions")
+            return {"terrain": 2, "weather": 1}
+
+        def feedback(ids):
+            calls.append("feedback")
+            return {"sessions": 2, "agent": 2}
+
+        with ExitStack() as stack:
+            for p in self._garmin([4, 5]):
+                stack.enter_context(p)
+            enriched = stack.enter_context(
+                patch(
+                    "arete.services.session_conditions.enrich_sessions",
+                    side_effect=enrich,
+                )
+            )
+            stack.enter_context(
+                patch("arete.coaching.write_sync_feedback", side_effect=feedback)
+            )
+            status = scheduler.daily_sync()
+        enriched.assert_called_once_with([4, 5])
+        assert calls == ["conditions", "feedback"]
+        assert status["conditions"] == "2 terrain, 1 weather"

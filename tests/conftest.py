@@ -36,6 +36,18 @@ def setup_test_db() -> Generator[None, None, None]:
         db_path.unlink()
 
 
+@pytest.fixture(autouse=True)
+def offline_weather(monkeypatch) -> None:
+    """Sync and upload paths enrich sessions: Open-Meteo is never called.
+
+    Tests of the client itself give ``fetch_weather`` a mock transport.
+    """
+    monkeypatch.setattr(
+        "arete.services.session_conditions.fetch_weather",
+        lambda *args, **kwargs: None,
+    )
+
+
 class _CountingConnection:
     """A DuckDB connection that records every statement it runs."""
 
