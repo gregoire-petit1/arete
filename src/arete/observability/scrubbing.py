@@ -95,27 +95,36 @@ def _redact_prompt_sections(text: str) -> str:
     return text[: min(starts)] + _redacted("personal_context")
 
 
-def _scrubbed_message(value: Any) -> BaseMessage | None:
+def _scrubbed_message(
+    value: Any, *, depth: int, nodes_left: list[int]
+) -> BaseMessage | None:
     """A redacted copy of a live message, or None if it needs no change.
 
     Covers a ToolMessage result (content keyed by the tool's own name), an
-    AIMessage requesting a sensitive tool (its own tool_calls, not .name),
-    and a system/human message whose content carries the injected prompt
-    sections above.
+    AIMessage requesting a sensitive tool through its normalized tool_calls
+    or a provider's raw additional_kwargs, and a system/human message whose
+    content carries the injected prompt sections above.
     """
     if not isinstance(value, BaseMessage):
         return None
     if value.name in SENSITIVE_TOOL_NAMES:
         return value.model_copy(update={"content": _redacted(value.name)})
+
+    updates: dict[str, Any] = {}
     tool_calls = getattr(value, "tool_calls", None) or []
     redacted_calls = [_redact_tool_call(call) for call in tool_calls]
     if redacted_calls != tool_calls:
-        return value.model_copy(update={"tool_calls": redacted_calls})
+        updates["tool_calls"] = redacted_calls
+    redacted_kwargs = _walk(
+        value.additional_kwargs, depth=depth + 1, nodes_left=nodes_left
+    )
+    if redacted_kwargs != value.additional_kwargs:
+        updates["additional_kwargs"] = redacted_kwargs
     if isinstance(value.content, str):
         redacted_content = _redact_prompt_sections(value.content)
         if redacted_content != value.content:
-            return value.model_copy(update={"content": redacted_content})
-    return None
+            updates["content"] = redacted_content
+    return value.model_copy(update=updates) if updates else None
 
 
 def _walk(value: Any, *, depth: int, nodes_left: list[int]) -> Any:
@@ -128,16 +137,20 @@ def _walk(value: Any, *, depth: int, nodes_left: list[int]) -> Any:
     if isinstance(value, Sensitive):
         return _redacted(value.label)
     if isinstance(value, BaseMessage):
-        return _scrubbed_message(value) or value
+        return _scrubbed_message(value, depth=depth, nodes_left=nodes_left) or value
     if isinstance(value, dict):
         name = value.get("name")
         if isinstance(name, str) and name in SENSITIVE_TOOL_NAMES:
-            # A tool_call dict (the model's own request) carries its sensitive
-            # payload under "args"; a ToolMessage dump carries it under
-            # "content". Redact whichever is present, wholesale: relying on
-            # SENSITIVE_KEYS alone would miss a field name it does not list.
+            # A normalized tool_call dict carries its payload under "args"; a
+            # raw provider function-call dict (additional_kwargs) carries it
+            # as a JSON-encoded string under "arguments"; a ToolMessage dump
+            # carries it under "content". Redact whichever is present,
+            # wholesale: relying on SENSITIVE_KEYS alone would miss a field
+            # name it does not list.
             value = {
-                key: _redacted(name) if key in ("content", "args") else child
+                key: _redacted(name)
+                if key in ("content", "args", "arguments")
+                else child
                 for key, child in value.items()
             }
         return {

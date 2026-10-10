@@ -134,6 +134,54 @@ def test_live_ai_message_requesting_a_sensitive_tool_has_its_args_redacted():
     assert message.tool_calls[0]["args"]["body"] == FIXTURE_SENTENCE  # Unmutated.
 
 
+def test_serialized_raw_provider_function_call_arguments_are_redacted():
+    """A provider's raw tool call (additional_kwargs) carries its args as a
+    JSON-encoded string under "arguments", a different field name than the
+    normalized tool_calls LangChain also attaches."""
+    payload = {
+        "additional_kwargs": {
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                        "name": "append_journal",
+                        "arguments": json.dumps(
+                            {"title": "t", "body": FIXTURE_SENTENCE}
+                        ),
+                    },
+                }
+            ]
+        }
+    }
+    scrubbed = scrub(payload)
+    function = scrubbed["additional_kwargs"]["tool_calls"][0]["function"]
+    assert function["arguments"] == "[REDACTED:append_journal]"
+
+
+def test_live_ai_message_raw_additional_kwargs_tool_call_is_redacted():
+    message = AIMessage(
+        content="",
+        additional_kwargs={
+            "tool_calls": [
+                {
+                    "id": "c1",
+                    "type": "function",
+                    "function": {
+                        "name": "remember_fact",
+                        "arguments": json.dumps({"text": FIXTURE_SENTENCE}),
+                    },
+                }
+            ]
+        },
+    )
+    scrubbed = scrub({"output": message})
+    function = scrubbed["output"].additional_kwargs["tool_calls"][0]["function"]
+    assert function["arguments"] == "[REDACTED:remember_fact]"
+    original_function = message.additional_kwargs["tool_calls"][0]["function"]
+    assert FIXTURE_SENTENCE in original_function["arguments"]  # Unmutated.
+
+
 def test_sensitive_tool_name_redacts_a_serialized_tool_message():
     payload = {
         "messages": [
