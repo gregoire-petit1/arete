@@ -82,12 +82,16 @@ def _walk(value: Any, *, depth: int, nodes_left: list[int]) -> Any:
     if _is_sensitive_tool_message(value):
         return value.model_copy(update={"content": _redacted(value.name)})
     if isinstance(value, dict):
-        if isinstance(value.get("name"), str) and value["name"] in SENSITIVE_TOOL_NAMES:
-            value = (
-                {**value, "content": _redacted(value["name"])}
-                if "content" in value
-                else value
-            )
+        name = value.get("name")
+        if isinstance(name, str) and name in SENSITIVE_TOOL_NAMES:
+            # A tool_call dict (the model's own request) carries its sensitive
+            # payload under "args"; a ToolMessage dump carries it under
+            # "content". Redact whichever is present, wholesale: relying on
+            # SENSITIVE_KEYS alone would miss a field name it does not list.
+            value = {
+                key: _redacted(name) if key in ("content", "args") else child
+                for key, child in value.items()
+            }
         return {
             key: _redacted(key)
             if key in SENSITIVE_KEYS

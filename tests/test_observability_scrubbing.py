@@ -49,15 +49,20 @@ def test_key_name_net_reaches_nested_structures():
     }
 
 
-def test_key_name_net_reaches_lists_of_tool_calls():
+def test_tool_name_net_redacts_the_whole_args_of_a_requested_tool_call():
     payload = {
         "tool_calls": [
             {"name": "append_journal", "args": {"title": "t", "body": FIXTURE_SENTENCE}}
         ]
     }
     scrubbed = scrub(payload)
-    args = scrubbed["tool_calls"][0]["args"]
-    assert args == {"title": "[REDACTED:title]", "body": "[REDACTED:body]"}
+    assert scrubbed["tool_calls"][0]["args"] == "[REDACTED:append_journal]"
+
+
+def test_key_name_net_still_redacts_unlisted_tool_calls_by_field_name():
+    payload = {"tool_calls": [{"name": "some_other_tool", "args": {"title": "t"}}]}
+    scrubbed = scrub(payload)
+    assert scrubbed["tool_calls"][0]["args"] == {"title": "[REDACTED:title]"}
 
 
 def test_sensitive_tool_name_redacts_a_live_tool_message():
