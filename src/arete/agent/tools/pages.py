@@ -33,8 +33,7 @@ def get_page_context(page: str) -> str:
         payload = get_page_data(page)
     except Exception as exc:
         # Operating error (empty DB, missing data): report it to the model
-        # instead of failing the run — same contract as Cortex's tool error
-        # handler. Never swallow silently.
+        # instead of failing the run. Never swallow silently.
         return json.dumps({"error": f"{type(exc).__name__}: {exc}"})
 
     rendered = json.dumps(payload, ensure_ascii=False, default=str)

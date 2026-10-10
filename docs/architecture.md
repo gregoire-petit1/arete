@@ -1,6 +1,6 @@
 # Coaching stack: responsibilities and dependencies
 
-Arete uses the Cortex ownership pattern with one coaching runtime and three
+Arete gives each behavior one owner, with one coaching runtime and three
 server-selected profiles. Browser-owned conversations, HTTP endpoints, tool names,
 DuckDB tables and ledger paths remain compatible. There are no placeholder layers
 for delegation, MCP, authentication or providers Arete does not use.

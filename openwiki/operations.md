@@ -69,7 +69,7 @@ Key configuration from `docker-compose.yml`:
 
 <!-- openwiki: broken internal link [/openwiki/architecture.md] link "/openwiki/architecture.md" is root-absolute, which no real consumer resolves against the repository root (not a coding agent reading the page, not GitHub's Markdown renderer, not a local viewer); use a path relative to this file instead. Fix the href or restore the target, then delete this comment. -->
 See [Architecture](/openwiki/architecture.md) for a high-level overview of the system design, including:
-- Coaching stack with Cortex ownership pattern
+- Coaching stack with one owner per behavior
 - Agent runtime with middleware pipeline
 - Service layer reusing domain modules
 - Daily sync entrypoints for Garmin/Strava data ingestion
