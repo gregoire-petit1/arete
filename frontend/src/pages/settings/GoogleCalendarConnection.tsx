@@ -8,6 +8,7 @@ import {
 } from "@/lib/googleCalendar";
 import { useAuthState } from "@/components/auth/authState";
 import { Button } from "@/components/ui";
+import { PlanCalendarSync } from "./PlanCalendarSync";
 
 /** Query flag Google's consent screen comes back with (through Clerk). */
 const RETURN_FLAG = "google_calendar";
@@ -254,6 +255,12 @@ export function GoogleCalendarConnection() {
                 <p role="alert" className="text-xs text-danger-red">
                   Sélectionne au maximum 10 calendriers.
                 </p>
+              )}
+              {calendars.data && (
+                <PlanCalendarSync
+                  status={status.data}
+                  calendars={calendars.data}
+                />
               )}
             </>
           )}

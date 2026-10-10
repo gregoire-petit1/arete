@@ -10,6 +10,7 @@ from time import monotonic
 from typing import Any
 from uuid import uuid4
 
+from arete.dataio import plan_changes
 from arete.dataio.db import db_connection, transaction
 from arete.garmin.workouts import canonical, convert, matches
 from arete.services.documents import DocumentError
@@ -808,6 +809,7 @@ def update_session(
             "UPDATE app.garmin_exports SET state='dirty',updated_at=current_timestamp WHERE session_id=? AND state<>'removed'",
             [session_id],
         )
+    plan_changes.touch()
 
 
 def export_batch(

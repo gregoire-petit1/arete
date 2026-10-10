@@ -24,6 +24,7 @@ from arete.api.garmin_export import router as garmin_export_router
 from arete.api.garmin_health import router as garmin_health_router
 from arete.api.garmin_sync import router as garmin_sync_router
 from arete.api.goals import router as goals_router
+from arete.api.google_calendar import PlanSyncMiddleware
 from arete.api.google_calendar import router as google_calendar_router
 from arete.api.metrics import router as metrics_router
 from arete.api.notifications import router as notifications_router
@@ -80,6 +81,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Arete API", version="0.1.0", lifespan=lifespan)
+# Innermost: follows the plan into Google Calendar once the response is sent.
+app.add_middleware(PlanSyncMiddleware)
 app.add_middleware(MirrorMiddleware)
 # Added last, so it runs first: a refused request never reaches the mirror.
 app.add_middleware(AuthMiddleware)
