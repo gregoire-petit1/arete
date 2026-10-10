@@ -35,7 +35,9 @@ export function DocumentAttachments({ threadId, disabled = false, ref, onBusy, o
         catch (error) { setErrors(previous => [...previous, `${file.name} : ${abort.signal.aborted ? 'Envoi annulé. Supprime le fichier incomplet avant de le renvoyer.' : error instanceof Error ? error.message : 'Envoi impossible.'}`]); }
       }
     } finally {
-      controller.current = null; setBusy(false); onBusy(false); setProgress(''); await refresh();
+      // Keep Send blocked until the library includes the finalized extraction.
+      try { await refresh(); }
+      finally { controller.current = null; setBusy(false); onBusy(false); setProgress(''); }
     }
   };
   useImperativeHandle(ref, () => ({ choose: () => input.current?.click(), upload: files => { void upload(files); } }));

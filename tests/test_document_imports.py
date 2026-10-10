@@ -470,3 +470,218 @@ def test_selected_documents_are_thread_scoped_and_never_silently_dropped(documen
     pending = documents.begin_upload(document_db, "pending.txt", 2, "0" * 64)
     with pytest.raises(DocumentError, match="incomplète"):
         documents.filesystem(document_db, (pending["id"],))
+    with pytest.raises(DocumentError, match="incomplète"):
+        documents.filesystem(document_db)
+    # An unrelated unfinished upload must not block an explicit ready selection.
+    assert documents.filesystem(document_db, (second["id"],)) == files
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("source", ["xlsx", "ocr"])
+def test_chat_hydrates_extraction_before_first_model_and_reads_mounted_file(
+    document_db, monkeypatch, tmp_path, router_client, streaming, source
+):
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    from arete.agent.backends.memory import build_memory_filesystem
+    from arete.agent.factory import build_agent
+    from arete.agent.profiles.catalog import get_profile
+    from arete.api.agent import router
+
+    monkeypatch.setattr("arete.agent.backends.memory.memory_root", lambda: tmp_path)
+    if source == "xlsx":
+        book = Workbook()
+        book.active.append([date(2026, 10, 12), "Footing après le 11", "45 minutes"])
+        raw = io.BytesIO()
+        book.save(raw)
+        doc = uploaded(document_db, "Prépa Semi Lille.xlsx", raw.getvalue())
+        locator = "A1"
+    else:
+        raw = io.BytesIO()
+        Image.new("RGB", (10, 10)).save(raw, format="PNG")
+        doc = uploaded(
+            document_db,
+            "scan.png",
+            raw.getvalue(),
+            Extraction(
+                blocks=[
+                    SourceBlock(
+                        locator="page 1",
+                        text="2026-10-12 : Footing après le 11, 45 minutes",
+                        method="ocr",
+                        confidence=90,
+                    )
+                ]
+            ),
+        )
+        locator = "page 1"
+    path = f"/attachments/{doc['id']}.md"
+    seen = []
+
+    class Model(GenericFakeChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            seen.append(messages)
+            return super()._generate(
+                messages, stop=stop, run_manager=run_manager, **kwargs
+            )
+
+    graph = build_agent(
+        get_profile("chat"),
+        model=Model(
+            messages=iter(
+                [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {
+                                "name": "read_file",
+                                "args": {"file_path": path},
+                                "id": "source",
+                            }
+                        ],
+                    ),
+                    AIMessage(content="Le fichier contient une séance le 12 octobre."),
+                    AIMessage(content="Autre fil."),
+                ]
+            ),
+            disable_streaming=True,
+        ),
+        context_tokens=65_536,
+        output_tokens=4096,
+        filesystem=build_memory_filesystem(),
+    )
+    monkeypatch.setattr("arete.api.agent.get_agent", lambda: graph)
+    client = router_client(router)
+    endpoint = "/agent/chat/stream" if streaming else "/agent/chat"
+    response = client.post(
+        endpoint,
+        json={
+            "thread_id": document_db,
+            "document_ids": [doc["id"]],
+            "messages": [
+                {"role": "user", "content": "Exporte les séances après le 11 octobre"}
+            ],
+        },
+    )
+    assert response.status_code == 200
+    assert "Le fichier contient" in response.text
+    # Even a model that answers without reading tools receives actual source
+    # evidence on its first call, including locators and OCR/cell provenance.
+    assert path in seen[0][0].text
+    assert "Footing après le 11" in seen[0][0].text
+    assert locator in seen[0][0].text
+    tool_result = next(m for m in seen[1] if m.type == "tool")
+    assert tool_result.status == "success"
+    assert "45 minutes" in tool_result.text
+    assert len(seen) == 2
+    client.post(
+        endpoint,
+        json={
+            "thread_id": str(uuid4()),
+            "document_ids": [],
+            "messages": [{"role": "user", "content": "Autre conversation"}],
+        },
+    )
+    assert path not in seen[2][0].text
+    assert "Footing après le 11" not in seen[2][0].text
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize(
+    "failure", ["pending", "legacy_pending", "missing", "no_thread"]
+)
+def test_chat_rejects_unavailable_files_before_agent_creation(
+    document_db, monkeypatch, router_client, streaming, failure
+):
+    from arete.api.agent import router
+
+    doc = documents.begin_upload(document_db, "plan.xlsx", 4, "0" * 64)
+    body = {
+        "thread_id": document_db,
+        "document_ids": [str(uuid4()) if failure == "missing" else doc["id"]],
+        "messages": [{"role": "user", "content": "Lis mon fichier"}],
+    }
+    if failure == "legacy_pending":
+        del body["document_ids"]
+    if failure == "no_thread":
+        del body["thread_id"]
+
+    def unexpected_graph():
+        pytest.fail("Agent must not start before document hydration succeeds")
+
+    monkeypatch.setattr("arete.api.agent.get_agent", unexpected_graph)
+    response = router_client(router).post(
+        "/agent/chat/stream" if streaming else "/agent/chat", json=body
+    )
+    if streaming:
+        events = [
+            json.loads(line[6:])
+            for line in response.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        assert [e["type"] for e in events] == ["error"]
+    else:
+        assert response.status_code == 422
+
+
+def test_concurrent_threads_keep_their_own_attachment_context(
+    document_db, monkeypatch, tmp_path
+):
+    from langchain.agents import create_agent
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from arete.agent.backends.memory import build_memory_filesystem
+    from arete.agent.middlewares.context import ContextBuilderMiddleware
+    from arete.agent.runtime.context import AgentContext
+    from arete.api.agent import _document_state
+
+    monkeypatch.setattr("arete.agent.backends.memory.memory_root", lambda: tmp_path)
+    contexts = [
+        AgentContext(thread_id=document_db),
+        AgentContext(thread_id=str(uuid4())),
+    ]
+    markers = ["SOURCE_ALPHA", "SOURCE_BETA"]
+    states = []
+    for context, marker in zip(contexts, markers, strict=True):
+        uploaded(context.thread_id, raw=marker.encode())
+        state, _ = _document_state(context)
+        states.append({"messages": [HumanMessage(marker)], **state})
+
+    async def concurrent_runs():
+        barrier = asyncio.Barrier(2)
+
+        class Model(GenericFakeChatModel):
+            def bind_tools(self, tools, **kwargs):
+                return self
+
+            async def _agenerate(self, messages, **kwargs):
+                await asyncio.wait_for(barrier.wait(), timeout=5)
+                own = messages[-1].text
+                other = next(marker for marker in markers if marker != own)
+                assert own in messages[0].text
+                assert other not in messages[0].text
+                return self._generate(messages)
+
+        graph = create_agent(
+            Model(messages=iter([AIMessage(content="OK"), AIMessage(content="OK")])),
+            middleware=[build_memory_filesystem(), ContextBuilderMiddleware()],
+            context_schema=AgentContext,
+        )
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                *[
+                    graph.ainvoke(state, context=context)
+                    for state, context in zip(states, contexts, strict=True)
+                ]
+            ),
+            timeout=10,
+        )
+        assert results[0]["files"] == states[0]["files"]
+        assert results[1]["files"] == states[1]["files"]
+
+    asyncio.run(concurrent_runs())

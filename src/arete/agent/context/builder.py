@@ -16,6 +16,7 @@ from arete.agent.capabilities.discovery import (
     _registry,
     tool_instructions_suffix,
 )
+from arete.agent.context.attachments import attachment_section
 from arete.agent.context.sections import ContextSection, page_section
 from arete.agent.runtime.budget import MAX_MODEL_CALLS
 from arete.agent.runtime.context import AgentContext
@@ -123,7 +124,11 @@ def build_context(
         ),
         ContextSection("journal", journal_block(), "ledger"),
         ContextSection(
-            "attachments", context.attachment_manifest if context else "", "server"
+            "attachments",
+            attachment_section(
+                state.get("files", {}), context.attachment_paths if context else ()
+            ),
+            "server",
         ),
         ContextSection(
             "page",

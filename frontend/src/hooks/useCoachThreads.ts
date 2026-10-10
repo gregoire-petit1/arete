@@ -138,7 +138,12 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
       ),
       { role: 'user', content, attachmentIds },
     ]);
-    const documentIds = selectedDocuments ? [...new Set(history.flatMap(m => m.attachmentIds ?? []))] : undefined;
+    // Files belong to the thread, independently of the model's message window.
+    // Keep retry's original selection and exclude the next unsent draft.
+    const documentIds = selectedDocuments ? [...new Set([
+      ...active.messages.slice(0, keep).flatMap(m => m.attachmentIds ?? []),
+      ...attachmentIds ?? [],
+    ])] : undefined;
     if (documentIds && documentIds.length > 20) {
       setError('Cette demande référence plus de 20 documents. Ouvre une nouvelle conversation.');
       return false;

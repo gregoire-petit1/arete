@@ -71,7 +71,7 @@ class AgentContext:
     document_ids: tuple[str, ...] | None = None
     # Only interactive HTTP chat requests need a next-message draft.
     suggest_reply: bool = False
-    attachment_manifest: str = ""
+    attachment_paths: tuple[str, ...] = ()
     document_import_pending: bool = False
     current_date: date = field(default_factory=date.today)
     deadline: float | None = field(default=None, init=False)
