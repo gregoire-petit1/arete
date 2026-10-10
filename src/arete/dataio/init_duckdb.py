@@ -477,6 +477,13 @@ CREATE TABLE IF NOT EXISTS app.system_skills (
     content VARCHAR NOT NULL,
     PRIMARY KEY (bundle, path)
 );
+
+-- One row per athlete who used Slack: public-reply consent and the run reservation.
+CREATE TABLE IF NOT EXISTS app.slack_athletes (
+    athlete_id     INTEGER PRIMARY KEY,
+    public_replies BOOLEAN NOT NULL DEFAULT FALSE,  -- off: channel answers go to DM
+    run_event_key  VARCHAR                          -- the Slack event being answered
+);
 """
 
 
@@ -758,6 +765,12 @@ def _m39_user_roles(con) -> None:
     )
 
 
+def _m40_slack_athletes(con) -> None:
+    """Slack serves several athletes: consent and one run per athlete."""
+    start = DDL.index("CREATE TABLE IF NOT EXISTS app.slack_athletes (")
+    con.execute(DDL[start : DDL.index(");", start) + 2])
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -787,6 +800,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (37, _m37_slack_deliveries),
     (38, _m38_system_skills),
     (39, _m39_user_roles),
+    (40, _m40_slack_athletes),
 ]
 
 

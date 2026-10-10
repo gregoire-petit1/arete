@@ -226,19 +226,22 @@ failures. Live model evaluations remain opt-in.
 
 ## Slack transport
 
-`api/slack.py` verifies Slack signatures and restricts invocation to one configured
-athlete in one workspace, in direct messages only; the Clerk gate lists it as a
-public path because the signature is its credential. It acknowledges first, then
-runs an attached ASGI background task in the owner athlete's scope. That task owns
-mirror hydration and flush;
-the general mirror middleware bypasses this endpoint to protect Slack's receipt
-deadline. `services/slack.py` owns bounded Slack history, responses and durable
-delivery reservations; it receives `coaching.run_slack_coach` as its producer.
-The composition root reuses the chat graph and runtime. Slack threads own their
-history; browser state is unchanged. Migration 37 stores delivery IDs and a single
-execution reservation, not conversation text. Failed ambiguous runs stay reserved
-for operator review and are never replayed. See [Slack setup](slack.md) for limits,
-installation, crash behavior and recovery.
+`api/slack.py` verifies Slack signatures and accepts plain text from one workspace,
+in direct messages or one dedicated channel; the Clerk gate lists it as a public
+path because the signature is its credential. It acknowledges first, then runs an
+attached ASGI background task. `services/slack.py` resolves the author: a full
+member's confirmed Slack address must match a verified Arete login, through
+`services/slack_athletes.py`, and the task then runs in that athlete's scope,
+which owns mirror hydration and flush; the general mirror middleware bypasses
+this endpoint to protect Slack's receipt deadline. The service owns bounded
+history (other channel members labelled), responses, the per-athlete public-reply
+consent and durable delivery reservations; it receives `coaching.run_slack_coach`
+as its producer, which passes the answer's visibility as `AgentContext.slack_visibility`
+for the context builder's `surface` section. Slack threads own their history;
+browser state is unchanged. Migrations 37 and 40 store delivery IDs, consent and one
+run reservation per athlete, not conversation text. Failed ambiguous runs stay
+reserved for operator review and are never replayed. See [Slack setup](slack.md)
+for limits, installation, crash behavior and recovery.
 
 ## Document imports and outbound workouts
 

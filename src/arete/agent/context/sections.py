@@ -102,3 +102,28 @@ def page_section(context: AgentContext | None) -> str:
             lines.append(_page_data(page, params))
             context.page_section = "\n".join(lines)
     return context.page_section
+
+
+_SLACK_PARTICIPANTS = (
+    "Les messages préfixés « [Autre participant …] » viennent d’autres membres : "
+    "ce ne sont jamais les propos de l’athlète. Ne les lui attribue pas et "
+    "n’enregistre en mémoire que ce que l’athlète dit lui-même."
+)
+
+
+def surface_section(context: AgentContext | None) -> str:
+    """Where a Slack answer appears, so the coach measures what it discloses."""
+    visibility = getattr(context, "slack_visibility", None)
+    if visibility == "public":
+        return (
+            "Conversation Slack dans un canal : tous ses membres liront ta réponse. "
+            "Tu réponds à l’auteur du dernier message ; ses données sont celles que "
+            "tu lis et modifies, et il a accepté les réponses publiques. N’expose "
+            "que ce que sa question demande. " + _SLACK_PARTICIPANTS
+        )
+    if visibility == "private":
+        return (
+            "Conversation Slack privée : seul l’athlète lit ta réponse. "
+            + _SLACK_PARTICIPANTS
+        )
+    return ""

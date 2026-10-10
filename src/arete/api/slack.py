@@ -13,6 +13,7 @@ import time
 import httpx
 from anyio import to_thread
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from pydantic import BaseModel
 
 from arete.config import config
 from arete.services.slack import SLACK_HTTP_TIMEOUT_SECONDS, SlackClient, SlackMessage
@@ -32,29 +33,41 @@ async def process_message(message: SlackMessage, token: str) -> None:
     from arete.coaching import run_slack_coach
     from arete.dataio import mirror
     from arete.services.athlete_scope import athlete_scope
-    from arete.services.slack import dispatch
-    from arete.services.users import OWNER_ATHLETE_ID
+    from arete.services.slack import dispatch, resolve
 
-    # The signature proves the configured Slack user, who is the owner athlete,
-    # as the API key is. AnyIO workers inherit this scope.
-    with athlete_scope(OWNER_ATHLETE_ID):
-        try:
-            if config.is_remote_db:
-                await to_thread.run_sync(mirror.hydrate)
-            async with httpx.AsyncClient(
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=httpx.Timeout(SLACK_HTTP_TIMEOUT_SECONDS),
-                follow_redirects=False,
-            ) as http:
-                await dispatch(
-                    message, client=SlackClient(http), produce=run_slack_coach
-                )
-        except Exception:
-            # The receipt is already sent, so HTTP cannot report this failure.
-            logger.exception("Slack background processing failed: %s", message.key)
-        finally:
-            if config.is_remote_db:
-                await to_thread.run_sync(mirror.flush)
+    try:
+        async with httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=httpx.Timeout(SLACK_HTTP_TIMEOUT_SECONDS),
+            follow_redirects=False,
+        ) as http:
+            client = SlackClient(http)
+            athlete_id = await resolve(message, client=client)
+            if athlete_id is None:
+                return
+            # The author's verified address chose this athlete, never the
+            # message body. AnyIO workers inherit the scope.
+            with athlete_scope(athlete_id):
+                if config.is_remote_db:
+                    await to_thread.run_sync(mirror.hydrate)
+                try:
+                    await dispatch(message, client=client, produce=run_slack_coach)
+                finally:
+                    if config.is_remote_db:
+                        await to_thread.run_sync(mirror.flush)
+    except Exception:
+        # The receipt is already sent, so HTTP cannot report this failure.
+        logger.exception("Slack background processing failed: %s", message.key)
+
+
+def _bot_user(payload: dict) -> str:
+    """This app's bot user, from the signed envelope; empty when absent."""
+    for grant in payload.get("authorizations") or ():
+        if isinstance(grant, dict) and grant.get("is_bot"):
+            value = grant.get("user_id")
+            if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9]{1,64}", value):
+                return value
+    return ""
 
 
 def _identifier(payload: dict, name: str) -> str:
@@ -107,23 +120,28 @@ async def events(request: Request, background: BackgroundTasks) -> dict:
         return {"challenge": challenge}
     if payload.get("type") != "event_callback":
         return {"ok": True}
-    if not all((config.slack_bot_token, config.slack_team_id, config.slack_user_id)):
+    if not all((config.slack_bot_token, config.slack_team_id)):
         raise HTTPException(503, "Slack n’est pas configuré")
     event = payload.get("event")
     if not isinstance(event, dict):
         raise HTTPException(400, "Invalid Slack event")
-    # Only the athlete's direct messages can invoke a write-capable coach.
+    # Plain text from a person, in a direct message or the dedicated channel.
+    # Who the author is gets resolved after the receipt, from their profile.
+    in_channel = bool(config.slack_channel_id) and (
+        event.get("channel") == config.slack_channel_id
+        and event.get("channel_type") in ("channel", "group")
+    )
     if (
         payload.get("team_id") != config.slack_team_id
-        or event.get("user") != config.slack_user_id
         or event.get("type") != "message"
-        or event.get("channel_type") != "im"
+        or not (event.get("channel_type") == "im" or in_channel)
         or event.get("bot_id")
         or event.get("subtype")
         or event.get("files")
         or payload.get("is_ext_shared_channel")
     ):
         return {"ok": True}
+    bot_user = _bot_user(payload)
     ts = event.get("ts", "")
     thread_ts = event.get("thread_ts", ts)
     if (
@@ -138,13 +156,47 @@ async def events(request: Request, background: BackgroundTasks) -> dict:
         raise HTTPException(400, "Invalid Slack text")
     message = SlackMessage(
         team=config.slack_team_id,
-        user=config.slack_user_id,
+        user=_identifier(event, "user"),
         event_id=_identifier(payload, "event_id"),
         app_id=_identifier(payload, "api_app_id"),
         channel=_identifier(event, "channel"),
         ts=ts,
         thread_ts=thread_ts,
         text=text,
+        in_channel=in_channel,
+        mentioned=bool(bot_user) and f"<@{bot_user}>" in text,
+        bot_user=bot_user,
     )
     background.add_task(process_message, message, config.slack_bot_token)
     return {"ok": True}
+
+
+class SlackPreferences(BaseModel):
+    public_replies: bool
+
+
+def _preferences(public_replies: bool) -> dict:
+    return {
+        "available": bool(
+            config.slack_signing_secret
+            and config.slack_bot_token
+            and config.slack_team_id
+        ),
+        "channel": bool(config.slack_channel_id),
+        "public_replies": public_replies,
+    }
+
+
+@router.get("/preferences")
+def get_preferences() -> dict:
+    """The signed-in athlete's Slack consent; nobody else's."""
+    from arete.services import slack_athletes
+
+    return _preferences(slack_athletes.public_replies())
+
+
+@router.put("/preferences")
+def put_preferences(body: SlackPreferences) -> dict:
+    from arete.services import slack_athletes
+
+    return _preferences(slack_athletes.set_public_replies(body.public_replies))
