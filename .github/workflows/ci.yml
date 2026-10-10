@@ -218,8 +218,17 @@ jobs:
           echo "url=$url" >> "$GITHUB_OUTPUT"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      # REST, as `vercel alias set` cannot resolve `--scope` with the token.
       - name: Point the fixed URL at it
-        run: vercel alias set "$URL" "$MAIN_PREVIEW_ALIAS" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+        run: |
+          api=https://api.vercel.com
+          id=$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "$api/v13/deployments/${URL#https://}?teamId=$VERCEL_ORG_ID" | jq -r .id)
+          curl -fsS -X POST -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"alias\":\"$MAIN_PREVIEW_ALIAS\"}" \
+            "$api/v2/deployments/$id/aliases?teamId=$VERCEL_ORG_ID" > /dev/null
+          echo "https://$MAIN_PREVIEW_ALIAS now serves $URL" >> "$GITHUB_STEP_SUMMARY"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           URL: ${{ steps.deploy.outputs.url }}
