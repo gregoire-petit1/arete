@@ -17,6 +17,7 @@ from arete.features.fitness import DailyTSS
 from arete.features.hr_zones import DEFAULT_MAX_HR, LTHR_FROM_MAX_HR
 from arete.features.terrain import VAM_MINUTES
 from arete.features.workload import DailyLoad
+from arete.services.athlete_scope import resolve_athlete_id
 
 # Garmin sync writes "running"/"cycling"/..., Strava writes "run"/"ride"/...:
 # both spellings coexist in the database, so every filter must accept both.
@@ -55,7 +56,7 @@ def sql_in(values: Iterable[str]) -> str:
 THRESHOLD_HR_SQL = f"""
     COALESCE(
       (SELECT COALESCE(NULLIF(lthr, 0), ROUND(NULLIF(max_hr, 0) * {LTHR_FROM_MAX_HR}))
-       FROM app.user_settings WHERE user_id = 1),
+       FROM app.visible_user_settings WHERE user_id = getvariable('arete_athlete_id')),
       {round(DEFAULT_MAX_HR * LTHR_FROM_MAX_HR)}
     )
 """
@@ -86,12 +87,12 @@ LOAD_ROWS = """
     (
       SELECT id, user_id, date, sport, duration_sec, rpe, suffer_score, avg_hr,
              distance_m, hr_zones_json, avg_pace_sec_km, ascent_m, avg_cadence
-      FROM app.actual_sessions
+      FROM app.visible_actual_sessions
       UNION ALL
       SELECT -id, user_id, date, 'strength', duration_min * 60,
              CAST(ROUND(overall_rpe) AS INTEGER), NULL, NULL,
              NULL, NULL, NULL, NULL, NULL
-      FROM app.strength_sessions
+      FROM app.visible_strength_sessions
       WHERE actual_session_id IS NULL AND duration_min > 0
     ) AS sessions
 """
@@ -102,9 +103,10 @@ def _days(start: date, end: date) -> Sequence[date]:
 
 
 def daily_tss(
-    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
+    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int | None = None
 ) -> list[DailyTSS]:
     """Daily TSS between two dates (inclusive), zeros for days without sessions."""
+    user_id = resolve_athlete_id(user_id)
     rows = con.execute(
         f"""
         SELECT date, SUM({TSS_EXPR}) AS daily_tss
@@ -119,9 +121,10 @@ def daily_tss(
 
 
 def daily_loads(
-    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
+    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int | None = None
 ) -> list[DailyLoad]:
     """Daily duration/RPE loads between two dates, zeros for days without sessions."""
+    user_id = resolve_athlete_id(user_id)
     rows = con.execute(
         f"""
         SELECT date,
@@ -143,9 +146,10 @@ def daily_loads(
 
 
 def daily_tss_by_date(
-    con: duckdb.DuckDBPyConnection, user_id: int = 1
+    con: duckdb.DuckDBPyConnection, user_id: int | None = None
 ) -> dict[date, float]:
     """TSS per day over the whole history, days without sessions absent."""
+    user_id = resolve_athlete_id(user_id)
     rows = con.execute(
         f"""
         SELECT date, SUM({TSS_EXPR})
@@ -187,13 +191,14 @@ HEALTH_COLUMNS = (
 
 
 def daily_metrics_range(
-    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
+    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int | None = None
 ) -> list[dict]:
     """Stored Garmin health metrics between two dates, oldest first."""
+    user_id = resolve_athlete_id(user_id)
     rows = con.execute(
         f"""
         SELECT {", ".join(HEALTH_COLUMNS)}
-        FROM app.daily_metrics
+        FROM app.visible_daily_metrics
         WHERE user_id = ? AND date >= ? AND date <= ?
         ORDER BY date ASC
         """,
@@ -209,11 +214,12 @@ def daily_metrics_range(
 
 
 def earliest_session_date(
-    con: duckdb.DuckDBPyConnection, user_id: int = 1
+    con: duckdb.DuckDBPyConnection, user_id: int | None = None
 ) -> date | None:
     """Date of the first recorded session, used by the "all" period."""
+    user_id = resolve_athlete_id(user_id)
     row = con.execute(
-        "SELECT MIN(date) FROM app.actual_sessions WHERE user_id = ?", [user_id]
+        "SELECT MIN(date) FROM app.visible_actual_sessions WHERE user_id = ?", [user_id]
     ).fetchone()
     return row[0] if row and row[0] else None
 
@@ -237,16 +243,17 @@ class OverviewRow(NamedTuple):
 
 
 def overview_rows(
-    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int = 1
+    con: duckdb.DuckDBPyConnection, start: date, end: date, user_id: int | None = None
 ) -> list[OverviewRow]:
     """Every session in the range with the columns the overview cards read."""
+    user_id = resolve_athlete_id(user_id)
     rows = con.execute(
         f"""
         SELECT date, sport, COALESCE(duration_sec, 0), distance_m, hr_zones_json,
                avg_pace_sec_km, avg_hr, rpe, ascent_m, avg_cadence, {TSS_EXPR},
                terrain.gap_sec_km
         FROM {LOAD_ROWS}
-        LEFT JOIN app.activity_terrain AS terrain
+        LEFT JOIN app.visible_activity_terrain AS terrain
           ON terrain.actual_session_id = sessions.id
         WHERE date >= ? AND date <= ? AND user_id = ?
         ORDER BY date ASC, sessions.id ASC
@@ -261,14 +268,15 @@ def drift_rows(
     start: date,
     end: date,
     min_duration_sec: int = 2400,
-    user_id: int = 1,
+    user_id: int | None = None,
 ) -> list[tuple]:
     """Long runs with laps, in the column order ``hr_drift.analyze_runs`` expects."""
+    user_id = resolve_athlete_id(user_id)
     return con.execute(
         f"""
         SELECT id, date, name, distance_m, ascent_m,
                moving_time_sec, avg_hr, avg_pace_sec_km, laps_json
-        FROM app.actual_sessions
+        FROM app.visible_actual_sessions
         WHERE date >= ? AND date <= ? AND user_id = ?
           AND sport IN ({sql_in(RUNNING_SPORTS)})
           AND moving_time_sec >= ?
@@ -292,19 +300,22 @@ class TerrainRow(NamedTuple):
     descent_json: str | None
 
 
-def terrain_rows(con: duckdb.DuckDBPyConnection, user_id: int = 1) -> list[TerrainRow]:
+def terrain_rows(
+    con: duckdb.DuckDBPyConnection, user_id: int | None = None
+) -> list[TerrainRow]:
     """Every session on foot with a stored terrain, all time, oldest first.
 
     One row per session with kept streams: a few hundred a year, so the cards
     slice and rank them in Python, the all-time records included.
     """
+    user_id = resolve_athlete_id(user_id)
     rows = con.execute(
         f"""
         SELECT s.id, s.date, s.name, s.sport,
                {", ".join(f"t.{column}" for column in VAM_COLUMNS.values())},
                t.descent_json
-        FROM app.activity_terrain t
-        JOIN app.actual_sessions s ON s.id = t.actual_session_id
+        FROM app.visible_activity_terrain t
+        JOIN app.visible_actual_sessions s ON s.id = t.actual_session_id
         WHERE s.user_id = ? AND s.sport IN ({sql_in(FOOT_SPORTS)})
         ORDER BY s.date ASC, s.id ASC
         """,
@@ -325,13 +336,14 @@ def terrain_rows(con: duckdb.DuckDBPyConnection, user_id: int = 1) -> list[Terra
 
 
 def best_effort_rows(
-    con: duckdb.DuckDBPyConnection, sports: Sequence[str], user_id: int = 1
+    con: duckdb.DuckDBPyConnection, sports: Sequence[str], user_id: int | None = None
 ) -> list[tuple]:
     """(best_efforts_json, date, name, id) for every session carrying best efforts."""
+    user_id = resolve_athlete_id(user_id)
     return con.execute(
         f"""
         SELECT best_efforts_json, date, name, id
-        FROM app.actual_sessions
+        FROM app.visible_actual_sessions
         WHERE user_id = ?
           AND best_efforts_json IS NOT NULL
           AND sport IN ({sql_in(sports)})

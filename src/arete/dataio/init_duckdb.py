@@ -702,6 +702,18 @@ def _m34_calendar_plan_sync(con) -> None:
             con.execute(statement)
 
 
+def _m35_athlete_accounts(con) -> None:
+    from arete.dataio.athlete_schema import migrate
+
+    migrate(con)
+
+
+def _m36_private_relations(con) -> None:
+    from arete.dataio.tenant_schema import migrate
+
+    migrate(con)
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -726,6 +738,8 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (31, _m31_activity_streams),
     (32, _m32_session_conditions),
     (34, _m34_calendar_plan_sync),
+    (35, _m35_athlete_accounts),
+    (36, _m36_private_relations),
 ]
 
 
@@ -743,6 +757,10 @@ def _run_migrations(con) -> None:
         migrate(con)
         con.execute("INSERT INTO app.schema_version (version) VALUES (?)", [version])
         logger.info("Schema migration %d applied", version)
+    if 36 in applied and any(version not in applied for version, _ in MIGRATIONS):
+        # A late historical migration can recreate a relation. Reapply the
+        # idempotent ownership projection so it cannot reintroduce shared data.
+        _m36_private_relations(con)
 
 
 def _is_current(con) -> bool:
@@ -762,6 +780,9 @@ def main():
         if _is_current(con):
             logger.info("Database schema is current (%d migrations)", len(MIGRATIONS))
             return
+        # Bootstrap writes belong to the original athlete, even before any
+        # HTTP identity exists. This private connection is closed after migration.
+        con.execute("SET VARIABLE arete_athlete_id = 1")
         for stmt in DDL.strip().split(";"):
             s = stmt.strip()
             if s:

@@ -64,7 +64,7 @@ make docker    # copies .env.example to .env if missing (compose reads env_file 
 # frontend: http://localhost:3080   backend: http://localhost:8001 (8000 is often taken)
 ```
 
-Docker and Vercel Production share one MotherDuck database (`ARETE_DB=md:arete`); Vercel Preview uses its own (`md:arete_preview`), so a preview never migrates the real data. MotherDuck is provisioned through the Vercel Marketplace (resource `arete-db`): open it with `vercel integration open motherduck` (single sign-on, no separate account), then Settings → Access tokens. The Vercel copy of `MOTHERDUCK_TOKEN` is a secret and cannot be pulled, so local scripts read the token from `.env`; give each user of the database its own token so one can be revoked without breaking the others; files that are not the database (Garmin tokens, coach memory) stay in the repo's `./data`, bind-mounted at `/app/data`, and are mirrored into it (`dataio/mirror.py`). `make dev` keeps the local `data/arete.duckdb` file unless `ARETE_DB` says otherwise. The daily sync runs on Vercel Cron at 08:00 UTC (`GET /api/cron/daily-sync`, `CRON_SECRET`), after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up. `ARETE_AUTO_SYNC_HOUR` still arms the in-process scheduler for a backend that stays up without Vercel. The compose file sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
+Docker and Vercel Production share one MotherDuck database (`ARETE_DB=md:arete`); Vercel Preview must use a separate database (for example `md:arete_preview`); the application refuses `md:arete` in a preview. Configure that database before enabling the PR preview. MotherDuck is provisioned through the Vercel Marketplace (resource `arete-db`): open it with `vercel integration open motherduck` (single sign-on, no separate account), then Settings → Access tokens. The Vercel copy of `MOTHERDUCK_TOKEN` is a secret and cannot be pulled, so local scripts read the token from `.env`; give each user of the database its own token so one can be revoked without breaking the others; files that are not the database (Garmin tokens, coach memory) stay in the repo's `./data`, bind-mounted at `/app/data`, and are mirrored into it (`dataio/mirror.py`). `make dev` keeps the local `data/arete.duckdb` file unless `ARETE_DB` says otherwise. The daily sync dispatcher runs on Vercel Cron every five minutes from 08:00 through 23:55 UTC (requires a plan supporting sub-daily cron) (`GET /api/cron/daily-sync`, `CRON_SECRET`), after wake-up: Garmin only publishes the night's HRV and sleep score once the athlete is up. `ARETE_AUTO_SYNC_HOUR` still arms the in-process scheduler for a backend that stays up without Vercel. The compose file sets `FRONTEND_URL` for the 3080 frontend; with `restart: unless-stopped` the stack comes back whenever Docker starts. Ollama is expected on the Docker host (`host.docker.internal:11434`); uncomment the `ollama` service in `docker-compose.yml` to run it in Docker instead.
 
 ## Configuration
 
@@ -83,7 +83,6 @@ All settings come from environment variables (see `.env.example`):
 | `OLLAMA_BASE_URL` / `OPENROUTER_API_KEY` / `GITHUB_TOKEN` | Credentials for the chosen provider |
 | `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REDIRECT_URI` | Strava OAuth app |
 | `FRONTEND_URL` | Where the Strava callback redirects (default `http://localhost:3080`) |
-| `GARMIN_EMAIL`, `GARMIN_PASSWORD` | Garmin Connect login (or log in from the Settings page) |
 | `ARETE_GARMIN_TOKENS_DIR` | Where the Garmin session tokens are stored (default `data/garmin_tokens`) |
 
 The agent reuses `LLM_PROVIDER` / `LLM_MODEL` and needs a tool-calling model; its memory ledger sits next to the database, in `data/agent/memory/`.
@@ -237,7 +236,7 @@ Interactive docs at `/docs`. Routers and their prefixes:
 
 ## Who can use it
 
-Out of the box Arete is one athlete with no sign-in: `user_id = 1` everywhere,
+Out of the box Arete is one implicit athlete with no sign-in (ID 1),
 Strava tokens in DuckDB and Garmin session tokens on disk in clear text. Run it
 on your own machine or behind something that authenticates (VPN, reverse proxy,
 Vercel Authentication). Do not expose it to the internet as is.
@@ -249,8 +248,8 @@ Marketplace (`vercel integration add clerk`), which sets `CLERK_SECRET_KEY` and
 | Variable | Purpose |
 | --- | --- |
 | `ARETE_AUTH=clerk` | Enforce sign-in: every API route except `/health`, `/auth/config`, the Strava callback, the cron and the schema needs a Clerk session token |
-| `ARETE_OWNER_EMAIL` | The address that is the athlete; comma-separated when you sign in with several accounts. Any other account can sign up but sees a waiting page: attaching more athletes is not done yet |
-| `ARETE_API_KEY` | Long-lived key for scripts and the MCP server (`Authorization: Bearer`), treated as the athlete |
+| `ARETE_OWNER_EMAIL` | Verified addresses allowed to claim the historical athlete (comma-separated). Every other account receives its own private athlete |
+| `ARETE_API_KEY` | Long-lived key for scripts and the MCP server (`Authorization: Bearer`), restricted to the historical athlete |
 | `ARETE_AUTH_ORIGINS` | Optional comma-separated browser origins allowed to hold a session (the token's `azp`); leave unset for Vercel previews |
 
 Turn it on in Preview first, sign in there, then in Production. Once the app
@@ -343,3 +342,5 @@ Point it at a copy: the agent writes to the memory ledger beside whichever datab
 ## License
 
 See [LICENSE](LICENSE).
+
+Private accounts and the per-athlete Garmin connection flow: [multi-athlete setup and rollout](docs/multi-athlete.md). Garmin credentials are entered in Settings → Connections, never supplied as shared environment variables.

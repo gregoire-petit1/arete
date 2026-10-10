@@ -32,7 +32,11 @@ reuses them. Business code imports neither the HTTP routes nor agent frameworks.
 
 `coaching.py` resolves configuration and supplies the concrete model and memory
 adapter to the factory. Graph creation is serialized
-on first access and cached once per profile. Only this composition root may
+on first access and cached per athlete and profile (32 athletes per profile).
+Memory roots are captured at construction, so sharing a compiled graph across
+athletes would expose the wrong ledger. `services/athlete_scope.py` carries the
+trusted identity through HTTP, workers, tools and scheduled jobs; clients cannot
+select it. See [multi-athlete storage and rollout](multi-athlete.md). Only this composition root may
 import the factory. The runtime receives an already-compiled graph; it never
 compiles another agent. Briefing and feedback services receive typed callbacks
 rather than reaching back into the factory.

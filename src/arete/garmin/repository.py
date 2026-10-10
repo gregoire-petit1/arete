@@ -8,6 +8,7 @@ import duckdb
 
 from arete.dataio import plan_changes
 from arete.dataio.db import connect
+from arete.dataio.ownership import require_owned
 from arete.garmin.models import (
     ActivitySource,
     ActualSession,
@@ -16,6 +17,7 @@ from arete.garmin.models import (
     SessionType,
 )
 from arete.garmin.streams import CHANNELS, ActivityStreams
+from arete.services.athlete_scope import resolve_athlete_id
 
 PLANNED_COLUMNS = (
     "id, user_id, date, sport, session_type, target_duration_min, "
@@ -94,6 +96,11 @@ class GarminRepository:
             ID of created session
         """
         conn = self._get_connection()
+        try:
+            require_owned(conn, "goals", session.goal_id)
+        except BaseException:
+            conn.close()
+            raise
 
         result = conn.execute(
             """
@@ -105,7 +112,7 @@ class GarminRepository:
             RETURNING id
             """,
             [
-                session.user_id or 1,
+                resolve_athlete_id(session.user_id),
                 session.date,
                 session.sport,
                 session.session_type.value
@@ -138,7 +145,7 @@ class GarminRepository:
         result = conn.execute(
             f"""
             SELECT {PLANNED_COLUMNS}
-            FROM planned_sessions WHERE id = ?
+            FROM visible_planned_sessions WHERE id = ?
             """,
             [session_id],
         ).fetchone()
@@ -166,7 +173,7 @@ class GarminRepository:
 
         query = f"""
             SELECT {PLANNED_COLUMNS}
-            FROM planned_sessions WHERE 1=1
+            FROM visible_planned_sessions WHERE 1=1
         """
         params: list = []
 
@@ -209,11 +216,14 @@ class GarminRepository:
         conn = self._get_connection()
         try:
             conn.execute("BEGIN TRANSACTION")
+            require_owned(conn, "goals", fields.get("goal_id"))
             row = conn.execute(
-                "SELECT prescription FROM planned_sessions WHERE id=?", [session_id]
+                "SELECT prescription FROM visible_planned_sessions WHERE id=?",
+                [session_id],
             ).fetchone()
             active = conn.execute(
-                "SELECT state FROM garmin_exports WHERE session_id=?", [session_id]
+                "SELECT state FROM visible_garmin_exports WHERE session_id=?",
+                [session_id],
             ).fetchone()
             if active and active[0] in {"working", "uncertain", "conflict"}:
                 raise ValueError(
@@ -229,13 +239,11 @@ class GarminRepository:
                 )
             # Both planning editors share the version used to reserve exports.
             result = conn.execute(
-                f"UPDATE planned_sessions SET {', '.join(f'{k} = ?' for k in fields)}, "
-                "revision=revision+1 WHERE id = ? RETURNING id",
+                f"UPDATE planned_sessions SET {', '.join(f'{k} = ?' for k in fields)}, revision=revision+1 WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) RETURNING id",
                 [*values, session_id],
             ).fetchone()
             conn.execute(
-                "UPDATE garmin_exports SET state='dirty',updated_at=current_timestamp "
-                "WHERE session_id=? AND state<>'removed'",
+                "UPDATE garmin_exports SET state='dirty',updated_at=current_timestamp WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (session_id=? AND state<>'removed') ",
                 [session_id],
             )
             conn.execute("COMMIT")
@@ -253,18 +261,20 @@ class GarminRepository:
         try:
             conn.execute("BEGIN TRANSACTION")
             active = conn.execute(
-                "SELECT state FROM garmin_exports WHERE session_id=?", [session_id]
+                "SELECT state FROM visible_garmin_exports WHERE session_id=?",
+                [session_id],
             ).fetchone()
             if active and active[0] in {"working", "uncertain", "conflict"}:
                 raise ValueError(
                     "Réconcilie l’export Garmin avant de supprimer la séance."
                 )
             conn.execute(
-                "UPDATE garmin_exports SET deleted=true,state='pending_removal',updated_at=current_timestamp WHERE session_id=? AND state<>'removed'",
+                "UPDATE garmin_exports SET deleted=true,state='pending_removal',updated_at=current_timestamp WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (session_id=? AND state<>'removed') ",
                 [session_id],
             )
             result = conn.execute(
-                "DELETE FROM planned_sessions WHERE id = ? RETURNING id", [session_id]
+                "UPDATE planned_sessions SET deleted_at = current_timestamp WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) RETURNING id",
+                [session_id],
             ).fetchone()
             conn.execute("COMMIT")
         except BaseException:
@@ -293,6 +303,7 @@ class GarminRepository:
         conn = self._get_connection()
         conn.execute("BEGIN TRANSACTION")
         try:
+            require_owned(conn, "planned_sessions", session.planned_session_id)
             result = conn.execute(
                 """
                 INSERT INTO actual_sessions (
@@ -312,7 +323,7 @@ class GarminRepository:
                 """,
                 [
                     session.planned_session_id,
-                    session.user_id or 1,
+                    resolve_athlete_id(session.user_id),
                     session.date,
                     session.sport,
                     session.session_type,
@@ -395,7 +406,7 @@ class GarminRepository:
                    name, notes, rpe, workout_type, moving_time_sec,
                    suffer_score, laps_json, splits_json, best_efforts_json,
                    avg_watts, weighted_avg_watts, device_name, strava_activity_id
-            FROM actual_sessions WHERE id = ?
+            FROM visible_actual_sessions WHERE id = ?
             """,
             [session_id],
         ).fetchone()
@@ -488,7 +499,7 @@ class GarminRepository:
                    name, notes, rpe, workout_type, moving_time_sec,
                    suffer_score, {blobs},
                    avg_watts, weighted_avg_watts, device_name, strava_activity_id
-            FROM actual_sessions WHERE 1=1
+            FROM visible_actual_sessions WHERE 1=1
         """
         params: list = []
 
@@ -556,7 +567,7 @@ class GarminRepository:
         try:
             row = conn.execute(
                 """
-                SELECT id FROM actual_sessions
+                SELECT id FROM visible_actual_sessions
                 WHERE date = ?
                   AND start_time IS NOT NULL
                   AND abs(epoch(start_time) - epoch(CAST(? AS TIMESTAMP))) <= ?
@@ -569,7 +580,7 @@ class GarminRepository:
                 tol = max(tolerance_sec, int(duration_sec * 0.05))
                 row = conn.execute(
                     """
-                    SELECT id FROM actual_sessions
+                    SELECT id FROM visible_actual_sessions
                     WHERE date = ? AND start_time IS NULL
                       AND abs(duration_sec - ?) <= ?
                     LIMIT 1
@@ -586,9 +597,9 @@ class GarminRepository:
         try:
             rows = conn.execute(
                 """
-                SELECT garmin_activity_id FROM actual_sessions WHERE source = 'strava'
+                SELECT garmin_activity_id FROM visible_actual_sessions WHERE source = 'strava'
                 UNION
-                SELECT strava_activity_id FROM actual_sessions WHERE strava_activity_id IS NOT NULL
+                SELECT strava_activity_id FROM visible_actual_sessions WHERE strava_activity_id IS NOT NULL
                 """
             ).fetchall()
         finally:
@@ -606,7 +617,7 @@ class GarminRepository:
         conn = self._get_connection()
         try:
             conn.execute(
-                f"UPDATE actual_sessions SET {assignments} WHERE id = ?",
+                f"UPDATE actual_sessions SET {assignments} WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) ",
                 [*fields.values(), session_id],
             )
         finally:
@@ -620,12 +631,16 @@ class GarminRepository:
     ) -> bool:
         """Update the planned_session_id for an actual session."""
         conn = self._get_connection()
+        try:
+            require_owned(conn, "planned_sessions", planned_id)
+        except BaseException:
+            conn.close()
+            raise
         result = conn.execute(
             """
             UPDATE actual_sessions
             SET planned_session_id = ?, adherence_score = ?
-            WHERE id = ?
-            RETURNING id
+            WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) RETURNING id
             """,
             [planned_id, adherence_score, actual_id],
         ).fetchone()
@@ -638,21 +653,13 @@ class GarminRepository:
         conn.execute("BEGIN TRANSACTION")
         try:
             result = conn.execute(
-                "DELETE FROM actual_sessions WHERE id = ? RETURNING id", [session_id]
+                "UPDATE actual_sessions SET deleted_at = current_timestamp WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) RETURNING id",
+                [session_id],
             ).fetchone()
             conn.execute(
-                "UPDATE app.game_events SET eligible=false,reason='removed',processed=false WHERE source_key=?",
+                "UPDATE app.game_events SET eligible=false,reason='removed',processed=false WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (source_key=?) ",
                 [f"actual:{session_id}"],
             )
-            for table in (
-                "activity_streams",
-                "session_feedback",
-                "activity_terrain",
-                "activity_weather",
-            ):
-                conn.execute(
-                    f"DELETE FROM {table} WHERE actual_session_id = ?", [session_id]
-                )
             conn.execute("COMMIT")
             return result is not None
         except BaseException:
@@ -674,8 +681,9 @@ class GarminRepository:
         conn = self._get_connection()
         conn.execute("BEGIN TRANSACTION")
         try:
+            require_owned(conn, "actual_sessions", actual_session_id)
             conn.execute(
-                "DELETE FROM activity_streams WHERE actual_session_id = ?",
+                "DELETE FROM activity_streams WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (actual_session_id = ?) ",
                 [actual_session_id],
             )
             conn.execute(
@@ -700,8 +708,7 @@ class GarminRepository:
         conn = self._get_connection()
         try:
             row = conn.execute(
-                f"SELECT t_sec, {', '.join(CHANNELS)} FROM activity_streams"
-                " WHERE actual_session_id = ?",
+                f"SELECT t_sec, {', '.join(CHANNELS)} FROM visible_activity_streams WHERE actual_session_id = ?",
                 [actual_session_id],
             ).fetchone()
         finally:
@@ -717,7 +724,7 @@ class GarminRepository:
     def count_actual_sessions(self) -> int:
         """Return total count of actual sessions (efficient query)."""
         conn = self._get_connection()
-        result = conn.execute("SELECT COUNT(*) FROM actual_sessions").fetchone()
+        result = conn.execute("SELECT COUNT(*) FROM visible_actual_sessions").fetchone()
         conn.close()
         return int(result[0]) if result else 0
 
@@ -730,8 +737,7 @@ class GarminRepository:
         conn = self._get_connection()
         try:
             row = conn.execute(
-                "SELECT MAX(date), MAX(created_at) FROM actual_sessions "
-                "WHERE source = ?",
+                "SELECT MAX(date), MAX(created_at) FROM visible_actual_sessions WHERE source = ?",
                 [ActivitySource.GARMIN_CONNECT.value],
             ).fetchone()
         finally:
@@ -781,7 +787,7 @@ class GarminRepository:
                            WHERE {due} AND status = 'pending' AND date < ?
                        ),
                        COUNT(*)
-                FROM planned_sessions
+                FROM visible_planned_sessions
                 """,
                 [*due_params, *due_params, *due_params, today],
             ).fetchone() or (0, 0, 0, 0)
@@ -790,7 +796,7 @@ class GarminRepository:
                 SELECT COUNT(*),
                        COUNT(*) FILTER (WHERE planned_session_id IS NOT NULL),
                        COUNT(*) FILTER (WHERE planned_session_id IS NULL AND {due})
-                FROM actual_sessions
+                FROM visible_actual_sessions
                 """,
                 due_params,
             ).fetchone() or (0, 0, 0)

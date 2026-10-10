@@ -34,6 +34,7 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
     },
     onSuccess: (data) => {
       if (data.needs_mfa) {
+        setPassword('');
         setNeedsMfa(true);
         setError(null);
       } else {
@@ -79,9 +80,12 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
         <>
           <p className="text-sm font-mono text-text-muted mb-6">Saisis le code envoyé sur ton appareil.</p>
           <div>
-            <label className={LABEL}>[CODE]</label>
+            <label htmlFor="garmin-mfa" className={LABEL}>[CODE]</label>
             <input
+              id="garmin-mfa"
               type="text"
+              autoComplete="one-time-code"
+              inputMode="numeric"
               value={mfaCode}
               onChange={(e) => setMfaCode(e.target.value)}
               className={`${FIELD} border-neon-cyan/30 text-center text-xl tracking-widest`}
@@ -101,8 +105,9 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
           <p className="text-sm font-mono text-text-muted mb-6">Connecte ton compte Garmin pour synchroniser tes activités.</p>
           <div className="space-y-4">
             <div>
-              <label className={LABEL}>[EMAIL]</label>
+              <label htmlFor="garmin-email" className={LABEL}>[EMAIL]</label>
               <input
+                id="garmin-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -113,8 +118,9 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
               />
             </div>
             <div>
-              <label className={LABEL}>[MOT DE PASSE]</label>
+              <label htmlFor="garmin-password" className={LABEL}>[MOT DE PASSE]</label>
               <input
+                id="garmin-password"
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

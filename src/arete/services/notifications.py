@@ -55,15 +55,13 @@ def subscribe(
     try:
         con.execute(
             "INSERT INTO app.push_subscriptions (endpoint, p256dh, auth, user_agent) "
-            "VALUES (?, ?, ?, ?) ON CONFLICT (endpoint) DO UPDATE SET "
+            "VALUES (?, ?, ?, ?) ON CONFLICT (athlete_id, endpoint) DO UPDATE SET "
             "p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, "
             "user_agent = EXCLUDED.user_agent, created_at = now()",
             [endpoint, p256dh, auth, (user_agent or "")[:300] or None],
         )
         con.execute(
-            "DELETE FROM app.push_subscriptions WHERE endpoint NOT IN ("
-            "SELECT endpoint FROM app.push_subscriptions "
-            "ORDER BY created_at DESC LIMIT ?)",
+            "DELETE FROM app.push_subscriptions WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (endpoint NOT IN (SELECT endpoint FROM app.visible_push_subscriptions ORDER BY created_at DESC LIMIT ?)) ",
             [MAX_SUBSCRIPTIONS],
         )
     finally:
@@ -73,7 +71,10 @@ def subscribe(
 def unsubscribe(endpoint: str) -> None:
     con = connect()
     try:
-        con.execute("DELETE FROM app.push_subscriptions WHERE endpoint = ?", [endpoint])
+        con.execute(
+            "DELETE FROM app.push_subscriptions WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (endpoint = ?) ",
+            [endpoint],
+        )
     finally:
         con.close()
 
@@ -82,8 +83,7 @@ def _subscriptions() -> list[tuple[str, str, str]]:
     con = connect()
     try:
         return con.execute(
-            "SELECT endpoint, p256dh, auth FROM app.push_subscriptions "
-            "ORDER BY created_at DESC LIMIT ?",
+            "SELECT endpoint, p256dh, auth FROM app.visible_push_subscriptions ORDER BY created_at DESC LIMIT ?",
             [MAX_SUBSCRIPTIONS],
         ).fetchall()
     finally:
@@ -143,7 +143,7 @@ def notify(title: str, body: str, url: str = "/") -> NotifyResult:
             con = connect()
             try:
                 con.execute(
-                    "UPDATE app.push_subscriptions SET last_success_at = ? WHERE endpoint = ?",
+                    "UPDATE app.push_subscriptions SET last_success_at = ? WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (endpoint = ?) ",
                     [datetime.now(), endpoint],
                 )
             finally:

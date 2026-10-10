@@ -221,7 +221,7 @@ class StrengthSession:
     """A complete strength training session."""
 
     id: int | None = None
-    user_id: int = 1
+    user_id: int | None = None
     date: date = field(default_factory=date.today)
     name: str | None = None  # e.g., "Push Day", "Upper A"
     program: str | None = None  # e.g., "PPL", "531", "GZCLP"

@@ -46,7 +46,9 @@ class TestGarminClientAuth:
             api = garmin_cls.return_value
             api.login.return_value = (None, None)
             assert GarminClient(token_dir).login("a@b.c", "pw") == "ok"
-        garmin_cls.assert_called_once_with("a@b.c", "pw", return_on_mfa=True)
+        garmin_cls.assert_called_once_with(
+            "a@b.c", "pw", return_on_mfa=True, retry_attempts=0
+        )
         api.client.dump.assert_called_once_with(str(token_dir))
         assert token_dir.exists()
 
@@ -61,10 +63,10 @@ class TestGarminClientAuth:
             GarminClient(token_dir).complete_mfa("123456")
         api.resume_login.assert_called_once_with({}, "123456")
         api.client.dump.assert_called_once_with(str(token_dir))
-        assert GarminClient._pending_mfa is None
+        assert not GarminClient._pending_mfa
 
     def test_complete_mfa_without_pending_login(self, token_dir):
-        GarminClient._pending_mfa = None
+        GarminClient._pending_mfa.clear()
         with pytest.raises(GarminAuthError, match="No login waiting"):
             GarminClient(token_dir).complete_mfa("000000")
 

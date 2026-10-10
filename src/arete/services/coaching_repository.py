@@ -15,6 +15,8 @@ from typing import Any, Literal
 import duckdb
 
 from arete.dataio.db import connect, db_connection
+from arete.dataio.ownership import require_owned
+from arete.services.athlete_scope import resolve_athlete_id
 
 Priority = Literal["info", "warning", "alert"]
 Source = Literal["agent", "rules"]
@@ -85,8 +87,9 @@ class BriefingRepository:
         status: str = "ok",
         error: str | None = None,
         trigger: str = "api",
-        user_id: int = 1,
+        user_id: int | None = None,
     ) -> int:
+        user_id = resolve_athlete_id(user_id)
         conn = self._get_connection()
         try:
             result = conn.execute(
@@ -116,7 +119,7 @@ class BriefingRepository:
         return int(result[0])
 
     def get_for_day(
-        self, briefing_date: date | None = None, user_id: int = 1
+        self, briefing_date: date | None = None, user_id: int | None = None
     ) -> Briefing | None:
         """The day's usable briefing — newest first, failures skipped.
 
@@ -124,11 +127,12 @@ class BriefingRepository:
         dashboard shows: a later successful run for the same day wins, and
         when there is none the caller falls back to the rule text.
         """
+        user_id = resolve_athlete_id(user_id)
         conn = self._get_connection()
         try:
             row = conn.execute(
                 f"""
-                SELECT {_COLUMNS} FROM coach_briefings
+                SELECT {_COLUMNS} FROM visible_coach_briefings
                 WHERE user_id = ? AND date = ? AND status = 'ok'
                 ORDER BY created_at DESC, id DESC
                 LIMIT 1
@@ -139,13 +143,16 @@ class BriefingRepository:
             conn.close()
         return _row_to_briefing(row) if row else None
 
-    def list_recent(self, limit: int = 30, user_id: int = 1) -> list[Briefing]:
+    def list_recent(
+        self, limit: int = 30, user_id: int | None = None
+    ) -> list[Briefing]:
         """Recent briefings, failures included — this is the audit view."""
+        user_id = resolve_athlete_id(user_id)
         conn = self._get_connection()
         try:
             rows = conn.execute(
                 f"""
-                SELECT {_COLUMNS} FROM coach_briefings
+                SELECT {_COLUMNS} FROM visible_coach_briefings
                 WHERE user_id = ?
                 ORDER BY date DESC, created_at DESC, id DESC
                 LIMIT ?
@@ -156,13 +163,13 @@ class BriefingRepository:
             conn.close()
         return [_row_to_briefing(row) for row in rows]
 
-    def delete_for_day(self, briefing_date: date, user_id: int = 1) -> int:
+    def delete_for_day(self, briefing_date: date, user_id: int | None = None) -> int:
         """Drop a day's briefings; returns how many went. Used to force a redo."""
+        user_id = resolve_athlete_id(user_id)
         conn = self._get_connection()
         try:
             rows = conn.execute(
-                "DELETE FROM coach_briefings WHERE user_id = ? AND date = ? "
-                "RETURNING id",
+                "DELETE FROM coach_briefings WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (user_id = ? AND date = ?) RETURNING id",
                 [user_id, briefing_date],
             ).fetchall()
         finally:
@@ -194,8 +201,9 @@ class SessionFeedbackRepository:
 
     def save(self, session_id: int, *, text: str, source: str, trigger: str) -> None:
         with db_connection() as conn:
+            require_owned(conn, "actual_sessions", session_id)
             conn.execute(
-                "DELETE FROM app.session_feedback WHERE actual_session_id = ?",
+                "DELETE FROM app.session_feedback WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (actual_session_id = ?) ",
                 [session_id],
             )
             conn.execute(
@@ -208,8 +216,7 @@ class SessionFeedbackRepository:
     def get(self, session_id: int) -> StoredFeedback | None:
         with db_connection() as conn:
             row = conn.execute(
-                "SELECT actual_session_id, text, source, trigger, created_at "
-                "FROM app.session_feedback WHERE actual_session_id = ?",
+                "SELECT actual_session_id, text, source, trigger, created_at FROM app.visible_session_feedback WHERE actual_session_id = ?",
                 [session_id],
             ).fetchone()
         return StoredFeedback(*row) if row else None
@@ -220,8 +227,7 @@ class SessionFeedbackRepository:
             return set()
         with db_connection() as conn:
             rows = conn.execute(
-                "SELECT actual_session_id FROM app.session_feedback "
-                "WHERE list_contains(?, actual_session_id)",
+                "SELECT actual_session_id FROM app.visible_session_feedback WHERE list_contains(?, actual_session_id)",
                 [session_ids],
             ).fetchall()
         return {int(r[0]) for r in rows}

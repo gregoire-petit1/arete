@@ -34,6 +34,7 @@ from arete.garmin.readiness import (
     fetch_window,
     training_readiness_from_rows,
 )
+from arete.services.athlete_scope import resolve_athlete_id
 
 logger = logging.getLogger(__name__)
 TSS_PER_SESSION = 50.0
@@ -302,7 +303,7 @@ def get_player_stats():
     (whole history, ~one row per training day) and the Banister coefficients.
     """
     today = date.today()
-    settings = get_user_settings(user_id=1) or {}
+    settings = get_user_settings(user_id=resolve_athlete_id()) or {}
     goal_tss = _weekly_goal_tss(settings)
 
     con = connect()
@@ -551,15 +552,16 @@ def current_vdot(con=None) -> tuple[float, str] | None:
     con = con or connect()
     try:
         row = con.execute(
-            "SELECT race_10k_sec FROM app.daily_metrics WHERE user_id = 1 "
-            "AND race_10k_sec IS NOT NULL ORDER BY date DESC LIMIT 1"
+            "SELECT race_10k_sec FROM app.visible_daily_metrics WHERE user_id = getvariable('arete_athlete_id') AND race_10k_sec IS NOT NULL ORDER BY date DESC LIMIT 1"
         ).fetchone()
     finally:
         if own:
             con.close()
     if row and row[0]:
         return vdot_from_race(10_000, row[0]), "garmin_prediction"
-    pace = (get_user_settings(user_id=1) or {}).get("threshold_pace_sec_km")
+    pace = (get_user_settings(user_id=resolve_athlete_id()) or {}).get(
+        "threshold_pace_sec_km"
+    )
     if pace:
         return vdot_from_threshold_pace(int(pace)), "threshold_pace"
     return None

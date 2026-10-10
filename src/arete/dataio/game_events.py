@@ -15,10 +15,12 @@ def capture(
     manual: bool = True,
     canonical: str | None = None,
 ) -> None:
-    profile = con.execute("SELECT enabled FROM app.game_profile WHERE id=1").fetchone()
+    profile = con.execute(
+        "SELECT enabled FROM app.visible_game_profile WHERE id=1"
+    ).fetchone()
     assert profile is not None
     settings = con.execute(
-        "SELECT timezone, weekly_training_goal FROM app.user_settings WHERE user_id=1"
+        "SELECT timezone, weekly_training_goal FROM app.visible_user_settings WHERE user_id = getvariable('arete_athlete_id')"
     ).fetchone()
     zone, goal = settings or ("Europe/Paris", 6)
     now = datetime.now(UTC)
@@ -33,14 +35,14 @@ def capture(
                 started if started.tzinfo else started.replace(tzinfo=ZoneInfo(zone))
             )
             allowed = con.execute(
-                "SELECT count(*) FROM app.game_periods WHERE started_at<=? AND (ended_at IS NULL OR ended_at>?)",
+                "SELECT count(*) FROM app.visible_game_periods WHERE started_at<=? AND (ended_at IS NULL OR ended_at>?)",
                 [instant, instant],
             ).fetchone()[0]
         else:
             start = datetime.combine(day, datetime.min.time(), ZoneInfo(zone))
             end = start + timedelta(days=1)
             allowed = (manual and day == local_today) or con.execute(
-                "SELECT count(*) FROM app.game_periods WHERE started_at<=? AND (ended_at IS NULL OR ended_at>=?)",
+                "SELECT count(*) FROM app.visible_game_periods WHERE started_at<=? AND (ended_at IS NULL OR ended_at>=?)",
                 [start, end],
             ).fetchone()[0]
         if not allowed:

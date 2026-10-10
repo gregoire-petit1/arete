@@ -134,15 +134,15 @@ def _database_corpus(corpus: Corpus, thread_id: str | None) -> None:
         sql = """SELECT id, revision, CAST(since AS VARCHAR), to_json(struct_pack(
             kind := kind, text := text, status := status, evidence := evidence,
             since := since, valid_until := valid_until, source_ref := source_ref)) AS body
-            FROM app.athlete_facts WHERE user_id = 1 ORDER BY id"""
+            FROM app.visible_athlete_facts WHERE user_id = getvariable('arete_athlete_id') ORDER BY id"""
         for fid, revision, day, body in _rows(con, corpus, sql):
             links: tuple[str, ...] = (
                 (f"fact:{fid}:r{revision - 1}",) if revision > 1 else ()
             )
             corpus.add(f"fact:{fid}:r{revision}", day, body, links=links)
         sql = """SELECT r.fact_id, r.revision, CAST(r.recorded_at AS VARCHAR),
-            CAST(r.snapshot AS VARCHAR) AS body FROM app.athlete_fact_revisions r
-            JOIN app.athlete_facts f ON f.id = r.fact_id WHERE f.user_id = 1
+            CAST(r.snapshot AS VARCHAR) AS body FROM app.visible_athlete_fact_revisions r
+            JOIN app.visible_athlete_facts f ON f.id = r.fact_id WHERE f.user_id = getvariable('arete_athlete_id')
             ORDER BY r.fact_id, r.revision"""
         for fid, revision, day, body in _rows(con, corpus, sql):
             links = (f"fact:{fid}:r{revision - 1}",) if revision > 1 else ()
@@ -153,8 +153,8 @@ def _database_corpus(corpus: Corpus, thread_id: str | None) -> None:
                 links=links,
             )
         sql = """SELECT id, CAST(date AS VARCHAR), planned_session_id,
-            concat_ws(' ', sport, name, notes) AS body FROM app.actual_sessions
-            WHERE user_id = 1 OR user_id IS NULL ORDER BY id"""
+            concat_ws(' ', sport, name, notes) AS body FROM app.visible_actual_sessions
+            WHERE user_id = getvariable('arete_athlete_id') ORDER BY id"""
         for sid, day, planned, body in _rows(con, corpus, sql):
             corpus.add(
                 f"actual:{sid}",
@@ -163,8 +163,8 @@ def _database_corpus(corpus: Corpus, thread_id: str | None) -> None:
                 links=(f"planned:{planned}",) if planned else (),
             )
         sql = """SELECT id, CAST(date AS VARCHAR), actual_session_id,
-            concat_ws(' ', name, program, notes) AS body FROM app.strength_sessions
-            WHERE user_id = 1 ORDER BY id"""
+            concat_ws(' ', name, program, notes) AS body FROM app.visible_strength_sessions
+            WHERE user_id = getvariable('arete_athlete_id') ORDER BY id"""
         for sid, day, actual, body in _rows(con, corpus, sql):
             corpus.add(
                 f"strength:{sid}",
@@ -175,12 +175,12 @@ def _database_corpus(corpus: Corpus, thread_id: str | None) -> None:
         sql = """SELECT id, CAST(date AS VARCHAR),
             to_json(struct_pack(sport := sport, description := description,
                 session_type := session_type, provenance := provenance)) AS body
-            FROM app.planned_sessions WHERE user_id = 1 OR user_id IS NULL ORDER BY id"""
+            FROM app.visible_planned_sessions WHERE user_id = getvariable('arete_athlete_id') ORDER BY id"""
         planned_rows = _rows(con, corpus, sql)
         allowed: set[str] = set()
         if thread_id:
             sql = """SELECT id, name, CAST(created_at AS VARCHAR),
-                CAST(extraction AS VARCHAR) AS body FROM app.coach_documents
+                CAST(extraction AS VARCHAR) AS body FROM app.visible_coach_documents
                 WHERE thread_id = ? AND status = 'ready' ORDER BY id"""
             for did, name, day, body in _rows(con, corpus, sql, [thread_id]):
                 extraction = json.loads(body)

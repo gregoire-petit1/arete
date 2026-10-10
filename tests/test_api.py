@@ -40,21 +40,13 @@ class TestCronDailySync:
         from arete import scheduler
 
         monkeypatch.setenv("CRON_SECRET", "right")
-        recorded: list[object] = []
-        monkeypatch.setattr(scheduler, "daily_sync", lambda: {"garmin": "ok"})
-        monkeypatch.setattr(scheduler, "record_run", recorded.append)
-        monkeypatch.setattr(scheduler, "write_daily_briefing", lambda: "rules")
-        monkeypatch.setattr(scheduler, "write_weekly_review", lambda: "not monday")
+        expected = {"athletes": {"1": {"sync": "ok"}}, "deferred": False}
+        monkeypatch.setattr(scheduler, "run_scheduled_batch", lambda: expected)
         response = client.get(
             "/cron/daily-sync", headers={"Authorization": "Bearer right"}
         )
         assert response.status_code == 200
-        assert response.json() == {
-            "garmin": "ok",
-            "briefing": "rules",
-            "review": "not monday",
-        }
-        assert len(recorded) == 1
+        assert response.json() == expected
 
 
 def test_booting_the_app_leaves_the_heavy_stacks_out(tmp_path):

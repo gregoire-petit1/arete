@@ -1,3 +1,4 @@
+import { useAuthState } from '@/components/auth/authState';
 import { markWorkout, measureWorkout } from '@/lib/workoutPerformance';
 import { cacheWorkout } from '@/lib/workouts';
 import { canRetryMessage } from '@/lib/agentActivity';
@@ -41,7 +42,9 @@ const FACT_WRITE_TOOLS = new Set(['remember_fact']);
 
 export function useCoachThreads(context: PanelPageContext, selectedDocuments = false) {
   const queryClient = useQueryClient();
-  const [initial] = useState(loadThreads);
+  const { athleteId } = useAuthState();
+  if (athleteId === null) throw new Error("Athlète absent.");
+  const [initial] = useState(() => loadThreads(athleteId));
   const [store, setStore] = useState(initial.store);
   const [storageError, setStorageError] = useState(initial.error);
   const [error, setError] = useState('');
@@ -62,14 +65,14 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
     storeRef.current = store;
     if (initial.error) return;
     const timeout = window.setTimeout(
-      () => setStorageError(saveThreads(storeRef.current)),
+      () => setStorageError(saveThreads(storeRef.current, athleteId)),
       SAVE_DELAY_MS
     );
     return () => window.clearTimeout(timeout);
-  }, [store, initial.error]);
+  }, [store, initial.error, athleteId]);
   useEffect(() => {
     const persist = () => {
-      if (!initial.error) saveThreads(storeRef.current);
+      if (!initial.error) saveThreads(storeRef.current, athleteId);
     };
     window.addEventListener('pagehide', persist);
     return () => {
@@ -77,7 +80,7 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
       persist();
       runRef.current?.controller.abort();
     };
-  }, [initial.error]);
+  }, [initial.error, athleteId]);
 
   const select = (id: string) => {
     setStore((prev) =>

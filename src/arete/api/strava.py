@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from arete.config import config
 from arete.services import oauth_state
+from arete.services.athlete_scope import athlete_scope, resolve_athlete_id
 
 if TYPE_CHECKING:
     from arete.strava.client import StravaClient
@@ -36,15 +37,15 @@ def _state_secret() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _get_strava_tokens(user_id: int = 1) -> dict | None:
+def _get_strava_tokens(user_id: int | None = None) -> dict | None:
     """Get Strava tokens from DB."""
+    user_id = resolve_athlete_id(user_id)
     from arete.dataio.db import connect
 
     con = connect()
     try:
         row = con.execute(
-            "SELECT athlete_id, access_token, refresh_token, expires_at, athlete_name "
-            "FROM app.strava_tokens WHERE user_id = ?",
+            "SELECT athlete_id, access_token, refresh_token, expires_at, athlete_name FROM app.visible_strava_tokens WHERE user_id = ?",
             [user_id],
         ).fetchone()
         if not row:
@@ -60,13 +61,17 @@ def _get_strava_tokens(user_id: int = 1) -> dict | None:
         con.close()
 
 
-def _save_strava_tokens(tokens: dict, user_id: int = 1) -> None:
+def _save_strava_tokens(tokens: dict, user_id: int | None = None) -> None:
     """Upsert Strava tokens in DB."""
+    user_id = resolve_athlete_id(user_id)
     from arete.dataio.db import connect
 
     con = connect(False)
     try:
-        con.execute("DELETE FROM app.strava_tokens WHERE user_id = ?", [user_id])
+        con.execute(
+            "DELETE FROM app.strava_tokens WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (user_id = ?) ",
+            [user_id],
+        )
         con.execute(
             "INSERT INTO app.strava_tokens "
             "(user_id, athlete_id, access_token, refresh_token, expires_at, athlete_name) "
@@ -84,13 +89,17 @@ def _save_strava_tokens(tokens: dict, user_id: int = 1) -> None:
         con.close()
 
 
-def _delete_strava_tokens(user_id: int = 1) -> None:
+def _delete_strava_tokens(user_id: int | None = None) -> None:
     """Delete Strava tokens from DB."""
+    user_id = resolve_athlete_id(user_id)
     from arete.dataio.db import connect
 
     con = connect(False)
     try:
-        con.execute("DELETE FROM app.strava_tokens WHERE user_id = ?", [user_id])
+        con.execute(
+            "DELETE FROM app.strava_tokens WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (user_id = ?) ",
+            [user_id],
+        )
     finally:
         con.close()
 
@@ -166,7 +175,11 @@ def authorize():
         raise HTTPException(
             status_code=500, detail="Strava env vars not configured"
         ) from None
-    return {"url": client.get_authorize_url(state=oauth_state.issue(_state_secret()))}
+    return {
+        "url": client.get_authorize_url(
+            state=oauth_state.issue(_state_secret(), athlete_id=resolve_athlete_id())
+        )
+    }
 
 
 @router.get("/callback")
@@ -176,11 +189,16 @@ def callback(code: str, state: str = "", scope: str = ""):
     The state issued by ``/authorize`` is what proves this round trip started
     here: the callback itself carries no session of ours.
     """
-    if not oauth_state.verify(_state_secret(), state):
+    athlete_id = oauth_state.athlete_for_state(_state_secret(), state)
+    if athlete_id is None:
         raise HTTPException(
             status_code=400,
             detail="État OAuth invalide ou expiré : relance la connexion Strava.",
         )
+    from arete.services.users import athlete_is_active
+
+    if not athlete_is_active(athlete_id):
+        raise HTTPException(status_code=403, detail="Cet athlète a été désactivé.")
     client = _get_strava_client()
     token_data = client.exchange_code(code)
 
@@ -193,7 +211,8 @@ def callback(code: str, state: str = "", scope: str = ""):
         "athlete_name": f"{athlete.get('firstname', '')} {athlete.get('lastname', '')}".strip()
         or None,
     }
-    _save_strava_tokens(tokens)
+    with athlete_scope(athlete_id):
+        _save_strava_tokens(tokens)
 
     # Redirect back to the frontend Settings page after successful OAuth
     frontend_url = config.frontend_url

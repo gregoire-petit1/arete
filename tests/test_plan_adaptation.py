@@ -220,7 +220,7 @@ def test_the_push_routes(tempo, router_client):
     garmin = _garmin()
     garmin.has_tokens.return_value = False
     with patch("arete.garmin.client.GarminClient", return_value=garmin):
-        assert client.post(f"/garmin/planned/{tempo}/push").status_code == 401
+        assert client.post(f"/garmin/planned/{tempo}/push").status_code == 409
         garmin.has_tokens.return_value = True
         body = client.post(f"/garmin/planned/{tempo}/push").json()
         assert body["garmin_workout_id"] == "1"

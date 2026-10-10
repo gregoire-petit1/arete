@@ -129,7 +129,7 @@ class TestStrengthSessionModel:
     def test_defaults(self):
         """Test default values."""
         session = StrengthSession()
-        assert session.user_id == 1
+        assert session.user_id is None
         assert session.date == date.today()
         assert session.exercises == []
 

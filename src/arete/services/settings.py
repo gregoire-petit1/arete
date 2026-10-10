@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, Field, field_validator
 
 from arete.dataio import settings as repo
+from arete.services.athlete_scope import resolve_athlete_id
 
 
 # ---------- User Settings ----------
@@ -68,11 +69,11 @@ class UserSettingsOut(BaseModel):
 
 def get_settings():
     """Get current user settings."""
-    settings = repo.get_user_settings(user_id=1)
+    settings = repo.get_user_settings(user_id=resolve_athlete_id())
     if not settings:
         # Return defaults if no settings exist
         return UserSettingsOut(
-            user_id=1,
+            user_id=resolve_athlete_id(),
             display_name="HUNTER",
             email=None,
             timezone="Europe/Paris",
@@ -96,7 +97,7 @@ def get_settings():
 def update_settings(payload: UserSettingsUpdate):
     """Update user settings."""
     settings = repo.upsert_user_settings(
-        user_id=1,
+        user_id=resolve_athlete_id(),
         display_name=payload.display_name,
         email=payload.email,
         timezone=payload.timezone,

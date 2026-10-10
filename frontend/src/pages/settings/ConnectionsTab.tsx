@@ -7,16 +7,37 @@ import { garminApi, stravaApi } from '@/lib/api';
 import { Button } from '@/components/ui';
 import { invalidateAfterSession } from '@/lib/queryKeys';
 import { GoogleCalendarConnection } from './GoogleCalendarConnection';
+import { GarminLoginModal } from '@/components/GarminLoginModal';
 
 export function ConnectionsTab() {
   const queryClient = useQueryClient();
   const [syncResult, setSyncResult] = useState<string | null>(null);
+  const [showGarminLogin, setShowGarminLogin] = useState(false);
+  const [garminResult, setGarminResult] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const { data: syncStatus } = useQuery({
+  const { data: syncStatus, isError: garminError, isPending: garminLoading } = useQuery({
     queryKey: ['syncStatus'],
     queryFn: garminApi.getSyncStatus,
     retry: false,
+  });
+
+  const garminSync = useMutation({
+    mutationFn: () => garminApi.syncActivities({ max_activities: 50, download_fit: true }),
+    onSuccess: (result) => {
+      setGarminResult(`${result.activities_synced} séance(s) importée(s)${result.errors.length ? ` · ${result.errors.length} erreur(s)` : ''}`);
+      queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
+      invalidateAfterSession(queryClient);
+    },
+    onError: (error: Error) => setGarminResult(error.message),
+  });
+  const garminLogout = useMutation({
+    mutationFn: garminApi.logout,
+    onSuccess: () => {
+      setGarminResult('Garmin déconnecté. Tes séances importées sont conservées.');
+      queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
+    },
+    onError: (error: Error) => setGarminResult(error.message),
   });
 
   const { data: stravaStatus, isError: stravaError } = useQuery({
@@ -83,7 +104,7 @@ export function ConnectionsTab() {
         {/* Garmin */}
         <div
           className={cn(
-            'flex items-center gap-4 p-4 rounded bg-abyss/50 border',
+            'flex flex-wrap items-center gap-4 p-4 rounded bg-abyss/50 border',
             garminConnected ? 'border-success-green/30' : 'border-text-muted/20'
           )}
         >
@@ -93,14 +114,17 @@ export function ConnectionsTab() {
             {syncStatus?.user_email && (
               <div className="text-xs text-neon-cyan">{syncStatus.user_email}</div>
             )}
+            {garminError && <p className="text-xs text-danger-red" role="alert">État Garmin indisponible.</p>}
+            {garminResult && <p className="text-xs text-text-muted" role="status">{garminResult}</p>}
           </div>
           {garminConnected ? (
-            <div className="flex items-center gap-1 text-xs text-success-green">
-              <Check className="w-4 h-4" />
-              Connecté
+            <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+              <span className="flex items-center gap-1 text-xs text-success-green"><Check className="w-4 h-4" />Connecté</span>
+              <Button size="sm" loading={garminSync.isPending} disabled={garminLogout.isPending} onClick={() => garminSync.mutate()}>SYNCHRONISER</Button>
+              <Button variant="danger" size="sm" aria-label="Déconnecter Garmin" loading={garminLogout.isPending} disabled={garminSync.isPending} onClick={() => garminLogout.mutate()}><LogOut className="w-3 h-3" /></Button>
             </div>
           ) : (
-            <span className="text-xs font-mono text-text-muted">Non connecté</span>
+            <Button size="sm" disabled={garminLoading || garminError} onClick={() => setShowGarminLogin(true)}>CONNECTER GARMIN</Button>
           )}
         </div>
 
@@ -159,6 +183,9 @@ export function ConnectionsTab() {
           )}
         </div>
       </div>
+      <GarminLoginModal isOpen={showGarminLogin} onClose={() => setShowGarminLogin(false)} onSuccess={() => {
+        setGarminResult('Garmin connecté. Lance la synchronisation pour importer tes activités.');
+      }} />
     </div>
   );
 }

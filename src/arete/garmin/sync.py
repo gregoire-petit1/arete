@@ -266,14 +266,11 @@ class GarminSyncClient:
     def login(self, email: str | None = None, password: str | None = None) -> str:
         """Authenticate with Garmin Connect. Returns "ok" or "needs_mfa".
 
-        Credentials default to GARMIN_EMAIL / GARMIN_PASSWORD.
+        Credentials come from the account connection form, never deployment settings.
         """
-        email = email or config.garmin_email
-        password = password or config.garmin_password
         if not email or not password:
             raise ValueError(
-                "Garmin credentials required. Set GARMIN_EMAIL and GARMIN_PASSWORD "
-                "environment variables or pass them directly."
+                "Garmin credentials required. Connect Garmin from Settings."
             )
         status = self.client.login(email, password)
         logger.info("Garmin login: %s", status)

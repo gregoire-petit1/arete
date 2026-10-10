@@ -1,9 +1,8 @@
 /// <reference lib="webworker" />
 import { clientsClaim } from 'workbox-core';
-import { ExpirationPlugin } from 'workbox-expiration';
 import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
-import { NetworkFirst } from 'workbox-strategies';
+import { NetworkOnly } from 'workbox-strategies';
 
 declare let self: ServiceWorkerGlobalScope;
 
@@ -18,17 +17,11 @@ cleanupOutdatedCaches();
 // callback must reach the server, never the cached shell.
 registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/^\/api\//] }));
 
-registerRoute(
-  // Approval status and private Calendar data must always come from the server;
-  // a full data export is neither small nor worth keeping in the cache.
-  ({ url }) => url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/agent/') && !url.pathname.startsWith('/api/garmin/exports') && !url.pathname.startsWith('/api/google-calendar/') && !url.pathname.startsWith('/api/export/'),
-  new NetworkFirst({
-    cacheName: 'api-cache',
-    // Past 10 s offline-ish, serve the cached answer if any.
-    networkTimeoutSeconds: 10,
-    plugins: [new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 300 })],
-  })
-);
+// Private API responses must never fall back to another account's cached data.
+registerRoute(({ url }) => url.pathname.startsWith('/api/'), new NetworkOnly());
+self.addEventListener('activate', (event) => {
+  event.waitUntil(caches.delete('api-cache'));
+});
 
 /** What the server sends (services/notifications.py). */
 interface PushPayload {
