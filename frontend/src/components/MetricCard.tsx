@@ -16,22 +16,22 @@ const zoneColorMap = {
   green: {
     border: 'border-success-green/50',
     badge: 'bg-success-green/20 text-success-green',
-    glow: 'hover:shadow-[0_0_20px_rgba(0,255,136,0.3)]',
+    glow: 'hover:shadow-[0_0_20px_color-mix(in_srgb,var(--color-success-green)_30%,transparent)]',
   },
   orange: {
     border: 'border-warning-orange/50',
     badge: 'bg-warning-orange/20 text-warning-orange',
-    glow: 'hover:shadow-[0_0_20px_rgba(255,140,0,0.3)]',
+    glow: 'hover:shadow-[0_0_20px_color-mix(in_srgb,var(--color-warning-orange)_30%,transparent)]',
   },
   red: {
     border: 'border-danger-red/50',
     badge: 'bg-danger-red/20 text-danger-red',
-    glow: 'hover:shadow-[0_0_20px_rgba(255,59,59,0.3)]',
+    glow: 'hover:shadow-[0_0_20px_color-mix(in_srgb,var(--color-danger-red)_30%,transparent)]',
   },
   cyan: {
     border: 'border-neon-cyan/50',
     badge: 'bg-neon-cyan/20 text-neon-cyan',
-    glow: 'hover:shadow-[0_0_20px_rgba(0,240,255,0.3)]',
+    glow: 'hover:shadow-[0_0_20px_color-mix(in_srgb,var(--color-neon-cyan)_30%,transparent)]',
   },
 };
 

@@ -65,10 +65,10 @@ export function LogPage() {
   const sessions = sessionsQuery.data ?? [];
 
   return (
-    <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
-      <div className="max-w-6xl mx-auto">
+    <div className="page-shell bg-void">
+      <div className="page-content">
         <header className="flex justify-between items-center mb-4 sm:mb-8 animate-fade-down">
-          <h1 className="text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wider">JOURNAL</h1>
+          <h1 className="page-title text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wider">JOURNAL</h1>
           {activeTab === 'force' && (
             <Button variant="gold" onClick={() => setShowNewSession(true)}>
               <Sparkles className="w-4 h-4" />

@@ -43,8 +43,8 @@ export function ProfilePage() {
     );
   if (!pref.data?.enabled)
     return (
-      <div className="mx-auto max-w-5xl p-6 space-y-4">
-        <h1 className="text-2xl font-bold">Mon profil</h1>
+      <div className="page-shell space-y-4">
+        <h1 className="page-title text-2xl font-bold">Mon profil</h1>
         <p>
           Active la gamification pour retrouver ton personnage, tes succès et
           tes tenues.
@@ -102,9 +102,9 @@ function ActiveProfile() {
     client.invalidateQueries({ queryKey: ['game-preference'] });
   };
   return (
-    <div className="mx-auto max-w-5xl px-4 py-5 sm:py-6 space-y-5">
+    <div className="page-shell space-y-5">
       <header className="flex items-center justify-between gap-3">
-        <h1 className="font-sans text-2xl font-bold">Mon profil</h1>
+        <h1 className="page-title font-sans text-2xl font-bold">Mon profil</h1>
         <Link
           className="font-mono text-xs text-neon-cyan py-3"
           to="/settings?tab=gamification"

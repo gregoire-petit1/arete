@@ -280,23 +280,12 @@ body {
   .coach-panel { animation: none; }
 }
 
-/* Approved Chiron Figma variants: 3 px travel, 1.28 s cycle, 280 ms stagger.
-   Only decorative presence loops; real SSE events own the response state. */
-.coach-presence { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; width: 32px; height: 16px; }
-.coach-presence > span { width: 5px; height: 5px; border-radius: 50%; background: var(--color-neon-cyan); opacity: .25; animation: coach-wave 1.28s ease-in-out infinite; }
-.coach-presence > span:nth-child(2) { animation-delay: .28s; }
-.coach-presence > span:nth-child(3) { animation-delay: .56s; }
-@keyframes coach-wave {
-  0%, 43.75%, 100% { opacity: .25; transform: translateY(0); }
-  17.1875%, 21.875% { opacity: 1; transform: translateY(-3px); }
-}
 .coach-confirmation { display: inline-block; flex-shrink: 0; width: 16px; height: 16px; background: var(--color-success-green); mask: url('./assets/coach/confirmation.svg') center / contain no-repeat; animation: coach-confirm .26s ease-out both; }
 @keyframes coach-confirm { from { opacity: .2; transform: scale(.7); } to { opacity: 1; transform: scale(1); } }
 .coach-status-label { animation: fade-in .16s ease-out both; }
 /* Fade each text block once on insertion, never each streamed token. */
 .coach-answer-part { animation: fade-in .12s ease-out both; }
 @media (prefers-reduced-motion: reduce) {
-  .coach-presence > span { animation: none; opacity: .7; transform: none; }
   .coach-confirmation, .coach-status-label, .coach-answer-part { animation: none; }
 }
 
@@ -322,3 +311,88 @@ html[data-theme='odyssey'] {
 }
 .rpg-tab[aria-current='page'] { background: var(--rpg-selection, color-mix(in srgb, var(--color-neon-cyan) 10%, transparent)); color: var(--color-neon-cyan); }
 .rpg-surface { background: var(--color-abyss); border: 1px solid color-mix(in srgb, var(--color-text-muted) 25%, transparent); border-radius: 4px; }
+
+/* Arete's editorial identity uses a local font: no third-party font request. */
+@font-face {
+  font-family: 'Cormorant Garamond';
+  src: url('./assets/fonts/CormorantGaramond-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+.arete-mark { display: inline-block; flex-shrink: 0; background: currentColor; mask: url('./assets/brand/arete-laurel.svg') center / contain no-repeat; }
+.arete-wordmark { display: inline-flex; align-items: center; gap: 9px; font: 600 32px/1 'Cormorant Garamond', Georgia, serif; letter-spacing: 1.1px; }
+.activity-presence { display: inline-flex; position: relative; align-items: center; justify-content: center; flex-shrink: 0; color: var(--color-neon-cyan); }
+/* A bounded 310 s orbit matches the transport deadline; real events remove it earlier. */
+.activity-orbit { position: absolute; inset: 0; border: 1px solid currentColor; border-left-color: transparent; border-bottom-color: transparent; border-radius: 50%; animation: activity-orbit 310s linear both; }
+@keyframes activity-orbit { to { transform: rotate(79714.285deg); } }
+.route-content { animation: fade-in .16s ease-out both; }
+.coach-panel { animation: coach-enter .22s ease-out both; }
+@keyframes coach-enter { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+
+/* Keep existing semantic owners: abyss is a card surface throughout the app. */
+html[data-theme='pierre'] {
+  color-scheme: light;
+  --color-void: #F6F3ED; --color-abyss: #FFFCF5; --color-shadow: #EEE8DD;
+  --color-text-primary: #1C2927; --color-text-secondary: #586158; --color-text-muted: #696C62;
+  --color-neon-cyan: #285349; --color-neon-purple: #73536C; --color-neon-gold: #8A5C35;
+  --color-success-green: #32694C; --color-danger-red: #AA3E3E; --color-warning-orange: #8A5C35;
+  --color-info-blue: #356278; --color-strava: #B94110;
+  --arete-border: #D8D1C3; --rpg-selection: #E3E9DF;
+  --arete-accent-text: #FFFCF5;
+  --color-heat-0: #EAE3D5; --color-heat-1: #57866C; --color-heat-2: #B58A3F; --color-heat-3: #BD693B; --color-heat-4: #AA3E3E;
+  --color-outline-dim: #B7B4A8; --color-outline: #797D70;
+}
+html[data-theme='prune'] {
+  color-scheme: dark;
+  --color-void: #291E29; --color-abyss: #342636; --color-shadow: #57394E;
+  --color-text-primary: #F2E8DA; --color-text-secondary: #D2BBCB; --color-text-muted: #BBA8B5;
+  --color-neon-cyan: #DBB5BC; --color-neon-purple: #C7AACB; --color-neon-gold: #D2AB76;
+  --color-success-green: #9ACAA7; --color-danger-red: #F2AAAA; --color-warning-orange: #D2AB76;
+  --color-info-blue: #A6C5DD; --color-strava: #FFAB83;
+  --arete-border: #62495D; --rpg-selection: #57394E;
+  --arete-accent-text: #291E29;
+  --color-heat-0: #482D40; --color-heat-1: #7AAB8A; --color-heat-2: #D2AB76; --color-heat-3: #DC956D; --color-heat-4: #F2AAAA;
+  --color-outline-dim: #806879; --color-outline: #BBA8B5;
+}
+html[data-theme='pierre'], html[data-theme='prune'] {
+  --font-mono: 'Inter', system-ui, sans-serif;
+  --color-chart-surface: var(--color-abyss); --color-chart-grid: var(--arete-border);
+  --color-chart-axis: var(--color-text-secondary); --color-chart-label: var(--color-text-muted); --color-chart-text: var(--color-text-primary);
+  --color-chart-blue: var(--color-info-blue); --color-chart-green: var(--color-success-green); --color-chart-yellow: var(--color-neon-gold);
+  --color-chart-orange: var(--color-warning-orange); --color-chart-red: var(--color-danger-red); --color-chart-grey: var(--color-text-muted);
+}
+html:is([data-theme='pierre'], [data-theme='prune']) {
+  .glass-panel, .rpg-surface { background: var(--color-abyss); border-color: var(--arete-border); border-radius: 16px; backdrop-filter: none; }
+  .page-title { font-family: 'Cormorant Garamond', Georgia, serif; font-size: clamp(30px, 3vw, 42px); font-weight: 600; line-height: 1.1; letter-spacing: 0; text-transform: none; color: var(--color-text-primary); }
+  .coach-title { font-family: 'Cormorant Garamond', Georgia, serif; font-size: 24px; font-weight: 600; line-height: 1.1; }
+  .ui-button { border-radius: 9px; }
+  .ui-button[data-strong='true'][data-variant='cyan'] { background: var(--color-neon-cyan); color: var(--arete-accent-text); }
+  .ui-button[data-strong='true'][data-variant='cyan']:hover { filter: brightness(.94); }
+  nav a[aria-current='page'] { background: var(--rpg-selection); border-color: transparent; border-radius: 8px; }
+  .coach-panel { background: var(--color-abyss); border-color: var(--arete-border); box-shadow: -8px 0 32px color-mix(in srgb, var(--color-text-primary) 4%, transparent); }
+  .coach-markdown code { font-family: 'JetBrains Mono', monospace; }
+  /* Data should be readable immediately; don't stagger the panels on every tab. */
+  .animate-fade-up, .animate-fade-down, .animate-fade-left { animation: fade-in .16s ease-out both; animation-delay: 0s !important; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-orbit, .coach-panel, .route-content,
+  .animate-fade-in, .animate-fade-out, .animate-fade-up, .animate-fade-down, .animate-fade-left, .animate-scale-in, .animate-scale-out { animation: none !important; }
+}
+
+/* A shared gutter keeps the wordmark and page headings aligned at every width.
+   Content uses the available workspace, including when the coach is docked. */
+:root { --page-gutter: 16px; }
+.navigation-shell { padding-inline: var(--page-gutter); }
+.page-shell { width: 100%; min-width: 0; padding: 20px var(--page-gutter); }
+.page-content { width: 100%; min-width: 0; }
+.dashboard-content { container-type: inline-size; }
+.dashboard-grid, .dashboard-primary, .dashboard-secondary { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 20px; align-content: start; }
+@media (min-width: 768px) {
+  :root { --page-gutter: clamp(24px, 3vw, 56px); }
+  .page-shell { padding-block: 28px; }
+}
+/* Measure the workspace, not the viewport: opening the coach can remove 520 px. */
+@container (min-width: 960px) {
+  .dashboard-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; gap: 24px; }
+}
