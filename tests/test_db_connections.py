@@ -17,6 +17,6 @@ def test_dashboard_readers_coexist_with_writer(tmp_path, monkeypatch):
         with db_connection() as reader:
             assert reader.execute("SELECT 1").fetchone() == (1,)
         assert get_player_stats().level == 0
-        assert load_coefficients(user_id=999999) is None
+        assert load_coefficients() is None
         get_user_settings(user_id=1)
         assert writer.execute("SELECT 1").fetchone() == (1,)

@@ -264,7 +264,7 @@ def test_callback_lands_on_the_connections_tab(router_client):
     from arete.api import strava
     from arete.services import oauth_state
 
-    state = oauth_state.issue(strava._state_secret())
+    state = oauth_state.issue(strava._state_secret(), athlete_id=1)
     with (
         patch("arete.api.strava._get_strava_client", return_value=client),
         patch("arete.api.strava._save_strava_tokens") as save,

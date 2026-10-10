@@ -17,9 +17,20 @@ from arete.dataio import mirror
 def store(tmp_path, monkeypatch) -> Callable[[], duckdb.DuckDBPyConnection]:
     """A local DuckDB file stands in for MotherDuck."""
     path = str(tmp_path / "store.duckdb")
-    monkeypatch.setattr(mirror, "connect", lambda: duckdb.connect(path))
+    from arete.dataio.db import configure_athlete
+    from arete.dataio.init_duckdb import main as init_schema
+
+    monkeypatch.setenv("ARETE_DB", path)
+    init_schema()
+
+    def local_connection():
+        con = duckdb.connect(path)
+        configure_athlete(con)
+        return con
+
+    monkeypatch.setattr(mirror, "connect", local_connection)
     mirror.reset()
-    yield lambda: duckdb.connect(path)
+    yield local_connection
     mirror.reset()
 
 

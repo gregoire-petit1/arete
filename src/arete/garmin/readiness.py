@@ -46,8 +46,8 @@ def _fetch_day_metrics(target_date: date) -> dict | None:
             """
             SELECT hrv_last_night, sleep_duration_sec, body_battery_high,
                    stress_avg, resting_hr
-            FROM app.daily_metrics
-            WHERE user_id = 1 AND date = ?
+            FROM app.visible_daily_metrics
+            WHERE user_id = getvariable('arete_athlete_id') AND date = ?
             """,
             [target_date],
         ).fetchone()
@@ -67,8 +67,8 @@ def _fetch_baseline(target_date: date, days: int = BASELINE_DAYS) -> dict | None
             """
             SELECT hrv_last_night, sleep_duration_sec, body_battery_high,
                    stress_avg, resting_hr
-            FROM app.daily_metrics
-            WHERE user_id = 1
+            FROM app.visible_daily_metrics
+            WHERE user_id = getvariable('arete_athlete_id')
               AND date >= ? AND date < ?
               AND hrv_last_night IS NOT NULL
             """,
@@ -113,8 +113,8 @@ def fetch_window(
         """
         SELECT date, hrv_last_night, sleep_duration_sec, body_battery_high,
                stress_avg, resting_hr, training_readiness_score
-        FROM app.daily_metrics
-        WHERE user_id = 1 AND date >= ? AND date <= ?
+        FROM app.visible_daily_metrics
+        WHERE user_id = getvariable('arete_athlete_id') AND date >= ? AND date <= ?
         """,
         [end - timedelta(days=days), end],
     ).fetchall()
@@ -216,7 +216,7 @@ def update_readiness_for_date(target_date: date) -> int | None:
             """
             UPDATE app.daily_metrics
             SET readiness_score = ?
-            WHERE user_id = 1 AND date = ?
+            WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (user_id = getvariable('arete_athlete_id') AND date = ?)
             """,
             [score, target_date],
         )

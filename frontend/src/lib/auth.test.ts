@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, healthApi } from './api';
 import { authFetch, authHeaders, endSession, onUnauthorized, setTokenGetter } from './auth';

@@ -5,6 +5,7 @@ export interface AuthState {
   /** Whether the server requires sign-in; false keeps the app exactly as before. */
   enabled: boolean;
   email: string | null;
+  athleteId: number | null;
   isOwner: boolean;
   /** Ends the session, drops the cached API answers and reloads; a no-op when sign-in is off. */
   signOut: () => Promise<void>;
@@ -20,6 +21,7 @@ export interface AuthState {
 export const AUTH_DISABLED: AuthState = {
   enabled: false,
   email: null,
+  athleteId: 1,
   isOwner: false,
   signOut: async () => {},
   grantGoogleScopes: async () => {

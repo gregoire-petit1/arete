@@ -22,6 +22,7 @@ from collections.abc import Callable
 from datetime import date, timedelta
 
 from arete.dataio.settings import get_user_settings
+from arete.services.athlete_scope import resolve_athlete_id
 from arete.services.coaching_repository import Briefing, BriefingRepository
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,9 @@ logger = logging.getLogger(__name__)
 MAX_BRIEFING_CHARS = 1200
 
 
-def briefing_enabled(user_id: int = 1) -> bool:
+def briefing_enabled(user_id: int | None = None) -> bool:
     """Whether the athlete wants a written briefing at all."""
+    user_id = resolve_athlete_id(user_id)
     settings = get_user_settings(user_id) or {}
     return bool(settings.get("coach_briefing_enabled", True))
 
@@ -173,9 +175,7 @@ def briefing_facts(target_date: date, rule_text: str) -> str:
         con = connect()
         try:
             row = con.execute(
-                "SELECT race_5k_sec, race_10k_sec, race_half_sec, race_marathon_sec "
-                "FROM app.daily_metrics WHERE user_id = 1 AND date <= ? "
-                "AND race_10k_sec IS NOT NULL ORDER BY date DESC LIMIT 1",
+                "SELECT race_5k_sec, race_10k_sec, race_half_sec, race_marathon_sec FROM app.visible_daily_metrics WHERE user_id = getvariable('arete_athlete_id') AND date <= ? AND race_10k_sec IS NOT NULL ORDER BY date DESC LIMIT 1",
                 [target_date],
             ).fetchone()
         finally:
@@ -234,7 +234,7 @@ def generate_briefing(
     produce: Callable[[str], str],
     trigger: str = "api",
     target_date: date | None = None,
-    user_id: int = 1,
+    user_id: int | None = None,
 ) -> Briefing:
     """Produce and persist one briefing. Never raises.
 
@@ -242,6 +242,7 @@ def generate_briefing(
     card's colour must not depend on a model) and it is the text we store when
     the agent is disabled or fails.
     """
+    user_id = resolve_athlete_id(user_id)
     target_date = target_date or date.today()
     repo = BriefingRepository()
     rule_text, priority = _rule_floor(target_date)
@@ -308,9 +309,10 @@ def get_or_create_briefing(
     produce: Callable[[str], str],
     trigger: str = "api",
     target_date: date | None = None,
-    user_id: int = 1,
+    user_id: int | None = None,
 ) -> Briefing:
     """The day's briefing, producing it once if the day has none."""
+    user_id = resolve_athlete_id(user_id)
     target_date = target_date or date.today()
     existing = BriefingRepository().get_for_day(target_date, user_id=user_id)
     if existing is not None:

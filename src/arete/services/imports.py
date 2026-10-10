@@ -28,7 +28,7 @@ def _sources_still_present(con, thread_id: str, items: list[dict]) -> None:
     ready = {
         r[0]
         for r in con.execute(
-            "SELECT id FROM app.coach_documents WHERE thread_id=? AND status='ready' LIMIT 20",
+            "SELECT id FROM app.visible_coach_documents WHERE thread_id=? AND status='ready' LIMIT 20",
             [thread_id],
         ).fetchall()
     }
@@ -40,7 +40,7 @@ def _sources_still_present(con, thread_id: str, items: list[dict]) -> None:
 
 def _get(con, thread_id: str, draft_id: str) -> dict:
     row = con.execute(
-        "SELECT id, version, status, sessions, confirmation_key, selected, session_ids FROM app.coach_imports WHERE id=? AND thread_id=?",
+        "SELECT id, version, status, sessions, confirmation_key, selected, session_ids FROM app.visible_coach_imports WHERE id=? AND thread_id=?",
         [str(UUID(draft_id)), str(UUID(thread_id))],
     ).fetchone()
     if not row:
@@ -70,7 +70,7 @@ def _get(con, thread_id: str, draft_id: str) -> dict:
 def list_drafts(thread_id: str) -> list[dict]:
     with db_connection() as con:
         ids = con.execute(
-            "SELECT id FROM app.coach_imports WHERE thread_id=? ORDER BY created_at DESC LIMIT ?",
+            "SELECT id FROM app.visible_coach_imports WHERE thread_id=? ORDER BY created_at DESC LIMIT ?",
             [str(UUID(thread_id)), MAX_DRAFTS_PER_THREAD],
         ).fetchall()
         return [_get(con, thread_id, row[0]) for row in ids]
@@ -124,7 +124,7 @@ def _validated(thread_id: str, session: ImportedSession) -> dict:
     with db_connection() as con:
         duplicates = (
             con.execute(
-                "SELECT id,description FROM app.planned_sessions WHERE date=? AND sport=? ORDER BY id LIMIT 51",
+                "SELECT id,description FROM app.visible_planned_sessions WHERE date=? AND sport=? ORDER BY id LIMIT 51",
                 [session.date, session.sport],
             ).fetchall()
             if session.date
@@ -164,12 +164,13 @@ def propose(
                     "Maximum 50 séances par brouillon ; crée un autre lot explicitement."
                 )
             con.execute(
-                "UPDATE app.coach_imports SET sessions=?,version=version+1 WHERE id=?",
+                "UPDATE app.coach_imports SET sessions=?,version=version+1 WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id=?) ",
                 [json.dumps(items, ensure_ascii=False), draft_id],
             )
         else:
             count_row = con.execute(
-                "SELECT count(*) FROM app.coach_imports WHERE thread_id=?", [thread_id]
+                "SELECT count(*) FROM app.visible_coach_imports WHERE thread_id=?",
+                [thread_id],
             ).fetchone()
             assert count_row is not None
             if count_row[0] >= MAX_DRAFTS_PER_THREAD:
@@ -201,7 +202,7 @@ def update_draft(
         if old["version"] != version or old["status"] != "draft":
             raise DocumentError("Le brouillon a changé. Recharge-le.")
         con.execute(
-            "UPDATE app.coach_imports SET sessions=?,version=version+1 WHERE id=?",
+            "UPDATE app.coach_imports SET sessions=?,version=version+1 WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id=?) ",
             [json.dumps(items, ensure_ascii=False), draft_id],
         )
         return _get(con, thread_id, draft_id)
@@ -245,7 +246,7 @@ def confirm(
     with transaction() as con:
         _sources_still_present(con, thread_id, items)
         changed = con.execute(
-            "UPDATE app.coach_imports SET status='confirmed',confirmation_key=?,selected=? WHERE id=? AND thread_id=? AND version=? AND status='draft' RETURNING id",
+            "UPDATE app.coach_imports SET status='confirmed',confirmation_key=?,selected=? WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id=? AND thread_id=? AND version=? AND status='draft') RETURNING id",
             [key, json.dumps(selected), draft_id, thread_id, version],
         ).fetchone()
         if not changed:
@@ -256,7 +257,7 @@ def confirm(
         for item in items:
             s = item["session"]
             row = con.execute(
-                "INSERT INTO app.planned_sessions (user_id,date,sport,session_type,description,source,status,prescription,provenance,revision) VALUES (1,?,?,?,?,'coach','pending',?,?,1) RETURNING id",
+                "INSERT INTO app.planned_sessions (user_id,date,sport,session_type,description,source,status,prescription,provenance,revision) VALUES (getvariable('arete_athlete_id'),?,?,?,?,'coach','pending',?,?,1) RETURNING id",
                 [
                     s["date"],
                     s["sport"],
@@ -269,7 +270,7 @@ def confirm(
             assert row
             ids.append(int(row[0]))
         con.execute(
-            "UPDATE app.coach_imports SET session_ids=? WHERE id=?",
+            "UPDATE app.coach_imports SET session_ids=? WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id=?) ",
             [json.dumps(ids), draft_id],
         )
     plan_changes.touch()
@@ -296,7 +297,7 @@ def has_unvalidated_documents(thread_id: str) -> bool:
 def discard(thread_id: str, draft_id: str, version: int) -> None:
     with transaction() as con:
         changed = con.execute(
-            "UPDATE app.coach_imports SET status='discarded',version=version+1 WHERE id=? AND thread_id=? AND version=? AND status='draft' RETURNING id",
+            "UPDATE app.coach_imports SET status='discarded',version=version+1 WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id=? AND thread_id=? AND version=? AND status='draft') RETURNING id",
             [str(UUID(draft_id)), str(UUID(thread_id)), version],
         ).fetchone()
         if not changed:

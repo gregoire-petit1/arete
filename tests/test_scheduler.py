@@ -57,81 +57,28 @@ class TestRunForever:
     def anyio_backend(self):
         return "asyncio"
 
-    @pytest.fixture(autouse=True)
-    def state_file(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(
-            scheduler, "state_path", lambda: tmp_path / "last_daily_sync.json"
-        )
-
     @pytest.mark.anyio
-    async def test_runs_once_then_waits(self):
-        calls = []
-
-        async def fake_sleep(_seconds):
-            if len(calls) >= 1:  # one sync is enough for this test
-                raise StopAsyncIteration
-
+    async def test_dispatches_then_waits(self):
         with (
-            patch.object(scheduler, "daily_sync", side_effect=lambda: calls.append(1)),
-            patch.object(scheduler, "write_daily_briefing", return_value="rules"),
-            patch("asyncio.sleep", side_effect=fake_sleep),
-            patch.object(scheduler, "is_due", side_effect=[True, False]),
+            patch.object(scheduler, "run_scheduled_batch", return_value={}) as dispatch,
+            patch("asyncio.sleep", side_effect=StopAsyncIteration) as sleep,
             pytest.raises(StopAsyncIteration),
         ):
-            await scheduler.run_forever(9, tick_seconds=1)
-
-        assert len(calls) == 1
-        assert scheduler.last_run_date() == date.today()
+            await scheduler.run_forever(0, tick_seconds=1)
+        dispatch.assert_called_once()
+        sleep.assert_awaited_once_with(1)
 
     @pytest.mark.anyio
-    async def test_the_briefing_is_written_after_the_sync_not_before(self):
-        # It reads the data the sync just landed, so the order matters.
-        order: list[str] = []
-
-        async def fake_sleep(_seconds):
-            if order:
-                raise StopAsyncIteration
-
+    async def test_a_dispatch_failure_does_not_stop_the_clock(self):
         with (
             patch.object(
-                scheduler, "daily_sync", side_effect=lambda: order.append("sync")
+                scheduler, "run_scheduled_batch", side_effect=RuntimeError("db down")
             ),
-            patch.object(
-                scheduler,
-                "write_daily_briefing",
-                side_effect=lambda: order.append("briefing") or "agent",
-            ),
-            patch("asyncio.sleep", side_effect=fake_sleep),
-            patch.object(scheduler, "is_due", side_effect=[True, False]),
+            patch("asyncio.sleep", side_effect=StopAsyncIteration) as sleep,
             pytest.raises(StopAsyncIteration),
         ):
-            await scheduler.run_forever(9, tick_seconds=1)
-
-        assert order == ["sync", "briefing"]
-
-    @pytest.mark.anyio
-    async def test_a_failing_briefing_does_not_stop_the_loop(self):
-        ticks = []
-
-        async def fake_sleep(_seconds):
-            ticks.append(1)
-            raise StopAsyncIteration
-
-        with (
-            patch.object(scheduler, "daily_sync", return_value={}),
-            patch(
-                "arete.coaching.generate_briefing",
-                side_effect=RuntimeError("model is away"),
-            ),
-            patch("arete.services.briefing.briefing_enabled", return_value=True),
-            patch("asyncio.sleep", side_effect=fake_sleep),
-            patch.object(scheduler, "is_due", side_effect=[True, False]),
-            pytest.raises(StopAsyncIteration),
-        ):
-            await scheduler.run_forever(9, tick_seconds=1)
-
-        # The loop reached its sleep, i.e. the failure was swallowed.
-        assert ticks == [1]
+            await scheduler.run_forever(0, tick_seconds=1)
+        sleep.assert_awaited_once_with(1)
 
 
 class TestWriteDailyBriefing:

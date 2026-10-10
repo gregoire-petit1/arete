@@ -77,7 +77,7 @@ export function SystemTab() {
   const syncMutation = useMutation({
     mutationFn: (options: SyncOptions) => garminApi.syncActivities(options),
     onSuccess: (result) => {
-      setAlert({ type: 'success', message: `${result.synced} ACTIVITÉS SYNCHRONISÉES` });
+      setAlert({ type: 'success', message: `${result.activities_synced} ACTIVITÉS SYNCHRONISÉES` });
       queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
       invalidateAfterSession(queryClient);
     },

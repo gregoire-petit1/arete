@@ -84,8 +84,7 @@ def list_facts(*, active_only: bool = False) -> list[Fact]:
     with db_connection() as con:
         where = "AND status = 'active'" if active_only else ""
         rows = con.execute(
-            f"SELECT {_COLUMNS} FROM app.athlete_facts WHERE user_id = 1 {where} "
-            "ORDER BY status, since DESC, id DESC LIMIT ?",
+            f"SELECT {_COLUMNS} FROM app.visible_athlete_facts WHERE user_id = getvariable('arete_athlete_id') {where} ORDER BY status, since DESC, id DESC LIMIT ?",
             [MAX_FACTS + 1],
         ).fetchall()
     if len(rows) > MAX_FACTS:
@@ -95,7 +94,7 @@ def list_facts(*, active_only: bool = False) -> list[Fact]:
 
 def _get(con, fact_id: int) -> Fact | None:
     row = con.execute(
-        f"SELECT {_COLUMNS} FROM app.athlete_facts WHERE id = ? AND user_id = 1",
+        f"SELECT {_COLUMNS} FROM app.visible_athlete_facts WHERE id = ? AND user_id = getvariable('arete_athlete_id')",
         [fact_id],
     ).fetchone()
     return Fact(*row) if row else None
@@ -180,9 +179,7 @@ def update_fact(
             if old.revision >= MAX_REVISIONS:
                 raise MemoryLimitExceeded("Limite de révisions atteinte pour ce fait.")
             row = con.execute(
-                f"UPDATE app.athlete_facts SET {', '.join(f'{k} = ?' for k in fields)}, "
-                "revision = revision + 1, updated_at = now() "
-                f"WHERE id = ? AND revision = ? RETURNING {_COLUMNS}",
+                f"UPDATE app.athlete_facts SET {', '.join(f'{k} = ?' for k in fields)}, revision = revision + 1, updated_at = now() WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ? AND revision = ?) RETURNING {_COLUMNS}",
                 [*fields.values(), fact_id, old.revision],
             ).fetchone()
             if row is None:
@@ -204,12 +201,13 @@ def delete_fact(fact_id: int, *, expected_revision: int | None = None) -> bool:
                 return False
             _expect(old, expected_revision)
             con.execute(
-                "DELETE FROM app.athlete_facts WHERE id = ? AND revision = ?",
+                "DELETE FROM app.athlete_facts WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ? AND revision = ?) ",
                 [fact_id, old.revision],
             )
             # Forgetting also removes previous versions, so retrieval cannot resurrect them.
             con.execute(
-                "DELETE FROM app.athlete_fact_revisions WHERE fact_id = ?", [fact_id]
+                "DELETE FROM app.athlete_fact_revisions WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (fact_id = ?) ",
+                [fact_id],
             )
             return True
     except duckdb.TransactionException as exc:
@@ -222,8 +220,7 @@ def fact_history(fact_id: int) -> list[dict[str, Any]]:
         if fact is None:
             return []
         rows = con.execute(
-            "SELECT snapshot FROM app.athlete_fact_revisions WHERE fact_id = ? "
-            "ORDER BY revision DESC LIMIT ?",
+            "SELECT snapshot FROM app.visible_athlete_fact_revisions WHERE fact_id = ? ORDER BY revision DESC LIMIT ?",
             [fact_id, MAX_REVISIONS + 1],
         ).fetchall()
     if len(rows) >= MAX_REVISIONS:

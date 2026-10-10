@@ -7,6 +7,7 @@ from typing import Any
 
 from arete.dataio.db import connect
 from arete.features.hr_zones import ZoneModel
+from arete.services.athlete_scope import resolve_athlete_id
 
 
 # ---------- User Settings ----------
@@ -45,8 +46,9 @@ def _settings_from_row(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
-def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
+def get_user_settings(user_id: int | None = None) -> dict[str, Any] | None:
     """Get user settings by user_id."""
+    user_id = resolve_athlete_id(user_id)
     con = connect()
     try:
         row = con.execute(
@@ -57,7 +59,7 @@ def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
                    weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
                    lthr_measured_on, coach_briefing_enabled,
                    auto_adapt_enabled, push_to_garmin_enabled
-            FROM app.user_settings
+            FROM app.visible_user_settings
             WHERE user_id = ?
             """,
             [user_id],
@@ -68,7 +70,7 @@ def get_user_settings(user_id: int = 1) -> dict[str, Any] | None:
 
 
 def upsert_user_settings(
-    user_id: int = 1,
+    user_id: int | None = None,
     *,
     display_name: str,
     email: str | None,
@@ -90,6 +92,7 @@ def upsert_user_settings(
     push_to_garmin_enabled: bool = False,
 ) -> dict[str, Any]:
     """Create or update user settings."""
+    user_id = resolve_athlete_id(user_id)
     import json as _json
 
     con = connect(False)
@@ -107,8 +110,7 @@ def upsert_user_settings(
                 threshold_pace_sec_km = ?, lthr_measured_on = ?,
                 coach_briefing_enabled = ?, auto_adapt_enabled = ?,
                 push_to_garmin_enabled = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE user_id = ?
-            RETURNING user_id, display_name, email, timezone, weekly_training_goal,
+            WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (user_id = ?) RETURNING user_id, display_name, email, timezone, weekly_training_goal,
                       rest_day_preference, fatigue_threshold, fitness_goal,
                       notifications_enabled, theme, exercise_abbreviations,
                       weekly_volume_target_kg, lthr, max_hr, threshold_pace_sec_km,
@@ -189,8 +191,9 @@ def upsert_user_settings(
         con.close()
 
 
-def athlete_zone_model(user_id: int = 1) -> ZoneModel:
+def athlete_zone_model(user_id: int | None = None) -> ZoneModel:
     """Zone model from the stored threshold, or max HR, or the generic default."""
+    user_id = resolve_athlete_id(user_id)
     settings = get_user_settings(user_id) or {}
     return ZoneModel.from_reference(
         lthr=settings.get("lthr"), max_hr=settings.get("max_hr")

@@ -256,10 +256,13 @@ export interface SyncStatus {
 }
 
 export interface SyncResult {
-  synced: number;
-  skipped: number;
+  success: boolean;
+  activities_synced: number;
+  activities_merged: number;
+  activities_matched: number;
+  activities_skipped: number;
   errors: string[];
-  new_activities: ActualSession[];
+  last_activity_date: string | null;
 }
 
 // ========================= //

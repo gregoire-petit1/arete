@@ -36,14 +36,14 @@ _SESSIONS_SQL = f"""
     FROM (
       SELECT id, user_id, date, sport, name, duration_sec, rpe, suffer_score,
              avg_hr, distance_m, ascent_m
-      FROM app.actual_sessions
+      FROM app.visible_actual_sessions
       UNION ALL
       SELECT -id, user_id, date, 'strength', name, duration_min * 60,
              CAST(ROUND(overall_rpe) AS INTEGER), NULL, NULL, NULL, NULL
-      FROM app.strength_sessions
+      FROM app.visible_strength_sessions
       WHERE actual_session_id IS NULL
     ) AS sessions
-    WHERE user_id = 1 AND date >= ? AND date <= ?
+    WHERE user_id = getvariable('arete_athlete_id') AND date >= ? AND date <= ?
     ORDER BY date ASC, id ASC
 """
 
@@ -51,22 +51,22 @@ _SESSIONS_SQL = f"""
 _STRENGTH_MONTHS_SQL = """
     SELECT month(ss.date), COUNT(DISTINCT ss.id), COUNT(es.id),
            COALESCE(SUM(es.reps * COALESCE(es.weight_kg, 0)), 0)
-    FROM app.strength_sessions ss
-    LEFT JOIN app.session_exercises se ON se.session_id = ss.id
-    LEFT JOIN app.exercise_sets es
+    FROM app.visible_strength_sessions ss
+    LEFT JOIN app.visible_session_exercises se ON se.session_id = ss.id
+    LEFT JOIN app.visible_exercise_sets es
       ON es.session_exercise_id = se.id AND NOT COALESCE(es.is_warmup, FALSE)
-    WHERE ss.user_id = 1 AND ss.date >= ? AND ss.date <= ?
+    WHERE ss.user_id = getvariable('arete_athlete_id') AND ss.date >= ? AND ss.date <= ?
     GROUP BY 1
 """
 
 _TOP_EXERCISES_SQL = """
     SELECT e.name, SUM(es.reps * COALESCE(es.weight_kg, 0)) AS volume,
            COUNT(*), MAX(es.weight_kg)
-    FROM app.strength_sessions ss
-    JOIN app.session_exercises se ON se.session_id = ss.id
-    JOIN app.exercise_sets es ON es.session_exercise_id = se.id
-    JOIN app.exercises e ON e.id = se.exercise_id
-    WHERE ss.user_id = 1 AND ss.date >= ? AND ss.date <= ?
+    FROM app.visible_strength_sessions ss
+    JOIN app.visible_session_exercises se ON se.session_id = ss.id
+    JOIN app.visible_exercise_sets es ON es.session_exercise_id = se.id
+    JOIN app.visible_exercises e ON e.id = se.exercise_id
+    WHERE ss.user_id = getvariable('arete_athlete_id') AND ss.date >= ? AND ss.date <= ?
       AND NOT COALESCE(es.is_warmup, FALSE)
     GROUP BY e.name
     ORDER BY volume DESC, e.name ASC
@@ -74,9 +74,9 @@ _TOP_EXERCISES_SQL = """
 """
 
 _YEARS_SQL = """
-    SELECT DISTINCT year(date) AS y FROM app.actual_sessions WHERE user_id = 1
+    SELECT DISTINCT year(date) AS y FROM app.visible_actual_sessions WHERE user_id = getvariable('arete_athlete_id')
     UNION
-    SELECT DISTINCT year(date) FROM app.strength_sessions WHERE user_id = 1
+    SELECT DISTINCT year(date) FROM app.visible_strength_sessions WHERE user_id = getvariable('arete_athlete_id')
 """
 
 TOP_EXERCISES = 3

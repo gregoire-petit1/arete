@@ -10,7 +10,10 @@ from arete.services import oauth_state, users
 
 OWNER = "user_owner"
 OTHER = "user_other"
-PROFILES = {OWNER: ("Owner@Example.com", "Greg"), OTHER: ("other@example.com", None)}
+PROFILES = {
+    OWNER: ("Owner@Example.com", "Greg", True),
+    OTHER: ("other@example.com", None, True),
+}
 TOKENS = {"owner-token": OWNER, "other-token": OTHER}
 
 
@@ -81,7 +84,7 @@ def test_enforced_mode_requires_a_credential(client, enforced):
     assert client.get("/strava/callback").status_code != 401
 
 
-def test_the_owner_gets_the_athlete_and_other_accounts_wait(client, enforced):
+def test_each_account_gets_its_own_athlete(client, enforced):
     me = client.get("/auth/me", headers=_bearer("owner-token")).json()
     assert me == {
         "email": "owner@example.com",
@@ -92,14 +95,11 @@ def test_the_owner_gets_the_athlete_and_other_accounts_wait(client, enforced):
     assert client.get("/settings", headers=_bearer("owner-token")).status_code == 200
 
     other = client.get("/auth/me", headers=_bearer("other-token")).json()
-    assert (other["email"], other["athlete_id"], other["is_owner"]) == (
-        "other@example.com",
-        None,
-        False,
-    )
-    refused = client.get("/settings", headers=_bearer("other-token"))
-    assert refused.status_code == 403
-    assert "Aucun athlète" in refused.json()["detail"]
+    assert other["email"] == "other@example.com"
+    assert other["athlete_id"] > 1 and other["is_owner"] is False
+    own = client.get("/settings", headers=_bearer("other-token"))
+    assert own.status_code == 200
+    assert own.json()["user_id"] == other["athlete_id"]
     # Each account's profile was read from Clerk once, then served from the table.
     assert sorted(enforced) == sorted([OWNER, OTHER])
 
@@ -130,23 +130,25 @@ class TestUsers:
     def test_every_owner_address_gets_the_athlete(self, monkeypatch):
         # One person, two Google accounts: both addresses are the athlete.
         monkeypatch.setenv("ARETE_OWNER_EMAIL", "Owner@Example.com, me@home.example")
-        first = users.upsert_user("u1", "owner@example.com", "Greg")
+        first = users.upsert_user("u1", "owner@example.com", "Greg", verified=True)
         assert first.athlete_id == 1 and first.is_owner
         again = users.upsert_user("u1", "OWNER@example.com", None)
         assert (again.athlete_id, again.name) == (1, "Greg")
-        home = users.upsert_user("u2", "ME@home.example", None)
+        home = users.upsert_user("u2", "ME@home.example", None, verified=True)
         assert home.athlete_id == 1
         other = users.upsert_user("u3", "other@example.com", "Someone")
-        assert other.athlete_id is None
+        assert other.athlete_id > 1
         assert [u.clerk_user_id for u in users.list_users()] == ["u1", "u2", "u3"]
 
     def test_the_owner_e_mail_falls_back_to_settings(self, monkeypatch):
         monkeypatch.delenv("ARETE_OWNER_EMAIL", raising=False)
-        monkeypatch.setattr(
-            users, "get_user_settings", lambda user_id=1: {"email": "Me@Example.com"}
+        con = connect()
+        con.execute(
+            "UPDATE app.user_settings SET email='Me@Example.com' WHERE user_id=1"
         )
-        assert users.upsert_user("u3", "me@example.com").athlete_id == 1
-        assert users.upsert_user("u4", "you@example.com").athlete_id is None
+        con.close()
+        assert users.upsert_user("u3", "me@example.com", verified=True).athlete_id == 1
+        assert users.upsert_user("u4", "you@example.com", verified=True).athlete_id > 1
 
 
 class TestOAuthState:
@@ -158,3 +160,43 @@ class TestOAuthState:
         assert not oauth_state.verify("secret", state, now=1_000_000 + 601)
         assert not oauth_state.verify("secret", None)
         assert not oauth_state.verify("secret", "a.b")
+
+
+def test_http_workers_enforce_private_plans(client, enforced):
+    first = _bearer("owner-token")
+    second = _bearer("other-token")
+    identifiers = []
+    for headers, label in [
+        (first, "First private plan"),
+        (second, "Second private plan"),
+    ]:
+        response = client.post(
+            "/garmin/planned",
+            headers=headers,
+            json={"date": "2026-10-10", "description": label},
+        )
+        assert response.status_code == 201, response.text
+        identifiers.append(response.json()["id"])
+    for headers, own, foreign in [
+        (first, identifiers[0], identifiers[1]),
+        (second, identifiers[1], identifiers[0]),
+    ]:
+        response = client.get("/garmin/planned", headers=headers)
+        assert response.status_code == 200
+        ids = {row["id"] for row in response.json()}
+        assert own in ids and foreign not in ids
+        assert (
+            client.patch(
+                f"/garmin/planned/{foreign}",
+                headers=headers,
+                json={"status": "skipped"},
+            ).status_code
+            == 404
+        )
+        assert (
+            client.delete(f"/garmin/planned/{foreign}", headers=headers).status_code
+            == 404
+        )
+        assert (
+            client.delete(f"/garmin/planned/{own}", headers=headers).status_code == 200
+        )

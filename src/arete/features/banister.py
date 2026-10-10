@@ -15,6 +15,7 @@ import numpy as np
 from arete.dataio.db import connect
 from arete.dataio.queries import RUNNING_SPORTS, daily_tss, sql_in
 from arete.features.fitness import DailyTSS
+from arete.services.athlete_scope import resolve_athlete_id
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +30,13 @@ def get_running_sessions(con, start_date: date, end_date: date) -> list[dict]:
     rows = con.execute(
         f"""
         SELECT date, avg_hr, avg_speed_mps
-        FROM app.actual_sessions
+        FROM app.visible_actual_sessions
         WHERE sport IN ({sql_in(RUNNING_SPORTS)})
           AND avg_hr IS NOT NULL
           AND avg_speed_mps IS NOT NULL
           AND avg_speed_mps > 0
           AND date >= ? AND date <= ?
-          AND user_id = 1
+          AND user_id = getvariable('arete_athlete_id')
         ORDER BY date ASC
         """,
         [start_date, end_date],
@@ -125,15 +126,16 @@ def fit_coefficients(sessions: list[dict]) -> dict | None:
     }
 
 
-def load_coefficients(user_id: int = 1) -> dict | None:
+def load_coefficients(user_id: int | None = None) -> dict | None:
     """Load personalized Banister coefficients from DB.
 
     Returns None if coefficients are not available or R² is too low.
     """
+    user_id = resolve_athlete_id(user_id)
     con = connect()
     try:
         row = con.execute(
-            "SELECT k1, k2, baseline, r2 FROM app.banister_coefficients WHERE user_id = ?",
+            "SELECT k1, k2, baseline, r2 FROM app.visible_banister_coefficients WHERE user_id = ?",
             [user_id],
         ).fetchone()
         if row and row[3] and float(row[3]) > 0.1:
@@ -148,8 +150,9 @@ def load_coefficients(user_id: int = 1) -> dict | None:
         con.close()
 
 
-def store_coefficients(coeffs: dict, user_id: int = 1) -> None:
+def store_coefficients(coeffs: dict, user_id: int | None = None) -> None:
     """UPSERT Banister coefficients into DB."""
+    user_id = resolve_athlete_id(user_id)
     con = connect()
     try:
         con.execute(

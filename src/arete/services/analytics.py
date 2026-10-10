@@ -302,8 +302,7 @@ def update_session(session_id: int, fields: Mapping[str, int | str | None]):
     con = connect(read_only=False)
     try:
         con.execute(
-            f"UPDATE app.actual_sessions SET {', '.join(f'{c} = ?' for c in columns)}"
-            " WHERE id = ?",
+            f"UPDATE app.actual_sessions SET {', '.join(f'{c} = ?' for c in columns)} WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) ",
             [*(fields[c] for c in columns), session_id],
         )
         return {"success": True}
@@ -326,8 +325,8 @@ def list_sessions(limit: int = 20, offset: int = 0, *, for_model: bool = False):
             f"""
             SELECT id, date, sport, name, duration_sec, distance_m,
                    avg_hr, avg_pace_sec_km, rpe, notes, source, calories
-            FROM app.actual_sessions
-            WHERE user_id = 1
+            FROM app.visible_actual_sessions
+            WHERE user_id = getvariable('arete_athlete_id')
               {f"AND source NOT IN ({sql_in(excluded)})" if excluded else ""}
             ORDER BY date DESC, id DESC
             LIMIT ? OFFSET ?
@@ -361,7 +360,7 @@ def get_session(session_id: int) -> dict | None:
     """Exact source of a personal record; never match an activity by its title."""
     with db_connection() as con:
         row = con.execute(
-            "SELECT id,date,name,sport,duration_sec,distance_m,avg_hr,hr_zones_json,source FROM app.actual_sessions WHERE id=? AND user_id=1",
+            "SELECT id,date,name,sport,duration_sec,distance_m,avg_hr,hr_zones_json,source FROM app.visible_actual_sessions WHERE id=? AND user_id = getvariable('arete_athlete_id')",
             [session_id],
         ).fetchone()
     if row is None:

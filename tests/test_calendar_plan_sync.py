@@ -385,30 +385,35 @@ def test_cron_builds_the_provider_from_the_stored_account(tmp_path, monkeypatch)
     import arete.calendar as composition
 
     monkeypatch.setenv("ARETE_DB", str(tmp_path / "cron.duckdb"))
-    monkeypatch.setenv("ARETE_AUTH", "clerk")
-    monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test_fake")
-    init_db()
-    google, accounts = Google(), []
-    monkeypatch.setattr(
-        composition, "ClerkProvider", lambda account: provider(google, accounts)
-    )
-    signed_in = composition.get_calendar_service("user_athlete")
-    signed_in.repo.configure(
-        enabled=True, selection={"readable": [CAL], "writable": [CAL]}
-    )
-    today = datetime.now(ZoneInfo("Europe/Paris")).date()
-    GarminRepository().create_planned_session(
-        PlannedSession(date=today + timedelta(days=1), session_type=SessionType.TEMPO)
-    )
-    PlanSync(signed_in).configure(True, CAL)
-    google.events.clear()
-    accounts.clear()
-    assert composition.sync_training_plan(DAILY) == "synced"
-    assert set(accounts) == {"user_athlete"}
-    assert len(google.live()) == 1
-    # A preview's connection in the same database is not this environment's.
-    monkeypatch.setenv("VERCEL_ENV", "preview")
-    assert composition.sync_training_plan(DAILY) == "disabled"
+    from arete.services.athlete_scope import athlete_scope
+
+    with athlete_scope(1):
+        monkeypatch.setenv("ARETE_AUTH", "clerk")
+        monkeypatch.setenv("CLERK_SECRET_KEY", "sk_test_fake")
+        init_db()
+        google, accounts = Google(), []
+        monkeypatch.setattr(
+            composition, "ClerkProvider", lambda account: provider(google, accounts)
+        )
+        signed_in = composition.get_calendar_service("user_athlete")
+        signed_in.repo.configure(
+            enabled=True, selection={"readable": [CAL], "writable": [CAL]}
+        )
+        today = datetime.now(ZoneInfo("Europe/Paris")).date()
+        GarminRepository().create_planned_session(
+            PlannedSession(
+                date=today + timedelta(days=1), session_type=SessionType.TEMPO
+            )
+        )
+        PlanSync(signed_in).configure(True, CAL)
+        google.events.clear()
+        accounts.clear()
+        assert composition.sync_training_plan(DAILY) == "synced"
+        assert set(accounts) == {"user_athlete"}
+        assert len(google.live()) == 1
+        # A preview's connection in the same database is not this environment's.
+        monkeypatch.setenv("VERCEL_ENV", "preview")
+        assert composition.sync_training_plan(DAILY) == "disabled"
 
 
 def test_a_request_that_changed_the_plan_syncs_after_its_response(monkeypatch):

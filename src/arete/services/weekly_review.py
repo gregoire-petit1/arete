@@ -73,22 +73,15 @@ def week_facts(week_start: date, today: date) -> WeekFacts:
     try:
         # A session the athlete or the daily adaptation skipped was not due.
         planned = con.execute(
-            "SELECT COUNT(*) FILTER (WHERE status <> 'skipped'), "
-            "COUNT(*) FILTER (WHERE status = 'completed'), "
-            "COUNT(*) FILTER (WHERE status IN ('pending', 'modified')), "
-            "COALESCE(SUM(target_duration_min) FILTER (WHERE status <> 'skipped'), 0) "
-            "FROM app.planned_sessions WHERE date BETWEEN ? AND ?",
+            "SELECT COUNT(*) FILTER (WHERE status <> 'skipped'), COUNT(*) FILTER (WHERE status = 'completed'), COUNT(*) FILTER (WHERE status IN ('pending', 'modified')), COALESCE(SUM(target_duration_min) FILTER (WHERE status <> 'skipped'), 0) FROM app.visible_planned_sessions WHERE date BETWEEN ? AND ?",
             [week_start, end],
         ).fetchone() or (0, 0, 0, 0)
         done = con.execute(
-            f"SELECT COALESCE(SUM(duration_sec), 0) / 60, "
-            f"COUNT(*) FILTER (WHERE sport IN ({sql_in(RUNNING_SPORTS)})) "
-            "FROM app.actual_sessions WHERE user_id = 1 AND date BETWEEN ? AND ?",
+            f"SELECT COALESCE(SUM(duration_sec), 0) / 60, COUNT(*) FILTER (WHERE sport IN ({sql_in(RUNNING_SPORTS)})) FROM app.visible_actual_sessions WHERE user_id = getvariable('arete_athlete_id') AND date BETWEEN ? AND ?",
             [week_start, end],
         ).fetchone() or (0, 0)
         readiness = con.execute(
-            "SELECT AVG(COALESCE(training_readiness_score, readiness_score)) "
-            "FROM app.daily_metrics WHERE user_id = 1 AND date BETWEEN ? AND ?",
+            "SELECT AVG(COALESCE(training_readiness_score, readiness_score)) FROM app.visible_daily_metrics WHERE user_id = getvariable('arete_athlete_id') AND date BETWEEN ? AND ?",
             [week_start, end],
         ).fetchone()
     finally:
@@ -299,7 +292,7 @@ def get_review(week_start: date) -> Review | None:
     con = connect()
     try:
         row = con.execute(
-            f"SELECT {_COLUMNS} FROM app.weekly_reviews WHERE user_id = 1 AND week_start = ?",
+            f"SELECT {_COLUMNS} FROM app.visible_weekly_reviews WHERE user_id = getvariable('arete_athlete_id') AND week_start = ?",
             [week_start],
         ).fetchone()
     finally:
@@ -311,7 +304,8 @@ def get_review_by_id(review_id: int) -> Review | None:
     con = connect()
     try:
         row = con.execute(
-            f"SELECT {_COLUMNS} FROM app.weekly_reviews WHERE id = ?", [review_id]
+            f"SELECT {_COLUMNS} FROM app.visible_weekly_reviews WHERE id = ?",
+            [review_id],
         ).fetchone()
     finally:
         con.close()
@@ -350,7 +344,7 @@ def generate_review(
     con = connect()
     try:
         con.execute(
-            "DELETE FROM app.weekly_reviews WHERE user_id = 1 AND week_start = ?",
+            "DELETE FROM app.weekly_reviews WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (user_id = getvariable('arete_athlete_id') AND week_start = ?) ",
             [week_start],
         )
         row = con.execute(
@@ -402,7 +396,7 @@ def apply_review(review_id: int, indices: list[int]) -> dict[str, Any]:
         con = connect()
         try:
             con.execute(
-                "UPDATE app.weekly_reviews SET applied_json = ?, applied_at = now() WHERE id = ?",
+                "UPDATE app.weekly_reviews SET applied_json = ?, applied_at = now() WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) ",
                 [json.dumps(sorted({*review.applied, *applied})), review_id],
             )
         finally:

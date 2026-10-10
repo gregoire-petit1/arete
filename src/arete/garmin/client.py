@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import io
 import logging
+import time
 import zipfile
 from datetime import date
 from pathlib import Path
+from threading import Lock
 from typing import Any, cast
 from urllib.parse import parse_qsl, urlsplit
 
@@ -38,12 +40,17 @@ class GarminAuthError(RuntimeError):
 class GarminClient:
     """Authenticated access to Garmin Connect for one user."""
 
-    # Login waiting for an MFA code (single-user app: one pending login at a time).
-    _pending_mfa: Garmin | None = None
+    MAX_PENDING_MFA = 128
+    MFA_TTL_SECONDS = 600
+    _pending_mfa: dict[Path, tuple[float, Garmin]] = {}
+    _mfa_lock = Lock()
 
     def __init__(self, token_dir: str | Path | None = None):
         self.token_dir = Path(token_dir) if token_dir else default_token_dir()
         self._api: Garmin | None = None
+        # Explicit directories support standalone CLI clients; application logins
+        # use a durable continuation so the next request may land on any worker.
+        self._durable_auth = token_dir is None
 
     # ------------------------------------------------------------------ auth
     @property
@@ -51,6 +58,10 @@ class GarminClient:
         return self.token_dir / TOKEN_FILE
 
     def has_tokens(self) -> bool:
+        if self._durable_auth and config.is_remote_db:
+            from arete.garmin import token_store
+
+            return token_store.hydrate(self.token_file)
         return self.token_file.exists()
 
     def connect(self) -> Garmin:
@@ -65,7 +76,7 @@ class GarminClient:
                 f"No Garmin tokens at {self.token_file}. Log in first "
                 "(Settings > System, or scripts/garmin_login.py)."
             )
-        api = Garmin()
+        api = Garmin(retry_attempts=0)
         try:
             api.login(str(self.token_dir))
         except Exception as e:
@@ -82,22 +93,51 @@ class GarminClient:
 
     def login(self, email: str, password: str) -> str:
         """Start a login. Returns "ok" or "needs_mfa" (then call complete_mfa)."""
-        api = Garmin(email, password, return_on_mfa=True)
+        api = Garmin(email, password, return_on_mfa=True, retry_attempts=0)
         status, _ = api.login()
         if status == "needs_mfa":
-            GarminClient._pending_mfa = api
+            if self._durable_auth:
+                from arete.garmin import auth_state
+
+                auth_state.save(api)
+                return "needs_mfa"
+            with self._mfa_lock:
+                now = time.monotonic()
+                stale = [
+                    key
+                    for key, (expires, _) in self._pending_mfa.items()
+                    if expires < now
+                ]
+                for key in stale:
+                    del self._pending_mfa[key]
+                if len(self._pending_mfa) >= self.MAX_PENDING_MFA:
+                    raise GarminAuthError("Too many pending Garmin logins.")
+                self._pending_mfa[self.token_dir.resolve()] = (
+                    now + self.MFA_TTL_SECONDS,
+                    api,
+                )
             return "needs_mfa"
         self._save(api)
         return "ok"
 
     def complete_mfa(self, code: str) -> None:
-        api = GarminClient._pending_mfa
-        if api is None:
-            raise GarminAuthError("No login waiting for an MFA code.")
-        try:
+        if self._durable_auth:
+            from arete.garmin import auth_state
+
+            api = auth_state.consume()
+            if api is None:
+                raise GarminAuthError(
+                    "La connexion MFA a expiré. Recommence la connexion Garmin."
+                )
             api.resume_login({}, code)
-        finally:
-            GarminClient._pending_mfa = None
+            self._save(api)
+            return
+        with self._mfa_lock:
+            pending = self._pending_mfa.pop(self.token_dir.resolve(), None)
+        if pending is None or pending[0] < time.monotonic():
+            raise GarminAuthError("No login waiting for an MFA code.")
+        api = pending[1]
+        api.resume_login({}, code)
         self._save(api)
 
     def _save(self, api: Garmin) -> None:
@@ -105,10 +145,26 @@ class GarminClient:
         api.client.dump(str(self.token_dir))
         if self.token_file.exists():
             self.token_file.chmod(0o600)  # session tokens: owner-only
+        if self._durable_auth:
+            from arete.garmin import auth_state, token_store
+
+            auth_state.clear()
+            if config.is_remote_db:
+                token_store.save(self.token_file)
         self._api = api
         logger.info("Garmin tokens saved to %s", self.token_file)
 
     def logout(self) -> None:
+        if self._durable_auth:
+            from arete.garmin import auth_state
+
+            auth_state.clear()
+            if config.is_remote_db:
+                from arete.garmin import token_store
+
+                token_store.delete()
+        with self._mfa_lock:
+            self._pending_mfa.pop(self.token_dir.resolve(), None)
         if self.token_file.exists():
             self.token_file.unlink()
         self._api = None
@@ -197,7 +253,7 @@ class GarminClient:
                 raise PermissionError(
                     "Connecte Garmin dans les réglages avant l’export."
                 )
-            api = Garmin()
+            api = Garmin(retry_attempts=0)
             api.client.load(
                 str(self.token_dir)
             )  # Local file read, no profile requests.

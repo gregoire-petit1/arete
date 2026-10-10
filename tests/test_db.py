@@ -52,7 +52,8 @@ def test_remote_connection_is_opened_once(opened):
 def test_each_remote_caller_gets_a_cursor_on_the_database(opened):
     cursor = db.connect()
     assert cursor is opened[0].cursor.return_value
-    cursor.execute.assert_called_with("USE arete")
+    cursor.execute.assert_any_call("USE arete")
+    cursor.execute.assert_called_with("SET VARIABLE arete_athlete_id = ?", [1])
 
 
 def test_a_dead_remote_connection_is_reopened(opened):
@@ -104,3 +105,19 @@ def test_without_a_bundle_nothing_is_seeded(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "REMOTE_HOME", tmp_path / "home")
     db._seed_extensions()
     assert not (tmp_path / "home/.duckdb").exists()
+
+
+def test_preview_cannot_open_production_motherduck(monkeypatch):
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("ARETE_DB", "md:arete")
+    with patch.object(db, "_remote_cursor") as remote_cursor:
+        with pytest.raises(RuntimeError, match="separate ARETE_DB"):
+            db.connect()
+        remote_cursor.assert_not_called()
+
+
+def test_preview_can_open_a_separate_database(monkeypatch, opened):
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("ARETE_DB", "md:arete_preview")
+    cursor = db.connect()
+    cursor.execute.assert_any_call("USE arete_preview")

@@ -71,8 +71,7 @@ def list_goals(*, include_past: bool = False) -> list[Goal]:
     try:
         where = "" if include_past else "AND race_date >= CURRENT_DATE"
         rows = con.execute(
-            f"SELECT {_COLUMNS} FROM app.goals WHERE user_id = 1 {where} "
-            "ORDER BY race_date, id"
+            f"SELECT {_COLUMNS} FROM app.visible_goals WHERE user_id = getvariable('arete_athlete_id') {where} ORDER BY race_date, id"
         ).fetchall()
     finally:
         con.close()
@@ -83,7 +82,7 @@ def get_goal(goal_id: int) -> Goal | None:
     con = connect()
     try:
         row = con.execute(
-            f"SELECT {_COLUMNS} FROM app.goals WHERE id = ?", [goal_id]
+            f"SELECT {_COLUMNS} FROM app.visible_goals WHERE id = ?", [goal_id]
         ).fetchone()
     finally:
         con.close()
@@ -141,7 +140,7 @@ def update_goal(goal_id: int, **fields: Any) -> Goal | None:
         con = connect()
         try:
             con.execute(
-                f"UPDATE app.goals SET {', '.join(f'{k} = ?' for k in fields)} WHERE id = ?",
+                f"UPDATE app.goals SET {', '.join(f'{k} = ?' for k in fields)} WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) ",
                 [*fields.values(), goal_id],
             )
         finally:
@@ -159,11 +158,12 @@ def delete_goal(goal_id: int) -> bool:
     con = connect()
     try:
         con.execute(
-            "UPDATE app.planned_sessions SET goal_id = NULL WHERE goal_id = ?",
+            "UPDATE app.planned_sessions SET goal_id = NULL WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (goal_id = ?) ",
             [goal_id],
         )
         row = con.execute(
-            "DELETE FROM app.goals WHERE id = ? RETURNING id", [goal_id]
+            "UPDATE app.goals SET deleted_at = current_timestamp WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) RETURNING id",
+            [goal_id],
         ).fetchone()
     finally:
         con.close()

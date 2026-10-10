@@ -128,8 +128,8 @@ def get_daily_metrics(
                    training_readiness_feedback, training_status, vo2max_run,
                    race_5k_sec, race_10k_sec, race_half_sec, race_marathon_sec,
                    endurance_score, hill_score
-            FROM app.daily_metrics
-            WHERE user_id = 1 AND date = ?
+            FROM app.visible_daily_metrics
+            WHERE user_id = getvariable('arete_athlete_id') AND date = ?
             """,
             [target_date],
         ).fetchone()
@@ -207,7 +207,7 @@ def sync_status() -> dict:
         stats = con.execute(
             """
             SELECT COUNT(*), MIN(date), MAX(date), MAX(fetched_at)
-            FROM app.daily_metrics WHERE user_id = 1
+            FROM app.visible_daily_metrics WHERE user_id = getvariable('arete_athlete_id')
             """
         ).fetchone() or (0, None, None, None)
     finally:

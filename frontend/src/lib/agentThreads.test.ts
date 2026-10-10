@@ -1,7 +1,10 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import {
   addThread,
   emptyStore,
+  loadThreads,
+  saveThreads,
   MAX_THREADS,
   removeThread,
   restoreThreads,
@@ -118,4 +121,17 @@ describe('storage and capacity bounds', () => {
     expect(() => addThread(store)).toThrow('Limite');
     expect(store.threads).toHaveLength(MAX_THREADS);
   });
+});
+
+it('keeps conversations private when two athletes use the same browser', () => {
+  localStorage.clear();
+  const first = emptyStore();
+  first.threads[0].draft = 'Private first athlete';
+  expect(saveThreads(first, 1)).toBeNull();
+  expect(loadThreads(2).store.threads[0].draft).toBe('');
+  const second = emptyStore();
+  second.threads[0].draft = 'Private second athlete';
+  expect(saveThreads(second, 2)).toBeNull();
+  expect(loadThreads(1).store.threads[0].draft).toBe('Private first athlete');
+  expect(loadThreads(2).store.threads[0].draft).toBe('Private second athlete');
 });

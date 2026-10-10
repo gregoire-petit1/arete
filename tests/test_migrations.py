@@ -6,12 +6,19 @@ import duckdb
 import pytest
 
 from arete.dataio import init_duckdb
+from arete.dataio.db import configure_athlete
+
+
+def migration_connection(*args, **kwargs):
+    con = duckdb.connect(*args, **kwargs)
+    configure_athlete(con)
+    return con
 
 
 def test_fresh_db_records_all_versions(tmp_path, monkeypatch):
     monkeypatch.setenv("ARETE_DB", str(tmp_path / "fresh.duckdb"))
     init_duckdb.main()
-    con = duckdb.connect(str(tmp_path / "fresh.duckdb"), read_only=True)
+    con = migration_connection(str(tmp_path / "fresh.duckdb"), read_only=True)
     versions = [
         r[0]
         for r in con.execute(
@@ -26,7 +33,7 @@ def test_legacy_column_is_renamed_once(tmp_path, monkeypatch):
     path = tmp_path / "legacy.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
     # Legacy shape: strength_sessions still has garmin_activity_id, no schema_version yet
-    con = duckdb.connect(str(path))
+    con = migration_connection(str(path))
     con.execute("CREATE SCHEMA app")
     con.execute(
         "CREATE TABLE app.strength_sessions (id INTEGER, garmin_activity_id INTEGER)"
@@ -38,7 +45,7 @@ def test_legacy_column_is_renamed_once(tmp_path, monkeypatch):
     init_duckdb.main()
     init_duckdb.main()  # second run must be a no-op
 
-    con = duckdb.connect(str(path), read_only=True)
+    con = migration_connection(str(path), read_only=True)
     cols = {r[0] for r in con.execute("DESCRIBE app.strength_sessions").fetchall()}
     versions = [
         r[0]
@@ -63,14 +70,14 @@ def test_a_database_behind_runs_its_migrations(tmp_path, monkeypatch):
     path = tmp_path / "behind.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
     init_duckdb.main()
-    con = duckdb.connect(str(path))
+    con = migration_connection(str(path))
     con.execute(
         "DELETE FROM app.schema_version WHERE version = ?",
         [init_duckdb.MIGRATIONS[-1][0]],
     )
     con.close()
     init_duckdb.main()
-    con = duckdb.connect(str(path), read_only=True)
+    con = migration_connection(str(path), read_only=True)
     (latest,) = con.execute("SELECT MAX(version) FROM app.schema_version").fetchone()
     con.close()
     assert latest == init_duckdb.MIGRATIONS[-1][0]
@@ -80,7 +87,7 @@ def test_document_migration_preserves_version_twelve_planning(tmp_path, monkeypa
     path = tmp_path / "version-twelve.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
     init_duckdb.main()
-    with duckdb.connect(str(path)) as con:
+    with migration_connection(str(path)) as con:
         con.execute(
             "INSERT INTO app.planned_sessions (date,sport,session_type,description) VALUES ('2027-01-12','running','endurance','Existing session')"
         )
@@ -96,7 +103,7 @@ def test_document_migration_preserves_version_twelve_planning(tmp_path, monkeypa
             con.execute(f"DROP TABLE app.{table}")
         con.execute("DELETE FROM app.schema_version WHERE version >= 13")
     init_duckdb.main()
-    with duckdb.connect(str(path)) as con:
+    with migration_connection(str(path)) as con:
         row = con.execute(
             "SELECT description,prescription,provenance,revision FROM app.planned_sessions"
         ).fetchone()
@@ -110,7 +117,7 @@ def test_sport_names_are_canonicalised_once(tmp_path, monkeypatch):
     path = tmp_path / "sports.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
     init_duckdb.main()
-    con = duckdb.connect(str(path))
+    con = migration_connection(str(path))
     con.execute("DELETE FROM app.schema_version WHERE version >= 9")
     for i, sport in enumerate(("run", "Ride", "walk", "running", "TrailRun"), 1):
         con.execute(
@@ -127,7 +134,7 @@ def test_sport_names_are_canonicalised_once(tmp_path, monkeypatch):
     init_duckdb.main()
     init_duckdb.main()  # second run must be a no-op
 
-    con = duckdb.connect(str(path), read_only=True)
+    con = migration_connection(str(path), read_only=True)
     actual = [
         r[0]
         for r in con.execute(
@@ -146,7 +153,7 @@ def test_m10_adds_performance_columns_to_a_legacy_table(tmp_path, monkeypatch):
     path = tmp_path / "perf.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
     init_duckdb.main()
-    con = duckdb.connect(str(path))
+    con = migration_connection(str(path))
     for name in init_duckdb.GARMIN_PERFORMANCE_COLUMNS:
         con.execute(f"ALTER TABLE app.daily_metrics DROP COLUMN {name}")
     con.execute("DELETE FROM app.schema_version WHERE version >= 10")
@@ -155,7 +162,7 @@ def test_m10_adds_performance_columns_to_a_legacy_table(tmp_path, monkeypatch):
     init_duckdb.main()
     init_duckdb.main()
 
-    con = duckdb.connect(str(path), read_only=True)
+    con = migration_connection(str(path), read_only=True)
     cols = {r[0] for r in con.execute("DESCRIBE app.daily_metrics").fetchall()}
     con.close()
     assert set(init_duckdb.GARMIN_PERFORMANCE_COLUMNS) <= cols
@@ -165,13 +172,13 @@ def test_m18_creates_the_users_table_once(tmp_path, monkeypatch):
     path = tmp_path / "users.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
     init_duckdb.main()
-    con = duckdb.connect(str(path))
+    con = migration_connection(str(path))
     con.execute("DROP TABLE app.users")
     con.execute("DELETE FROM app.schema_version WHERE version >= 18")
     con.close()
     init_duckdb.main()
     init_duckdb.main()
-    con = duckdb.connect(str(path), read_only=True)
+    con = migration_connection(str(path), read_only=True)
     cols = {r[0] for r in con.execute("DESCRIBE app.users").fetchall()}
     (latest,) = con.execute("SELECT MAX(version) FROM app.schema_version").fetchone()
     con.close()
@@ -192,7 +199,7 @@ def test_memory_upgrade_accepts_both_version_19_histories(
             [(v, fn) for v, fn in init_duckdb.MIGRATIONS if v <= 18],
         )
         init_duckdb.main()
-    with duckdb.connect(str(path)) as con:
+    with migration_connection(str(path)) as con:
         con.execute(
             "INSERT INTO app.athlete_facts(kind, text, since) VALUES ('constraint', 'Pas de mercredi', DATE '2026-10-01')"
         )
@@ -215,7 +222,7 @@ def test_memory_upgrade_accepts_both_version_19_histories(
         con.execute("INSERT INTO app.schema_version(version) VALUES (19)")
     init_duckdb.main()
     init_duckdb.main()
-    with duckdb.connect(str(path), read_only=True) as con:
+    with migration_connection(str(path), read_only=True) as con:
         assert con.execute(
             "SELECT text, evidence, revision FROM app.athlete_facts"
         ).fetchone() == ("Pas de mercredi", expected_evidence, 1)
@@ -240,7 +247,7 @@ def test_a_missing_version_below_the_latest_still_runs(tmp_path, monkeypatch):
     path = tmp_path / "gap.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
     init_duckdb.main()
-    con = duckdb.connect(str(path))
+    con = migration_connection(str(path))
     con.execute("DROP TABLE app.calendar_actions")
     con.execute("DROP TABLE app.calendar_connections")
     con.execute("DELETE FROM app.schema_version WHERE version = 17")
@@ -248,7 +255,7 @@ def test_a_missing_version_below_the_latest_still_runs(tmp_path, monkeypatch):
     con.close()
     init_duckdb.main()
     init_duckdb.main()
-    con = duckdb.connect(str(path), read_only=True)
+    con = migration_connection(str(path), read_only=True)
     tables = {
         r[0]
         for r in con.execute(
@@ -270,14 +277,14 @@ def test_m31_creates_the_stream_and_feedback_tables_once(tmp_path, monkeypatch):
     path = tmp_path / "streams.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
     init_duckdb.main()
-    con = duckdb.connect(str(path))
+    con = migration_connection(str(path))
     con.execute("DROP TABLE app.activity_streams")
     con.execute("DROP TABLE app.session_feedback")
     con.execute("DELETE FROM app.schema_version WHERE version = 31")
     con.close()
     init_duckdb.main()
     init_duckdb.main()
-    con = duckdb.connect(str(path), read_only=True)
+    con = migration_connection(str(path), read_only=True)
     columns = dict(
         (r[0], r[1]) for r in con.execute("DESCRIBE app.activity_streams").fetchall()
     )
@@ -295,7 +302,7 @@ def test_m32_creates_the_terrain_and_weather_tables_once(tmp_path, monkeypatch):
     path = tmp_path / "conditions.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))
     init_duckdb.main()
-    with duckdb.connect(str(path)) as con:
+    with migration_connection(str(path)) as con:
         con.execute("DROP TABLE app.activity_terrain")
         con.execute("DROP TABLE app.activity_weather")
         con.execute(
@@ -306,7 +313,7 @@ def test_m32_creates_the_terrain_and_weather_tables_once(tmp_path, monkeypatch):
         con.execute("DELETE FROM app.schema_version WHERE version = 32")
     init_duckdb.main()
     init_duckdb.main()  # recorded once, then skipped
-    with duckdb.connect(str(path), read_only=True) as con:
+    with migration_connection(str(path), read_only=True) as con:
         terrain = dict(
             (r[0], r[1])
             for r in con.execute("DESCRIBE app.activity_terrain").fetchall()
@@ -343,7 +350,7 @@ def test_m34_adds_the_plan_sync_columns_once(tmp_path, monkeypatch):
         (line.split()[2], line.split()[8])
         for line in PLAN_SYNC_DDL.strip().splitlines()
     ]
-    with duckdb.connect(str(path)) as con:
+    with migration_connection(str(path)) as con:
         for table, column in added:
             con.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
         con.execute(
@@ -355,7 +362,7 @@ def test_m34_adds_the_plan_sync_columns_once(tmp_path, monkeypatch):
         con.execute("DELETE FROM app.schema_version WHERE version = 34")
     init_duckdb.main()
     init_duckdb.main()  # recorded once, then skipped
-    with duckdb.connect(str(path), read_only=True) as con:
+    with migration_connection(str(path), read_only=True) as con:
         for table, column in added:
             columns = {r[0] for r in con.execute(f"DESCRIBE {table}").fetchall()}
             assert column in columns
@@ -368,3 +375,48 @@ def test_m34_adds_the_plan_sync_columns_once(tmp_path, monkeypatch):
         assert con.execute(
             "SELECT count(*) FROM app.schema_version WHERE version = 34"
         ).fetchone() == (1,)
+
+
+def test_shared_schema_preserves_legacy_owners_children_and_next_identity(
+    tmp_path, monkeypatch
+):
+    from arete.dataio.db import connect
+    from arete.services.athlete_scope import athlete_scope
+    from arete.services.users import upsert_user
+
+    monkeypatch.setenv("ARETE_DB", str(tmp_path / "legacy-owners.duckdb"))
+    migrations = init_duckdb.MIGRATIONS
+    monkeypatch.setattr(
+        init_duckdb, "MIGRATIONS", [(v, fn) for v, fn in migrations if v < 35]
+    )
+    init_duckdb.main()
+    con = connect()
+    con.execute(
+        "INSERT INTO app.actual_sessions(id,user_id,date,duration_sec,source) VALUES(100,42,'2026-01-01',1000,'manual'),(101,NULL,'2026-01-02',1200,'manual')"
+    )
+    con.execute(
+        "INSERT INTO app.session_feedback(actual_session_id,text,source,trigger) VALUES(100,'historical feedback','rules','sync')"
+    )
+    con.close()
+    monkeypatch.setattr(init_duckdb, "MIGRATIONS", migrations)
+    init_duckdb.main()
+    init_duckdb.main()
+    with athlete_scope(42):
+        con = connect()
+        assert con.execute("SELECT id FROM app.visible_actual_sessions").fetchall() == [
+            (100,)
+        ]
+        assert con.execute(
+            "SELECT text FROM app.visible_session_feedback"
+        ).fetchall() == [("historical feedback",)]
+        con.close()
+    with athlete_scope(1):
+        con = connect()
+        assert con.execute("SELECT id FROM app.visible_actual_sessions").fetchall() == [
+            (101,)
+        ]
+        assert (
+            con.execute("SELECT * FROM app.visible_session_feedback").fetchall() == []
+        )
+        con.close()
+    assert upsert_user("new-identity", "new@example.com").athlete_id > 42

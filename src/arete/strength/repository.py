@@ -11,9 +11,10 @@ from datetime import date, datetime
 
 import duckdb
 
-from arete.config import config
 from arete.data.exercises_catalog import EXERCISES_CATALOG
-from arete.dataio.db import connect, get_db_path
+from arete.dataio.db import configure_athlete, connect, get_db_path
+from arete.dataio.ownership import require_owned
+from arete.services.athlete_scope import resolve_athlete_id
 from arete.strength.models import (
     Exercise,
     ExerciseCategory,
@@ -34,9 +35,11 @@ class StrengthRepository:
 
     def _get_connection(self) -> duckdb.DuckDBPyConnection:
         """Get a database connection: the configured one unless a path was given."""
-        if config.is_remote_db and not self._explicit_path:
+        if not self._explicit_path:
             return connect()
-        return duckdb.connect(self.db_path)
+        con = duckdb.connect(self.db_path)
+        configure_athlete(con)
+        return con
 
     # ─────────────────────────────────────────────────────────────────────
     # Exercises (Library)
@@ -76,7 +79,7 @@ class StrengthRepository:
             """
             SELECT id, name, category, primary_muscle, secondary_muscles_json,
                    equipment, is_unilateral, notes
-            FROM app.exercises WHERE id = ?
+            FROM app.visible_exercises WHERE id = ?
             """,
             [exercise_id],
         ).fetchone()
@@ -94,7 +97,7 @@ class StrengthRepository:
             """
             SELECT id, name, category, primary_muscle, secondary_muscles_json,
                    equipment, is_unilateral, notes
-            FROM app.exercises WHERE LOWER(name) = LOWER(?)
+            FROM app.visible_exercises WHERE LOWER(name) = LOWER(?)
             """,
             [name],
         ).fetchone()
@@ -117,7 +120,7 @@ class StrengthRepository:
         query = """
             SELECT id, name, category, primary_muscle, secondary_muscles_json,
                    equipment, is_unilateral, notes
-            FROM app.exercises WHERE 1=1
+            FROM app.visible_exercises WHERE 1=1
         """
         params: list = []
 
@@ -150,9 +153,9 @@ class StrengthRepository:
         # Count duplicates first
         dup_row = conn.execute(
             """
-            SELECT COUNT(*) FROM app.exercises
+            SELECT COUNT(*) FROM app.visible_exercises
             WHERE id NOT IN (
-                SELECT MIN(id) FROM app.exercises GROUP BY LOWER(name)
+                SELECT MIN(id) FROM app.visible_exercises GROUP BY LOWER(name)
             )
             """
         ).fetchone()
@@ -162,9 +165,9 @@ class StrengthRepository:
         conn.execute(
             """
             DELETE FROM app.exercises
-            WHERE id NOT IN (
-                SELECT MIN(id) FROM app.exercises GROUP BY LOWER(name)
-            )
+            WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (id NOT IN (
+                SELECT MIN(id) FROM app.visible_exercises GROUP BY LOWER(name)
+            ))
             """
         )
 
@@ -185,7 +188,7 @@ class StrengthRepository:
             """
             SELECT id, name, category, primary_muscle, secondary_muscles_json,
                    equipment, is_unilateral, notes
-            FROM app.exercises
+            FROM app.visible_exercises
             WHERE notes LIKE ?
             LIMIT 1
             """,
@@ -200,7 +203,7 @@ class StrengthRepository:
                 """
                 SELECT id, name, category, primary_muscle, secondary_muscles_json,
                        equipment, is_unilateral, notes
-                FROM app.exercises
+                FROM app.visible_exercises
                 WHERE LOWER(name) = LOWER(?) OR LOWER(name) = LOWER(?)
                 LIMIT 1
                 """,
@@ -334,7 +337,7 @@ class StrengthRepository:
                 RETURNING id
                 """,
                 [
-                    session.user_id,
+                    resolve_athlete_id(session.user_id),
                     session.date,
                     session.name,
                     session.program,
@@ -374,6 +377,8 @@ class StrengthRepository:
         self, conn: duckdb.DuckDBPyConnection, exercise: SessionExercise
     ) -> int:
         """Create a session exercise with its sets."""
+        require_owned(conn, "strength_sessions", exercise.session_id)
+        require_owned(conn, "exercises", exercise.exercise_id)
         result = conn.execute(
             """
             INSERT INTO app.session_exercises (
@@ -407,6 +412,7 @@ class StrengthRepository:
         self, conn: duckdb.DuckDBPyConnection, exercise_set: ExerciseSet
     ) -> int:
         """Create an exercise set."""
+        require_owned(conn, "session_exercises", exercise_set.session_exercise_id)
         result = conn.execute(
             """
             INSERT INTO app.exercise_sets (
@@ -438,7 +444,7 @@ class StrengthRepository:
         conn = self._get_connection()
         try:
             row = conn.execute(
-                f"SELECT {_SESSION_COLUMNS} FROM app.strength_sessions WHERE id = ?",
+                f"SELECT {_SESSION_COLUMNS} FROM app.visible_strength_sessions WHERE id = ?",
                 [session_id],
             ).fetchone()
             if not row:
@@ -463,7 +469,9 @@ class StrengthRepository:
         """
         conn = self._get_connection()
 
-        query = f"SELECT {_SESSION_COLUMNS} FROM app.strength_sessions WHERE 1=1"
+        query = (
+            f"SELECT {_SESSION_COLUMNS} FROM app.visible_strength_sessions WHERE 1=1"
+        )
         params: list = []
 
         if start_date:
@@ -502,8 +510,8 @@ class StrengthRepository:
                    se.target_sets, se.target_reps, se.target_rpe, se.notes,
                    e.id, e.name, e.category, e.primary_muscle, e.secondary_muscles_json,
                    e.equipment, e.is_unilateral, e.notes
-            FROM app.session_exercises se
-            LEFT JOIN app.exercises e ON se.exercise_id = e.id
+            FROM app.visible_session_exercises se
+            LEFT JOIN app.visible_exercises e ON se.exercise_id = e.id
             WHERE se.session_id IN ({", ".join("?" * len(by_id))})
             ORDER BY se.session_id, se.exercise_order
             """,
@@ -521,7 +529,7 @@ class StrengthRepository:
             f"""
             SELECT session_exercise_id, id, set_number, reps, weight_kg, rpe, rir,
                    rest_sec, tempo, is_warmup, is_failure, notes
-            FROM app.exercise_sets
+            FROM app.visible_exercise_sets
             WHERE session_exercise_id IN ({", ".join("?" * len(exercises))})
             ORDER BY session_exercise_id, set_number
             """,
@@ -535,30 +543,15 @@ class StrengthRepository:
         conn = self._get_connection()
         conn.execute("BEGIN TRANSACTION")
         try:
-            # Delete sets first (cascade)
-            conn.execute(
-                """
-                DELETE FROM app.exercise_sets
-                WHERE session_exercise_id IN (
-                    SELECT id FROM app.session_exercises WHERE session_id = ?
-                )
-                """,
-                [session_id],
-            )
-
-            # Delete session exercises
-            conn.execute(
-                "DELETE FROM app.session_exercises WHERE session_id = ?", [session_id]
-            )
-
+            # Retain children for recovery; their live views require this parent.
             # Delete session
             result = conn.execute(
-                "DELETE FROM app.strength_sessions WHERE id = ? RETURNING id",
+                "UPDATE app.strength_sessions SET deleted_at = current_timestamp WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) RETURNING id",
                 [session_id],
             ).fetchone()
 
             conn.execute(
-                "UPDATE app.game_events SET eligible=false,reason='removed',processed=false WHERE source_key=?",
+                "UPDATE app.game_events SET eligible=false,reason='removed',processed=false WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (source_key=?) ",
                 [f"strength:{session_id}"],
             )
             conn.execute("COMMIT")
@@ -590,9 +583,9 @@ class StrengthRepository:
                    SUM(CASE WHEN NOT es.is_warmup
                        THEN es.reps * COALESCE(es.weight_kg, 0) END) as volume,
                    AVG(CASE WHEN NOT es.is_warmup THEN es.rpe END) as avg_rpe
-            FROM app.session_exercises se
-            JOIN app.strength_sessions ss ON se.session_id = ss.id
-            LEFT JOIN app.exercise_sets es ON es.session_exercise_id = se.id
+            FROM app.visible_session_exercises se
+            JOIN app.visible_strength_sessions ss ON se.session_id = ss.id
+            LEFT JOIN app.visible_exercise_sets es ON es.session_exercise_id = se.id
             WHERE se.exercise_id = ?
             GROUP BY ss.date, se.id
             ORDER BY ss.date DESC
@@ -633,9 +626,9 @@ class StrengthRepository:
             SELECT se.exercise_id, ss.id, ss.date, se.id, se.target_reps,
                    es.reps, es.weight_kg, es.rpe, es.rir,
                    COALESCE(es.is_failure, FALSE)
-            FROM app.exercise_sets es
-            JOIN app.session_exercises se ON es.session_exercise_id = se.id
-            JOIN app.strength_sessions ss ON se.session_id = ss.id
+            FROM app.visible_exercise_sets es
+            JOIN app.visible_session_exercises se ON es.session_exercise_id = se.id
+            JOIN app.visible_strength_sessions ss ON se.session_id = ss.id
             WHERE se.exercise_id IN ({", ".join("?" * len(exercise_ids))})
               AND NOT COALESCE(es.is_warmup, FALSE)
         """
@@ -677,10 +670,10 @@ class StrengthRepository:
         query = """
             SELECT ss.date, e.primary_muscle, e.secondary_muscles_json,
                    es.reps, COALESCE(es.weight_kg, 0) AS weight
-            FROM app.exercise_sets es
-            JOIN app.session_exercises se ON es.session_exercise_id = se.id
-            JOIN app.exercises e ON se.exercise_id = e.id
-            JOIN app.strength_sessions ss ON se.session_id = ss.id
+            FROM app.visible_exercise_sets es
+            JOIN app.visible_session_exercises se ON es.session_exercise_id = se.id
+            JOIN app.visible_exercises e ON se.exercise_id = e.id
+            JOIN app.visible_strength_sessions ss ON se.session_id = ss.id
             WHERE NOT es.is_warmup
         """
         params: list = []
@@ -719,10 +712,10 @@ class StrengthRepository:
         query = """
             SELECT e.id, e.name, e.primary_muscle, e.secondary_muscles_json,
                    es.reps, COALESCE(es.weight_kg, 0) as weight
-            FROM app.exercise_sets es
-            JOIN app.session_exercises se ON es.session_exercise_id = se.id
-            JOIN app.exercises e ON se.exercise_id = e.id
-            JOIN app.strength_sessions ss ON se.session_id = ss.id
+            FROM app.visible_exercise_sets es
+            JOIN app.visible_session_exercises se ON es.session_exercise_id = se.id
+            JOIN app.visible_exercises e ON se.exercise_id = e.id
+            JOIN app.visible_strength_sessions ss ON se.session_id = ss.id
             WHERE NOT es.is_warmup
         """
         params: list = []
@@ -786,9 +779,9 @@ class StrengthRepository:
         max_weight = conn.execute(
             """
             SELECT MAX(es.weight_kg), es.reps, ss.date
-            FROM app.exercise_sets es
-            JOIN app.session_exercises se ON es.session_exercise_id = se.id
-            JOIN app.strength_sessions ss ON se.session_id = ss.id
+            FROM app.visible_exercise_sets es
+            JOIN app.visible_session_exercises se ON es.session_exercise_id = se.id
+            JOIN app.visible_strength_sessions ss ON se.session_id = ss.id
             WHERE se.exercise_id = ? AND NOT es.is_warmup
             GROUP BY es.weight_kg, es.reps, ss.date
             ORDER BY es.weight_kg DESC
@@ -801,9 +794,9 @@ class StrengthRepository:
         max_volume = conn.execute(
             """
             SELECT SUM(es.reps * COALESCE(es.weight_kg, 0)) as vol, ss.date
-            FROM app.exercise_sets es
-            JOIN app.session_exercises se ON es.session_exercise_id = se.id
-            JOIN app.strength_sessions ss ON se.session_id = ss.id
+            FROM app.visible_exercise_sets es
+            JOIN app.visible_session_exercises se ON es.session_exercise_id = se.id
+            JOIN app.visible_strength_sessions ss ON se.session_id = ss.id
             WHERE se.exercise_id = ? AND NOT es.is_warmup
             GROUP BY ss.id, ss.date
             ORDER BY vol DESC
@@ -850,18 +843,20 @@ class StrengthRepository:
         # Link and invalidation are one commit so a crash cannot leave stale rewards.
         conn.execute("BEGIN TRANSACTION")
         try:
+            require_owned(conn, "actual_sessions", garmin_id)
             result = conn.execute(
-                "SELECT id FROM app.strength_sessions WHERE id = ?", (session_id,)
+                "SELECT id FROM app.visible_strength_sessions WHERE id = ?",
+                (session_id,),
             ).fetchone()
             if not result:
                 conn.execute("ROLLBACK")
                 return False
             conn.execute(
-                "UPDATE app.strength_sessions SET actual_session_id = ? WHERE id = ?",
+                "UPDATE app.strength_sessions SET actual_session_id = ? WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) ",
                 (garmin_id, session_id),
             )
             conn.execute(
-                "UPDATE app.game_events SET processed=false WHERE source_key=? OR source_key=?",
+                "UPDATE app.game_events SET processed=false WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (source_key=? OR source_key=?) ",
                 [f"strength:{session_id}", f"actual:{garmin_id}"],
             )
             conn.execute("COMMIT")

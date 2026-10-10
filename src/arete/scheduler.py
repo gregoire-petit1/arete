@@ -17,8 +17,11 @@ import json
 import logging
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from time import monotonic
 
 from arete.config import config
+from arete.dataio.db import db_connection
+from arete.services.athlete_scope import athlete_scope, current_athlete_id
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +34,12 @@ STATE_FILENAME = "last_daily_sync.json"
 #: ``get_sync_status`` tool. Process-local and deliberately not persisted: it
 #: answers "what happened on the run this process did", while the durable
 #: "did today's run happen at all" lives in the JSON marker below.
-_last_status: dict[str, str] = {}
+_last_status: dict[int, dict[str, str]] = {}
 
 
 def last_status() -> dict[str, str]:
     """Per-source status of the last sync this process ran ({} if none yet)."""
-    return dict(_last_status)
+    return dict(_last_status.get(current_athlete_id(), {}))
 
 
 def state_path() -> Path:
@@ -161,8 +164,7 @@ def daily_sync() -> dict[str, str]:
 
         notify("Arete", f"{imported} séance(s) importée(s)", "/log?tab=cardio")
     logger.info("Daily sync: %s", status)
-    _last_status.clear()
-    _last_status.update(status)
+    _last_status[current_athlete_id()] = dict(status)
     return status
 
 
@@ -230,26 +232,83 @@ def write_weekly_review(today: date | None = None) -> str:
     return f"{review.source}, {len(review.proposals)} proposals"
 
 
-async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
-    logger.info(
-        "Automatic sync armed for %02d:00 local, checked every %d min (last run: %s)",
-        hour,
-        tick_seconds // 60,
-        last_run_date() or "never",
-    )
-    while True:
-        now = datetime.now()
-        if is_due(hour, now, last_run_date()):
-            await asyncio.to_thread(daily_sync)
-            record_run(datetime.now())
-            # After the sync, never before: the briefing reads the data the
-            # sync just landed.
-            # The coach bridges model calls back onto this loop, keeping the
-            # shared SDK HTTP pool on its owning loop across daily runs.
-            from anyio import to_thread
+MAX_SCHEDULED_ATHLETES = 5
+SCHEDULE_DISPATCH_SECONDS = 240
+SCHEDULE_LEASE_SECONDS = 900
 
-            await to_thread.run_sync(write_daily_briefing)
-            await to_thread.run_sync(write_weekly_review)
+
+def run_scheduled_batch() -> dict:
+    """Claim a bounded batch; each athlete has a durable daily marker and lease.
+
+    A failed/ambiguous run is not automatically replayed: its lease remains for
+    investigation. Dispatch stops at the deadline and reports deferred work.
+    """
+    deadline = monotonic() + SCHEDULE_DISPATCH_SECONDS
+    with db_connection() as con:
+        rows = con.execute(
+            "SELECT id FROM app.athletes WHERE deleted_at IS NULL "
+            "AND (last_sync_at IS NULL OR CAST(last_sync_at AS DATE)<current_date) "
+            "AND sync_lease_until IS NULL ORDER BY last_sync_at NULLS FIRST,id LIMIT ?",
+            [MAX_SCHEDULED_ATHLETES + 1],
+        ).fetchall()
+    outcomes: dict[str, dict] = {}
+    deferred = len(rows) > MAX_SCHEDULED_ATHLETES
+    for (athlete_id,) in rows[:MAX_SCHEDULED_ATHLETES]:
+        if monotonic() >= deadline:
+            deferred = True
+            break
+        with db_connection() as con:
+            claimed = con.execute(
+                "UPDATE app.athletes SET sync_lease_until=current_timestamp + ? * INTERVAL '1 second' "
+                "WHERE id=? AND deleted_at IS NULL AND sync_lease_until IS NULL "
+                "AND (last_sync_at IS NULL OR CAST(last_sync_at AS DATE)<current_date) RETURNING id",
+                [SCHEDULE_LEASE_SECONDS, athlete_id],
+            ).fetchone()
+        if not claimed:
+            continue
+        with athlete_scope(athlete_id):
+            from arete.dataio import mirror
+
+            try:
+                if config.is_remote_db:
+                    mirror.hydrate()
+                status = daily_sync()
+                status["briefing"] = write_daily_briefing()
+                status["review"] = write_weekly_review()
+                record_run(datetime.now())
+                if config.is_remote_db:
+                    mirror.flush()
+                with db_connection() as con:
+                    con.execute(
+                        "UPDATE app.athletes SET last_sync_at=current_timestamp,sync_lease_until=NULL WHERE id=?",
+                        [athlete_id],
+                    )
+                outcomes[str(athlete_id)] = status
+            except Exception:
+                logger.exception(
+                    "Scheduled work failed for athlete %s; lease retained", athlete_id
+                )
+                outcomes[str(athlete_id)] = {
+                    "status": "failed; manual recovery required"
+                }
+    return {"athletes": outcomes, "deferred": deferred}
+
+
+async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
+    from anyio import to_thread
+
+    logger.info(
+        "Automatic sync armed for %02d:00, dispatch every %ds", hour, tick_seconds
+    )
+    # This task intentionally lives as long as the server; each dispatch is bounded.
+    while True:
+        if datetime.now().hour >= hour:
+            try:
+                await to_thread.run_sync(run_scheduled_batch)
+            except Exception:
+                logger.exception(
+                    "Scheduled dispatch failed; next tick will check unclaimed work"
+                )
         await asyncio.sleep(tick_seconds)
 
 
