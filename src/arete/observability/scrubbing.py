@@ -66,8 +66,28 @@ def _redacted(label: str) -> str:
     return f"[REDACTED:{label}]"
 
 
-def _is_sensitive_tool_message(value: Any) -> bool:
-    return isinstance(value, BaseMessage) and value.name in SENSITIVE_TOOL_NAMES
+def _redact_tool_call(call: dict) -> dict:
+    name = call.get("name")
+    if isinstance(name, str) and name in SENSITIVE_TOOL_NAMES and call.get("args"):
+        return {**call, "args": _redacted(name)}
+    return call
+
+
+def _scrubbed_message(value: Any) -> BaseMessage | None:
+    """A redacted copy of a live message, or None if it needs no change.
+
+    Covers a ToolMessage result (content keyed by the tool's own name) and an
+    AIMessage requesting a sensitive tool (its own tool_calls, not .name).
+    """
+    if not isinstance(value, BaseMessage):
+        return None
+    if value.name in SENSITIVE_TOOL_NAMES:
+        return value.model_copy(update={"content": _redacted(value.name)})
+    tool_calls = getattr(value, "tool_calls", None) or []
+    redacted_calls = [_redact_tool_call(call) for call in tool_calls]
+    if redacted_calls != tool_calls:
+        return value.model_copy(update={"tool_calls": redacted_calls})
+    return None
 
 
 def _walk(value: Any, *, depth: int, nodes_left: list[int]) -> Any:
@@ -79,8 +99,8 @@ def _walk(value: Any, *, depth: int, nodes_left: list[int]) -> Any:
 
     if isinstance(value, Sensitive):
         return _redacted(value.label)
-    if _is_sensitive_tool_message(value):
-        return value.model_copy(update={"content": _redacted(value.name)})
+    if isinstance(value, BaseMessage):
+        return _scrubbed_message(value) or value
     if isinstance(value, dict):
         name = value.get("name")
         if isinstance(name, str) and name in SENSITIVE_TOOL_NAMES:

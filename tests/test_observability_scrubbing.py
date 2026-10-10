@@ -72,6 +72,23 @@ def test_sensitive_tool_name_redacts_a_live_tool_message():
     assert message.content == FIXTURE_SENTENCE  # The original is never mutated.
 
 
+def test_live_ai_message_requesting_a_sensitive_tool_has_its_args_redacted():
+    message = AIMessage(
+        content="",
+        tool_calls=[
+            {
+                "name": "append_journal",
+                "args": {"title": "t", "body": FIXTURE_SENTENCE},
+                "id": "c1",
+                "type": "tool_call",
+            }
+        ],
+    )
+    scrubbed = scrub({"output": message})
+    assert scrubbed["output"].tool_calls[0]["args"] == "[REDACTED:append_journal]"
+    assert message.tool_calls[0]["args"]["body"] == FIXTURE_SENTENCE  # Unmutated.
+
+
 def test_sensitive_tool_name_redacts_a_serialized_tool_message():
     payload = {
         "messages": [
