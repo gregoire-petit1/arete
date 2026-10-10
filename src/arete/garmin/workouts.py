@@ -14,6 +14,14 @@ if TYPE_CHECKING:
 
 from arete.services.prescriptions import Prescription, Step, Target
 
+# Exact catalog equivalents only: fuzzy substitutions can change the exercise.
+_STRENGTH_NAMES = {
+    "Back Squat": "Barbell Back Squat",
+    "Lunges": "Lunge",
+    "Calf Raises": "Calf Raise",
+    "Leg Extension": "Leg Extensions",
+}
+
 
 def _target(target: Target, hr_ranges: list[tuple[int, int | None]] | None) -> dict:
     kind = target.kind
@@ -113,7 +121,8 @@ def convert(
                     "Un repos de musculation ne peut pas masquer un exercice ou une charge."
                 )
             if sport == "strength" and step.kind not in {"rest", "recovery"}:
-                entry = resolve(step.garmin_exercise or step.exercise)
+                name = step.garmin_exercise or step.exercise
+                entry = resolve(_STRENGTH_NAMES.get(name, name))
                 if not entry or step.duration_kind != "reps":
                     raise ValueError(
                         f"Choisis un exercice Garmin exact et un nombre de répétitions pour « {step.exercise} »."

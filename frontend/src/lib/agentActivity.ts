@@ -2,7 +2,6 @@ import type { ChatMessage, ToolPart } from './agentStream';
 
 /** Presentation only: permissions and execution remain server-owned. */
 const TOOL_LABELS: Record<string, [running: string, done: string]> = {
-  get_page_context: ['Lecture de la page', 'Page consultée'],
   read_file: ['Lecture de tes notes', 'Notes consultées'],
   ls: ['Recherche dans tes notes', 'Recherche terminée'],
   glob: ['Recherche dans tes notes', 'Recherche terminée'],

@@ -29,7 +29,6 @@ from arete.agent.runtime.budget import (
 )
 from arete.agent.runtime.context import AgentContext
 from arete.agent.tools.journal import append_journal, remember_fact
-from arete.agent.tools.pages import get_page_context
 from arete.services.calendar import CalendarService
 
 #: Builds the calendar of one signed-in account (its Clerk user id).
@@ -103,7 +102,6 @@ def build_agent(
     return create_agent(
         model,
         tools=[
-            *([get_page_context] if profile.page_context else []),
             *([append_journal, remember_fact] if profile.journal_tools else []),
         ],
         middleware=middleware,

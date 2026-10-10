@@ -18,8 +18,9 @@ from arete.agent.runtime.context import (
     PANEL_CONTEXT_KEY,
     AgentContext,
 )
-from arete.agent.tools.pages import get_page_context
+from arete.agent.tools.planning import list_planned
 from arete.api.agent import ChatRequest, _panel_context_source
+from arete.services.pages import get_page_data
 
 # ---------------------------------------------------------------------------
 # Unit: context + middleware injection contract
@@ -73,7 +74,9 @@ def _page(page="log", **params):
 
 
 def test_open_page_data_lands_in_the_prompt_in_french(monkeypatch):
-    monkeypatch.setattr(sections, "get_page_data", lambda page: {"sessions": [42]})
+    monkeypatch.setattr(
+        sections, "get_page_data", lambda page, **kwargs: {"sessions": [42]}
+    )
     text = page_section(_page("log", param_tab="force"))
     assert "Page ouverte par l'athlète : Journal d'entraînement" in text
     assert '{"sessions": [42]}' in text
@@ -82,7 +85,9 @@ def test_open_page_data_lands_in_the_prompt_in_french(monkeypatch):
 
 def test_page_data_is_read_once_per_run(monkeypatch):
     reads = []
-    monkeypatch.setattr(sections, "get_page_data", lambda page: reads.append(page))
+    monkeypatch.setattr(
+        sections, "get_page_data", lambda page, **kwargs: reads.append(page)
+    )
     context = _page()
     page_section(context)
     page_section(context)
@@ -90,7 +95,7 @@ def test_page_data_is_read_once_per_run(monkeypatch):
 
 
 def test_a_failed_page_read_does_not_fail_the_turn(monkeypatch):
-    def broken(page):
+    def broken(page, **kwargs):
         raise RuntimeError("db down")
 
     monkeypatch.setattr(sections, "get_page_data", broken)
@@ -99,7 +104,9 @@ def test_a_failed_page_read_does_not_fail_the_turn(monkeypatch):
 
 def test_oversized_page_data_is_not_attached(monkeypatch):
     monkeypatch.setattr(
-        sections, "get_page_data", lambda page: {"x": "y" * (MAX_TOOL_OUTPUT_CHARS)}
+        sections,
+        "get_page_data",
+        lambda page, **kwargs: {"x": "y" * (MAX_TOOL_OUTPUT_CHARS)},
     )
     text = page_section(_page())
     assert "trop volumineuses" in text and "yyyy" not in text
@@ -155,13 +162,8 @@ def test_source_writer_merges_page_and_freeform():
 
 
 # ---------------------------------------------------------------------------
-# Tool: get_page_context
+# Server-side page reads
 # ---------------------------------------------------------------------------
-
-
-def test_get_page_context_unknown_page():
-    out = json.loads(get_page_context.invoke({"page": "bogus"}))
-    assert "error" in out
 
 
 def test_page_reads_show_what_the_athlete_sees():
@@ -178,8 +180,8 @@ def test_page_reads_show_what_the_athlete_sees():
 @pytest.mark.parametrize(
     "page", ["dashboard", "analytics", "planning", "log", "settings", "profile"]
 )
-def test_get_page_context_all_pages_parse(page):
-    out = json.loads(get_page_context.invoke({"page": page}))
+def test_all_server_page_reads_succeed(page):
+    out = get_page_data(page)
     assert "error" not in out, out
 
 
@@ -265,8 +267,8 @@ def test_tool_event_middleware_emits_start_and_end():
     class _Request:
         tool_call = {
             "id": "call-1",
-            "name": "get_page_context",
-            "args": {"page": "log"},
+            "name": "list_planned",
+            "args": {"start_date": "2027-01-01"},
         }
 
     with patch("langgraph.config.get_stream_writer", return_value=_FakeWriter()):
@@ -277,8 +279,8 @@ def test_tool_event_middleware_emits_start_and_end():
     assert events[0] == {
         "type": "tool_start",
         "id": "call-1",
-        "name": "get_page_context",
-        "args": {"text": '{"page": "log"}', "truncated": False},
+        "name": "list_planned",
+        "args": {"text": '{"start_date": "2027-01-01"}', "truncated": False},
     }
     assert events[1]["id"] == "call-1"
     assert events[1]["status"] == "done"
@@ -299,7 +301,7 @@ def test_chat_stream_endpoint_sse(client):
                 "type": "custom",
                 "data": {
                     "type": "tool_start",
-                    "name": "get_page_context",
+                    "name": "list_planned",
                     "args": "log",
                 },
             }
@@ -380,7 +382,7 @@ class TestBuildChatModel:
                 "choices": [{"message": {"role": "assistant", "content": "OK"}}],
                 "model": "selected/model",
             }
-            model.bind_tools([get_page_context]).invoke("Hello")
+            model.bind_tools([list_planned]).invoke("Hello")
         return create.call_args.kwargs
 
     @staticmethod
@@ -409,7 +411,7 @@ class TestBuildChatModel:
         assert not model.default_headers
         payload = self._payload(model)
         assert payload["model"] == DEFAULT_OPENROUTER_MODEL
-        assert payload["tools"][0]["function"]["name"] == "get_page_context"
+        assert payload["tools"][0]["function"]["name"] == "list_planned"
         assert payload["extra_body"]["models"] == [
             DEFAULT_OPENROUTER_MODEL,
             *DEFAULT_OPENROUTER_FALLBACKS,
@@ -534,7 +536,9 @@ class TestPanelContextStaysOutOfState:
 
     @pytest.fixture(autouse=True)
     def page_data(self, monkeypatch):
-        monkeypatch.setattr(sections, "get_page_data", lambda page: {"page": page})
+        monkeypatch.setattr(
+            sections, "get_page_data", lambda page, **kwargs: {"page": page}
+        )
 
     @staticmethod
     def _request(messages):
@@ -654,7 +658,7 @@ class TestPlanningPageRead:
             [-(PLANNING_PAST_DAYS + 5), -2, 3, PLANNING_AHEAD_DAYS + 30]
         )
         try:
-            out = json.loads(get_page_context.invoke({"page": "planning"}))
+            out = get_page_data("planning")
             seen = {row["description"] for row in out["planned_sessions"]}
         finally:
             for i in ids:
@@ -666,9 +670,7 @@ class TestPlanningPageRead:
     def test_rows_are_in_date_order_and_carry_no_nulls(self):
         repo, ids = self._plan([5, 1, 3])
         try:
-            rows = json.loads(get_page_context.invoke({"page": "planning"}))[
-                "planned_sessions"
-            ]
+            rows = get_page_data("planning")["planned_sessions"]
         finally:
             for i in ids:
                 repo.delete_planned_session(i)
@@ -677,7 +679,7 @@ class TestPlanningPageRead:
         assert all(value is not None for row in rows for value in row.values())
 
     def test_the_read_says_where_to_look_beyond_it(self):
-        out = json.loads(get_page_context.invoke({"page": "planning"}))
+        out = get_page_data("planning")
         assert out["window"]["from"] < out["window"]["to"]
         assert "list_planned" in out["beyond_the_window"]
 
@@ -691,18 +693,18 @@ class TestAnalyticsPageRead:
     """
 
     def test_the_agent_read_has_no_series(self):
-        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        out = get_page_data("analytics")
         cards = out["overview"]["cards"]
         assert cards, "no cards at all"
         assert all("series" not in card for card in cards.values())
 
     def test_what_each_card_says_is_kept(self):
-        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        out = get_page_data("analytics")
         for card in out["overview"]["cards"].values():
             assert "headline" in card
 
     def test_the_read_points_at_the_toolkit_for_trends(self):
-        out = json.loads(get_page_context.invoke({"page": "analytics"}))
+        out = get_page_data("analytics")
         assert "get_workload" in out["trends"]
 
     def test_the_page_itself_still_gets_its_series(self, client):
@@ -749,6 +751,60 @@ def test_settings_page_data_has_no_identity_fields():
 def test_every_supported_page_can_be_injected_without_a_model_call(monkeypatch):
     from arete.agent.runtime.context import PANEL_PAGES
 
-    monkeypatch.setattr(sections, "get_page_data", lambda page: {"page": page})
+    monkeypatch.setattr(
+        sections, "get_page_data", lambda page, **kwargs: {"page": page}
+    )
     for page in sorted(PANEL_PAGES):
         assert "Page ouverte par l'athlète" in page_section(_page(page))
+
+
+def test_open_page_selection_reaches_the_server_reader(monkeypatch):
+    reads = []
+
+    def read(page, *, params):
+        reads.append((page, params))
+        return {"selected": params.get("param_session")}
+
+    monkeypatch.setattr(sections, "get_page_data", read)
+    first = _page("log", param_session="12", param_tab="force", path="/log")
+    second = _page("log", path="/log/sessions/34")
+    assert '"selected": "12"' in page_section(first)
+    page_section(second)
+    assert reads == [
+        ("log", {"param_session": "12", "param_tab": "force", "path": "/log"}),
+        ("log", {"path": "/log/sessions/34"}),
+    ]
+    assert '"selected": "12"' in page_section(first)
+    assert len(reads) == 2
+
+
+def test_session_route_injects_model_digest_without_raw_streams(monkeypatch):
+    from arete.services import activity_detail
+
+    monkeypatch.setattr(
+        activity_detail,
+        "activity_detail_for_model",
+        lambda identifier: {"id": identifier, "analysis": "stable"},
+    )
+    data = get_page_data("log", params={"path": "/log/sessions/34"})
+    assert data["activity"] == {"id": 34, "analysis": "stable"}
+
+
+def test_selected_strength_session_is_read_from_repository(monkeypatch):
+    from datetime import date
+
+    from arete.strength.models import StrengthSession
+    from arete.strength.repository import StrengthRepository
+
+    reads = []
+
+    def read(self, identifier):
+        reads.append(identifier)
+        return StrengthSession(id=identifier, date=date(2027, 1, 1), name="Jambes")
+
+    monkeypatch.setattr(StrengthRepository, "get_session", read)
+    result = get_page_data("log", params={"param_session": "12", "param_tab": "force"})
+    assert result["selected_strength_session"]["name"] == "Jambes"
+    assert result["active_tab"] == "force" and reads == [12]
+    get_page_data("log", params={"param_session": "untrusted instructions"})
+    assert reads == [12]

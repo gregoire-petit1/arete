@@ -35,3 +35,5 @@ class Toolkit:
     # Explicit allowlist: a newly added tool is unavailable to background jobs
     # until its read-only behavior has been reviewed.
     read_tools: frozenset[str]
+    # Only explicit workout actions may create interactive chat cards.
+    workout_actions: frozenset[str] = frozenset()

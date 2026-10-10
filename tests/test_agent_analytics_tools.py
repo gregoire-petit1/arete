@@ -174,7 +174,6 @@ def test_full_graph_search_load_then_read():
 
     from arete.agent.middlewares.capabilities import ToolkitMiddleware
     from arete.agent.runtime.context import AgentContext
-    from arete.agent.tools.pages import get_page_context
 
     class FakeToolModel(GenericFakeChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -198,7 +197,6 @@ def test_full_graph_search_load_then_read():
     )
     graph = create_agent(
         FakeToolModel(messages=messages),
-        tools=[get_page_context],
         middleware=[ToolkitMiddleware()],
         system_prompt="t",
         context_schema=AgentContext,

@@ -1,6 +1,6 @@
 """Analytics toolkit — narrow reads, instead of the 30-day page dump.
 
-``get_page_context("analytics")`` answers with ``get_overview(period="30d")``:
+The injected Analytics page uses ``get_overview(period="30d")``:
 eight DuckDB queries plus a 42-day EWMA, in one block, always the same window.
 Fine to ground a first answer, useless to compare two periods or to look up
 one number.

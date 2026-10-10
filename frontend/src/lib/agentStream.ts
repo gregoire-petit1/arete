@@ -286,7 +286,7 @@ export async function runAgentStream(
   documentIds?: string[],
   onAccepted?: () => void,
 ): Promise<void> {
-  const panel_context: Record<string, string> = { page: context.page };
+  const panel_context: Record<string, string> = { page: context.page, path: context.path };
   for (const [key, value] of Object.entries(context.params))
     panel_context[`param_${key}`] = value;
   const response = await authFetch('/api/agent/chat/stream', {

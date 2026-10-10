@@ -11,7 +11,7 @@ from langchain_core.tools import BaseTool
 from langgraph.config import get_stream_writer
 
 from arete.agent.capabilities.execution import _resolve_tool
-from arete.agent.capabilities.registry import validate_registry
+from arete.agent.capabilities.registry import CAPABILITIES, validate_registry
 from arete.agent.middlewares.observability import run_stats
 from arete.agent.runtime.budget import MAX_TOOL_CALLS
 from arete.agent.runtime.events import enforce_tool_status, workout_updates
@@ -52,6 +52,8 @@ class ToolkitMiddleware(AgentMiddleware):
     def _config(request, *, loop=None):
         config = dict(getattr(request.runtime, "config", None) or {})
         context = getattr(request.runtime, "context", None)
+        name = request.tool_call["name"]
+        emits_workouts = any(name in tk.workout_actions for tk in CAPABILITIES.values())
         # Capture the writer on the graph loop. Synchronous services execute in workers.
         try:
             writer = get_stream_writer()
@@ -59,7 +61,7 @@ class ToolkitMiddleware(AgentMiddleware):
             writer = None  # Unit calls outside a graph have no stream consumer.
 
         def progress(value):
-            if writer is None:
+            if not emits_workouts or writer is None:
                 return
             session = {k: v for k, v in value["session"].items() if k != "prescription"}
             event = {
@@ -94,6 +96,17 @@ class ToolkitMiddleware(AgentMiddleware):
         }
         return config, progress
 
+    @staticmethod
+    def _invalidate_page(request, name):
+        # A write may partially commit even when it raises. Re-read next model
+        # boundary; never let the cached page contradict the action's result.
+        context = getattr(request.runtime, "context", None)
+        if context is not None and any(
+            name in {t.name for t in tk.tools} and name not in tk.read_tools
+            for tk in CAPABILITIES.values()
+        ):
+            context.page_section = None
+
     def wrap_tool_call(self, request, handler):
         self._count(request)
         name = str(request.tool_call.get("name", ""))
@@ -103,10 +116,12 @@ class ToolkitMiddleware(AgentMiddleware):
         if tool is None:
             return enforce_tool_status(handler(request))
         config, progress = self._config(request)
-        result = tool.invoke(
-            dict(request.tool_call.get("args") or {}),
-            config=config,
-        )
+        try:
+            result = tool.invoke(
+                dict(request.tool_call.get("args") or {}), config=config
+            )
+        finally:
+            self._invalidate_page(request, name)
         for update in workout_updates(result):
             progress(update)
         return enforce_tool_status(
@@ -126,10 +141,12 @@ class ToolkitMiddleware(AgentMiddleware):
         # ainvoke runs sync database tools off the event loop, allowing live
         # progress and concurrent requests to keep flowing during execution.
         config, progress = self._config(request, loop=asyncio.get_running_loop())
-        result = await tool.ainvoke(
-            dict(request.tool_call.get("args") or {}),
-            config=config,
-        )
+        try:
+            result = await tool.ainvoke(
+                dict(request.tool_call.get("args") or {}), config=config
+            )
+        finally:
+            self._invalidate_page(request, name)
         for update in workout_updates(result):
             progress(update)
         return enforce_tool_status(

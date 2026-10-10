@@ -273,7 +273,6 @@ def test_full_graph_load_then_execute_planning():
 
     from arete.agent.backends.memory import build_memory_filesystem
     from arete.agent.runtime.context import AgentContext
-    from arete.agent.tools.pages import get_page_context
 
     class FakeToolModel(GenericFakeChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -313,7 +312,6 @@ def test_full_graph_load_then_execute_planning():
     )
     graph = create_agent(
         FakeToolModel(messages=messages),
-        tools=[get_page_context],
         middleware=[middleware, build_memory_filesystem(), ContextBuilderMiddleware()],
         system_prompt="t",
         context_schema=AgentContext,
@@ -427,7 +425,6 @@ def test_full_graph_async_path_executes_toolkit_tools():
     from arete.agent.backends.memory import build_memory_filesystem
     from arete.agent.middlewares.events import ToolEventMiddleware
     from arete.agent.runtime.context import AgentContext
-    from arete.agent.tools.pages import get_page_context
 
     class FakeToolModel(GenericFakeChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -468,7 +465,6 @@ def test_full_graph_async_path_executes_toolkit_tools():
         )
         graph = create_agent(
             FakeToolModel(messages=messages),
-            tools=[get_page_context],
             middleware=[
                 middleware,
                 ToolEventMiddleware(),

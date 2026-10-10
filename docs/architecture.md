@@ -94,8 +94,11 @@ Model-generated loaded state and client page metadata cannot change these polici
 The context builder combines the harness/filesystem contribution, mission
 instructions, the current date for chat, the catalog of toolkits still loadable,
 loaded instructions, a bounded journal excerpt and, for chat, the open page: its
-data read by the server once per run (`context/sections.py`, through
-`services/pages.py`) and its URL parameters labelled as untrusted client data. A
+data read by the server at the first model boundary (`context/sections.py`, through
+`services/pages.py`) and its route/URL parameters labelled as untrusted client data.
+The Log selection includes the selected strength session or the cardio detail digest.
+Domain actions invalidate this invocation-local cache for the next model call; reads
+reuse it. There is no page-context tool. A
 question about the screen therefore needs no tool call. The journal is read again
 for each model call, so writes within a turn are visible on the next call; older
 entries remain accessible through filesystem tools. Contributions do not mutate
@@ -139,7 +142,10 @@ Runtime tool events are projected into the existing SSE protocol by
 `api/agent_streaming.py`. Workout events carry session ID/revision, tool call,
 thread and durable operation state. The domain service publishes through an injected
 callback; the runtime supplies correlation and the API projects `workout_update`.
-Cards consume these events before `done`, independently of truncated tool previews.
+Only catalog-declared workout actions emit these cards: planning lists and session
+inspection remain model data, never interactive cards. The capability middleware
+enforces this for returned results and progress callbacks. Cards consume these events
+before `done`, independently of truncated tool previews.
 Optional LangSmith tracing remains invocation-scoped, including stream
 cancellation cleanup, dynamic tool spans and browser thread IDs. Provider usage logs
 retain reported cache/input/output details and model timing without logging the

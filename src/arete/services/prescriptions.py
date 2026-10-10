@@ -129,6 +129,7 @@ class ImportedSession(StrictModel):
 
 
 def strength_prescription(text: str, day: Date | None) -> Prescription:
+    from arete.data.exercises_catalog import get_exercise
     from arete.strength.logging_service import parse_for_athlete
 
     parsed = parse_for_athlete(text, workout_date=day)
@@ -138,6 +139,8 @@ def strength_prescription(text: str, day: Date | None) -> Prescription:
         )
     steps = []
     for exercise in parsed.exercises:
+        definition = get_exercise(exercise.exercise_id or "")
+        assert definition is not None
         for series in exercise.sets:
             steps.append(
                 Step(
@@ -145,11 +148,16 @@ def strength_prescription(text: str, day: Date | None) -> Prescription:
                     duration_kind="reps",
                     value=series.reps,
                     exercise=exercise.name,
+                    garmin_exercise=definition["name"],
                     weight_kg=series.weight_kg,
                 )
             )
+            if series.rest_sec:
+                steps.append(
+                    Step(kind="rest", duration_kind="seconds", value=series.rest_sec)
+                )
             if len(steps) > MAX_STEPS:
-                raise ValueError("Maximum 100 séries par séance.")
+                raise ValueError("Maximum 100 étapes (séries et repos) par séance.")
     return Prescription(steps=steps)
 
 
@@ -182,18 +190,23 @@ def conversation_prescription(
     """Validate model input without allowing it to replace the strength grammar."""
     if len(raw) > 32_000 or len(strength_text) > 4_000:
         raise ValueError("Prescription trop volumineuse.")
-    prescription = Prescription.model_validate_json(raw)
+    if strength_text and sport != "strength":
+        raise ValueError('strength_text exige sport="strength".')
     if sport == "strength":
         if not strength_text:
             raise ValueError(
                 "Fournis le texte exact de musculation pour vérifier les séries."
             )
         parsed = strength_prescription(strength_text, day)
+        if not raw:
+            return parsed
+        prescription = Prescription.model_validate_json(raw)
         if strength_sets(prescription) != strength_sets(parsed):
             raise ValueError(
                 "Les séries ne correspondent pas au texte reconnu par la grammaire."
             )
-    return prescription
+        return prescription
+    return Prescription.model_validate_json(raw)
 
 
 def describe(prescription: Prescription) -> str:

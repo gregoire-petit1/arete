@@ -86,7 +86,7 @@ def test_transient_read_retries_once_without_extra_model_call(
     "name,args",
     [
         ("get_workload", {"days": 5}),
-        ("get_page_context", {"page": "invalid"}),
+        ("list_planned", {"start_date": "invalid"}),
         ("load_toolkit", {"toolkit_id": "invalid"}),
     ],
 )

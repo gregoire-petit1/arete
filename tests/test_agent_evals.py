@@ -44,7 +44,6 @@ pytestmark = pytest.mark.eval
 
 #: Tools that read the athlete's data, whatever route they take.
 DATA_TOOLS = {
-    "get_page_context",
     "get_workload",
     "get_fitness",
     "get_training_advice",
@@ -218,7 +217,7 @@ def test_a_question_about_load_answers_with_numbers():
 
 def test_a_records_question_reaches_the_records_tool():
     run = ask("Quel est mon record sur 10K ?")
-    assert run.called("get_personal_records", "get_page_context"), str(run)
+    assert run.called("get_personal_records"), str(run)
 
 
 # ---------------------------------------------------------------------------

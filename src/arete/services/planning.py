@@ -152,6 +152,8 @@ def create_planned_session(
                 prescription_json, canonical_sport(sport), day, strength_text
             )
             if prescription_json
+            or strength_text
+            or canonical_sport(sport) == "strength"
             else None
         )
     except ValueError as exc:
