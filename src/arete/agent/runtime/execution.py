@@ -29,6 +29,7 @@ from arete.agent.runtime.context import AgentContext
 from arete.config import config
 from arete.observability.agent import record_run
 from arete.observability.tracing import agent_tracing
+from arete.services.athlete_scope import database_athlete_id
 
 RUN_LIMIT_ERRORS = (ModelCallLimitExceededError, ToolCallLimitExceededError)
 LIMIT_MESSAGE = (
@@ -59,6 +60,10 @@ def run_config(
             "model": configured_model_name(),
         },
     }
+    # Model requests are spent per athlete: name whose run this is.
+    athlete_id = database_athlete_id()
+    if athlete_id is not None:
+        result["metadata"]["athlete_id"] = athlete_id
     if context is not None:
         result["run_id"] = context.run_id
     if context and context.thread_id is not None:

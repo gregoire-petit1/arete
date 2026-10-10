@@ -78,7 +78,13 @@ loading machinery (catalog, `load_toolkit`, load-before-execute) stays for
 profiles that do not preload. The briefing and the session feedback bind no tool:
 `services/briefing.py` and `services/session_feedback.py` compute their facts
 (load, form, recovery, today's plan, recent sessions, yesterday's briefing; or the
-session's numbers, RPE and notes) and the model answers in one request. The
+session's numbers, RPE and notes) and the model answers in one request. An
+athlete with nothing to coach on (no load over 28 days, no form model, no
+readiness and no session planned that day; for the weekly review, a week with
+nothing planned, done or missed)
+gets the rule text without a model request; facts that could not be read still
+go to the model. The on-demand briefing is produced once per athlete and day
+under a per-athlete lock, so athletes never wait for each other's run. The
 server files the feedback's ledger entry itself (`services/memory.append_entry`,
 dated heading, never twice), so neither mission can mutate training data or
 forget to write. Every profile receives the current date. Chat adds new journal
@@ -147,7 +153,9 @@ inspection remain model data, never interactive cards. The capability middleware
 enforces this for returned results and progress callbacks. Cards consume these events
 before `done`, independently of truncated tool previews.
 Optional LangSmith tracing remains invocation-scoped, including stream
-cancellation cleanup, dynamic tool spans and browser thread IDs. Provider usage logs
+cancellation cleanup, dynamic tool spans and browser thread IDs. Run metadata
+names the scoped athlete (`athlete_id`), so model requests can be counted per
+athlete. Provider usage logs
 retain reported cache/input/output details and model timing without logging the
 athlete's prompts. Opt-in LangSmith traces include full inputs, outputs and tool
 results; setup and exported data are described in the

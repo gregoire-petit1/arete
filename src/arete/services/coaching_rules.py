@@ -135,6 +135,22 @@ class RuleFacts:
     fitness_goal: str
     readiness_source: str = "model"  # see services.metrics.ReadinessSource
     readiness_measured_on: date | None = None
+    #: False when a read failed: its metric is then unknown, not absent.
+    complete: bool = True
+
+    @property
+    def is_empty(self) -> bool:
+        """Nothing to coach on: no load over 28 days, no form model, no readiness.
+
+        What a fresh athlete reads: with no load and no Garmin night there is
+        no modeled readiness either. A failed read is not an empty history.
+        """
+        return (
+            self.complete
+            and self.acwr is None
+            and self.tsb is None
+            and self.readiness_score is None
+        )
 
 
 def rule_facts(target_date: date | None = None) -> RuleFacts:
@@ -143,6 +159,7 @@ def rule_facts(target_date: date | None = None) -> RuleFacts:
     from arete.services.metrics import load_form
 
     target_date = target_date or date.today()
+    complete = True
 
     acwr: float | None = None
     try:
@@ -150,6 +167,7 @@ def rule_facts(target_date: date | None = None) -> RuleFacts:
         if any(load.duration_min > 0 for load in loads):
             acwr = compute_workload_metrics(loads, target_date).acwr
     except Exception:
+        complete = False
         logger.warning("Failed to compute workload metrics for tip", exc_info=True)
 
     tsb: float | None = None
@@ -158,6 +176,7 @@ def rule_facts(target_date: date | None = None) -> RuleFacts:
         model, readiness = load_form(target_date)
         tsb = model.tsb if model else None
     except Exception:
+        complete = False
         logger.warning("Failed to compute fitness metrics for tip", exc_info=True)
 
     settings = get_user_settings(user_id=resolve_athlete_id()) or {}
@@ -171,13 +190,14 @@ def rule_facts(target_date: date | None = None) -> RuleFacts:
         fitness_goal=str(settings.get("fitness_goal") or "build"),
         readiness_source=readiness.source if readiness else "model",
         readiness_measured_on=readiness.measured_on if readiness else None,
+        complete=complete,
     )
 
 
 def daily_rule_tip(
-    target_date: date | None = None,
+    facts: RuleFacts,
 ) -> tuple[str, Literal["info", "warning", "alert"]]:
-    """Today's rule-based tip and its priority.
+    """The day's rule-based tip and its priority, read from its ``rule_facts``.
 
     The deterministic floor under everything the coach says: it always
     produces a concrete, numeric sentence, and it is what the dashboard shows
@@ -185,7 +205,6 @@ def daily_rule_tip(
     the one used either way — it drives the card's colour and must not depend
     on a model.
     """
-    facts = rule_facts(target_date)
     return generate_daily_tip(
         facts.acwr,
         facts.tsb,
