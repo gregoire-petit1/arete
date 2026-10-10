@@ -8,32 +8,7 @@ import {
 } from 'lucide-react';
 import type { Preview, ToolPart } from '@/lib/agentStream';
 
-const LABELS: Record<string, string> = {
-  get_page_context: 'Lecture de la page',
-  read_file: 'Lecture de la mémoire',
-  append_journal: 'Note dans le journal',
-  remember_fact: 'Mémorisation d’un fait',
-  search_toolkits: 'Recherche de capacités',
-  load_toolkit: 'Chargement des outils',
-  get_workload: 'Analyse de la charge',
-  get_fitness: 'Analyse de la forme',
-  get_training_advice: 'Recommandations',
-  get_personal_records: 'Records personnels',
-  list_recent_sessions: 'Séances récentes',
-  read_workout: 'Lecture de la séance',
-  save_workout: 'Enregistrement de la séance',
-  get_strength_progress: 'Progression en force',
-  list_planned: 'Planning',
-  inspect_planned_session: 'Lecture des étapes',
-  update_session_prescription: 'Modification des étapes',
-  list_garmin_devices: 'Appareils Garmin',
-  export_garmin_sessions: 'Programmation dans Garmin',
-  reconcile_garmin_session: 'Vérification Garmin',
-  create_planned_session: 'Création d’une séance',
-  update_planned_status: 'Mise à jour d’une séance',
-  update_planned_session: 'Modification d’une séance',
-  delete_planned_session: 'Suppression d’une séance',
-};
+import { toolLabel } from '@/lib/agentActivity';
 
 function ToolPreview({ label, preview }: { label: string; preview?: Preview }) {
   if (!preview?.text) return null;
@@ -62,13 +37,13 @@ function ToolPreview({ label, preview }: { label: string; preview?: Preview }) {
   );
 }
 
-export function ToolActivity({ tools }: { tools: ToolPart[] }) {
+export function ToolActivity({ tools, compact = false }: { tools: ToolPart[]; compact?: boolean }) {
   const running = tools.some((t) => t.status === 'running');
   const failed = tools.some((t) => t.status === 'error');
   return (
     <section
       aria-label="Activité des outils"
-      className="my-3 overflow-hidden rounded-xl border border-text-muted/15 bg-shadow/35"
+      className={compact ? "min-w-0" : "my-3 overflow-hidden rounded-xl border border-text-muted/15 bg-shadow/35"}
     >
       <div className="flex items-center gap-2 px-3 py-2 text-[11px] text-text-muted">
         <Wrench className="size-3" />
@@ -83,7 +58,7 @@ export function ToolActivity({ tools }: { tools: ToolPart[] }) {
         <details key={tool.id} className="group border-t border-text-muted/10">
           <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5 text-xs hover:bg-text-muted/5 [&::-webkit-details-marker]:hidden">
             {tool.status === 'running' ? (
-              <Loader2 className="size-3.5 shrink-0 animate-spin text-neon-cyan" />
+              <Loader2 className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none text-neon-cyan" />
             ) : tool.status === 'error' ? (
               <CircleAlert className="size-3.5 shrink-0 text-danger-red" />
             ) : tool.status === 'interrupted' ? (
@@ -92,7 +67,7 @@ export function ToolActivity({ tools }: { tools: ToolPart[] }) {
               <Check className="size-3.5 shrink-0 text-success-green/80" />
             )}
             <span className="min-w-0 flex-1 text-text-secondary">
-              {LABELS[tool.name] ?? tool.name}
+              {toolLabel(tool)}
             </span>
             <span className="text-[10px] text-text-muted">
               {tool.status === 'error'

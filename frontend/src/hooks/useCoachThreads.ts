@@ -1,5 +1,6 @@
 import { markWorkout, measureWorkout } from '@/lib/workoutPerformance';
 import { cacheWorkout } from '@/lib/workouts';
+import { canRetryMessage } from '@/lib/agentActivity';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { documentsApi } from '@/lib/documents';
@@ -151,6 +152,8 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
     runRef.current = run;
     let suggestion: string | undefined;
     markWorkout('coach:request-start');
+    performance.clearMarks('coach:first-feedback');
+    performance.clearMarks('coach:first-text');
     performance.clearMarks('coach:first-workout');
     performance.clearMarks('coach:first-scheduled');
     performance.clearMarks('coach:last-token');
@@ -166,7 +169,7 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
         messages: [
           ...t.messages.slice(0, keep),
           { role: 'user', content, attachmentIds },
-          { role: 'assistant', content: '', parts: [], pending: true },
+          { role: 'assistant', content: '', parts: [], pending: true, startedAt: Date.now() },
         ],
       }))
     );
@@ -213,6 +216,10 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
           measureWorkout('coach:last-stream-gap', 'coach:last-token', 'coach:token-received');
           markWorkout('coach:last-token');
         }
+        if ((event.type === 'token' || event.type === 'message') && event.text.trim() && !performance.getEntriesByName('coach:first-text', 'mark').length) {
+          markWorkout('coach:first-text');
+          measureWorkout('coach:time-to-first-text', 'coach:request-start', 'coach:first-text');
+        }
         if (event.type === 'done') {
           markWorkout('coach:done');
           measureWorkout('coach:total', 'coach:request-start', 'coach:done');
@@ -235,7 +242,8 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
       },
       controller.signal,
       threadId,
-      documentIds
+      documentIds,
+      () => { if (!controller.signal.aborted) patchAnswer(m => ({ ...m, streamAccepted: true })); },
     )
       .catch((err: unknown) =>
         patchAnswer((m) =>
@@ -258,7 +266,8 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
   };
   /** Ask the last question again, replacing its answer. */
   const retry = () => {
-    if (active.messages.at(-1)?.workouts?.length) return false;
+    const answer = active.messages.at(-1);
+    if (answer && !canRetryMessage(answer)) return false;
     const last = active.messages.map((m) => m.role).lastIndexOf('user');
     return last >= 0 && send(active.messages[last].content, last);
   };
