@@ -3,9 +3,10 @@ name: Deploy production
 # Production ships by hand, in batches, rather than on every merge into main:
 # each deployment stores a ~430 MB function against the plan's 10 GB. Anyone
 # with write access runs it. The guard is not a reviewer but the preview: the
-# commit must already run healthy at https://arete-main-arete15.vercel.app,
-# migrations included. The first request a deployment serves migrates the real
-# database after cloning it (docs/deployment.md, "Migrations").
+# application must already run healthy at https://arete-main-arete15.vercel.app,
+# migrations included. Non-deployable commits may follow its tagged SHA.
+# The first request migrates the real database after cloning it
+# (docs/deployment.md, "Migrations").
 on:
   workflow_dispatch:
 
@@ -32,20 +33,22 @@ jobs:
       MAIN_PREVIEW_ALIAS: arete-main-arete15.vercel.app
     steps:
       - uses: actions/checkout@v5
-      # "Deploy preview" moves the fixed URL only onto a healthy build, tagged
-      # with its commit: the URL must serve this very commit.
-      - name: Require a healthy preview of this commit
+        with:
+          # Equivalence requires ancestry and the full diff from the serving SHA.
+          fetch-depth: 0
+      - name: Require a healthy preview of the same application
         run: |
-          serving=$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" \
+          serving=$(curl -fsS --connect-timeout 10 --max-time 30 \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v13/deployments/$MAIN_PREVIEW_ALIAS?teamId=$VERCEL_ORG_ID" \
-            | jq -r '.meta.sha // ""')
-          if [[ "$serving" != "$GITHUB_SHA" ]]; then
-            echo "::error::https://$MAIN_PREVIEW_ALIAS serves ${serving:-an untagged build}," \
-              "not $GITHUB_SHA. Wait for or fix 'Deploy preview' first."
-            exit 1
-          fi
+            | jq -er 'select(.readyState == "READY") | .meta.sha | select(type == "string" and length > 0)')
+          python3 scripts/ci/deployment_guard.py --preview-sha "$serving" | tee -a "$GITHUB_STEP_SUMMARY"
+          curl -fsS --connect-timeout 10 --max-time 60 \
+            -H "x-vercel-protection-bypass: $BYPASS" \
+            "https://$MAIN_PREVIEW_ALIAS/api/health" | tee -a "$GITHUB_STEP_SUMMARY"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
       - uses: actions/setup-node@v5
         with:
           node-version: 22

@@ -9,7 +9,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from select_checks import CHECKS, MAX_CHANGED_FILES, changed_paths, main, select_checks
+from select_checks import (
+    CHECKS,
+    MAX_CHANGED_FILES,
+    build_plan,
+    changed_paths,
+    main,
+    select_checks,
+)
 
 
 class SelectionTests(unittest.TestCase):
@@ -47,15 +54,20 @@ class SelectionTests(unittest.TestCase):
         for path in (
             "pyproject.toml",
             "uv.lock",
-            "Makefile",
             "asgi.py",
             "vercel.json",
-            ".github/workflows/ci.yml",
-            "scripts/ci/select_checks.py",
             "new-package/code.py",
         ):
             with self.subTest(path=path):
                 self.assertEqual(select_checks([path]), CHECKS)
+
+    def test_tooling_runs_checks_without_deploying(self):
+        for path in (
+            "Makefile",
+            ".github/workflows/ci.yml",
+            "scripts/ci/select_checks.py",
+        ):
+            self.assertEqual(select_checks([path]), CHECKS - {"preview"})
 
     def test_large_diff_fails_instead_of_truncating(self):
         with self.assertRaises(ValueError):
@@ -65,7 +77,7 @@ class SelectionTests(unittest.TestCase):
         paths = ["src/deleted.py", "docs/new name.md", "frontend/new\nname.ts"]
         result = subprocess.CompletedProcess([], 0, ("\0".join(paths) + "\0").encode())
         with patch("select_checks.subprocess.run", return_value=result):
-            self.assertEqual(changed_paths("HEAD^1"), paths)
+            self.assertEqual(changed_paths("HEAD^1"), sorted(paths))
 
     def test_bad_base_and_timeout_never_publish_green_outputs(self):
         for error in (
@@ -123,7 +135,29 @@ class SelectionTests(unittest.TestCase):
                 {"backend", "frontend", "preview"},
             )
 
-    def test_manual_and_main_runs_select_every_check_without_a_diff(self):
+    def test_main_docs_stay_cheap_but_main_backend_runs_full_tests(self):
+        with patch("select_checks.git_output", return_value=b"a" * 40):
+            docs = build_plan(["README.md"], full_tests=True)
+            self.assertFalse(docs["backend"])
+            self.assertFalse(docs["preview"])
+            self.assertEqual(docs["pytest_paths"], [])
+            backend = build_plan(["src/arete/service.py"], full_tests=True)
+            self.assertTrue(backend["preview"])
+            self.assertEqual(backend["pytest_paths"], ["tests/"])
+
+    def test_local_plan_includes_uncommitted_and_untracked_paths(self):
+        with patch(
+            "select_checks.git_output",
+            side_effect=[b"src/edited.py\0tests/staged.py\0", b"tests/new.py\0"],
+        ) as git:
+            self.assertEqual(
+                changed_paths("base", worktree=True),
+                ["src/edited.py", "tests/new.py", "tests/staged.py"],
+            )
+        self.assertNotIn("HEAD", git.call_args_list[0].args)
+        self.assertIn("--exclude-standard", git.call_args_list[1].args)
+
+    def test_manual_runs_select_every_check_without_a_diff(self):
         output = io.StringIO()
         with (
             patch("sys.argv", ["select_checks.py", "--all"]),

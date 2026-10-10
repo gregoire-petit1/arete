@@ -31,21 +31,33 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # The PR merge commit's first parent is the exact tested base. Two
-          # levels suffice, without an API file limit or full-history fetch.
-          fetch-depth: 2
+          # PR: merge commit's first parent. Push: the event's entire range,
+          # including multi-commit pushes; never infer it from HEAD^ alone.
+          fetch-depth: 0
       - name: Test CI selection policy
         run: python3 -m unittest discover -s scripts/ci -p 'test_*.py'
       - name: Select affected checks
         id: select
         env:
           EVENT_NAME: ${{ github.event_name }}
+          PUSH_BASE: ${{ github.event.before }}
         run: |
           if [[ "$EVENT_NAME" == pull_request ]]; then
-            python3 scripts/ci/select_checks.py --base HEAD^1 >> "$GITHUB_OUTPUT"
+            mode=(--base HEAD^1)
+          elif [[ "$EVENT_NAME" == push && "$PUSH_BASE" != 0000000000000000000000000000000000000000 ]]; then
+            mode=(--base "$PUSH_BASE" --full-tests)
           else
-            python3 scripts/ci/select_checks.py --all >> "$GITHUB_OUTPUT"
+            mode=(--all)
           fi
+          python3 scripts/ci/select_checks.py "${mode[@]}" \
+            --plan .context/ci-plan.json --summary "$GITHUB_STEP_SUMMARY" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-plan
+          path: .context/ci-plan.json
+          include-hidden-files: true
+          retention-days: 14
+          overwrite: true
       - uses: astral-sh/setup-uv@v6
         if: steps.select.outputs.backend == 'true'
         with:
@@ -81,7 +93,11 @@ jobs:
       - run: uv sync --frozen --extra dev
       # Two bounded workers, each with its own temporary DuckDB from conftest.
       # Keep each file together to preserve module fixtures and test ordering.
-      - run: uv run pytest tests/ --tb=short -n 2 --dist loadfile --max-worker-restart=0
+      - uses: actions/download-artifact@v4
+        with:
+          name: ci-plan
+          path: .context
+      - run: python3 scripts/ci/check_changed.py --plan .context/ci-plan.json --run --tests-only
 
   typecheck:
     runs-on: ubuntu-latest
