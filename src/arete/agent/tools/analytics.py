@@ -203,7 +203,8 @@ def get_activity_detail(session_id: int) -> str:
     summary, minutes per HR zone, laps, and the analysis of its recording —
     heart-rate drift and pace:HR decoupling, pace of each half and pace fade,
     cadence variability, power — plus the work intervals of a structured
-    workout. Deterministic numbers; no raw stream.
+    workout, the grade-adjusted pace and best climbing speeds (m/h) on foot,
+    and the weather at the start. Deterministic numbers; no raw stream.
 
     Args:
         session_id: The session's id.

@@ -562,33 +562,3 @@ def format_pace(pace_minkm: float) -> str:
     minutes = int(pace_minkm)
     seconds = int((pace_minkm - minutes) * 60)
     return f"{minutes}:{seconds:02d}"
-
-
-def calculate_gap(
-    pace_minkm: float,
-    elevation_gain_m: float,
-    distance_km: float,
-) -> float:
-    """Calculate Grade Adjusted Pace (GAP).
-
-    Adjusts pace for elevation to compare hilly runs.
-    Simple approximation: +6 sec/km per 1% grade
-
-    Args:
-        pace_minkm: Actual pace in min/km
-        elevation_gain_m: Total elevation gain
-        distance_km: Total distance
-
-    Returns:
-        GAP in min/km
-    """
-    if distance_km <= 0:
-        return pace_minkm
-
-    # Average grade percentage
-    grade_pct = (elevation_gain_m / (distance_km * 1000)) * 100
-
-    # Adjustment: ~6 sec per 1% grade
-    adjustment = grade_pct * 0.1  # 0.1 min = 6 sec per 1%
-
-    return max(0.1, pace_minkm - adjustment)

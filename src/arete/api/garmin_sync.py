@@ -179,6 +179,9 @@ def sync_activities(request: SyncRequest):
         download_fit=request.download_fit,
         max_activities=request.max_activities,
     )
+    from arete.services.session_conditions import enrich_sessions
+
+    enrich_sessions(result.session_ids)  # bounded, never raises
 
     return SyncResponse(
         success=result.success,

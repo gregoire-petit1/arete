@@ -291,6 +291,47 @@ def test_m31_creates_the_stream_and_feedback_tables_once(tmp_path, monkeypatch):
     assert recorded == 1
 
 
+def test_m32_creates_the_terrain_and_weather_tables_once(tmp_path, monkeypatch):
+    path = tmp_path / "conditions.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    with duckdb.connect(str(path)) as con:
+        con.execute("DROP TABLE app.activity_terrain")
+        con.execute("DROP TABLE app.activity_weather")
+        con.execute(
+            "INSERT INTO app.actual_sessions "
+            "(user_id, date, sport, duration_sec, source) "
+            "VALUES (1, '2026-10-01', 'running', 3600, 'garmin_connect')"
+        )
+        con.execute("DELETE FROM app.schema_version WHERE version = 32")
+    init_duckdb.main()
+    init_duckdb.main()  # recorded once, then skipped
+    with duckdb.connect(str(path), read_only=True) as con:
+        terrain = dict(
+            (r[0], r[1])
+            for r in con.execute("DESCRIBE app.activity_terrain").fetchall()
+        )
+        weather = {
+            r[0] for r in con.execute("DESCRIBE app.activity_weather").fetchall()
+        }
+        assert terrain["gap_sec_km"] == "INTEGER" and terrain["vam_60min"] == "INTEGER"
+        assert {
+            "temperature_c",
+            "humidity_pct",
+            "wind_kmh",
+            "start_altitude_m",
+        } <= weather
+        # Existing sessions keep working, with no terrain or weather yet
+        assert con.execute(
+            "SELECT count(*) FROM app.actual_sessions s "
+            "LEFT JOIN app.activity_terrain t ON t.actual_session_id = s.id "
+            "WHERE t.actual_session_id IS NULL"
+        ).fetchone() == (1,)
+        assert con.execute(
+            "SELECT count(*) FROM app.schema_version WHERE version = 32"
+        ).fetchone() == (1,)
+
+
 def test_m34_adds_the_plan_sync_columns_once(tmp_path, monkeypatch):
     from arete.services.calendar_repository import PLAN_SYNC_DDL
 

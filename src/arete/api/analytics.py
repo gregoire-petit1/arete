@@ -24,6 +24,18 @@ def get_records(sport: str = Query("running")):
     return service.get_records(sport)
 
 
+@router.post("/terrain/backfill")
+def backfill_terrain(limit: int = Query(50, ge=1, le=50)):
+    """GAP and climbing speeds of sessions whose streams predate them.
+
+    One bounded batch per call, from the stored streams only (no network);
+    call again while ``remaining`` is above zero.
+    """
+    from arete.services.session_conditions import backfill_terrain as backfill
+
+    return backfill(limit)
+
+
 @router.patch("/sessions/{session_id}")
 def update_session(session_id: int, body: SessionUpdate):
     # Only the keys the client sent: an explicit null clears the value.
