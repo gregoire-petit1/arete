@@ -42,9 +42,14 @@ def day():
 # ---------------------------------------------------------------------------
 
 
-def test_registered_with_both_tools():
+def test_registered_with_its_three_tools():
     toolkit = CAPABILITIES["strength"]
-    assert {t.name for t in toolkit.tools} == {"read_workout", "save_workout"}
+    assert {t.name for t in toolkit.tools} == {
+        "read_workout",
+        "save_workout",
+        "get_strength_progress",
+    }
+    assert "get_strength_progress" in toolkit.read_tools
     assert toolkit.instructions == STRENGTH_INSTRUCTIONS
     assert {t.name for t in STRENGTH_TOOLS} == {t.name for t in toolkit.tools}
 

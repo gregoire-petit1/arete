@@ -39,6 +39,8 @@ class ParsedSet:
     is_warmup: bool = False
     is_failure: bool = False
     rest_sec: int | None = None  # Rest time after set (parsed from r2', r1'30)
+    rir: int | None = None  # Reps in reserve ("RIR 2")
+    tempo: str | None = None  # "3-1-1-0" (eccentric-pause-concentric-pause)
 
 
 @dataclass

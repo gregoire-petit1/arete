@@ -8,6 +8,8 @@ describes the user's shorthand:
     4x8 @80 bench press r2'                    sets, weight, then name (terse)
     5x20 leg raises                            sets then name
     3@100, 1@105, 1@110 squat r2'              descending singles
+    squat 2x5@60 echauf, 5x5@100 RIR 2         warm-up sets, reps in reserve
+    bench press 4x6 @80 tempo 3-1-1-0          tempo (eccentric-pause-up-pause)
     bench press : 6@80kg, 4@100kg, 2x1@110kg   colon form
     horizontal pull 2x8@100kg r1'30            mixed form
     (10,6,5) squat @100                        explicit rep list
@@ -31,21 +33,23 @@ start: rest_line | circuit | emom | finisher | rep_list | prefix_form | name_for
 
 rest_line: REST
 
-circuit: CIRCUIT_HEAD item ("," item)* ")" weight? REST? RPE?
+circuit: CIRCUIT_HEAD item ("," item)* ")" weight? _suffix*
 item: REPS? name weight?
 
 emom: EMOM_HEAD "(" emom_item ("," emom_item)* ")"
 emom_item: WORD ":" REPS name
 
-finisher: "(" name ")" setspec weight? REST? RPE?
+finisher: "(" name ")" setspec weight? _suffix*
 
-rep_list: "(" REPS ("," REPS)+ ")" name weight? REST? RPE?
+rep_list: "(" REPS ("," REPS)+ ")" name weight? _suffix*
 
-prefix_form: setspec ("," setspec)* name weight? REST? RPE?
+prefix_form: setspec ("," setspec)* name weight? _suffix*
 
-name_form: name ":"? setspec ("," setspec)* RPE? REST? RPE?
+name_form: name ":"? setspec ("," setspec)* _suffix*
 
-setspec: (SETSXREPS | REPS) weight?
+_suffix: REST | RPE | RIR | TEMPO
+
+setspec: (SETSXREPS | REPS) weight? WARMUP?
 weight: WEIGHT | BAREWEIGHT
 name: WORD+
 
@@ -53,6 +57,9 @@ CIRCUIT_HEAD.6: /\d+\s*x\s*(\d+e?)?\(/i
 EMOM_HEAD.6:    /emom\s*\d+'?/i
 REST.5:         /r\s?\d+'\d{0,2}/i
 RPE.5:          /rpe\s*\d+(\.\d+)?/i
+RIR.5:          /rir\s*\d+/i
+TEMPO.5:        /tempo\s*\d-?\d-?\d-?\d/i
+WARMUP.5:       /(warm-?up|wu|[ée]chauf+(e|ement)?|chauffe)\b/i
 SETSXREPS.4:    /\d+\s*x\s*(\d+(-\d+)?e?|f\b|failure|amrap)/i
 BAREWEIGHT.4:   /\d+(\.\d+)?\s*kg/i
 WEIGHT.3:       /@\s*\d+(\.\d+)?\s*(kg)?/i
@@ -94,6 +101,20 @@ def _rpe_value(tok: Token | None) -> float | None:
     return float(m.group()) if m else None
 
 
+def _rir_value(tok: Token | None) -> int | None:
+    if tok is None:
+        return None
+    m = re.search(r"\d+", str(tok))
+    return int(m.group()) if m else None
+
+
+def _tempo_value(tok: Token | None) -> str | None:
+    """'tempo 3110' or 'tempo 3-1-1-0' -> '3-1-1-0', the stored spelling."""
+    if tok is None:
+        return None
+    return "-".join(re.findall(r"\d", str(tok)))
+
+
 def _reps_spec(text: str) -> dict[str, Any]:
     """Parse '8', '8-10', '15e', 'F', 'amrap' into reps/target/flags."""
     t = text.strip().lower()
@@ -122,6 +143,10 @@ def _make_sets(
     rest_sec: int | None,
     rpe: float | None,
     start: int = 1,
+    *,
+    rir: int | None = None,
+    tempo: str | None = None,
+    warmup: bool = False,
 ) -> list[dict[str, Any]]:
     return [
         {
@@ -129,12 +154,19 @@ def _make_sets(
             "reps": spec["reps"],
             "weight_kg": weight,
             "rpe": rpe,
-            "is_warmup": False,
+            "rir": rir,
+            "tempo": tempo,
+            "is_warmup": warmup,
             "is_failure": spec["failure"],
             "rest_sec": rest_sec,
         }
         for i in range(count)
     ]
+
+
+def _effort(b: dict[str, Any]) -> dict[str, Any]:
+    """The line's trailing qualifiers, applied to each of its sets."""
+    return {"rir": _rir_value(b.get("RIR")), "tempo": _tempo_value(b.get("TEMPO"))}
 
 
 def _exercise(
@@ -182,8 +214,15 @@ class _ToExercises(Transformer):
 
     def setspec(self, children: list[Any]) -> dict[str, Any]:
         count, spec = _setspec_value(children[0])
-        weight = children[1]["value"] if len(children) > 1 else None
-        return {"_kind": "setspec", "count": count, "spec": spec, "weight": weight}
+        weight = next((c["value"] for c in children[1:] if isinstance(c, dict)), None)
+        warmup = any(isinstance(c, Token) and c.type == "WARMUP" for c in children[1:])
+        return {
+            "_kind": "setspec",
+            "count": count,
+            "spec": spec,
+            "weight": weight,
+            "warmup": warmup,
+        }
 
     def item(self, children: list[Any]) -> dict[str, Any]:
         b = _split_children(children)
@@ -215,12 +254,23 @@ class _ToExercises(Transformer):
         sets: list[dict[str, Any]] = []
         for ss in b["setspecs"]:
             w = ss["weight"] if ss["weight"] is not None else fallback_weight
+            # The line's RPE/RIR describe the work sets, not the warm-ups.
+            warmup = ss["warmup"]
             sets += _make_sets(
-                ss["count"], ss["spec"], w, rest, rpe, start=len(sets) + 1
+                ss["count"],
+                ss["spec"],
+                w,
+                rest,
+                None if warmup else rpe,
+                start=len(sets) + 1,
+                warmup=warmup,
+                **({"tempo": _tempo_value(b.get("TEMPO"))} if warmup else _effort(b)),
             )
-        targets = {ss["spec"]["target"] for ss in b["setspecs"]}
+        # Warm-ups do not set the target: "2x5@60 wu, 5x5@100" targets 5.
+        working = [ss for ss in b["setspecs"] if not ss["warmup"]] or b["setspecs"]
+        targets = {ss["spec"]["target"] for ss in working}
         target = targets.pop() if len(targets) == 1 else None
-        unilateral = any(ss["spec"]["unilateral"] for ss in b["setspecs"])
+        unilateral = any(ss["spec"]["unilateral"] for ss in working)
         if unilateral:
             notes = "each side" if notes is None else f"{notes}, each side"
         return [_exercise(name, sets, target, notes)]
@@ -242,7 +292,13 @@ class _ToExercises(Transformer):
         sets: list[dict[str, Any]] = []
         for tok in b["reps"]:
             sets += _make_sets(
-                1, _reps_spec(str(tok)), weight, rest, rpe, start=len(sets) + 1
+                1,
+                _reps_spec(str(tok)),
+                weight,
+                rest,
+                rpe,
+                start=len(sets) + 1,
+                **_effort(b),
             )
         target = "/".join(str(t) for t in b["reps"])
         return [_exercise(b["name"]["value"], sets, target)]
@@ -272,7 +328,7 @@ class _ToExercises(Transformer):
             exercises.append(
                 _exercise(
                     it["name"],
-                    _make_sets(rounds, spec, w, rest, rpe),
+                    _make_sets(rounds, spec, w, rest, rpe, **_effort(b)),
                     spec["target"],
                     notes,
                 )

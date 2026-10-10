@@ -22,6 +22,7 @@ from arete.strength.models import (
     SessionExercise,
     StrengthSession,
 )
+from arete.strength.progression import ExerciseSession, WorkSet
 
 
 class StrengthRepository:
@@ -585,8 +586,9 @@ class StrengthRepository:
             SELECT ss.date, se.id,
                    COUNT(es.id) as total_sets,
                    SUM(CASE WHEN NOT es.is_warmup THEN 1 ELSE 0 END) as working_sets,
-                   MAX(es.weight_kg) as max_weight,
-                   SUM(es.reps * COALESCE(es.weight_kg, 0)) as volume,
+                   MAX(CASE WHEN NOT es.is_warmup THEN es.weight_kg END) as max_weight,
+                   SUM(CASE WHEN NOT es.is_warmup
+                       THEN es.reps * COALESCE(es.weight_kg, 0) END) as volume,
                    AVG(CASE WHEN NOT es.is_warmup THEN es.rpe END) as avg_rpe
             FROM app.session_exercises se
             JOIN app.strength_sessions ss ON se.session_id = ss.id
@@ -612,6 +614,60 @@ class StrengthRepository:
             }
             for row in results
         ]
+
+    def working_sessions(
+        self,
+        exercise_ids: list[int],
+        *,
+        exclude_session_id: int | None = None,
+        before: date | None = None,
+    ) -> dict[int, list[ExerciseSession]]:
+        """Working sets (never warm-ups) per exercise, oldest session first.
+
+        One statement for any number of exercises: the save path asks for
+        every exercise of the session at once.
+        """
+        if not exercise_ids:
+            return {}
+        query = f"""
+            SELECT se.exercise_id, ss.id, ss.date, se.id, se.target_reps,
+                   es.reps, es.weight_kg, es.rpe, es.rir,
+                   COALESCE(es.is_failure, FALSE)
+            FROM app.exercise_sets es
+            JOIN app.session_exercises se ON es.session_exercise_id = se.id
+            JOIN app.strength_sessions ss ON se.session_id = ss.id
+            WHERE se.exercise_id IN ({", ".join("?" * len(exercise_ids))})
+              AND NOT COALESCE(es.is_warmup, FALSE)
+        """
+        params: list = list(exercise_ids)
+        if exclude_session_id is not None:
+            query += " AND ss.id <> ?"
+            params.append(exclude_session_id)
+        if before is not None:
+            query += " AND ss.date < ?"
+            params.append(before)
+        query += " ORDER BY ss.date, ss.id, se.id, es.set_number"
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(query, params).fetchall()
+        finally:
+            conn.close()
+
+        grouped: dict[int, dict[int, ExerciseSession]] = {}
+        for ex_id, session_id, day, se_id, target, reps, kg, rpe, rir, fail in rows:
+            sessions = grouped.setdefault(ex_id, {})
+            if se_id not in sessions:
+                sessions[se_id] = ExerciseSession(
+                    session_id=session_id,
+                    date=day,
+                    sets=[],
+                    target_reps=target,
+                    session_exercise_id=se_id,
+                )
+            sessions[se_id].sets.append(
+                WorkSet(reps=reps or 0, weight_kg=kg, rpe=rpe, rir=rir, is_failure=fail)
+            )
+        return {ex_id: list(by_se.values()) for ex_id, by_se in grouped.items()}
 
     def muscle_set_rows(
         self, start_date: date | None = None, end_date: date | None = None

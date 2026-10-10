@@ -176,7 +176,7 @@ class StrengthSessionDetailResponse(BaseModel):
 
 
 class ExerciseHistoryResponse(BaseModel):
-    """Exercise history entry."""
+    """Exercise history entry (warm-ups count in total_sets only)."""
 
     date: str
     session_exercise_id: int
@@ -185,6 +185,20 @@ class ExerciseHistoryResponse(BaseModel):
     max_weight: float | None
     volume: float
     avg_rpe: float | None
+    best_e1rm: float | None = None  # Epley, sets of 1-12 reps
+    top_weight: float | None = None
+    top_reps: int | None = None
+
+
+class RecordResponse(BaseModel):
+    """One personal record: what was lifted, what it beat, when."""
+
+    kind: str = Field(description="weight | e1rm | reps")
+    value: float
+    previous: float | None = None
+    weight_kg: float | None = None
+    reps: int | None = None
+    date: str | None = None
 
 
 class PersonalRecordsResponse(BaseModel):
@@ -196,6 +210,33 @@ class PersonalRecordsResponse(BaseModel):
     estimated_1rm: float | None
     max_session_volume: float | None
     max_volume_date: str | None
+    best_e1rm: RecordResponse | None = None
+    rep_records: list[RecordResponse] = []
+
+
+class SuggestionResponse(BaseModel):
+    """Deterministic next-session load (see ``strength.progression``)."""
+
+    weight_kg: float | None
+    sets: int
+    reps: int
+    rep_range: str | None
+    rule: str
+    reason: str
+    based_on: str
+    deload: bool
+    readiness: float | None = None
+
+
+class ReadinessResponse(BaseModel):
+    score: float
+    source: str
+    level: str
+
+
+class ExerciseSuggestionResponse(BaseModel):
+    suggestion: SuggestionResponse | None
+    readiness: ReadinessResponse | None
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -258,7 +299,13 @@ def get_exercise_history(exercise_id: int, limit: int = Query(20, ge=1, le=100))
     if not exercise:
         raise HTTPException(status_code=404, detail="Exercise not found")
 
-    return _repo.get_exercise_history(exercise_id, limit=limit)
+    from arete.services.strength_progress import history_points
+
+    points = history_points(exercise_id, repo=_repo)
+    return [
+        {**row, **points.get(row["session_exercise_id"], {})}
+        for row in _repo.get_exercise_history(exercise_id, limit=limit)
+    ]
 
 
 @router.get("/exercises/{exercise_id}/prs", response_model=PersonalRecordsResponse)
@@ -268,7 +315,28 @@ def get_exercise_prs(exercise_id: int):
     if not exercise:
         raise HTTPException(status_code=404, detail="Exercise not found")
 
-    return _repo.get_personal_records(exercise_id)
+    from arete.services.strength_progress import records_summary
+
+    sessions = _repo.working_sessions([exercise_id]).get(exercise_id, [])
+    summary = records_summary(sessions)
+    return {
+        **_repo.get_personal_records(exercise_id),
+        "best_e1rm": summary["best_e1rm"],
+        "rep_records": summary["rep_records"],
+    }
+
+
+@router.get(
+    "/exercises/{exercise_id}/suggestion", response_model=ExerciseSuggestionResponse
+)
+def get_exercise_suggestion(exercise_id: int):
+    """Load, sets and reps for the next session; a deload when recovery is low."""
+    from arete.services.strength_progress import exercise_suggestion
+
+    exercise = _repo.get_exercise(exercise_id)
+    if not exercise:
+        raise HTTPException(status_code=404, detail="Exercise not found")
+    return exercise_suggestion(exercise, repo=_repo)
 
 
 @router.delete("/exercises/duplicates")
@@ -648,6 +716,8 @@ class ParsedSetResponse(BaseModel):
     is_warmup: bool = False
     is_failure: bool = False
     rest_sec: int | None = None  # Rest time after set in seconds
+    rir: int | None = None
+    tempo: str | None = None
 
 
 class ExerciseSuggestion(BaseModel):
@@ -669,6 +739,15 @@ class ParsedExerciseResponse(BaseModel):
     target_reps: str | None = None  # Rep range like "8-10" or "5"
     match_score: int = 0
     suggestions: list[ExerciseSuggestion] = []
+    # What the history suggested for this session (preview only)
+    progression: SuggestionResponse | None = None
+
+
+class SessionRecordResponse(RecordResponse):
+    """A record the saved session set."""
+
+    exercise_id: int
+    exercise: str
 
 
 class WorkoutParseResponse(BaseModel):
@@ -684,6 +763,7 @@ class WorkoutParseResponse(BaseModel):
     session_id: int | None = None  # Set if saved
     message: str | None = None
     unparsed_lines: list[str] = []  # Lines the grammar rejected (to fix by hand)
+    records: list[SessionRecordResponse] = []  # Personal records set (on save)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -814,6 +894,7 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
 
     try:
         parsed = parse_for_athlete(request.text, workout_date=request.date)
+        progression = {} if request.save else _preview_suggestions(parsed)
 
         # Convert to response
         exercises_response = []
@@ -825,8 +906,10 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
                     weight_kg=s.weight_kg,
                     rpe=s.rpe,
                     is_warmup=s.is_warmup,
-                    is_failure=getattr(s, "is_failure", False),
-                    rest_sec=getattr(s, "rest_sec", None),
+                    is_failure=s.is_failure,
+                    rest_sec=s.rest_sec,
+                    rir=s.rir,
+                    tempo=s.tempo,
                 )
                 for s in ex.sets
             ]
@@ -845,16 +928,26 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
                         )
                         for sg in ex.suggestions
                     ],
+                    progression=(
+                        SuggestionResponse.model_validate(found)
+                        if (found := progression.get(ex.exercise_id or ""))
+                        else None
+                    ),
                 )
             )
 
         session_id = None
         message = None
+        records: list[SessionRecordResponse] = []
 
         if request.save and parsed.exercises:
             outcome = save_parsed_session(parsed, repo=_repo)
             session_id = outcome.session_id
             message = outcome.message
+            records = [
+                SessionRecordResponse.model_validate(r.as_dict())
+                for r in outcome.records
+            ]
 
         return WorkoutParseResponse(
             success=True,
@@ -867,8 +960,20 @@ def parse_workout_text_endpoint(request: WorkoutParseRequest):
             session_id=session_id,
             message=message,
             unparsed_lines=parsed.unparsed_lines,
+            records=records,
         )
 
     except ValueError as e:
         # Nothing recognised in the text: a client problem, say so plainly
         raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+def _preview_suggestions(parsed) -> dict[str, dict]:
+    """The preview's suggestions; a failed read costs them, not the parse."""
+    from arete.services.strength_progress import suggestions_for_parsed
+
+    try:
+        return suggestions_for_parsed(parsed, repo=_repo)
+    except Exception as exc:  # noqa: BLE001 - the parse is still worth showing
+        logger.warning("Strength suggestions unavailable: %s", exc)
+        return {}
