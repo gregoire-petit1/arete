@@ -2,9 +2,8 @@ import { useLocation } from 'react-router-dom';
 
 /**
  * The page the user is currently viewing, stamped into every agent request as
- * `panel_context`. Arete-side equivalent of the Cortex extension's
- * `getActivePageContext()`: the "page" is a React Router route, so context
- * comes from `useLocation` — no browser-extension tab query needed.
+ * `panel_context`. The "page" is a React Router route, so context
+ * comes from `useLocation`.
  */
 export interface PanelPageContext {
   page: string;

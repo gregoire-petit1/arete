@@ -1,7 +1,6 @@
 """Coaching agent REST surface: POST /agent/chat.
 
-The only writer of ``panel_context`` — same single-writer contract as Cortex's
-``agent-run-context.ts``. Stateless v1: the client sends the full message
+The only writer of ``panel_context``. Stateless v1: the client sends the full message
 history each call; persistence lands later if needed.
 """
 
@@ -118,7 +117,7 @@ def _panel_context_source(request: ChatRequest) -> dict[str, str]:
         return {}
     raw = json.dumps(payload, ensure_ascii=False, default=str)
     if len(raw) > MAX_PANEL_CONTEXT_CHARS:
-        # Skip, never truncate (Cortex contract): half a payload parses as a
+        # Reject, never truncate: half a payload parses as a
         # different page.
         raise HTTPException(
             status_code=413,

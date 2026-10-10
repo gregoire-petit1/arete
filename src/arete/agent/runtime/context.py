@@ -1,7 +1,6 @@
 """Agent run context and panel-context budget constants.
 
-Port of ``cortex_ai/agents/shared/contexts.py``, reduced to what Arete needs:
-the panel carries the page the user is looking at (route + query params), not
+The panel carries the page the user is looking at (route + query params), not
 an editable draft, so there is no live-draft machinery here.
 """
 
@@ -20,7 +19,7 @@ from arete.agent.runtime.budget import MAX_TOOL_CONCURRENCY
 
 #: Key under which the API layer stamps the open-page payload in the source
 #: dict. ``agent/context/sections.py`` is the reader; ``api/agent.py`` is the
-#: only writer (same single-writer contract as Cortex's ``agent-run-context.ts``).
+#: only writer.
 PANEL_CONTEXT_KEY = "panel_context"
 
 #: Budget for one serialized panel-context payload. Over it the injection is
@@ -53,8 +52,8 @@ class RunStats:
 class AgentContext:
     """Per-run context handed to ``create_agent(context_schema=...)``.
 
-    ``source`` mirrors Cortex's ``BaseAgentContext.source``: a plain dict the
-    API layer stamps before invoking the graph. Only ``PANEL_CONTEXT_KEY``
+    ``source`` is a plain dict the API layer stamps before invoking the graph.
+    Only ``PANEL_CONTEXT_KEY``
     inside it is read by the middleware.
     """
 

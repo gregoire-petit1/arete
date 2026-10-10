@@ -1,7 +1,6 @@
-"""Toolkits — Cortex-style progressive tool loading for the coaching agent.
+"""Toolkits — progressive tool loading for the coaching agent.
 
-Port of Cortex's ``ToolkitMiddleware`` pattern, reduced to what Arete needs:
-toolkits are registered on the graph but their tools stay OUT of the model
+Toolkits are registered on the graph but their tools stay OUT of the model
 request until the agent calls ``load_toolkit(toolkit_id)``. Loading binds the
 toolkit's tools natively (full schemas) and pins its instructions for the rest
 of the run. ``search_toolkits(query)`` finds the right toolkit when only the
