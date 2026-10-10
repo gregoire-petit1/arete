@@ -14,10 +14,12 @@ on:
 permissions:
   contents: read
 
-# A new push supersedes the run in flight on the same ref.
+# A new push to a PR supersedes its run in flight. On main a run is never cut
+# short: it deploys the main preview, and cancelling it mid-deploy leaves the
+# fixed URL on an older build (a newer main run then waits its turn).
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint:
