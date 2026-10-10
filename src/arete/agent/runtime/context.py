@@ -10,6 +10,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Any, Literal
+from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
     from arete.agent.profiles.models import AgentProfile
@@ -63,6 +64,8 @@ class AgentContext:
     resolved_profile: AgentProfile | None = field(default=None, init=False, repr=False)
     calendar: CalendarService | None = field(default=None, init=False, repr=False)
     thread_id: str | None = None
+    # One root run per turn; message/model IDs identify children, not the answer.
+    run_id: UUID = field(default_factory=uuid4, init=False)
     # Clerk user id from the verified request identity, never from the body.
     account_id: str = ""
     document_ids: tuple[str, ...] | None = None

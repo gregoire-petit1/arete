@@ -542,10 +542,12 @@ def test_chat_turns_share_thread_metadata_without_reusing_trace_or_date(
 ):
     from datetime import date, timedelta
 
+    turn_ids = []
     model, factory = install_model(monkeypatch, [AIMessage(content="ok")] * 3)
     for index, thread_id in enumerate(("thread-a", "thread-a", "thread-b")):
         today = date(2026, 10, 8) + timedelta(days=index)
         context = AgentContext(thread_id=thread_id, current_date=today)
+        turn_ids.append(context.run_id)
         if streaming:
 
             async def consume(context=context):
@@ -560,6 +562,8 @@ def test_chat_turns_share_thread_metadata_without_reusing_trace_or_date(
     factory.assert_called_once()
     runs, roots = assert_trace_tree(recorder, roots=3)
     assert len({r["trace_id"] for r in roots}) == 3
+    assert {r["id"] for r in roots} == set(turn_ids)
+    assert {r["trace_id"] for r in roots} == set(turn_ids)
     assert sorted(r["extra"]["metadata"]["thread_id"] for r in roots) == [
         "thread-a",
         "thread-a",

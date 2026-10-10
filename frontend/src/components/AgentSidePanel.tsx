@@ -1,3 +1,4 @@
+import { MessageFeedback } from './agent/MessageFeedback';
 import { useGamePreference } from '@/lib/gamification';
 import { ChironPortrait } from './ChironPortrait';
 import { MessageAttachments } from './agent/MessageAttachments';
@@ -164,7 +165,9 @@ export function AgentSidePanel({
     // Grow the draft between the inline actions, then scroll at the height limit.
     const resize = () => {
       input.style.height = 'auto';
-      input.style.height = `${Math.min(input.scrollHeight, MAX_COMPOSER_HEIGHT_PX)}px`;
+      const height = input.scrollHeight;
+      input.style.height = `${Math.min(height, MAX_COMPOSER_HEIGHT_PX)}px`;
+      input.style.overflowY = height > MAX_COMPOSER_HEIGHT_PX ? 'auto' : 'hidden';
     };
     resize();
     window.addEventListener('resize', resize);
@@ -407,15 +410,22 @@ export function AgentSidePanel({
                       </div>
                       {rpg && <CoachActivity message={message} />}
                       <MessageSurfaces message={message} chiron={rpg} locked={busy} onAction={text => coach.recordAction(active.id, text)} />
-                      {i === messages.length - 1 && !busy && !message.pending && canRetryMessage(message) && (
-                        <button
-                          onClick={() => coach.retry() && followLatest()}
-                          className="mt-3 inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary"
-                        >
-                          <RotateCcw className="size-3" />
-                          {message.error || message.interrupted ? 'Réessayer' : 'Regénérer'}
-                        </button>
-                      )}
+                      <div className="mt-1 flex flex-wrap items-center gap-x-0.5">
+                        {message.trace && !message.pending && !message.error && !message.interrupted && <MessageFeedback
+                          key={message.trace.trace_id} trace={message.trace} threadId={active.id} feedback={message.feedback}
+                          onChange={feedback => coach.feedback(active.id, message.trace!.trace_id, feedback)}
+                        />}
+                        {i === messages.length - 1 && !busy && !message.pending && canRetryMessage(message) && (
+                          <button
+                            onClick={() => coach.retry() && followLatest()}
+                            aria-label={message.error || message.interrupted ? 'Réessayer' : 'Regénérer'}
+                            title={message.error || message.interrupted ? 'Réessayer' : 'Regénérer'}
+                            className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-shadow hover:text-text-secondary focus-visible:outline-2 focus-visible:outline-neon-cyan [@media(pointer:coarse)]:size-10"
+                          >
+                            <RotateCcw className="size-3.5" />
+                          </button>
+                        )}
+                      </div>
                       {!rpg && streaming && i === messages.length - 1 && (
                         <div
                           role="status"
@@ -454,16 +464,16 @@ export function AgentSidePanel({
             </button>
           )}
           <footer className={cn('shrink-0 px-4 pb-4 pt-3', !rpg && 'border-t border-text-muted/15 bg-abyss')}>
-            <div className={cn('relative rounded-xl border border-text-muted/20 p-2 focus-within:border-neon-cyan/40', rpg ? 'bg-abyss' : 'bg-void/40')}>
+            <div className={cn('relative rounded-xl border border-text-muted/20 p-2 focus-within:border-neon-cyan/40', rpg ? 'grid grid-cols-[24px_minmax(0,1fr)_auto_32px] items-end gap-x-1 bg-abyss' : 'bg-void/40')}>
               {rpg && <DocumentAttachments key={active.id} threadId={active.id} compact selectedIds={active.attachmentIds ?? []} disabled={runningId !== null} ref={attachmentsRef} onBusy={setDocumentsBusy} onDocuments={coach.attachments} />}
-              <div className={cn('flex items-end', rpg ? 'gap-1' : 'gap-2')}>
+              <div className={rpg ? 'contents' : 'flex items-end gap-2'}>
                 {rpg && <button
                   type="button"
                   disabled={busy}
                   aria-label="Joindre un fichier"
                   title="Joindre un fichier · PDF, Excel, images, texte · 20 Mio par fichier"
                   onClick={() => attachmentsRef.current?.choose()}
-                  className="flex h-8 w-6 shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:text-text-primary focus-visible:outline-2 focus-visible:outline-neon-cyan disabled:opacity-30"
+                  className="col-start-1 row-start-2 flex h-8 w-6 shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:text-text-primary focus-visible:outline-2 focus-visible:outline-neon-cyan disabled:opacity-30"
                 ><Plus className="size-4" aria-hidden="true" /></button>}
                 <textarea
                   ref={inputRef}
@@ -472,6 +482,7 @@ export function AgentSidePanel({
                   onChange={(e) => coach.draft(e.target.value)}
                   onPaste={event => { if (rpg && event.clipboardData.files.length) { event.preventDefault(); if (!busy) attachmentsRef.current?.upload(Array.from(event.clipboardData.files)); } }}
                   rows={rpg ? 1 : 2}
+                  wrap="soft"
                   maxLength={MAX_MESSAGE_CHARS}
                   onKeyDown={(e) => {
                     if (
@@ -485,12 +496,12 @@ export function AgentSidePanel({
                     }
                   }}
                   placeholder="Pose ta question…"
-                  className={cn('max-h-36 min-w-0 flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed outline-none', rpg ? 'px-1' : 'px-2')}
+                  className={cn('coach-composer-input block max-h-36 min-w-0 flex-1 resize-none appearance-none overflow-x-hidden overflow-y-auto bg-transparent py-1.5 text-sm leading-relaxed outline-none', rpg ? 'col-start-2 row-start-2 w-full px-1' : 'px-2')}
                 />
                 {streaming ? (
                   <button
                     onClick={coach.stop}
-                    className={cn('flex items-center justify-center gap-2 rounded-lg bg-text-muted/10 hover:bg-text-muted/20', rpg ? 'ml-auto size-8' : 'min-h-11 min-w-11 px-3')}
+                    className={cn('flex items-center justify-center gap-2 rounded-lg bg-text-muted/10 hover:bg-text-muted/20', rpg ? 'col-start-4 row-start-2 size-8' : 'min-h-11 min-w-11 px-3')}
                     aria-label="Arrêter la réponse"
                   >
                     <Square className="size-4" />
@@ -499,7 +510,7 @@ export function AgentSidePanel({
                   <button
                     onClick={() => send()}
                     disabled={busy || !active.draft.trim()}
-                    className={cn('flex shrink-0 items-center justify-center rounded-lg bg-neon-cyan/15 text-neon-cyan hover:bg-neon-cyan/25 disabled:opacity-30', rpg ? 'ml-auto size-8' : 'p-2.5')}
+                    className={cn('flex shrink-0 items-center justify-center rounded-lg bg-neon-cyan/15 text-neon-cyan hover:bg-neon-cyan/25 disabled:opacity-30', rpg ? 'col-start-4 row-start-2 size-8' : 'p-2.5')}
                     aria-label="Envoyer"
                   >
                     <Send className="size-4" />

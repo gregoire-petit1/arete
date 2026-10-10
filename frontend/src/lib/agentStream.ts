@@ -1,5 +1,6 @@
 import { isWorkoutUpdate, type WorkoutUpdate } from './workouts';
 import { authFetch } from './auth';
+import { isTraceReceipt, type TraceReceipt, type MessageFeedback } from './agentFeedback';
 import { readableError } from './utils';
 import type { PanelPageContext } from './pageContext';
 
@@ -28,6 +29,8 @@ export interface CalendarActionPart {
 }
 export type ChatPart = ToolPart | TextPart | CalendarActionPart;
 export interface ChatMessage {
+  trace?: TraceReceipt;
+  feedback?: MessageFeedback;
   /** Local transport state; restored conversations are always settled. */
   startedAt?: number;
   streamAccepted?: boolean;
@@ -57,7 +60,7 @@ export type StreamEvent =
       output: Preview;
       elapsed_ms: number;
     }
-  | { type: 'done'; message: { role: 'assistant'; content: string } }
+  | { type: 'done'; message: { role: 'assistant'; content: string }; trace?: TraceReceipt }
   | { type: 'error'; detail: string };
 
 /** Messages sent per turn. The thread keeps everything locally; the coach's
@@ -132,8 +135,14 @@ export function parseEvent(data: string): StreamEvent | null {
     record(e.message) &&
     e.message.role === 'assistant' &&
     typeof e.message.content === 'string'
-  )
+  ) {
+    if (e.trace !== undefined && !isTraceReceipt(e.trace)) {
+      // Optional feedback must not invalidate an otherwise completed answer.
+      console.warn('Trace du coach invalide : feedback indisponible.');
+      return { type: 'done', message: { role: 'assistant', content: e.message.content } };
+    }
     return e as StreamEvent;
+  }
   throw new Error('Événement du coach invalide.');
 }
 
@@ -172,7 +181,7 @@ export function applyEvent(
   if (event.type === 'import_preview') return { ...message, imports: [...(message.imports ?? []).filter(item => item.id !== event.id), { id: event.id, version: event.version }] };
   if (event.type === 'error') return settleMessage(message, event.detail);
   if (event.type === 'done')
-    return settleMessage({ ...message, content: event.message.content });
+    return settleMessage({ ...message, content: event.message.content, trace: event.trace });
   const parts = [...(message.parts ?? [])];
   if (event.type === 'calendar_action') {
     if (!parts.some((p) => p.kind === 'calendar_action' && p.id === event.id))

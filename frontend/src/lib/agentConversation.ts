@@ -1,4 +1,5 @@
 import { isWorkoutUpdate } from './workouts';
+import { isTraceReceipt, isFeedbackState } from './agentFeedback';
 import {
   settleMessage,
   type ChatMessage,
@@ -74,6 +75,11 @@ export function restoreConversation(raw: string | null): ChatMessage[] {
     if (m.workouts !== undefined && (!Array.isArray(m.workouts) || m.workouts.length > 50 || !m.workouts.every(isWorkoutUpdate))) throw new Error('Séances sauvegardées invalides.');
     return settleMessage(
       {
+        trace: m.role === 'assistant' && isTraceReceipt(m.trace) ? m.trace : undefined,
+        feedback: isTraceReceipt(m.trace) && isFeedbackState(m.feedback) ? {
+          ...m.feedback,
+          status: m.feedback.status === 'saved' ? 'saved' : 'uncertain',
+        } : undefined,
         attachmentIds: Array.isArray(m.attachmentIds) && m.attachmentIds.length <= 20 && m.attachmentIds.every((id: unknown) => typeof id === 'string') ? m.attachmentIds : undefined,
         workouts: m.workouts,
         imports: Array.isArray(m.imports) && m.imports.length <= 50 && m.imports.every((item: { id?: unknown; version?: unknown }) => typeof item.id === 'string' && Number.isInteger(item.version)) ? m.imports : undefined,

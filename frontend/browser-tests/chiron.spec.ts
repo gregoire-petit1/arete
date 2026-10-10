@@ -226,3 +226,46 @@ test('the existing opt-out keeps the original coach interface', async ({ page })
     await expect(panel.getByRole('button', { name: 'Arrêter la réponse' })).toBeVisible();
   } finally { await stream.close(); }
 });
+
+for (const theme of ['odyssey', 'performance']) {
+  test(`compact ${theme} composer preserves newlines and scrolls only vertically`, async ({ page }) => {
+    const stream = await fixture(page);
+    const doc = { id: '11111111-1111-4111-8111-111111111111', name: 'Programme.md', size: 18, sha256: '0'.repeat(64), status: 'ready' };
+    await page.route('**/api/agent/threads/*/documents', route => route.fulfill({ json: [doc] }));
+    try {
+      const panel = await openCoach(page);
+      await panel.getByRole('button', { name: 'Agrandir la conversation' }).click();
+      await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
+      const composer = panel.locator('footer');
+      const input = composer.getByLabel('Message au coach');
+      const library = composer.getByRole('button', { name: 'Fichiers du fil (1)' });
+      await expect(library).toBeVisible();
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 844 });
+        await input.fill('Première ligne');
+        await input.press('Shift+Enter');
+        await input.pressSequentially('Deuxième ligne');
+        await expect(input).toHaveValue('Première ligne\nDeuxième ligne');
+        expect(stream.requests()).toBe(0);
+        await input.fill(('Une longue ligne qui doit rester dans le champ. '.repeat(10) + '\n' + 'x'.repeat(200) + '\n').repeat(8));
+        const dimensions = await input.evaluate(el => ({ width: el.clientWidth, contentWidth: el.scrollWidth, height: el.clientHeight, contentHeight: el.scrollHeight }));
+        expect(dimensions.height).toBeLessThanOrEqual(144);
+        expect(dimensions.contentHeight).toBeGreaterThan(dimensions.height);
+        expect(dimensions.contentWidth).toBeLessThanOrEqual(dimensions.width);
+        await expect(input).toHaveCSS('overflow-x', 'hidden');
+        await expect(input).toHaveCSS('overflow-y', 'auto');
+        await composer.screenshot({ path: `../.context/composer-${theme}-${width}-multiline.png` });
+        await input.fill('');
+        await expect(input).toHaveCSS('overflow-y', 'hidden');
+        // The archived-file count must not reserve a second row in an empty draft.
+        expect((await composer.boundingBox())!.height).toBeLessThan(84);
+        const inputBox = (await input.boundingBox())!;
+        const libraryBox = (await library.boundingBox())!;
+        expect(libraryBox.y).toBeGreaterThanOrEqual(inputBox.y);
+        expect(libraryBox.y + libraryBox.height).toBeLessThanOrEqual(inputBox.y + inputBox.height + 1);
+        expect(await panel.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+        await composer.screenshot({ path: `../.context/composer-${theme}-${width}-empty.png` });
+      }
+    } finally { await stream.close(); }
+  });
+}

@@ -149,6 +149,29 @@ unknown, not zero.
 Each invocation also logs one `Agent run:` line (`RunStats` on the run context):
 model calls, tool calls, model time, time to first token and served models.
 
+Completed chat answers carry their `trace_id` and a signed feedback receipt
+in both HTTP and SSE `done`. The runtime supplies that UUID as the graph's
+`RunnableConfig.run_id`; it is distinct from the browser thread and child model
+message IDs. Browser storage preserves the receipt with that answer.
+`api/agent_feedback.py` validates votes and single emoji graphemes;
+`observability/feedback.py` owns the LangSmith writes. The receipt binds the root,
+thread, authenticated account, athlete, endpoint and project, without introducing
+server-side conversation persistence. The tracing key signs the receipt and stays
+server-side; rotating it invalidates previous receipts.
+
+Feedback uses `user_score` (1 for useful, 0 for not useful) and `reaction` (the
+emoji in `value`, no numeric score), each with a deterministic ID per root.
+Updates and removal target those same IDs. A separate synchronous SDK client
+confirms writes before the UI marks them saved: no background queue, no SDK or
+HTTP retry, 1 s connect / 4 s read timeouts, at most four requests for creation
+(existing feedback, project, server info, write). It adds no model requests.
+Uncertain writes block new submissions until the athlete explicitly reads the
+remote state; a reload converts an in-flight local write to uncertain. Historical
+answers without a receipt, untraced and interrupted answers expose no controls.
+The emoji is a standard textual feedback, not a promise to reproduce a private
+LangSmith UI reaction API. See the [LangSmith feedback guide](https://docs.langchain.com/langsmith/attach-user-feedback)
+and [Figma proposal](https://www.figma.com/design/lnwgvzmvsutjFsuZiQ6Mzz?node-id=2-11).
+
 These bounds are not a cumulative token/spend quota: SDK retries have their own
 limit and share the run deadline. Arete has no delegated
 children to budget; a provider-side fallback stays within one model call. Conversation

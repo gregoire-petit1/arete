@@ -43,10 +43,9 @@ export function DocumentAttachments({ threadId, disabled = false, ref, onBusy, o
     try { await work(); } catch (error) { setErrors(previous => [...previous.slice(-19), error instanceof Error ? error.message : 'Opération impossible.']); }
   };
   const hasDocuments = !!query.data?.length;
-  if (compact) return <div className="flex flex-col gap-2 text-xs">
+  if (compact) return <div className="contents text-xs">
     <input ref={input} type="file" multiple accept={ACCEPTED_FILES} className="sr-only" aria-label="Joindre des documents" disabled={busy || disabled} onChange={e => { void upload(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
-    {(selectedIds.length > 0 || hasDocuments) && <div className="flex items-start gap-2 p-1">
-    {selectedIds.length > 0 && <div className="flex min-w-0 flex-1 flex-wrap gap-2 max-h-44 overflow-y-auto" aria-label="Pièces jointes du brouillon">
+    {selectedIds.length > 0 && <div className="col-span-full row-start-1 mb-2 flex min-w-0 flex-wrap gap-2 max-h-44 overflow-y-auto" aria-label="Pièces jointes du brouillon">
       {selectedIds.map(id => {
         const doc = query.data?.find(d => d.id === id);
         return <div key={id} className="flex min-w-0 max-w-full items-center rounded-lg bg-text-muted/5 pl-2">
@@ -55,14 +54,15 @@ export function DocumentAttachments({ threadId, disabled = false, ref, onBusy, o
         </div>;
       })}
     </div>}
-    {hasDocuments && <button aria-label={`Fichiers du fil (${query.data?.length})`} title="Fichiers de cette conversation" aria-expanded={library} onClick={() => setLibrary(!library)} className="ml-auto flex h-8 shrink-0 items-center gap-1 rounded-lg px-1 text-text-muted hover:text-text-primary focus-visible:outline-2 focus-visible:outline-neon-cyan"><Paperclip size={14} aria-hidden="true" /><span className="text-[11px] tabular-nums">{query.data?.length}</span></button>}
-    </div>}
-    {busy && <div role="status" aria-live="polite" className="flex items-center gap-2 py-2 text-text-secondary"><LoaderCircle size={14} className="animate-spin" /><span className="min-w-0 flex-1 break-words">{progress || 'Préparation…'}</span><button className="min-h-11" onClick={() => controller.current?.abort()}>Annuler</button></div>}
-    {query.error && <p role="alert" className="text-danger-red">{query.error.message}</p>}
-    {errors.map((error, i) => <p role="alert" key={i} className="text-danger-red break-words">{error}</p>)}
-    {library && hasDocuments && <div className="max-h-48 overflow-y-auto rounded-lg border border-text-muted/20 p-3 space-y-2">
-      <p className="text-text-muted">Sélectionne les fichiers du prochain message. Retirer du brouillon conserve l’original.</p>
-      {query.data?.map(doc => <div key={doc.id} className="flex items-center gap-2"><label className="min-w-0 flex-1 flex gap-2 py-2"><input type="checkbox" disabled={busy || disabled || doc.status !== 'ready'} checked={selectedIds.includes(doc.id)} onChange={e => onDocuments(e.target.checked ? [...selectedIds, doc.id] : selectedIds.filter(id => id !== doc.id))} /><span className="truncate">{doc.name}{doc.status !== 'ready' && ' · Incomplet'}</span></label><button aria-label={`Supprimer définitivement ${doc.name}`} className="size-11 text-danger-red" disabled={busy || disabled} onClick={() => action(async () => { await documentsApi.delete(threadId, doc.id); onDocuments(selectedIds.filter(id => id !== doc.id)); await refresh(); })}><Trash2 size={16} /></button></div>)}
+    {hasDocuments && <button aria-label={`Fichiers du fil (${query.data?.length})`} title="Fichiers de cette conversation" aria-expanded={library} onClick={() => setLibrary(!library)} className="col-start-3 row-start-2 flex h-8 shrink-0 items-center gap-1 rounded-lg px-1 text-text-muted hover:text-text-primary focus-visible:outline-2 focus-visible:outline-neon-cyan"><Paperclip size={14} aria-hidden="true" /><span className="text-[11px] tabular-nums">{query.data?.length}</span></button>}
+    {(busy || query.error || errors.length > 0 || (library && hasDocuments)) && <div className="col-span-full row-start-3 mt-2 flex min-w-0 flex-col gap-2">
+      {busy && <div role="status" aria-live="polite" className="flex items-center gap-2 py-2 text-text-secondary"><LoaderCircle size={14} className="animate-spin" /><span className="min-w-0 flex-1 break-words">{progress || 'Préparation…'}</span><button className="min-h-11" onClick={() => controller.current?.abort()}>Annuler</button></div>}
+      {query.error && <p role="alert" className="text-danger-red">{query.error.message}</p>}
+      {errors.map((error, i) => <p role="alert" key={i} className="text-danger-red break-words">{error}</p>)}
+      {library && hasDocuments && <div className="max-h-48 overflow-y-auto rounded-lg border border-text-muted/20 p-3 space-y-2">
+        <p className="text-text-muted">Sélectionne les fichiers du prochain message. Retirer du brouillon conserve l’original.</p>
+        {query.data?.map(doc => <div key={doc.id} className="flex items-center gap-2"><label className="min-w-0 flex-1 flex gap-2 py-2"><input type="checkbox" disabled={busy || disabled || doc.status !== 'ready'} checked={selectedIds.includes(doc.id)} onChange={e => onDocuments(e.target.checked ? [...selectedIds, doc.id] : selectedIds.filter(id => id !== doc.id))} /><span className="truncate">{doc.name}{doc.status !== 'ready' && ' · Incomplet'}</span></label><button aria-label={`Supprimer définitivement ${doc.name}`} className="size-11 text-danger-red" disabled={busy || disabled} onClick={() => action(async () => { await documentsApi.delete(threadId, doc.id); onDocuments(selectedIds.filter(id => id !== doc.id)); await refresh(); })}><Trash2 size={16} /></button></div>)}
+      </div>}
     </div>}
     {source && <DocumentPreview threadId={threadId} document={source} onClose={() => setSource(null)} />}
   </div>;

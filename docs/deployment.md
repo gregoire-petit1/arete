@@ -58,6 +58,17 @@ the coach's answer. Set `LANGSMITH_TRACING=false` and restart/redeploy to disabl
 future exports. `uv run pytest tests/test_agent_tracing.py -q` checks span
 parentage, thread isolation, cancellation and failures offline.
 
+New completed chat answers expose 👍 / 👎 and an emoji picker. In LangSmith,
+open that turn's `arete_coach` root and inspect `user_score` (0/1) and `reaction`
+(the emoji stored in `value`). This uses the existing tracing credentials, with
+no model call or additional setting. The browser keeps the root ID and a signed
+receipt beside the answer; older answers cannot be retroactively associated.
+The receipt is athlete/account/thread/project scoped. Rotating the LangSmith key
+invalidates previous receipts. A failed feedback request offers **Vérifier le
+retour enregistré** rather than replaying a possibly committed write.
+The implementation follows the [feedback SDK guide](https://docs.langchain.com/langsmith/attach-user-feedback);
+the emoji is textual feedback, not an undocumented LangSmith UI reaction endpoint.
+
 ## From a branch to production
 
 1. **Pull request.** CI runs the checks the diff needs (`scripts/ci/select_checks.py`)
