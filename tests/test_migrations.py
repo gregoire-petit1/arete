@@ -230,8 +230,8 @@ def test_memory_upgrade_accepts_both_version_19_histories(
             == expected_game
         )
         assert con.execute(
-            "SELECT max(version) FROM app.schema_version"
-        ).fetchone() == (20,)
+            "SELECT count(*) FROM app.schema_version WHERE version = 20"
+        ).fetchone() == (1,)
 
 
 def test_a_missing_version_below_the_latest_still_runs(tmp_path, monkeypatch):
@@ -264,3 +264,28 @@ def test_a_missing_version_below_the_latest_still_runs(tmp_path, monkeypatch):
     con.close()
     assert {"calendar_actions", "calendar_connections"} <= tables
     assert versions == [17]  # recorded once, and the unknown 9999 is ignored
+
+
+def test_m31_creates_the_stream_and_feedback_tables_once(tmp_path, monkeypatch):
+    path = tmp_path / "streams.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = duckdb.connect(str(path))
+    con.execute("DROP TABLE app.activity_streams")
+    con.execute("DROP TABLE app.session_feedback")
+    con.execute("DELETE FROM app.schema_version WHERE version = 31")
+    con.close()
+    init_duckdb.main()
+    init_duckdb.main()
+    con = duckdb.connect(str(path), read_only=True)
+    columns = dict(
+        (r[0], r[1]) for r in con.execute("DESCRIBE app.activity_streams").fetchall()
+    )
+    feedback = {r[0] for r in con.execute("DESCRIBE app.session_feedback").fetchall()}
+    (recorded,) = con.execute(
+        "SELECT count(*) FROM app.schema_version WHERE version = 31"
+    ).fetchone()
+    con.close()
+    assert columns["heart_rate"] == "SMALLINT[]" and columns["lat"] == "FLOAT[]"
+    assert {"actual_session_id", "text", "source", "trigger"} <= feedback
+    assert recorded == 1

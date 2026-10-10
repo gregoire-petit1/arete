@@ -1,4 +1,5 @@
-"""Repository for the coach's daily briefings (``app.coach_briefings``).
+"""Repositories for the coach's written output: the daily briefings
+(``app.coach_briefings``) and the session feedback (``app.session_feedback``).
 
 One row per produced briefing, kept rather than recomputed: a run costs a
 model call, and a failure must stay visible instead of leaving the dashboard
@@ -13,7 +14,7 @@ from typing import Any, Literal
 
 import duckdb
 
-from arete.dataio.db import connect
+from arete.dataio.db import connect, db_connection
 
 Priority = Literal["info", "warning", "alert"]
 Source = Literal["agent", "rules"]
@@ -167,3 +168,60 @@ class BriefingRepository:
         finally:
             conn.close()
         return len(rows)
+
+
+@dataclass(frozen=True)
+class StoredFeedback:
+    """The coach's word on one cardio session, as the session page shows it."""
+
+    session_id: int
+    text: str
+    source: str
+    trigger: str
+    created_at: datetime | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "text": self.text,
+            "source": self.source,
+            "trigger": self.trigger,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class SessionFeedbackRepository:
+    """``app.session_feedback``: one row per cardio session, the latest wins."""
+
+    def save(self, session_id: int, *, text: str, source: str, trigger: str) -> None:
+        with db_connection() as conn:
+            conn.execute(
+                "DELETE FROM app.session_feedback WHERE actual_session_id = ?",
+                [session_id],
+            )
+            conn.execute(
+                "INSERT INTO app.session_feedback "
+                "(actual_session_id, text, source, trigger, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [session_id, text, source, trigger, datetime.now()],
+            )
+
+    def get(self, session_id: int) -> StoredFeedback | None:
+        with db_connection() as conn:
+            row = conn.execute(
+                "SELECT actual_session_id, text, source, trigger, created_at "
+                "FROM app.session_feedback WHERE actual_session_id = ?",
+                [session_id],
+            ).fetchone()
+        return StoredFeedback(*row) if row else None
+
+    def with_feedback(self, session_ids: list[int]) -> set[int]:
+        """Which of these sessions already have one (a run never pays twice)."""
+        if not session_ids:
+            return set()
+        with db_connection() as conn:
+            rows = conn.execute(
+                "SELECT actual_session_id FROM app.session_feedback "
+                "WHERE list_contains(?, actual_session_id)",
+                [session_ids],
+            ).fetchall()
+        return {int(r[0]) for r in rows}

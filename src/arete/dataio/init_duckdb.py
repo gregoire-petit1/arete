@@ -402,6 +402,32 @@ CREATE TABLE IF NOT EXISTS app.push_subscriptions (
     created_at       TIMESTAMP DEFAULT now(),
     last_success_at  TIMESTAMP
 );
+
+-- Per-second streams of an activity, one row per session (garmin/streams.py).
+-- Lists aligned on t_sec, NULL for a channel the activity never recorded.
+CREATE TABLE IF NOT EXISTS app.activity_streams (
+    actual_session_id  INTEGER PRIMARY KEY,
+    sample_count       INTEGER NOT NULL,
+    t_sec              INTEGER[] NOT NULL,   -- seconds since the first record
+    heart_rate         SMALLINT[],
+    speed_mps          FLOAT[],
+    altitude_m         FLOAT[],
+    distance_m         FLOAT[],               -- cumulative
+    cadence            SMALLINT[],            -- steps/min on foot, rpm on a bike
+    power_w            SMALLINT[],
+    lat                FLOAT[],
+    lon                FLOAT[],
+    created_at         TIMESTAMP DEFAULT now()
+);
+
+-- The coach's word on a cardio session, shown on its page
+CREATE TABLE IF NOT EXISTS app.session_feedback (
+    actual_session_id  INTEGER PRIMARY KEY,
+    text               VARCHAR NOT NULL,
+    source             VARCHAR NOT NULL,      -- 'agent', 'rules'
+    trigger            VARCHAR NOT NULL,      -- 'api' (upload, manual entry), 'sync'
+    created_at         TIMESTAMP DEFAULT now()
+);
 """
 
 
@@ -626,6 +652,13 @@ def _m20_personal_memory(con) -> None:
     migrate(con)
 
 
+def _m31_activity_streams(con) -> None:
+    """Kept FIT streams and the stored session feedback."""
+    for table in ("app.activity_streams (", "app.session_feedback ("):
+        start = DDL.index(f"CREATE TABLE IF NOT EXISTS {table}")
+        con.execute(DDL[start : DDL.index(");", start) + 2])
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -647,6 +680,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (18, _m18_users),
     (19, _m19_gamification),
     (20, _m20_personal_memory),
+    (31, _m31_activity_streams),
 ]
 
 

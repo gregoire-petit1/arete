@@ -9,7 +9,8 @@ from arete.agent.tools.strength import STRENGTH_TOOLS
 
 ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé. Règles:
 - Pour une période précise ou une comparaison, appelle les outils avec des `days` différents plutôt que de raisonner sur le bloc de la page.
-- L'ACWR exige 28 jours d'historique; quand il manque, ne l'invente pas."""
+- L'ACWR exige 28 jours d'historique; quand il manque, ne l'invente pas.
+- Pour juger une séance précise (allure, découplage, fractionné), lis `get_activity_detail` avec son id plutôt que sa seule ligne de liste."""
 
 
 PLANNING_INSTRUCTIONS = """Toolkit `planning` chargé. Règles:
@@ -88,8 +89,9 @@ CAPABILITIES: dict[str, Toolkit] = {
         id="analytics",
         description=(
             "Analyser l'entraînement : charge (ACWR, monotonie), forme "
-            "(CTL/ATL/TSB), records, séances récentes, conseils chiffrés sur "
-            "une fenêtre de jours au choix."
+            "(CTL/ATL/TSB), records, séances récentes et détail d'une séance "
+            "(tours, découplage, fractionné), conseils chiffrés sur une "
+            "fenêtre de jours au choix."
         ),
         tools=ANALYTICS_TOOLS,
         instructions=ANALYTICS_INSTRUCTIONS,
@@ -100,6 +102,7 @@ CAPABILITIES: dict[str, Toolkit] = {
                 "get_training_advice",
                 "get_personal_records",
                 "list_recent_sessions",
+                "get_activity_detail",
             }
         ),
     ),
