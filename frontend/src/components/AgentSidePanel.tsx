@@ -460,7 +460,7 @@ export function AgentSidePanel({
                       send();
                     }
                   }}
-                  placeholder="Pose ta question… / pour choisir un skill"
+                  placeholder="Pose ta question… / skills"
                   className={cn('coach-composer-input block max-h-36 min-w-0 flex-1 resize-none appearance-none overflow-x-hidden overflow-y-auto bg-transparent py-1.5 text-sm leading-relaxed outline-none', rpg ? 'col-start-2 row-start-2 w-full px-1' : 'px-2')}
                 />
                 {streaming ? (
