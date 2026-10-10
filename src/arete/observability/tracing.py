@@ -12,6 +12,7 @@ from langsmith import Client, tracing_context
 from urllib3.util import Retry
 
 from arete.config import config
+from arete.observability.scrubbing import scrub
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,8 @@ def get_tracing_client() -> Client | None:
                 tracing_sampling_rate=1.0,
                 max_batch_size_bytes=TRACE_MAX_BATCH_BYTES,
                 tracing_error_callback=_export_error,
+                hide_inputs=scrub,
+                hide_outputs=scrub,
             )
             # The SDK exposes queue capacity via an env var, not a constructor
             # argument. Bound this client's queue without changing global env.
