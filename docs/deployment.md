@@ -24,6 +24,40 @@ Environment variables live in the Vercel project, per environment. `ARETE_DB`
 differs between Production and Preview, and `dataio/db.py` refuses to open
 `md:arete` from a preview deployment. Names are listed in `.env.example`.
 
+## LangSmith agent tracing
+
+The shared coach already traces chat, briefings, feedback and weekly reviews.
+Tracing is opt-in and independent of the inference provider: no Anthropic key
+or model change is needed. Set these server-side variables in the local `.env`
+or in the Vercel project's intended environment:
+
+```dotenv
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=<LangSmith API key>
+LANGSMITH_PROJECT=Arete
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+```
+
+Use the exact project name, not its UUID. Match the endpoint to the project's
+region; set `LANGSMITH_WORKSPACE_ID` only when the key requires a workspace.
+Keep the key in the ignored `.env` or Vercel's secret storage, never in source.
+Restart the local backend after changing `.env`; recreate the Docker backend
+to reload its environment. Vercel changes require a new deployment through the
+normal preview/production workflow below.
+
+Send a coach message, then open the `Arete` tracing project in LangSmith. Expect
+one `arete_coach` root with nested model/tool calls and `task`, `provider` and
+`model` metadata. Chat turns carry the browser's `thread_id`; an enabled reply
+suggestion adds a `coach_autosuggestion` child. Full inputs, outputs, tool results,
+page context and journal content read by the agent are exported when enabled.
+
+If no trace appears, check the environment on the running deployment and look
+for `LangSmith trace export failed` in its backend logs. A missing key fails
+startup when tracing is enabled; exporter failures are logged without failing
+the coach's answer. Set `LANGSMITH_TRACING=false` and restart/redeploy to disable
+future exports. `uv run pytest tests/test_agent_tracing.py -q` checks span
+parentage, thread isolation, cancellation and failures offline.
+
 ## From a branch to production
 
 1. **Pull request.** CI runs the checks the diff needs (`scripts/ci/select_checks.py`)
