@@ -138,7 +138,9 @@ Optional LangSmith tracing remains invocation-scoped, including stream
 cancellation cleanup, dynamic tool spans and browser thread IDs. Provider usage logs
 retain reported cache/input/output details and model timing without logging the
 athlete's prompts. Opt-in LangSmith traces include full inputs, outputs and tool
-results, as described in the README. Missing usage remains unknown, not zero.
+results; setup and exported data are described in the
+[deployment runbook](deployment.md#langsmith-agent-tracing). Missing usage remains
+unknown, not zero.
 Each invocation also logs one `Agent run:` line (`RunStats` on the run context):
 model calls, tool calls, model time, time to first token and served models.
 
