@@ -172,7 +172,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
       - name: Remove the PR's superseded previews
-        run: scripts/ci/prune_deployments.sh 1 --meta pr="$PR"
+        run: scripts/ci/prune_deployments.sh 1 meta-pr="$PR"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           PR: ${{ github.event.pull_request.number }}

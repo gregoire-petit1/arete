@@ -24,7 +24,7 @@ jobs:
           node-version: 22
       - run: npm install --global vercel@63.1.2
       - name: Remove the PR's previews
-        run: scripts/ci/prune_deployments.sh 0 --meta pr="$PR"
+        run: scripts/ci/prune_deployments.sh 0 meta-pr="$PR"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
