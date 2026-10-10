@@ -1,11 +1,18 @@
 name: CI
 
 on:
-  # Every branch, not just main: an agent pushing a branch gets its verdict
-  # without having to open a pull request first.
+  # PRs already check the merge result: branch pushes must not duplicate them.
   push:
+    branches: [main]
   pull_request:
     branches: [main]
+    # `labeled`: adding the `preview` label deploys the PR's preview.
+    types: [opened, synchronize, reopened, labeled]
+  # Full verification remains available before opening a PR.
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 # A new push supersedes the run in flight on the same ref.
 concurrency:
@@ -15,20 +22,54 @@ concurrency:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.select.outputs.backend }}
+      frontend: ${{ steps.select.outputs.frontend }}
+      preview: ${{ steps.select.outputs.preview }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          # The PR merge commit's first parent is the exact tested base. Two
+          # levels suffice, without an API file limit or full-history fetch.
+          fetch-depth: 2
+      - name: Test CI selection policy
+        run: python3 -m unittest discover -s scripts/ci -p 'test_*.py'
+      - name: Select affected checks
+        id: select
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            python3 scripts/ci/select_checks.py --base HEAD^1 >> "$GITHUB_OUTPUT"
+          else
+            python3 scripts/ci/select_checks.py --all >> "$GITHUB_OUTPUT"
+          fi
       - uses: astral-sh/setup-uv@v6
+        if: steps.select.outputs.backend == 'true'
         with:
           version: "latest"
           enable-cache: true
       - run: uv python install 3.12
+        if: steps.select.outputs.backend == 'true'
       - run: uv sync --frozen --extra dev
-      - run: uv run ruff check src tests
-      - run: uv run ruff format --check src tests
+        if: steps.select.outputs.backend == 'true'
+      - run: uv run ruff check src tests scripts/ci
+        if: steps.select.outputs.backend == 'true'
+      - run: uv run ruff format --check src tests scripts/ci
+        if: steps.select.outputs.backend == 'true'
+      - uses: actions/setup-node@v5
+        if: steps.select.outputs.transport == 'true'
+        with:
+          node-version: "22.22.0"
+      - run: node --test scripts/openwiki/transport.test.mjs
+        if: steps.select.outputs.transport == 'true'
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: lint
+    if: needs.lint.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
@@ -37,11 +78,15 @@ jobs:
           enable-cache: true
       - run: uv python install 3.12
       - run: uv sync --frozen --extra dev
-      - run: uv run pytest tests/ --tb=short
+      # Two bounded workers, each with its own temporary DuckDB from conftest.
+      # Keep each file together to preserve module fixtures and test ordering.
+      - run: uv run pytest tests/ --tb=short -n 2 --dist loadfile --max-worker-restart=0
 
   typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: lint
+    if: needs.lint.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
@@ -50,10 +95,18 @@ jobs:
           enable-cache: true
       - run: uv python install 3.12
       - run: uv sync --frozen --extra dev
+      - uses: actions/cache@v4
+        with:
+          path: .mypy_cache
+          key: mypy-${{ runner.os }}-py312-${{ hashFiles('uv.lock', 'pyproject.toml') }}-${{ github.sha }}
+          restore-keys: |
+            mypy-${{ runner.os }}-py312-${{ hashFiles('uv.lock', 'pyproject.toml') }}-
       - run: uv run mypy src/arete
 
   frontend:
     runs-on: ubuntu-latest
+    needs: lint
+    if: needs.lint.outputs.frontend == 'true'
     timeout-minutes: 15
     defaults:
       run:
@@ -78,16 +131,24 @@ jobs:
           path: .context/browser-results
           include-hidden-files: true
 
-  # Previews deploy here, once every check above is green, instead of on
-  # each push from Vercel's Git integration (`git.deploymentEnabled` in
-  # vercel.json keeps that for main only). A pull_request run checks out
-  # the merge of the branch into main, so the preview is what merging would
-  # ship; a conflicting branch has no merge commit, no run, no preview.
+  # Previews deploy here, once every affected check above is green, and only
+  # for a PR labelled `preview`: each deployment stores a ~430 MB function
+  # against the plan's 10 GB. Vercel's Git integration deploys nothing
+  # (`git.deploymentEnabled` in vercel.json); production ships through the
+  # manual "Deploy production" workflow. A pull_request run checks out the
+  # merge of the branch into main, so the preview is what merging would ship;
+  # a conflicting branch has no merge commit, no run, no preview.
   preview:
     if: >-
+      !cancelled() &&
       github.event_name == 'pull_request' &&
-      github.event.pull_request.head.repo.full_name == github.repository
-    needs: [test, typecheck, frontend]
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'preview') &&
+      needs.lint.result == 'success' && needs.lint.outputs.preview == 'true' &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.typecheck.result == 'success' || needs.typecheck.result == 'skipped') &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+    needs: [lint, test, typecheck, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -101,14 +162,20 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - run: npm install --global vercel@63.1.0
+      - run: npm install --global vercel@63.1.2
       - name: Deploy the preview
         id: deploy
         run: |
-          url=$(vercel deploy --archive=tgz --yes --token "$VERCEL_TOKEN")
+          url=$(vercel deploy --archive=tgz --yes --token "$VERCEL_TOKEN" --meta pr="$PR")
           echo "url=$url" >> "$GITHUB_OUTPUT"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+      - name: Remove the PR's superseded previews
+        run: scripts/ci/prune_deployments.sh 1 --meta pr="$PR"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
       - name: Link the preview on the pull request
         run: |
           gh pr comment "$PR" --edit-last --create-if-none --body \

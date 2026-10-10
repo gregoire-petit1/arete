@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:59f0c03de77f5b75de5182ab242682b5a02e4e974d8f788ae0e240e3075ce56f",
+  "claims": [
+    {
+      "id": "claim_69ecfc24203c4a0b8cddd285919acd25",
+      "statement": "The Arete coaching system uses a modular agent framework built with LangChain, assembling agents from profiles that define capabilities, instructions, and behavior.",
+      "evidence": [
+        {
+          "resource": "repo://src/arete/agent/capabilities/registry.py",
+          "version": "repo-file-v1:sha256:38fc4de94ac012a4de86018dcf8916fd92f51b72fac5e21a7c955bd281c4c105"
+        },
+        {
+          "resource": "repo://src/arete/agent/factory.py",
+          "version": "repo-file-v1:sha256:273ee4375f041376961514dc93446f5073ccee3a92187a7e7a56ab5f9aa21e09"
+        },
+        {
+          "resource": "repo://src/arete/agent/profiles/catalog.py",
+          "version": "repo-file-v1:sha256:76156bd4724302bbf54d002d3c6ca2543f3f1b20d46b2839a5369c628f3d4ffc"
+        },
+        {
+          "resource": "repo://src/arete/agent/runtime/context.py",
+          "version": "repo-file-v1:sha256:7ec9aada23ed8c6d6307220c50c84d2384bcd3001e4ec29c64b5f2c20f99ac5e"
+        }
+      ]
+    },
+    {
+      "id": "claim_b37b855d54704b5c9559c34055401a7a",
+      "statement": "Agents are constructed by the `build_agent` function, which creates a middleware stack including `ProfilePolicyMiddleware`, execution limits, `ToolkitMiddleware`, filesystem tools (when enabled), `ContextBuilderMiddleware`, `ContextBudgetMiddleware`, `ModelTelemetryMiddleware`, and optionally `AutoSuggestionMiddleware`.",
+      "evidence": [
+        {
+          "resource": "repo://src/arete/agent/factory.py",
+          "version": "repo-file-v1:sha256:273ee4375f041376961514dc93446f5073ccee3a92187a7e7a56ab5f9aa21e09"
+        }
+      ]
+    },
+    {
+      "id": "claim_101c4378d1dd4c32a1a92be2eb29d057",
+      "statement": "Four main profiles exist: `chat` (primary interactive agent), `briefing`, `feedback`, and `review`.",
+      "evidence": [
+        {
+          "resource": "repo://src/arete/agent/profiles/catalog.py",
+          "version": "repo-file-v1:sha256:76156bd4724302bbf54d002d3c6ca2543f3f1b20d46b2839a5369c628f3d4ffc"
+        }
+      ]
+    },
+    {
+      "id": "claim_d8475aebcae84651a5c54ab534878f52",
+      "statement": "Capabilities (toolkits) are registered in `CAPABILITIES` in `registry.py` as `Toolkit` objects containing a set of tools, instructions, and read-only tool allowlists.",
+      "evidence": [
+        {
+          "resource": "repo://src/arete/agent/capabilities/registry.py",
+          "version": "repo-file-v1:sha256:38fc4de94ac012a4de86018dcf8916fd92f51b72fac5e21a7c955bd281c4c105"
+        }
+      ]
+    },
+    {
+      "id": "claim_3feb1b0c21e54ddd8f1bfaea5a6f9efb",
+      "statement": "The `AgentContext` (in `context.py`) is the per-run context carrying the source dictionary, selected profile, calendar service, thread ID, stats, page section, and tool concurrency semaphore.",
+      "evidence": [
+        {
+          "resource": "repo://src/arete/agent/runtime/context.py",
+          "version": "repo-file-v1:sha256:7ec9aada23ed8c6d6307220c50c84d2384bcd3001e4ec29c64b5f2c20f99ac5e"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.7.1",
+    "at": "2026-10-09T21:28:29.291Z"
+  }
+}

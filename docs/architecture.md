@@ -47,7 +47,8 @@ the server event loop. This avoids sharing the SDK's cached async HTTP connectio
 across short-lived event loops. Async callers use `invoke_agent` directly.
 
 The execution envelope is five minutes, 8 main graph model calls, 32 tool calls,
-and four simultaneous tool executions per invocation. Framework recursion is a
+and four simultaneous tool executions per invocation. Interactive chat may add one
+optional next-message completion (512 output tokens, five seconds, zero SDK retries). Framework recursion is a
 separate 100-step backstop. A model call gives up after 60 s, or 30 s without a
 streamed chunk, with two SDK retries; on OpenRouter the request carries a
 fallback list of at most three models. Tools and failed runs are never
@@ -61,7 +62,7 @@ Discovery, binding, policy checks and structural tests consume the same catalog.
 Tools call services; they do not import HTTP handlers. New tools are unavailable
 to background missions until explicitly classified as read-only.
 
-Chat preloads analytics, planning and strength capabilities: loading one cost a
+Chat preloads analytics, planning, strength and Garmin capabilities: loading one cost a
 model request per turn, and requests are the free tier's budget. The on-demand
 loading machinery (catalog, `load_toolkit`, load-before-execute) stays for
 profiles that do not preload. The briefing and the session feedback bind no tool:
@@ -70,9 +71,14 @@ profiles that do not preload. The briefing and the session feedback bind no tool
 session's numbers, RPE and notes) and the model answers in one request. The
 server files the feedback's ledger entry itself (`services/memory.append_entry`,
 dated heading, never twice), so neither mission can mutate training data or
-forget to write. Every profile receives the current date. Chat writes the
-journal through one tool, `append_journal` (server-dated heading, deduplicated,
-bounded); its filesystem middleware only reads (`read_file`).
+forget to write. Every profile receives the current date. Chat adds new journal
+entries through `append_journal` (server-dated heading, deduplicated,
+bounded). Its filesystem also exposes `edit_file` for targeted corrections/removal
+and `delete` for forgetting an entire current ledger (`notes.md` or `sessions.md`).
+Archives and `/attachments/` remain read-only, with an explicit deny for every
+other write path. New entries still use `append_journal`; arbitrary file creation
+is not exposed. Appends, rotation, edits and deletion share a bounded process-local
+lock so overlapping turns in one server cannot overwrite each other's writes.
 Model-generated loaded state and client page metadata cannot change these policies.
 
 The context builder combines the harness/filesystem contribution, mission
@@ -97,13 +103,34 @@ long thread, since nothing persists the summary between requests.
 
 ## Completion, transport and observability
 
-Follow-up suggestions are the browser's: fixed, page-aware lists
-(`frontend/src/lib/coachPrompts.ts`), so `done` follows the last token and no
-auxiliary model request runs after an answer. Generating them cost one request
-per turn and held `done` for up to eight seconds.
+Empty conversations use fixed, page-aware starters (`frontend/src/lib/coachPrompts.ts`).
+After an interactive answer, `AutoSuggestionMiddleware` invokes one tool-free
+completion through `runtime/autosuggestion.py`, using the complete latest user/coach
+exchange assembled and budgeted by the context builder. It emits one `suggestion`
+custom event before `done`; non-streaming chat exposes the same optional field.
+Streaming clients opt in with `supports_suggestions: true`; older cached clients
+receive no unfamiliar event and incur no auxiliary model call. Invalid optional
+draft events are logged and omitted without failing the answer. The 300-character
+limit counts Unicode code points in both Python and the browser.
+The browser inserts the suggestion as an editable draft only on successful completion
+and only if the athlete has not edited the originating thread's draft meanwhile.
+Drafts use the existing browser storage; generated text never enters message history
+until the athlete sends it. There are no follow-up cards during a conversation.
+The auxiliary call shares the run trace (a `coach_autosuggestion` LLM child span)
+and is included in total model calls, timing and `suggestion_calls` telemetry.
+OpenRouter reasoning is disabled for this short completion so it cannot consume
+the entire output reservation before writing the draft. The exchange is serialized
+as user data; a trailing assistant message would be interpreted as a prefill by some providers.
+It has five seconds and no SDK retries; provider failures or invalid/oversized output
+are logged and leave the answer intact. Near the run deadline it is skipped.
+Briefings, feedback and reviews never request a suggestion.
 
 Runtime tool events are projected into the existing SSE protocol by
-`api/agent_streaming.py`. Optional LangSmith tracing remains invocation-scoped, including stream
+`api/agent_streaming.py`. Workout events carry session ID/revision, tool call,
+thread and durable operation state. The domain service publishes through an injected
+callback; the runtime supplies correlation and the API projects `workout_update`.
+Cards consume these events before `done`, independently of truncated tool previews.
+Optional LangSmith tracing remains invocation-scoped, including stream
 cancellation cleanup, dynamic tool spans and browser thread IDs. Provider usage logs
 retain reported cache/input/output details and model timing without logging the
 athlete's prompts. Opt-in LangSmith traces include full inputs, outputs and tool
@@ -113,8 +140,8 @@ model calls, tool calls, model time, time to first token and served models.
 
 These bounds are not a cumulative token/spend quota: SDK retries have their own
 limit and share the run deadline. Arete has no delegated
-children to budget; a provider-side fallback stays within one model call. No database or browser-store migration is
-required.
+children to budget; a provider-side fallback stays within one model call. Conversation
+history stays in browser storage; Calendar's approval registry is described below.
 
 ## Enforcement
 
@@ -128,13 +155,14 @@ failures. Live model evaluations remain opt-in.
 ## Slack transport
 
 `api/slack.py` verifies Slack signatures and restricts invocation to one configured
-athlete in one workspace, in direct messages only. It acknowledges first, then
+athlete in one workspace, in direct messages only; the Clerk gate lists it as a
+public path because the signature is its credential. It acknowledges first, then
 runs an attached ASGI background task. That task owns mirror hydration and flush;
 the general mirror middleware bypasses this endpoint to protect Slack's receipt
 deadline. `services/slack.py` owns bounded Slack history, responses and durable
 delivery reservations; it receives `coaching.run_slack_coach` as its producer.
 The composition root reuses the chat graph and runtime. Slack threads own their
-history; browser state is unchanged. Migration 17 stores delivery IDs and a single
+history; browser state is unchanged. Migration 35 stores delivery IDs and a single
 execution reservation, not conversation text. Failed ambiguous runs stay reserved
 for operator review and are never replayed. See [Slack setup](slack.md) for limits,
 installation, crash behavior and recovery.
@@ -146,12 +174,129 @@ import drafts and outbound Garmin operation records are deliberately durable in
 DuckDB/MotherDuck (migration 13). `services/documents.py` and `services/imports.py`
 own these lifecycles. API chat hydration builds an invocation-local StateBackend
 view at `/attachments/`; the context builder receives only a bounded manifest.
-The readonly filesystem composes that view with the existing ledger backend.
+The filesystem composes that read-only view with the existing ledger backend.
 The model can propose a draft but has no confirmation tool; pending imports block
 ordinary coach planning writes. Human confirmation commits selected sessions once.
 
 `services/prescriptions.py` owns versioned steps and provenance. Garmin conversion
-lives in `garmin/workouts.py`; `services/garmin_export.py` owns explicit export,
-reconciliation and removal with durable reservations and no ambiguous write replay.
+lives in `garmin/workouts.py`; `services/garmin_export.py` owns both interactive
+and daily export, reconciliation and removal with durable reservations and no
+ambiguous write replay. Chat can create coach prescriptions without a document;
+explicit prescriptions remain excluded from automatic daily adaptation/export.
+Legacy sessions use deterministic conversion, and existing Garmin identifiers must
+be verified before adoption. Updates require the current revision and mark the
+export dirty without transmitting it. See [conversational workouts](conversational-workouts.md)
+for UI, limits and verification.
 Only `GarminClient` touches the remote service. See [document imports](document-imports.md)
 for resource bounds, frontend worker assets, unsupported conversions and acceptance.
+
+## Session page, kept streams and sync feedback
+
+Migration 31 keeps each FIT activity's per-second streams in
+`app.activity_streams` (one row per session, one LIST column per channel,
+`garmin/streams.py`) and the coach's word on a cardio session in
+`app.session_feedback`. Garmin sync, FIT upload and `POST /garmin/sync/reprocess`
+fill the streams. `services/activity_detail.py` reads one session for
+`GET /analytics/sessions/{id}/detail` (the `/log/sessions/:id` page) and, as a
+compact digest without any stream, for the chat's read-only
+`get_activity_detail`; Strava rows never reach the model. Analytics come from
+`garmin/time_series.py`: decoupling, pace fade, cadence variability, power and
+the work intervals of a structured workout (FIT lap intensity).
+
+Migration 32 stores what the streams and the start say about a session's
+conditions, once, so no page or card rescans a stream: `app.activity_terrain`
+(grade-adjusted pace on Minetti's energy cost of running on a slope, best
+climbing speed over 5 to 60 min, time per descent grade band;
+`features/terrain.py`) and `app.activity_weather` (Open-Meteo at the start's
+hour and place, `services/weather.py`). `services/session_conditions.py` fills
+both after a Garmin sync (scheduled or HTTP) and a FIT upload: the weather
+requests share a 20 s budget and nothing there can fail the import. Sessions
+kept before migration 32 get their terrain from `POST /analytics/terrain/backfill`,
+50 at most per call, from the stored streams and without network. The pace
+trend reads the GAP of hilly runs; the Terrain section adds the climbing curve
+(period against all-time record) and the descent card; the coach's digest gets
+GAP, climbing bests and weather.
+
+The daily sync hands the sessions Garmin imported to
+`coaching.write_sync_feedback`: one feedback request for up to five sessions,
+numbered sections split by `services/session_feedback.py`. A missing, failed or
+misnumbered answer leaves each session its rule text. The server files the
+journal entries and stores the texts; the feedback profile still binds no tool.
+
+## Optional athlete RPG
+
+`services/gamification.py` owns deterministic XP, cosmetic currency and purchases.
+Activity repositories capture evidence inside the session transaction; explicit
+projection writes auditable ledger deltas. The model cannot grant rewards or spend
+currency. The account preference defaults off, with a deployment kill switch.
+Chiron reuses the existing coach runtime and selected conversation documents.
+See [gamification system design](gamification-design.md) for rollout, transaction
+contracts, limits and the distinction between shipped behavior and Figma scope.
+## Identity
+
+`api/auth.py` owns who is calling: a pure ASGI middleware (like the mirror's,
+so the coach's stream is not buffered) and the `/auth/config` and `/auth/me`
+routes. Off by default; with `ARETE_AUTH=clerk` every non-public request
+carries a Clerk session token or the instance's API key, verified in a worker
+thread. `services/users.py` owns the accounts table and the one rule that
+attaches an account to the athlete: its e-mail is one of the owner's. Services never import
+`arete.api.auth`; the athlete's data stays `user_id = 1`, so nothing below the
+boundary changed. `services/google_tokens.py` reads the signed-in user's Google
+token from Clerk for Calendar, and
+`services/oauth_state.py` signs the Strava OAuth state the callback demands.
+
+## Google Calendar
+
+With sign-in on, the composition root adds Calendar to the chat's resolved
+capabilities/preloads and compiles a calendar factory into the policy
+middleware. Each run gets the caller's own service, built from the Clerk user id
+the API stamps on the invocation context from the verified identity; the API key
+and background profiles get none. A resolved profile is server-owned and cannot
+be supplied through browser page metadata.
+
+`calendar.py` composes the provider adapter and repository without importing the
+agent stack; API endpoints use it without paying coaching cold-start costs.
+`services/calendar.py` owns permissions, bounded reads, proposals, and execution.
+The provider adapter takes the Google token from Clerk (`services/google_tokens.py`)
+and calls Google Calendar. Only the HTTP decision endpoint approves writes; the
+model has reads and proposal tools. The browser's approval executes the stored
+arguments directly.
+
+Migration 17 persists connection selections and a one-shot action registry, keyed
+by account and environment, not conversation history. A `calendar_action` SSE
+event carries only an action ID. Browser storage keeps that ID; cards reload the
+authoritative proposal and outcome from the API. Settings changes invalidate
+pending actions, ETags protect existing events, and ambiguous writes are never
+replayed.
+
+The training plan sync (`services/calendar_plan.py`, migration 34) is a separate,
+standing authorization from Settings, without the model. Plan writers note a
+change in a request-scoped flag (`dataio/plan_changes.py`); `PlanSyncMiddleware`
+runs a bounded sync after the response and the daily sync runs one too, both
+through `calendar.sync_training_plan`, which rebuilds the provider from the Clerk
+user id stored on the connection.
+See [Google Calendar setup](google-calendar.md) for activation and live testing.
+
+## Personal memory
+
+Migration 20 versions athlete facts and distinguishes explicit declarations,
+coach hypotheses and legacy evidence. Active, currently valid facts are mandatory
+context; missing reads and oversized contexts fail explicitly. Settings and the
+coach use optimistic revisions, and deleting a fact removes its history.
+
+Chat adds bounded BM25 retrieval of existing facts, journals, session text and
+thread-scoped document blocks through the central context builder. Reads run in
+workers, with a fresh corpus at each model boundary and no extra model request.
+Optional traversal follows only authoritative source links and remains disabled
+pending behavior evaluations. See [personal memory](personal-memory.md) for
+contracts, bounds, migration compatibility and the synthetic evaluation harness.
+
+## Data export and year in review
+
+`services/data_export.py` owns what leaves the database in the athlete's
+download: an allowlist of tables plus the journal files, never a credential
+table (`tests/test_data_export.py` also rejects token-like columns). Bodies are
+built in memory and refused above 4 MB, under Vercel's response limit.
+`services/year_review.py` derives a calendar year from the shared TSS estimate
+and fitness series, with no model request. Both are plain HTTP reads
+(`api/data_export.py`, `api/year_review.py`); the coach never receives them.

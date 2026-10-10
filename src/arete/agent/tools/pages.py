@@ -22,7 +22,7 @@ from arete.services.pages import get_page_data
 @tool
 def get_page_context(page: str) -> str:
     """Read the data behind an Arete app page other than the one open, whose
-    data is already in the prompt: dashboard, planning, analytics, log or
+    data is already in the prompt: dashboard, planning, analytics, log, profile or
     settings. Fixed windows; use the analytics tools for a chosen period.
     Read-only."""
     if page not in PANEL_PAGES:

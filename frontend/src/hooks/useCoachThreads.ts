@@ -1,3 +1,6 @@
+import { markWorkout, measureWorkout } from '@/lib/workoutPerformance';
+import { cacheWorkout } from '@/lib/workouts';
+import { canRetryMessage } from '@/lib/agentActivity';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { documentsApi } from '@/lib/documents';
@@ -26,6 +29,9 @@ const MAX_ACTIVE_RUNS = 1;
 const SAVE_DELAY_MS = 250;
 const SESSION_WRITE_TOOLS = new Set([
   'create_planned_session',
+  'update_session_prescription',
+  'export_garmin_sessions',
+  'reconcile_garmin_session',
   'update_planned_status',
   'update_planned_session',
   'delete_planned_session',
@@ -33,7 +39,7 @@ const SESSION_WRITE_TOOLS = new Set([
 ]);
 const FACT_WRITE_TOOLS = new Set(['remember_fact']);
 
-export function useCoachThreads(context: PanelPageContext) {
+export function useCoachThreads(context: PanelPageContext, selectedDocuments = false) {
   const queryClient = useQueryClient();
   const [initial] = useState(loadThreads);
   const [store, setStore] = useState(initial.store);
@@ -43,6 +49,7 @@ export function useCoachThreads(context: PanelPageContext) {
   const runRef = useRef<{
     threadId: string;
     controller: AbortController;
+    draftEdited: boolean;
   } | null>(null);
   const storeRef = useRef(store);
   const active = store.threads.find((t) => t.id === store.activeId);
@@ -102,10 +109,12 @@ export function useCoachThreads(context: PanelPageContext) {
   const attachments = useCallback((ids: string[]) => {
     setStore(prev => updateThread(prev, active.id, thread => JSON.stringify(thread.attachmentIds ?? []) === JSON.stringify(ids) ? thread : { ...thread, attachmentIds: ids }));
   }, [active.id]);
-  const draft = (text: string) =>
+  const draft = (text: string) => {
+    if (runRef.current?.threadId === active.id) runRef.current.draftEdited = true;
     setStore((prev) =>
       updateThread(prev, prev.activeId, (t) => ({ ...t, draft: text }))
     );
+  };
   const stop = useCallback(() => runRef.current?.controller.abort(), []);
 
   /** ``keep`` = messages kept before the new question (a retry drops the
@@ -115,12 +124,21 @@ export function useCoachThreads(context: PanelPageContext) {
     const activeRuns = runRef.current ? 1 : 0;
     if (!content || activeRuns >= MAX_ACTIVE_RUNS) return false;
     const retrying = keep < active.messages.length;
+    const attachmentIds = selectedDocuments ? (retrying ? active.messages[keep]?.attachmentIds ?? [] : active.attachmentIds ?? []) : undefined;
     const history = requestWindow([
-      ...active.messages.slice(0, keep).filter(
+      ...active.messages.slice(0, keep).map(m => m.workouts?.length ? {
+        ...m, error: undefined, interrupted: false,
+        content: `${m.content}\nSéances concernées : ${m.workouts.map(w => `#${w.session.id} (${w.session.date}, ${w.session.description}, état observé : ${w.export?.state ?? 'enregistrée'}).`).join(' ')} Relire leur état actuel avant toute écriture.`,
+      } : m).filter(
         (m) => m.content.trim() && !m.error && !m.interrupted
       ),
-      { role: 'user', content },
+      { role: 'user', content, attachmentIds },
     ]);
+    const documentIds = selectedDocuments ? [...new Set(history.flatMap(m => m.attachmentIds ?? []))] : undefined;
+    if (documentIds && documentIds.length > 20) {
+      setError('Cette demande référence plus de 20 documents. Ouvre une nouvelle conversation.');
+      return false;
+    }
     if (history.some((m) => m.content.length > MAX_MESSAGE_CHARS)) {
       setError(
         'Un message dépasse 16 000 caractères. Raccourcis-le ou crée une nouvelle conversation.'
@@ -130,7 +148,15 @@ export function useCoachThreads(context: PanelPageContext) {
     const threadId = active.id;
     const answerIndex = keep + 1;
     const controller = new AbortController();
-    runRef.current = { threadId, controller };
+    const run = { threadId, controller, draftEdited: retrying && !!active.draft };
+    runRef.current = run;
+    let suggestion: string | undefined;
+    markWorkout('coach:request-start');
+    performance.clearMarks('coach:first-feedback');
+    performance.clearMarks('coach:first-text');
+    performance.clearMarks('coach:first-workout');
+    performance.clearMarks('coach:first-scheduled');
+    performance.clearMarks('coach:last-token');
     setRunningId(threadId);
     setError('');
     setStore((prev) =>
@@ -138,11 +164,12 @@ export function useCoachThreads(context: PanelPageContext) {
         ...t,
         title: t.messages.length ? t.title : titleFromMessage(content),
         draft: retrying ? t.draft : '',
+        attachmentIds: selectedDocuments && !retrying ? [] : t.attachmentIds,
         updatedAt: Date.now(),
         messages: [
           ...t.messages.slice(0, keep),
-          { role: 'user', content },
-          { role: 'assistant', content: '', parts: [], pending: true },
+          { role: 'user', content, attachmentIds },
+          { role: 'assistant', content: '', parts: [], pending: true, startedAt: Date.now() },
         ],
       }))
     );
@@ -166,6 +193,43 @@ export function useCoachThreads(context: PanelPageContext) {
       history,
       context,
       (event) => {
+        if (controller.signal.aborted) return;
+        if (event.type === 'suggestion') {
+          suggestion = event.text;
+          return;
+        }
+        if (event.type === 'workout_update') {
+          if (event.thread_id !== threadId) throw new Error('Événement reçu pour un autre fil.');
+          cacheWorkout(queryClient, event);
+          markWorkout('coach:workout-received');
+          if (!performance.getEntriesByName('coach:first-workout', 'mark').length) {
+            markWorkout('coach:first-workout');
+            measureWorkout('coach:time-to-useful-result', 'coach:request-start', 'coach:first-workout');
+          }
+          if (['scheduled', 'transfer_requested'].includes(event.export?.state ?? '') && !performance.getEntriesByName('coach:first-scheduled', 'mark').length) {
+            markWorkout('coach:first-scheduled');
+            measureWorkout('coach:time-to-scheduled', 'coach:request-start', 'coach:first-scheduled');
+          }
+        }
+        if (event.type === 'token') {
+          markWorkout('coach:token-received');
+          measureWorkout('coach:last-stream-gap', 'coach:last-token', 'coach:token-received');
+          markWorkout('coach:last-token');
+        }
+        if ((event.type === 'token' || event.type === 'message') && event.text.trim() && !performance.getEntriesByName('coach:first-text', 'mark').length) {
+          markWorkout('coach:first-text');
+          measureWorkout('coach:time-to-first-text', 'coach:request-start', 'coach:first-text');
+        }
+        if (event.type === 'done') {
+          markWorkout('coach:done');
+          measureWorkout('coach:total', 'coach:request-start', 'coach:done');
+          // Commit the proposed draft only once the run succeeds. A late event
+          // must neither overwrite typing (even if erased) nor touch another thread.
+          const proposed = suggestion;
+          if (proposed && !run.draftEdited) {
+            setStore(prev => updateThread(prev, threadId, t => run.draftEdited || t.draft ? t : { ...t, draft: proposed }));
+          }
+        }
         patchAnswer((m) => applyEvent(m, event));
         if (event.type === 'import_preview' || event.type === 'done') void queryClient.invalidateQueries({ queryKey: ['coach-imports', threadId] });
         // Refresh when the write completes, even if the final answer fails or
@@ -177,7 +241,9 @@ export function useCoachThreads(context: PanelPageContext) {
         }
       },
       controller.signal,
-      threadId
+      threadId,
+      documentIds,
+      () => { if (!controller.signal.aborted) patchAnswer(m => ({ ...m, streamAccepted: true })); },
     )
       .catch((err: unknown) =>
         patchAnswer((m) =>
@@ -200,11 +266,18 @@ export function useCoachThreads(context: PanelPageContext) {
   };
   /** Ask the last question again, replacing its answer. */
   const retry = () => {
+    const answer = active.messages.at(-1);
+    if (answer && !canRetryMessage(answer)) return false;
     const last = active.messages.map((m) => m.role).lastIndexOf('user');
     return last >= 0 && send(active.messages[last].content, last);
   };
 
+  const recordAction = (threadId: string, text: string) => setStore(prev => updateThread(prev, threadId, t => ({
+    ...t, updatedAt: Date.now(), messages: [...t.messages, { role: 'assistant', content: text }],
+  })));
+
   return {
+    recordAction,
     store,
     active,
     runningId,

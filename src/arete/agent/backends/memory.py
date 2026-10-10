@@ -1,6 +1,7 @@
 """Deep Agents filesystem adapter, restricted to the coaching ledger."""
 
 from deepagents.backends import CompositeBackend, FilesystemBackend, StateBackend
+from deepagents.backends.protocol import DeleteResult, EditResult
 from deepagents.middleware.filesystem import (
     FilesystemMiddleware,
     FilesystemPermission,
@@ -10,15 +11,22 @@ from deepagents.middleware.filesystem import (
 )
 from pydantic import BaseModel, Field
 
-from arete.services.memory import NOTES_LEDGER, SESSIONS_LEDGER, memory_root
-
-#: Writes go through ``append_journal`` (server-dated, deduplicated); the
-#: filesystem only reads, so a model can no longer rewrite or lose the journal.
-MEMORY_PERMISSION = FilesystemPermission(
-    operations=["read"],
-    paths=["/**"],
-    mode="allow",
+from arete.services.memory import (
+    NOTES_LEDGER,
+    SESSIONS_LEDGER,
+    ledger_lock,
+    memory_root,
 )
+
+# Permissions default to allow in Deep Agents: the trailing deny is essential.
+MEMORY_PERMISSIONS = [
+    FilesystemPermission(
+        operations=["write"],
+        paths=[f"/{NOTES_LEDGER}", f"/{SESSIONS_LEDGER}"],
+        mode="allow",
+    ),
+    FilesystemPermission(operations=["write"], paths=["/**"], mode="deny"),
+]
 
 
 LEDGER_TOOL_DESCRIPTIONS = {
@@ -27,7 +35,32 @@ LEDGER_TOOL_DESCRIPTIONS = {
     "limit pour paginer. Dans sessions.md les entrées récentes sont à la fin: "
     "lis la fin du fichier pour les trouver. Les lignes arrivent numérotées, "
     "ne recopie jamais ces numéros.",
+    "edit_file": "Corrige ou retire un passage de /notes.md ou /sessions.md. "
+    "old_string doit correspondre exactement au texte existant, sans numéros "
+    "de ligne; new_string vide retire le passage. Préserve les autres entrées "
+    "et leurs dates. Pour une nouvelle entrée, utilise append_journal.",
+    "delete": "Supprime entièrement /notes.md ou /sessions.md uniquement "
+    "si tout son contenu doit être oublié. Pour retirer un passage, utilise "
+    "edit_file. Les archives et les pièces jointes restent en lecture seule.",
 }
+
+
+class LedgerBackend(FilesystemBackend):
+    """Serialize corrections with appends so concurrent turns cannot lose entries."""
+
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        with ledger_lock():
+            return super().edit(file_path, old_string, new_string, replace_all)
+
+    def delete(self, file_path: str) -> DeleteResult:
+        with ledger_lock():
+            return super().delete(file_path)
 
 
 class PortableGlob(GlobSchema):
@@ -46,26 +79,25 @@ class BoundedRead(ReadFileSchema):
 
 
 def build_memory_filesystem() -> FilesystemMiddleware:
-    """Read-only ledger plus invocation-local documents, with portable schemas."""
+    """Editable current ledgers and read-only archives/invocation documents."""
     root = memory_root()
     for name in (SESSIONS_LEDGER, NOTES_LEDGER):
         (root / name).touch(exist_ok=True)
     middleware = FilesystemMiddleware(
         backend=CompositeBackend(
-            default=FilesystemBackend(
-                root_dir=root, virtual_mode=True, max_file_size_mb=5
-            ),
+            default=LedgerBackend(root_dir=root, virtual_mode=True, max_file_size_mb=5),
             routes={"/attachments/": StateBackend()},
         ),
-        tools=["read_file", "ls", "glob", "grep"],
+        tools=["read_file", "ls", "glob", "grep", "edit_file", "delete"],
         custom_tool_descriptions={
+            **LEDGER_TOOL_DESCRIPTIONS,
             "read_file": LEDGER_TOOL_DESCRIPTIONS["read_file"]
-            + " Lis aussi les documents normalisés sous /attachments/ ; conserve leurs références de source."
+            + " Lis aussi les documents normalisés sous /attachments/ ; conserve leurs références de source.",
         },
         tool_token_limit_before_evict=None,
         human_message_token_limit_before_evict=None,
         grep_max_count=100,
-        _permissions=[MEMORY_PERMISSION],
+        _permissions=MEMORY_PERMISSIONS,
     )
     # Some free providers reject anyOf/null; adapt schemas without forking tools.
     schemas: dict[str, type[BaseModel]] = {

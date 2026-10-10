@@ -20,6 +20,20 @@ def _env(name: str, default: str | None = None) -> str | None:
 
 
 class Config:
+    @property
+    def gamification_available(self) -> bool:
+        """Deployment kill switch; the athlete still has to opt in."""
+        return (_env("GAMIFICATION_ENABLED", "true") or "").lower() == "true"
+
+    @property
+    def google_calendar_environment(self) -> str:
+        return _env("VERCEL_ENV", "development") or "development"
+
+    @property
+    def google_calendar_configured(self) -> bool:
+        """Calendar rides on Clerk: the signed-in Google account holds the grant."""
+        return self.auth_provider == "clerk" and bool(self.clerk_secret_key)
+
     # --- storage -----------------------------------------------------------
     @property
     def db_target(self) -> str:
@@ -232,6 +246,45 @@ class Config:
     def web_push_subject(self) -> str:
         """Contact the push services can reach (``mailto:`` or https URL)."""
         return _env("WEB_PUSH_SUBJECT", "mailto:admin@localhost") or ""
+
+    # --- authentication ----------------------------------------------------
+    @property
+    def auth_provider(self) -> str:
+        """``clerk`` makes every API route require a signed-in user; empty
+        (the default) leaves the API open, as a self-hosted instance behind
+        its own network or Vercel Authentication runs it."""
+        return (_env("ARETE_AUTH", "") or "").strip().lower()
+
+    @property
+    def clerk_secret_key(self) -> str:
+        return _env("CLERK_SECRET_KEY", "") or ""
+
+    @property
+    def clerk_publishable_key(self) -> str:
+        """The Marketplace provisions it under the Next.js name; both are read."""
+        return (
+            _env("CLERK_PUBLISHABLE_KEY")
+            or _env("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "")
+            or ""
+        )
+
+    @property
+    def auth_origins(self) -> tuple[str, ...]:
+        """Browser origins allowed to hold a session (the token's ``azp``);
+        empty = not checked, which Vercel preview URLs need."""
+        raw = _env("ARETE_AUTH_ORIGINS", "") or ""
+        return tuple(o.strip().rstrip("/") for o in raw.split(",") if o.strip())
+
+    @property
+    def owner_emails(self) -> tuple[str, ...]:
+        """Addresses that are the athlete, comma-separated; others get no data."""
+        raw = _env("ARETE_OWNER_EMAIL", "") or ""
+        return tuple(e.strip().lower() for e in raw.split(",") if e.strip())
+
+    @property
+    def api_key(self) -> str:
+        """A long-lived key for scripts and the MCP server, acting as the owner."""
+        return _env("ARETE_API_KEY", "") or ""
 
     @property
     def log_level(self) -> str:

@@ -1,4 +1,9 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { useGamePreference } from '@/lib/gamification';
+import { ChironPortrait } from './ChironPortrait';
+import { MessageAttachments } from './agent/MessageAttachments';
+import { Maximize2, Minimize2 } from 'lucide-react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { WorkoutSelection } from './WorkoutSelection';
 import {
   ArrowDown,
   Bot,
@@ -22,12 +27,15 @@ import {
   type ToolPart,
 } from '@/lib/agentStream';
 import { useCoachThreads } from '@/hooks/useCoachThreads';
-import { followUps, starters } from '@/lib/coachPrompts';
+import { starters } from '@/lib/coachPrompts';
 import { ThreadHistory } from './agent/ThreadHistory';
 import { AgentMarkdown } from './agent/AgentMarkdown';
 import { ToolActivity } from './agent/ToolActivity';
+import { CoachActivity, CoachPresence } from './agent/CoachActivity';
+import { canRetryMessage } from '@/lib/agentActivity';
 import { DocumentAttachments, type AttachmentsHandle } from './agent/DocumentAttachments';
 import { DocumentImports } from './agent/DocumentImports';
+import { CalendarActionCard } from './agent/CalendarActionCard';
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: 'Tableau de bord',
@@ -35,6 +43,7 @@ const PAGE_LABELS: Record<string, string> = {
   analytics: 'Analyses',
   log: 'Carnet',
   settings: 'Paramètres',
+  profile: 'Mon profil',
 };
 /** On a phone, Enter inserts a new line: the keyboard has no Shift to hold. */
 const touchKeyboard = () =>
@@ -63,7 +72,13 @@ function useElapsedSeconds(running: boolean): number {
  *  A card per tool round read as several answers stacked on each other. */
 const MessageSurfaces = memo(function MessageSurfaces({
   message,
+  onAction,
+  locked,
+  chiron = false,
 }: {
+  onAction?: (text: string) => void;
+  locked?: boolean;
+  chiron?: boolean;
   message: ChatMessage;
 }) {
   const parts: ChatPart[] = message.parts?.length
@@ -76,7 +91,8 @@ const MessageSurfaces = memo(function MessageSurfaces({
   for (const part of parts) {
     if (part.kind === 'text') {
       if (part.text.trim()) groups.push(part);
-    } else if (part === tools[0]) groups.push(tools);
+    } else if (part.kind === 'calendar_action') groups.push(part);
+    else if (!chiron && part === tools[0]) groups.push(tools);
   }
   return (
     <>
@@ -84,9 +100,13 @@ const MessageSurfaces = memo(function MessageSurfaces({
         Array.isArray(part) ? (
           <ToolActivity key={`tool-${part[0].id}`} tools={part} />
         ) : part.kind === 'text' ? (
-          <AgentMarkdown key={`text-${part.id}`} text={part.text} />
+          chiron ? <div key={`text-${part.id}`} className="coach-answer-part"><AgentMarkdown text={part.text} /></div>
+            : <AgentMarkdown key={`text-${part.id}`} text={part.text} />
+        ) : part.kind === 'calendar_action' ? (
+          <CalendarActionCard key={`calendar-${part.id}`} id={part.id} />
         ) : null
       )}
+      {!!message.workouts?.length && <WorkoutSelection sessions={message.workouts} onResult={onAction} locked={locked} />}
       {message.error && (
         <div
           role="alert"
@@ -96,8 +116,8 @@ const MessageSurfaces = memo(function MessageSurfaces({
           <span>{message.error}</span>
         </div>
       )}
-      {message.interrupted && (
-        <p className="mt-3 text-xs text-text-muted">Réponse interrompue.</p>
+      {message.interrupted && !chiron && (
+        <p className="mt-3 text-xs text-text-muted">Réponse interrompue. Les séances déjà enregistrées sont conservées ; vérifie Garmin avant tout nouvel envoi.</p>
       )}
     </>
   );
@@ -113,15 +133,23 @@ export function AgentSidePanel({
   onBusyChange?: (busy: boolean) => void;
 }) {
   const panelContext = usePanelContext();
-  const coach = useCoachThreads(panelContext);
+  const { data: preference } = useGamePreference();
+  const rpg = preference?.enabled === true;
+  const [expanded, setExpanded] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
+  const coach = useCoachThreads(panelContext, rpg);
   const { active, store, runningId } = coach;
   const messages = active.messages;
   const attachmentsRef = useRef<AttachmentsHandle>(null);
-  const [documentsBusy, setDocumentsBusy] = useState(false);
+  const [documentBusyByThread, setDocumentBusyByThread] = useState<Record<string, boolean>>({});
+  const documentsBusy = documentBusyByThread[active.id] ?? false;
+  const setDocumentsBusy = useCallback((value: boolean) => {
+    setDocumentBusyByThread(previous => ({ ...previous, [active.id]: value }));
+  }, [active.id]);
   const streaming = runningId === active.id;
   const busy = runningId !== null || documentsBusy;
-  const elapsed = useElapsedSeconds(streaming);
-  const asked = messages.filter((m) => m.role === 'user').map((m) => m.content);
+  const elapsed = useElapsedSeconds(streaming && !rpg);
   const [showHistory, setShowHistory] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [following, setFollowing] = useState(true);
@@ -142,6 +170,7 @@ export function AgentSidePanel({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || document.querySelector('[role="dialog"]')) return;
       if (e.key === 'Escape') {
         if (deleteId) setDeleteId(null);
         else if (showHistory) setShowHistory(false);
@@ -174,21 +203,25 @@ export function AgentSidePanel({
   const page = PAGE_LABELS[panelContext.page] ?? panelContext.page;
   return (
     <aside
+      onDragEnter={event => { if (rpg && event.dataTransfer.types.includes('Files')) { event.preventDefault(); dragDepth.current += 1; setDragging(true); } }}
+      onDragLeave={event => { if (rpg && event.dataTransfer.types.includes('Files')) { dragDepth.current = Math.max(0, dragDepth.current - 1); if (!dragDepth.current) setDragging(false); } }}
       onDragOver={event => { if (event.dataTransfer.types.includes('Files')) event.preventDefault(); }}
-      onDrop={event => { event.preventDefault(); if (!busy) attachmentsRef.current?.upload(Array.from(event.dataTransfer.files)); }}
+      onDrop={event => { if (!event.dataTransfer.types.includes('Files')) return; event.preventDefault(); dragDepth.current = 0; setDragging(false); if (!busy) attachmentsRef.current?.upload(Array.from(event.dataTransfer.files)); }}
       id="coach-panel"
-      className="coach-panel fixed right-0 z-40 flex w-full max-w-[520px] flex-col border-l border-text-muted/20 bg-abyss shadow-2xl animate-fade-in"
+      className={cn("coach-panel fixed right-0 z-40 flex w-full flex-col border-l border-text-muted/20 shadow-2xl animate-fade-in", rpg ? 'bg-void' : 'bg-abyss', rpg && expanded ? "max-w-none md:px-[max(24px,calc((100vw-800px)/2))]" : "max-w-[520px]")}
       role="complementary"
       aria-label="Coach IA"
     >
+      {dragging && rpg && <div className="absolute inset-3 z-50 pointer-events-none flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-neon-cyan bg-abyss/95 p-6 text-center"><p className="text-xl font-bold">Dépose tes fichiers ici</p><p className="mt-3 text-sm text-text-secondary">Ils seront joints au brouillon, sans envoyer le message.</p><p className="mt-2 text-xs text-text-muted">5 fichiers maximum · 20 Mio par fichier</p></div>}
       <header className="flex shrink-0 items-center gap-3 border-b border-text-muted/15 px-5 py-4">
-        <div className="flex size-9 items-center justify-center rounded-xl border border-neon-cyan/15 bg-neon-cyan/5">
-          <Bot className="size-5 text-neon-cyan" />
+        <div className={cn('flex size-9 shrink-0 items-center justify-center', !rpg && 'rounded-xl border border-neon-cyan/15 bg-neon-cyan/5')}>
+          {rpg ? <ChironPortrait size={36} /> : <Bot className="size-5 text-neon-cyan" />}
         </div>
         <div>
-          <h2 className="text-sm font-semibold">Coach Arete</h2>
+          <h2 className="text-sm font-semibold">{rpg ? 'Chiron — Coach Arete' : 'Coach Arete'}</h2>
           <p className="mt-0.5 text-[11px] text-text-muted">{page}</p>
         </div>
+        {rpg && <button aria-label={expanded ? 'Réduire la conversation' : 'Agrandir la conversation'} onClick={() => setExpanded(!expanded)} className="ml-auto hidden md:flex size-11 items-center justify-center text-text-muted">{expanded ? <Minimize2 size={18} /> : <Maximize2 size={18} />}</button>}
         <button
           onClick={() => setShowHistory((v) => !v)}
           className="ml-auto rounded-lg p-2 text-text-muted hover:bg-text-muted/10"
@@ -276,13 +309,13 @@ export function AgentSidePanel({
             <span className="min-w-0 flex-1 truncate">{active.title}</span>
             <ChevronDown className="size-3.5 text-text-muted" />
           </button>
-          {busy && !streaming && (
+          {runningId !== null && !streaming && (
             <div
               role="status"
               className="border-b border-neon-cyan/10 bg-neon-cyan/5 px-4 py-3 text-xs text-text-secondary"
             >
               <p className="flex items-center gap-2">
-                <Loader2 className="size-3 animate-spin" />
+                {rpg ? <CoachPresence /> : <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />}
                 Le coach répond dans un autre fil.
               </p>
               <button
@@ -312,11 +345,11 @@ export function AgentSidePanel({
             }}
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6"
           >
-            <DocumentAttachments key={active.id} threadId={active.id} disabled={runningId !== null} ref={attachmentsRef} onBusy={setDocumentsBusy} onDocuments={coach.attachments} />
+            {!rpg && <DocumentAttachments key={active.id} threadId={active.id} collapsed={active.messages.length > 0} disabled={runningId !== null} ref={attachmentsRef} onBusy={setDocumentsBusy} onDocuments={coach.attachments} />}
             <div className="my-3"><DocumentImports key={`imports-${active.id}`} threadId={active.id} /></div>
             {!messages.length && (
               <div className="mx-auto mt-10 max-w-sm">
-                <BotMessageSquare className="mb-5 size-8 text-neon-cyan/70" />
+                {rpg ? <ChironPortrait size={48} /> : <BotMessageSquare className="mb-5 size-8 text-neon-cyan/70" />}
                 <h3 className="text-lg font-semibold">On prépare la suite ?</h3>
                 <p className="mt-2 text-sm leading-relaxed text-text-muted">
                   Ta forme, tes séances, tes objectifs. Pose une question, je
@@ -351,14 +384,16 @@ export function AgentSidePanel({
                   {message.role === 'user' ? (
                     <div className="max-w-[90%] whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm bg-neon-purple/15 px-4 py-3 text-sm leading-relaxed">
                       {message.content}
+                      {!!message.attachmentIds?.length && <MessageAttachments ids={message.attachmentIds} threadId={active.id} />}
                     </div>
                   ) : (
                     <div className="min-w-0">
                       <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-text-muted">
-                        <Bot className="size-3.5 text-neon-cyan/70" /> ARETE
+                        {rpg ? <ChironPortrait size={24} /> : <Bot className="size-3.5 text-neon-cyan/70" />} {rpg ? 'CHIRON' : 'ARETE'}
                       </div>
-                      <MessageSurfaces message={message} />
-                      {i === messages.length - 1 && !busy && !message.pending && (
+                      {rpg && <CoachActivity message={message} />}
+                      <MessageSurfaces message={message} chiron={rpg} locked={busy} onAction={text => coach.recordAction(active.id, text)} />
+                      {i === messages.length - 1 && !busy && !message.pending && canRetryMessage(message) && (
                         <button
                           onClick={() => coach.retry() && followLatest()}
                           className="mt-3 inline-flex items-center gap-1.5 text-xs text-text-muted hover:text-text-secondary"
@@ -367,33 +402,19 @@ export function AgentSidePanel({
                           {message.error || message.interrupted ? 'Réessayer' : 'Regénérer'}
                         </button>
                       )}
-                      {i === messages.length - 1 && !busy && !message.pending &&
-                        !message.error && !message.interrupted && (
-                        <div aria-label="Suggestions de suivi" className="mt-4 flex flex-wrap gap-2">
-                          {followUps(panelContext.page, asked).map((prompt) => (
-                            <button
-                              key={prompt}
-                              onClick={() => send(prompt)}
-                              className="rounded-xl border border-neon-cyan/20 px-3 py-2 text-left text-xs text-text-secondary hover:bg-neon-cyan/5"
-                            >
-                              {prompt}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {streaming && i === messages.length - 1 && (
+                      {!rpg && streaming && i === messages.length - 1 && (
                         <div
                           role="status"
                           className="mt-3 flex items-center gap-2 text-xs text-text-muted"
                         >
-                          <Loader2 className="size-3 animate-spin" />
+                          <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />
                           {message.parts?.some(
                             (p) => p.kind === 'tool' && p.status === 'running'
                           )
-                            ? 'Consultation en cours…'
+                            ? 'Action en cours…'
                             : message.content
                               ? 'Rédaction…'
-                              : 'Le coach réfléchit…'}
+                              : elapsed < 1 ? 'Demande envoyée' : 'Préparation de la réponse…'}
                           {elapsed >= 3 && ` ${elapsed} s`}
                         </div>
                       )}
@@ -410,7 +431,7 @@ export function AgentSidePanel({
                 setFollowing(true);
                 scrollRef.current?.scrollTo({
                   top: scrollRef.current.scrollHeight,
-                  behavior: 'smooth',
+                  behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
                 });
               }}
               className="absolute bottom-36 right-5 flex items-center gap-1.5 rounded-full border border-text-muted/20 bg-shadow px-3 py-2 text-xs shadow-lg"
@@ -418,13 +439,15 @@ export function AgentSidePanel({
               <ArrowDown className="size-3" /> Derniers messages
             </button>
           )}
-          <footer className="shrink-0 border-t border-text-muted/15 bg-abyss px-4 pb-4 pt-3">
-            <div className="flex items-end gap-2 rounded-xl border border-text-muted/20 bg-void/40 p-2 focus-within:border-neon-cyan/40">
+          <footer className={cn('shrink-0 px-4 pb-4 pt-3', !rpg && 'border-t border-text-muted/15 bg-abyss')}>
+            {rpg && <DocumentAttachments key={active.id} threadId={active.id} compact selectedIds={active.attachmentIds ?? []} disabled={runningId !== null} ref={attachmentsRef} onBusy={setDocumentsBusy} onDocuments={coach.attachments} />}
+            <div className={cn('flex items-end gap-2 rounded-xl border border-text-muted/20 p-2 focus-within:border-neon-cyan/40', rpg ? 'bg-abyss' : 'bg-void/40')}>
               <textarea
                 ref={inputRef}
                 aria-label="Message au coach"
                 value={active.draft}
                 onChange={(e) => coach.draft(e.target.value)}
+                onPaste={event => { if (rpg && event.clipboardData.files.length) { event.preventDefault(); if (!busy) attachmentsRef.current?.upload(Array.from(event.clipboardData.files)); } }}
                 rows={2}
                 maxLength={MAX_MESSAGE_CHARS}
                 onKeyDown={(e) => {
@@ -444,10 +467,11 @@ export function AgentSidePanel({
               {streaming ? (
                 <button
                   onClick={coach.stop}
-                  className="rounded-lg bg-text-muted/15 p-2.5 hover:bg-text-muted/25"
+                  className="flex min-h-11 min-w-11 items-center justify-center gap-2 rounded-lg bg-text-muted/10 px-3 hover:bg-text-muted/20"
                   aria-label="Arrêter la réponse"
                 >
                   <Square className="size-4" />
+                  {rpg && <span className="text-xs">Arrêter</span>}
                 </button>
               ) : (
                 <button
@@ -461,7 +485,7 @@ export function AgentSidePanel({
               )}
             </div>
             <p className="mt-2 text-center text-[10px] text-text-muted">
-              {touchKeyboard()
+              {rpg && streaming ? 'Tu peux préparer ton prochain message.' : touchKeyboard()
                 ? 'Touche Envoyer pour envoyer'
                 : 'Entrée pour envoyer · Maj + Entrée pour une nouvelle ligne'}
             </p>

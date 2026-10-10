@@ -41,6 +41,9 @@ Slack must reach this endpoint without Vercel Authentication. If the deployment
 is protected, configure access for this webhook; do not disable protection for
 the whole app. The endpoint verifies HMAC signatures and rejects requests
 older than five minutes before parsing them.
+With `ARETE_AUTH=clerk`, `/slack/events` is a public path: Slack sends no
+Clerk session, so the signature is its only credential. Calendar tools stay
+unavailable from Slack because they need a verified Clerk account.
 
 ## Execution and limits
 
@@ -67,7 +70,7 @@ The reply is plain text, bounded to 39,000 characters, with automatic mentions
 and unfurls disabled. No message text is stored in the delivery ledger. Existing
 optional LangSmith tracing still includes the messages and Slack thread ID.
 
-Migration 17 adds `app.slack_deliveries` and a singleton `app.slack_execution`.
+Migration 35 adds `app.slack_deliveries` and a singleton `app.slack_execution`.
 The ledger stops accepting new events at 100,000 records, requiring operator
 review rather than silently forgetting duplicate IDs.
 

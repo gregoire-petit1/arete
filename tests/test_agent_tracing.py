@@ -100,6 +100,9 @@ class RecordingClient(Client):
 @pytest.fixture(autouse=True)
 def isolated_graph(monkeypatch, tmp_path):
     monkeypatch.setenv("ARETE_DB", str(tmp_path / "agent.duckdb"))
+    from arete.dataio.init_duckdb import main as init_db
+
+    init_db()  # Missing memory tables are now explicit failures, not empty context.
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
     monkeypatch.setenv("LLM_MODEL", "test-coach")
     monkeypatch.setenv("LANGSMITH_PROJECT", "test-project")
@@ -566,3 +569,32 @@ def test_chat_turns_share_thread_metadata_without_reusing_trace_or_date(
     assert all(
         r["extra"]["metadata"]["thread_id"] == threads[r["trace_id"]] for r in runs
     )
+
+
+def test_autosuggestion_has_a_child_llm_span_and_thread_metadata(monkeypatch, recorder):
+    draft = "Oui, prépare cette séance."
+    suggestion = FakeCoach(messages=iter([AIMessage(content=draft)]))
+    coach = FakeCoach(messages=iter([AIMessage(content="Une séance facile ?")]))
+    monkeypatch.setattr(
+        agent,
+        "build_chat_model",
+        lambda **kw: suggestion if kw.get("max_tokens") == 512 else coach,
+    )
+    context = AgentContext(thread_id="suggestion-thread", suggest_reply=True)
+
+    async def consume():
+        return [part async for part in stream_run(state("Demain ?"), context=context)]
+
+    parts = asyncio.run(consume())
+    assert {"type": "suggestion", "text": draft} in [
+        p["data"] for p in parts if p["type"] == "custom"
+    ]
+    runs, _ = assert_trace_tree(recorder)
+    llms = [r for r in runs if r["run_type"] == "llm"]
+    assert len(llms) == 2
+    completion = next(r for r in llms if r["name"] == "coach_autosuggestion")
+    parent = recorder.recorded_runs[str(completion["parent_run_id"])]
+    assert parent["run_type"] == "chain"
+    assert "AutoSuggestionMiddleware" in parent["name"]
+    assert completion["extra"]["metadata"]["thread_id"] == "suggestion-thread"
+    assert context.stats.model_calls == 2

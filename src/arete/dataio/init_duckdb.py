@@ -381,6 +381,19 @@ CREATE TABLE IF NOT EXISTS app.weekly_reviews (
     UNIQUE (user_id, week_start)
 );
 
+CREATE SEQUENCE IF NOT EXISTS app.users_seq START 1;
+
+-- Signed-in accounts (Clerk): athlete_id links an account to its data
+CREATE TABLE IF NOT EXISTS app.users (
+    id              INTEGER PRIMARY KEY DEFAULT nextval('app.users_seq'),
+    clerk_user_id   VARCHAR NOT NULL UNIQUE,
+    email           VARCHAR NOT NULL,
+    name            VARCHAR,
+    athlete_id      INTEGER,                   -- NULL until an athlete is attached
+    created_at      TIMESTAMP DEFAULT now(),
+    last_seen_at    TIMESTAMP DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS app.push_subscriptions (
     endpoint         VARCHAR PRIMARY KEY,
     p256dh           VARCHAR NOT NULL,
@@ -388,6 +401,59 @@ CREATE TABLE IF NOT EXISTS app.push_subscriptions (
     user_agent       VARCHAR,
     created_at       TIMESTAMP DEFAULT now(),
     last_success_at  TIMESTAMP
+);
+
+-- Per-second streams of an activity, one row per session (garmin/streams.py).
+-- Lists aligned on t_sec, NULL for a channel the activity never recorded.
+CREATE TABLE IF NOT EXISTS app.activity_streams (
+    actual_session_id  INTEGER PRIMARY KEY,
+    sample_count       INTEGER NOT NULL,
+    t_sec              INTEGER[] NOT NULL,   -- seconds since the first record
+    heart_rate         SMALLINT[],
+    speed_mps          FLOAT[],
+    altitude_m         FLOAT[],
+    distance_m         FLOAT[],               -- cumulative
+    cadence            SMALLINT[],            -- steps/min on foot, rpm on a bike
+    power_w            SMALLINT[],
+    lat                FLOAT[],
+    lon                FLOAT[],
+    created_at         TIMESTAMP DEFAULT now()
+);
+
+-- The coach's word on a cardio session, shown on its page
+CREATE TABLE IF NOT EXISTS app.session_feedback (
+    actual_session_id  INTEGER PRIMARY KEY,
+    text               VARCHAR NOT NULL,
+    source             VARCHAR NOT NULL,      -- 'agent', 'rules'
+    trigger            VARCHAR NOT NULL,      -- 'api' (upload, manual entry), 'sync'
+    created_at         TIMESTAMP DEFAULT now()
+);
+
+-- Terrain of a session on foot, from its kept streams (features/terrain.py)
+CREATE TABLE IF NOT EXISTS app.activity_terrain (
+    actual_session_id  INTEGER PRIMARY KEY,
+    model_version      INTEGER NOT NULL,      -- terrain.MODEL_VERSION it was computed with
+    grade_factor       DOUBLE,                -- flat-equivalent distance / distance (Minetti)
+    gap_sec_km         INTEGER,               -- grade-adjusted pace
+    vam_5min           INTEGER,               -- best net climbing speed over 5 min, m/h
+    vam_10min          INTEGER,
+    vam_20min          INTEGER,
+    vam_30min          INTEGER,
+    vam_60min          INTEGER,
+    descent_json       VARCHAR,               -- [{min, max, sec, m}] per grade band
+    created_at         TIMESTAMP DEFAULT now()
+);
+
+-- Weather at a session's start (Open-Meteo, services/weather.py)
+CREATE TABLE IF NOT EXISTS app.activity_weather (
+    actual_session_id  INTEGER PRIMARY KEY,
+    observed_at        TIMESTAMP NOT NULL,    -- the hour read, on the session's clock
+    temperature_c      DOUBLE,
+    humidity_pct       DOUBLE,
+    wind_kmh           DOUBLE,
+    start_altitude_m   DOUBLE,                -- the watch's, else the weather grid's
+    source             VARCHAR NOT NULL,      -- 'open-meteo-forecast', 'open-meteo-archive'
+    created_at         TIMESTAMP DEFAULT now()
 );
 
 -- Slack owns conversation text. These rows prevent write replay.
@@ -580,20 +646,79 @@ def _m16_weekly_reviews(con) -> None:
     con.execute(DDL[start : DDL.index(");", DDL.index("app.weekly_reviews (")) + 2])
 
 
-#: Append-only. A database at the last version skips the DDL entirely on boot
-#: (one statement instead of ~30, each a round trip to MotherDuck), so any
+def _m18_users(con) -> None:
+    """Signed-in accounts, and which one is the athlete."""
+    start = DDL.index("CREATE SEQUENCE IF NOT EXISTS app.users_seq")
+    con.execute(DDL[start : DDL.index(");", DDL.index("app.users (")) + 2])
+
+
+#: Append-only. A database that has every version skips the DDL entirely on
+#: boot (one statement instead of ~30, each a round trip to MotherDuck), so any
 #: table, column or sequence added to ``DDL`` also needs a migration here that
 #: creates it on existing databases. Migrations must stay idempotent.
+#:
+#: A version is an identifier, not a high-water mark: every version a database
+#: lacks runs, even below its latest. Parallel branches deploy previews against
+#: one shared database in any order, and a migration merged after a higher one
+#: must still run. Never renumber a migration once any database has recorded
+#: it: take a fresh number instead.
 def _m13_document_imports(con) -> None:
     from arete.dataio.document_schema import migrate
 
     migrate(con)
 
 
-def _m17_slack_deliveries(con) -> None:
+def _m17_google_calendar(con) -> None:
+    from arete.services.calendar_repository import CALENDAR_DDL
+
+    for statement in CALENDAR_DDL.strip().split(";"):
+        if statement.strip():
+            con.execute(statement)
+
+
+def _m19_gamification(con) -> None:
+    from arete.dataio.game_schema import migrate
+
+    migrate(con)
+
+
+def _m20_personal_memory(con) -> None:
+    from arete.dataio.memory_schema import migrate
+
+    # This branch previously used version 19 for memory. Idempotent game DDL
+    # also upgrades those local/preview databases without resetting game state.
+    _m19_gamification(con)
+    migrate(con)
+
+
+def _m31_activity_streams(con) -> None:
+    """Kept FIT streams and the stored session feedback."""
+    for table in ("app.activity_streams (", "app.session_feedback ("):
+        start = DDL.index(f"CREATE TABLE IF NOT EXISTS {table}")
+        con.execute(DDL[start : DDL.index(");", start) + 2])
+
+
+def _m32_session_conditions(con) -> None:
+    """A session's terrain (GAP, climbing speed) and start weather."""
+    for table in ("app.activity_terrain (", "app.activity_weather ("):
+        start = DDL.index(f"CREATE TABLE IF NOT EXISTS {table}")
+        con.execute(DDL[start : DDL.index(");", start) + 2])
+
+
+def _m34_calendar_plan_sync(con) -> None:
+    """The training plan followed into Google Calendar (columns only)."""
+    from arete.services.calendar_repository import CALENDAR_DDL, PLAN_SYNC_DDL
+
+    for statement in (CALENDAR_DDL + PLAN_SYNC_DDL).strip().split(";"):
+        if statement.strip():
+            con.execute(statement)
+
+
+def _m35_slack_deliveries(con) -> None:
     """Durable deduplication is required across concurrent Vercel instances."""
     start = DDL.index("CREATE TABLE IF NOT EXISTS app.slack_deliveries")
-    con.execute(DDL[start:])
+    end = DDL.index("ON CONFLICT DO NOTHING;", start) + len("ON CONFLICT DO NOTHING;")
+    con.execute(DDL[start:end])
 
 
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
@@ -613,18 +738,27 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (14, _m14_goals),
     (15, _m15_athlete_facts),
     (16, _m16_weekly_reviews),
-    (17, _m17_slack_deliveries),
+    (17, _m17_google_calendar),
+    (18, _m18_users),
+    (19, _m19_gamification),
+    (20, _m20_personal_memory),
+    (31, _m31_activity_streams),
+    (32, _m32_session_conditions),
+    (34, _m34_calendar_plan_sync),
+    (35, _m35_slack_deliveries),
 ]
 
 
+def _applied(con) -> set[int]:
+    rows = con.execute("SELECT version FROM app.schema_version").fetchall()
+    return {int(r[0]) for r in rows}
+
+
 def _run_migrations(con) -> None:
-    """Apply pending migrations and record them in app.schema_version."""
-    row = con.execute(
-        "SELECT COALESCE(MAX(version), 0) FROM app.schema_version"
-    ).fetchone()
-    current = int(row[0]) if row else 0
+    """Apply every missing migration, in list order, and record it."""
+    applied = _applied(con)
     for version, migrate in MIGRATIONS:
-        if version <= current:
+        if version in applied:
             continue
         migrate(con)
         con.execute("INSERT INTO app.schema_version (version) VALUES (?)", [version])
@@ -633,12 +767,11 @@ def _run_migrations(con) -> None:
 
 def _is_current(con) -> bool:
     try:
-        row = con.execute(
-            "SELECT COALESCE(MAX(version), 0) FROM app.schema_version"
-        ).fetchone()
+        applied = _applied(con)
     except duckdb.CatalogException:
         return False  # a fresh database: no schema yet
-    return bool(row) and int(row[0]) == MIGRATIONS[-1][0]
+    # Versions from other branches may be present; only missing ones matter.
+    return {version for version, _ in MIGRATIONS} <= applied
 
 
 def main():
@@ -647,7 +780,7 @@ def main():
     try:
         con = connect(False)
         if _is_current(con):
-            logger.info("Database schema is current (version %d)", MIGRATIONS[-1][0])
+            logger.info("Database schema is current (%d migrations)", len(MIGRATIONS))
             return
         for stmt in DDL.strip().split(";"):
             s = stmt.strip()

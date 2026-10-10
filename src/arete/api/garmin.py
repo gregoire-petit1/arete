@@ -16,7 +16,7 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from arete.dataio.settings import athlete_zone_model
-from arete.garmin.fit_parser import FITParser
+from arete.garmin.fit_parser import FITParser, laps_to_json
 from arete.garmin.matcher import SessionMatcher
 from arete.garmin.models import (
     ActivitySource,
@@ -27,6 +27,7 @@ from arete.garmin.models import (
     canonical_sport,
 )
 from arete.garmin.repository import GarminRepository
+from arete.garmin.streams import from_time_series
 
 logger = logging.getLogger(__name__)
 
@@ -350,7 +351,9 @@ def upload_fit_file(
     zones = athlete_zone_model()
     try:
         parser = FITParser(zones=zones)
-        parsed = parser.parse_stream(io.BytesIO(content_bytes))
+        # Detailed: the laps and the per-second streams are kept for the
+        # session page and the coach's analysis.
+        parsed = parser.parse_stream(io.BytesIO(content_bytes), detailed=True)
         # Sanitize filename to prevent path traversal
         parsed.source_file = Path(file.filename).name
     except Exception as e:
@@ -376,6 +379,9 @@ def upload_fit_file(
         descent_m=parsed.descent_m,
         start_lat=parsed.start_lat,
         start_lon=parsed.start_lon,
+        avg_cadence=parsed.avg_cadence,
+        max_cadence=parsed.max_cadence,
+        laps_json=laps_to_json(parsed),
         source=ActivitySource.FIT_FILE,
         source_file=file.filename,
         start_time=parsed.start_time,
@@ -411,6 +417,15 @@ def upload_fit_file(
 
     # Save actual session
     activity_id = _repo.create_actual_session(actual)
+    streams = from_time_series(parsed.time_series, actual.sport)
+    if streams is not None:
+        try:
+            _repo.save_activity_streams(activity_id, streams)
+        except Exception:  # the session is saved; only its page loses the charts
+            logger.warning("Could not store the upload's streams", exc_info=True)
+    from arete.services.session_conditions import enrich_sessions
+
+    enrich_sessions([activity_id])  # GAP, climbing speed, weather; never raises
 
     activity_dict = {
         "id": activity_id,

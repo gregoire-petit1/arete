@@ -16,7 +16,7 @@ ALL = {
     "review": REVIEW_PROMPT,
     **{f"toolkit:{tid}": tk.instructions for tid, tk in CAPABILITIES.items()},
 }
-REMOVED_TOOLS = ("load_toolkit", "search_toolkits", "edit_file", "write_file", "`ls`")
+REMOVED_TOOLS = ("load_toolkit", "search_toolkits", "write_file", "`ls`")
 
 
 @pytest.mark.parametrize("name", ALL)
@@ -36,6 +36,8 @@ def test_shared_and_mission_prompts_name_no_tool(prompt):
         "append_journal",
         "remember_fact",
         "read_file",
+        "edit_file",
+        "delete",
         "get_workload",
     ):
         assert tool not in prompt

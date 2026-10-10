@@ -6,6 +6,7 @@ from typing import Any
 
 import duckdb
 
+from arete.dataio import plan_changes
 from arete.dataio.db import connect
 from arete.garmin.models import (
     ActivitySource,
@@ -14,6 +15,7 @@ from arete.garmin.models import (
     SessionStatus,
     SessionType,
 )
+from arete.garmin.streams import CHANNELS, ActivityStreams
 
 PLANNED_COLUMNS = (
     "id, user_id, date, sport, session_type, target_duration_min, "
@@ -98,8 +100,8 @@ class GarminRepository:
             INSERT INTO planned_sessions (
                 user_id, date, sport, session_type, target_duration_min,
                 target_distance_km, target_hr_zone, target_intensity,
-                description, source, status, created_at, goal_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                description, source, status, created_at, prescription, provenance, goal_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             """,
             [
@@ -119,12 +121,15 @@ class GarminRepository:
                 if isinstance(session.status, SessionStatus)
                 else session.status,
                 datetime.now(),
+                json.dumps(session.prescription) if session.prescription else None,
+                json.dumps(session.provenance) if session.provenance else None,
                 session.goal_id,
             ],
         ).fetchone()
         conn.close()
         if result is None:
             raise RuntimeError("Failed to insert planned session")
+        plan_changes.touch()
         return int(result[0])
 
     def get_planned_session(self, session_id: int) -> PlannedSession | None:
@@ -188,13 +193,7 @@ class GarminRepository:
         self, session_id: int, status: SessionStatus
     ) -> bool:
         """Update the status of a planned session."""
-        conn = self._get_connection()
-        result = conn.execute(
-            "UPDATE planned_sessions SET status = ? WHERE id = ? RETURNING id",
-            [status.value, session_id],
-        ).fetchone()
-        conn.close()
-        return result is not None
+        return self.update_planned_session_fields(session_id, status=status)
 
     def update_planned_session_fields(self, session_id: int, **fields: Any) -> bool:
         """Overwrite some fields of a planned session (whitelisted columns)."""
@@ -245,6 +244,7 @@ class GarminRepository:
             raise
         finally:
             conn.close()
+        plan_changes.touch()
         return result is not None
 
     def delete_planned_session(self, session_id: int) -> bool:
@@ -272,6 +272,7 @@ class GarminRepository:
             raise
         finally:
             conn.close()
+        plan_changes.touch()
         return result is not None
 
     # ─────────────────────────────────────────────────────────────────────
@@ -287,76 +288,96 @@ class GarminRepository:
         Returns:
             ID of created session
         """
-        conn = self._get_connection()
+        from arete.dataio.game_events import capture
 
-        result = conn.execute(
-            """
-            INSERT INTO actual_sessions (
-                planned_session_id, user_id, date, sport, session_type,
-                duration_sec, distance_m, calories, avg_hr, max_hr,
-                hr_zones_json, avg_pace_sec_km, avg_speed_mps, max_speed_mps,
-                ascent_m, descent_m, start_lat, start_lon,
-                avg_cadence, max_cadence, avg_vertical_oscillation,
-                avg_ground_contact_time, avg_stride_length,
-                source, source_file, garmin_activity_id,
-                adherence_score, intensity_deviation, start_time, created_at,
-                name, notes, rpe, workout_type, moving_time_sec,
-                suffer_score, laps_json, splits_json, best_efforts_json,
-                avg_watts, weighted_avg_watts, device_name
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id
-            """,
-            [
-                session.planned_session_id,
-                session.user_id or 1,
+        conn = self._get_connection()
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            result = conn.execute(
+                """
+                INSERT INTO actual_sessions (
+                    planned_session_id, user_id, date, sport, session_type,
+                    duration_sec, distance_m, calories, avg_hr, max_hr,
+                    hr_zones_json, avg_pace_sec_km, avg_speed_mps, max_speed_mps,
+                    ascent_m, descent_m, start_lat, start_lon,
+                    avg_cadence, max_cadence, avg_vertical_oscillation,
+                    avg_ground_contact_time, avg_stride_length,
+                    source, source_file, garmin_activity_id,
+                    adherence_score, intensity_deviation, start_time, created_at,
+                    name, notes, rpe, workout_type, moving_time_sec,
+                    suffer_score, laps_json, splits_json, best_efforts_json,
+                    avg_watts, weighted_avg_watts, device_name
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+                """,
+                [
+                    session.planned_session_id,
+                    session.user_id or 1,
+                    session.date,
+                    session.sport,
+                    session.session_type,
+                    session.duration_sec,
+                    session.distance_m,
+                    session.calories,
+                    session.avg_hr,
+                    session.max_hr,
+                    session.hr_zones_json,
+                    session.avg_pace_sec_km,
+                    session.avg_speed_mps,
+                    session.max_speed_mps,
+                    session.ascent_m,
+                    session.descent_m,
+                    session.start_lat,
+                    session.start_lon,
+                    session.avg_cadence,
+                    session.max_cadence,
+                    session.avg_vertical_oscillation,
+                    session.avg_ground_contact_time,
+                    session.avg_stride_length,
+                    session.source.value
+                    if isinstance(session.source, ActivitySource)
+                    else session.source,
+                    session.source_file,
+                    session.garmin_activity_id,
+                    session.adherence_score,
+                    session.intensity_deviation,
+                    session.start_time,
+                    datetime.now(),
+                    session.name,
+                    session.notes,
+                    session.rpe,
+                    session.workout_type,
+                    session.moving_time_sec,
+                    session.suffer_score,
+                    session.laps_json,
+                    session.splits_json,
+                    session.best_efforts_json,
+                    session.avg_watts,
+                    session.weighted_avg_watts,
+                    session.device_name,
+                ],
+            ).fetchone()
+            if result is None:
+                raise RuntimeError("Failed to insert actual session")
+            capture(
+                conn,
+                f"actual:{result[0]}",
                 session.date,
-                session.sport,
-                session.session_type,
-                session.duration_sec,
-                session.distance_m,
-                session.calories,
-                session.avg_hr,
-                session.max_hr,
-                session.hr_zones_json,
-                session.avg_pace_sec_km,
-                session.avg_speed_mps,
-                session.max_speed_mps,
-                session.ascent_m,
-                session.descent_m,
-                session.start_lat,
-                session.start_lon,
-                session.avg_cadence,
-                session.max_cadence,
-                session.avg_vertical_oscillation,
-                session.avg_ground_contact_time,
-                session.avg_stride_length,
-                session.source.value
-                if isinstance(session.source, ActivitySource)
-                else session.source,
-                session.source_file,
-                session.garmin_activity_id,
-                session.adherence_score,
-                session.intensity_deviation,
-                session.start_time,
-                datetime.now(),
-                session.name,
-                session.notes,
-                session.rpe,
-                session.workout_type,
-                session.moving_time_sec,
-                session.suffer_score,
-                session.laps_json,
-                session.splits_json,
-                session.best_efforts_json,
-                session.avg_watts,
-                session.weighted_avg_watts,
-                session.device_name,
-            ],
-        ).fetchone()
-        conn.close()
-        if result is None:
-            raise RuntimeError("Failed to insert actual session")
-        return int(result[0])
+                session.name or session.sport,
+                session.duration_sec > 0,
+                started=session.start_time,
+                canonical=f"garmin:{session.garmin_activity_id}"
+                if session.garmin_activity_id
+                else (f"file:{session.source_file}" if session.source_file else None),
+                manual=str(session.source) in {"manual", "ActivitySource.MANUAL"},
+            )
+            conn.execute("COMMIT")
+            return int(result[0])
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
     def get_actual_session(self, session_id: int) -> ActualSession | None:
         """Get an actual session by ID."""
@@ -614,11 +635,84 @@ class GarminRepository:
     def delete_actual_session(self, session_id: int) -> bool:
         """Delete an actual session by ID."""
         conn = self._get_connection()
-        result = conn.execute(
-            "DELETE FROM actual_sessions WHERE id = ? RETURNING id", [session_id]
-        ).fetchone()
-        conn.close()
-        return result is not None
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            result = conn.execute(
+                "DELETE FROM actual_sessions WHERE id = ? RETURNING id", [session_id]
+            ).fetchone()
+            conn.execute(
+                "UPDATE app.game_events SET eligible=false,reason='removed',processed=false WHERE source_key=?",
+                [f"actual:{session_id}"],
+            )
+            for table in (
+                "activity_streams",
+                "session_feedback",
+                "activity_terrain",
+                "activity_weather",
+            ):
+                conn.execute(
+                    f"DELETE FROM {table} WHERE actual_session_id = ?", [session_id]
+                )
+            conn.execute("COMMIT")
+            return result is not None
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Activity streams (one row per session, see garmin/streams.py)
+    # ─────────────────────────────────────────────────────────────────────
+
+    def save_activity_streams(
+        self, actual_session_id: int, streams: ActivityStreams
+    ) -> None:
+        """Store (or replace) a session's streams."""
+        columns = streams.channels()
+        placeholders = ", ".join(["?"] * (3 + len(CHANNELS)))
+        conn = self._get_connection()
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            conn.execute(
+                "DELETE FROM activity_streams WHERE actual_session_id = ?",
+                [actual_session_id],
+            )
+            conn.execute(
+                "INSERT INTO activity_streams (actual_session_id, sample_count, "
+                f"t_sec, {', '.join(CHANNELS)}) VALUES ({placeholders})",
+                [
+                    actual_session_id,
+                    len(streams),
+                    streams.t,
+                    *(columns.get(name) for name in CHANNELS),
+                ],
+            )
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    def get_activity_streams(self, actual_session_id: int) -> ActivityStreams | None:
+        """A session's streams, None when none were kept."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                f"SELECT t_sec, {', '.join(CHANNELS)} FROM activity_streams"
+                " WHERE actual_session_id = ?",
+                [actual_session_id],
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        channels = {
+            name: None if values is None else list(values)
+            for name, values in zip(CHANNELS, row[1:], strict=True)
+        }
+        return ActivityStreams(t=list(row[0]), **channels)
 
     def count_actual_sessions(self) -> int:
         """Return total count of actual sessions (efficient query)."""

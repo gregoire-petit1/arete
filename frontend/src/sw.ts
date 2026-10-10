@@ -19,7 +19,9 @@ cleanupOutdatedCaches();
 registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html'), { denylist: [/^\/api\//] }));
 
 registerRoute(
-  ({ url }) => url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/agent/') && !url.pathname.startsWith('/api/garmin/exports'),
+  // Approval status and private Calendar data must always come from the server;
+  // a full data export is neither small nor worth keeping in the cache.
+  ({ url }) => url.pathname.startsWith('/api/') && !url.pathname.startsWith('/api/agent/') && !url.pathname.startsWith('/api/garmin/exports') && !url.pathname.startsWith('/api/google-calendar/') && !url.pathname.startsWith('/api/export/'),
   new NetworkFirst({
     cacheName: 'api-cache',
     // Past 10 s offline-ish, serve the cached answer if any.

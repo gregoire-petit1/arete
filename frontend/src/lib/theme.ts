@@ -3,6 +3,8 @@ export const THEMES = [
   { value: 'dark', label: 'SOMBRE', color: '#0A0A0F' },
   { value: 'darker', label: 'PLUS SOMBRE', color: '#050508' },
   { value: 'abyss', label: 'ABYSSE', color: '#000000' },
+  { value: 'performance', label: 'PERFORMANCE', color: '#F4F5EF' },
+  { value: 'odyssey', label: 'ODYSSEY', color: '#F5EBDD' },
 ] as const;
 
 export type Theme = (typeof THEMES)[number]['value'];

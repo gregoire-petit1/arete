@@ -463,12 +463,22 @@ def extraction_for(thread_id: str, document_id: str) -> Extraction:
     return Extraction.model_validate_json(row[5])
 
 
-def filesystem(thread_id: str) -> dict[str, str]:
+def filesystem(
+    thread_id: str, document_ids: tuple[str, ...] | None = None
+) -> dict[str, str]:
     with db_connection() as con:
         rows = con.execute(
             "SELECT id,name,extraction FROM app.coach_documents WHERE thread_id=? AND status='ready' ORDER BY created_at LIMIT ?",
             [_uuid(thread_id), MAX_THREAD_FILES],
         ).fetchall()
+    if document_ids is not None:
+        selected = set(document_ids)
+        available = {row[0] for row in rows}
+        if len(selected) > MAX_THREAD_FILES or not selected.issubset(available):
+            raise DocumentError(
+                "Une pièce jointe sélectionnée est absente ou incomplète. Vérifie les fichiers du fil."
+            )
+        rows = [row for row in rows if row[0] in selected]
     files = {}
     total = 0
     for document_id, name, raw in rows:
@@ -509,5 +519,12 @@ def delete_documents(thread_id: str, document_id: str | None = None) -> None:
             con.execute("DELETE FROM app.coach_imports WHERE thread_id=?", [thread_id])
 
 
-def manifest(thread_id: str) -> str:
-    return json.dumps(list_documents(thread_id), ensure_ascii=False)
+def manifest(thread_id: str, document_ids: tuple[str, ...] | None = None) -> str:
+    return json.dumps(
+        [
+            d
+            for d in list_documents(thread_id)
+            if document_ids is None or d["id"] in document_ids
+        ],
+        ensure_ascii=False,
+    )

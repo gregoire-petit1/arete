@@ -9,6 +9,7 @@ its journal. When the agent is unavailable, the rule text is what ships.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
@@ -19,7 +20,14 @@ from arete.dataio.queries import training_loads
 from arete.dataio.settings import athlete_zone_model, get_user_settings
 from arete.features.workload import compute_workload_metrics
 from arete.garmin.repository import GarminRepository
-from arete.services.session_feedback import SessionEvidence
+from arete.services.activity_detail import analysis_lines
+from arete.services.analytics import MODEL_EXCLUDED_SOURCES
+from arete.services.coaching_repository import SessionFeedbackRepository
+from arete.services.session_feedback import (
+    SessionEvidence,
+    SessionFacts,
+    batch_session_feedback,
+)
 from arete.strength.repository import StrengthRepository
 
 logger = logging.getLogger(__name__)
@@ -251,6 +259,7 @@ def _generate_strength_feedback(
         # The id keeps two same-named sessions of one day apart in the journal
         # (it files each heading once), while the same session stays one entry.
         title=f"musculation — {session.name or 'séance'} (#{session_id})",
+        session_ref=f"strength:{session_id}",
         rpe=session.overall_rpe,
         notes=session.notes,
     )
@@ -346,6 +355,7 @@ def _generate_cardio_feedback(
                 else f"(#{session_id})"
             )
         ),
+        session_ref=f"actual:{session_id}",
         rpe=session.rpe,
         notes=session.notes,
     )
@@ -392,10 +402,54 @@ def _generate_cardio_feedback(
         highlights.append("Séance complétée")
 
     rule_feedback = " ".join(feedback_parts)
-    rule_highlights = highlights[:5]
+    # The pace and heart analysis of the kept streams and laps, when there are.
+    rule_highlights = highlights[:5] + analysis_lines(session_id, repo=repo)[:3]
 
     return PostSessionResponse(
         feedback=rule_feedback,
         highlights=rule_highlights,
         source="rules",
     ), evidence
+
+
+def sync_feedback(
+    session_ids: list[int],
+    *,
+    produce: Callable[[str, int], str],
+) -> dict[str, int]:
+    """The coach's word on the sessions a sync imported: one model request.
+
+    Strava rows stay out of the model's input, and a session that already has
+    a stored feedback is not paid for twice. Each answer is stored for the
+    session page (``trigger='sync'``). Never raises for one session's error.
+    """
+    repo = GarminRepository()
+    feedback_repo = SessionFeedbackRepository()
+    done = feedback_repo.with_feedback(session_ids)
+    candidates: list[tuple[int, SessionFacts]] = []
+    for session_id in dict.fromkeys(session_ids):  # once each, in order
+        session = repo.get_actual_session(session_id)
+        if session is None or session_id in done:
+            continue
+        if getattr(session.source, "value", session.source) in MODEL_EXCLUDED_SOURCES:
+            continue
+        try:
+            result, evidence = _generate_cardio_feedback(session_id)
+        except Exception:
+            logger.warning("No rule feedback for session %s", session_id, exc_info=True)
+            continue
+        candidates.append(
+            (session_id, SessionFacts(result.feedback, result.highlights, evidence))
+        )
+    answers = batch_session_feedback(
+        [facts for _, facts in candidates], produce=produce
+    )
+    for (session_id, _), (text, source) in zip(candidates, answers, strict=True):
+        try:
+            feedback_repo.save(session_id, text=text, source=source, trigger="sync")
+        except Exception:
+            logger.warning("Could not store feedback of %s", session_id, exc_info=True)
+    return {
+        "sessions": len(candidates),
+        "agent": sum(1 for _, source in answers if source == "agent"),
+    }

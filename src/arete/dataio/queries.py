@@ -15,6 +15,7 @@ import duckdb
 from arete.dataio.db import db_connection
 from arete.features.fitness import DailyTSS
 from arete.features.hr_zones import DEFAULT_MAX_HR, LTHR_FROM_MAX_HR
+from arete.features.terrain import VAM_MINUTES
 from arete.features.workload import DailyLoad
 
 # Garmin sync writes "running"/"cycling"/..., Strava writes "run"/"ride"/...:
@@ -232,6 +233,7 @@ class OverviewRow(NamedTuple):
     ascent_m: float | None
     avg_cadence: int | None  # steps/min on runs
     tss: float
+    gap_sec_km: int | None = None  # grade-adjusted pace, from the kept streams
 
 
 def overview_rows(
@@ -241,10 +243,13 @@ def overview_rows(
     rows = con.execute(
         f"""
         SELECT date, sport, COALESCE(duration_sec, 0), distance_m, hr_zones_json,
-               avg_pace_sec_km, avg_hr, rpe, ascent_m, avg_cadence, {TSS_EXPR}
+               avg_pace_sec_km, avg_hr, rpe, ascent_m, avg_cadence, {TSS_EXPR},
+               terrain.gap_sec_km
         FROM {LOAD_ROWS}
+        LEFT JOIN app.activity_terrain AS terrain
+          ON terrain.actual_session_id = sessions.id
         WHERE date >= ? AND date <= ? AND user_id = ?
-        ORDER BY date ASC, id ASC
+        ORDER BY date ASC, sessions.id ASC
         """,
         [start, end, user_id],
     ).fetchall()
@@ -274,13 +279,58 @@ def drift_rows(
     ).fetchall()
 
 
+#: Column of ``app.activity_terrain`` per climbing-speed duration (minutes).
+VAM_COLUMNS: dict[int, str] = {minutes: f"vam_{minutes}min" for minutes in VAM_MINUTES}
+
+
+class TerrainRow(NamedTuple):
+    session_id: int
+    date: date
+    name: str | None
+    sport: str
+    vam: dict[int, int | None]  # minutes -> best m/h
+    descent_json: str | None
+
+
+def terrain_rows(con: duckdb.DuckDBPyConnection, user_id: int = 1) -> list[TerrainRow]:
+    """Every session on foot with a stored terrain, all time, oldest first.
+
+    One row per session with kept streams: a few hundred a year, so the cards
+    slice and rank them in Python, the all-time records included.
+    """
+    rows = con.execute(
+        f"""
+        SELECT s.id, s.date, s.name, s.sport,
+               {", ".join(f"t.{column}" for column in VAM_COLUMNS.values())},
+               t.descent_json
+        FROM app.activity_terrain t
+        JOIN app.actual_sessions s ON s.id = t.actual_session_id
+        WHERE s.user_id = ? AND s.sport IN ({sql_in(FOOT_SPORTS)})
+        ORDER BY s.date ASC, s.id ASC
+        """,
+        [user_id],
+    ).fetchall()
+    n = len(VAM_COLUMNS)
+    return [
+        TerrainRow(
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            dict(zip(VAM_COLUMNS, row[4 : 4 + n], strict=True)),
+            row[4 + n],
+        )
+        for row in rows
+    ]
+
+
 def best_effort_rows(
     con: duckdb.DuckDBPyConnection, sports: Sequence[str], user_id: int = 1
 ) -> list[tuple]:
-    """(best_efforts_json, date, name) for every session carrying best efforts."""
+    """(best_efforts_json, date, name, id) for every session carrying best efforts."""
     return con.execute(
         f"""
-        SELECT best_efforts_json, date, name
+        SELECT best_efforts_json, date, name, id
         FROM app.actual_sessions
         WHERE user_id = ?
           AND best_efforts_json IS NOT NULL

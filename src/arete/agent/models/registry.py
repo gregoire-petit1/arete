@@ -7,6 +7,9 @@ from pydantic import SecretStr
 #: Named bounds, per TigerStyle: no silent SDK defaults on the agent loop.
 AGENT_TEMPERATURE = 0.3
 AGENT_MAX_TOKENS = 4096
+SUGGESTION_MAX_TOKENS = 512
+SUGGESTION_TIMEOUT_SEC = 5
+SUGGESTION_TEMPERATURE = 0.3
 #: A free model that hangs is not coming back: give up on the attempt after a
 #: minute, or 30 s without a streamed chunk, and let the fallback list (or one
 #: SDK retry) take over instead of burning the whole run deadline.

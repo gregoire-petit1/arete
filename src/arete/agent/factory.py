@@ -1,11 +1,13 @@
 """Assemble a graph from explicit dependencies; no business work or model routing."""
 
+from collections.abc import Callable
 from typing import Any
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware
 from langchain_core.language_models import BaseChatModel
 
+from arete.agent.middlewares.autosuggestion import AutoSuggestionMiddleware
 from arete.agent.middlewares.capabilities import ToolkitMiddleware
 from arete.agent.middlewares.context import (
     ContextBudgetMiddleware,
@@ -20,6 +22,10 @@ from arete.agent.prompts.coach import SYSTEM_SKILL
 from arete.agent.runtime.context import AgentContext
 from arete.agent.tools.journal import append_journal, remember_fact
 from arete.agent.tools.pages import get_page_context
+from arete.services.calendar import CalendarService
+
+#: Builds the calendar of one signed-in account (its Clerk user id).
+CalendarFactory = Callable[[str], CalendarService]
 
 
 def build_agent(
@@ -29,20 +35,35 @@ def build_agent(
     context_tokens: int,
     output_tokens: int,
     filesystem: AgentMiddleware[Any, Any, Any],
+    calendar: CalendarFactory | None = None,
+    suggestion_model: BaseChatModel | None = None,
 ):
-    middleware = [ProfilePolicyMiddleware(profile.id), *execution_limits()]
+    middleware = [
+        ProfilePolicyMiddleware(profile.id, profile=profile, calendar=calendar),
+        *execution_limits(),
+    ]
     if profile.page_context:
         middleware.append(ToolEventMiddleware())
     middleware.append(ToolkitMiddleware())
     if profile.journal_tools:
         middleware.append(filesystem)
-    middleware.append(ContextBuilderMiddleware())
+    middleware.append(
+        ContextBuilderMiddleware(
+            context_tokens=context_tokens, output_tokens=output_tokens
+        )
+    )
     middleware.append(
         ContextBudgetMiddleware(
             context_tokens=context_tokens, output_tokens=output_tokens
         )
     )
     middleware.append(ModelTelemetryMiddleware())
+    if profile.id == "chat" and suggestion_model is not None:
+        middleware.append(
+            AutoSuggestionMiddleware(
+                model=suggestion_model, context_tokens=context_tokens
+            )
+        )
     return create_agent(
         model,
         tools=[

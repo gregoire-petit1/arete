@@ -1,3 +1,5 @@
+import { isWorkoutUpdate, type WorkoutUpdate } from './workouts';
+import { authFetch } from './auth';
 import { readableError } from './utils';
 import type { PanelPageContext } from './pageContext';
 
@@ -20,8 +22,17 @@ export interface TextPart {
   id: string;
   text: string;
 }
-export type ChatPart = ToolPart | TextPart;
+export interface CalendarActionPart {
+  kind: 'calendar_action';
+  id: string;
+}
+export type ChatPart = ToolPart | TextPart | CalendarActionPart;
 export interface ChatMessage {
+  /** Local transport state; restored conversations are always settled. */
+  startedAt?: number;
+  streamAccepted?: boolean;
+  attachmentIds?: string[];
+  workouts?: WorkoutUpdate[];
   imports?: { id: string; version: number }[];
   role: 'user' | 'assistant';
   content: string;
@@ -31,7 +42,10 @@ export interface ChatMessage {
   pending?: boolean;
 }
 export type StreamEvent =
+  | WorkoutUpdate
+  | { type: 'suggestion'; text: string }
   | { type: 'import_preview'; id: string; version: number }
+  | { type: 'calendar_action'; id: string }
   | { type: 'token'; id: string; text: string }
   | { type: 'message'; id: string; text: string }
   | { type: 'tool_start'; id: string; name: string; args: Preview }
@@ -51,6 +65,7 @@ export type StreamEvent =
  *  used to trigger a summarization request on every turn of a long thread). */
 export const REQUEST_WINDOW_MESSAGES = 30;
 export const MAX_MESSAGE_CHARS = 16_000;
+export const MAX_SUGGESTION_CHARS = 300;
 
 /** The tail of a thread sent to the coach, starting on a question: some
  *  models refuse a conversation that opens with an assistant message. */
@@ -62,7 +77,7 @@ export function requestWindow(history: ChatMessage[]): ChatMessage[] {
 const MAX_STREAM_BYTES = 2_000_000;
 const MAX_STREAM_EVENTS = 12_000;
 const MAX_STREAM_READS = 24_000;
-const STREAM_TIMEOUT_MS = 310_000;
+export const STREAM_TIMEOUT_MS = 310_000;
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
@@ -75,12 +90,25 @@ function isPreview(value: unknown): value is Preview {
   );
 }
 
-/** Fail explicitly on malformed events; losing one can leave a tool running forever. */
-export function parseEvent(data: string): StreamEvent {
+/** Fail on malformed required events; optional drafts may be omitted with a warning. */
+export function parseEvent(data: string): StreamEvent | null {
   const e: unknown = JSON.parse(data);
   if (!record(e)) throw new Error('Événement du coach invalide.');
+  if (isWorkoutUpdate(e)) return e;
+  if (e.type === 'suggestion') {
+    // Match Python's Unicode code-point limit, including emoji. An optional
+    // draft must never turn a completed answer into a retryable failure.
+    if (typeof e.text === 'string' && e.text.trim() && Array.from(e.text).length <= MAX_SUGGESTION_CHARS) return e as StreamEvent;
+    console.warn('Suggestion du coach invalide : brouillon ignoré.');
+    return null;
+  }
   if (e.type === 'import_preview' && typeof e.id === 'string' && /^[0-9a-f-]{36}$/i.test(e.id) && Number.isInteger(e.version) && Number(e.version) > 0) return e as StreamEvent;
   const identified = typeof e.id === 'string' && e.id.length > 0;
+  if (
+    e.type === 'calendar_action' &&
+    typeof e.id === 'string' &&
+    /^[a-f0-9]{32}$/.test(e.id)
+  ) return { type: 'calendar_action', id: e.id };
   if (
     identified &&
     (e.type === 'token' || e.type === 'message') &&
@@ -132,11 +160,25 @@ export function applyEvent(
   message: ChatMessage,
   event: StreamEvent
 ): ChatMessage {
+  // Suggestions belong to the editable draft, never to conversation history.
+  if (event.type === 'suggestion') return message;
+  if (event.type === 'workout_update') {
+    const current = message.workouts ?? [];
+    const previous = current.find(w => w.session.id === event.session.id);
+    if (previous && (previous.session.revision > event.session.revision || previous.sequence >= event.sequence)) return message;
+    if (!previous && current.length >= 50) throw new Error('Maximum 50 séances par réponse.');
+    return { ...message, workouts: previous ? current.map(w => w.session.id === event.session.id ? event : w) : [...current, event] };
+  }
   if (event.type === 'import_preview') return { ...message, imports: [...(message.imports ?? []).filter(item => item.id !== event.id), { id: event.id, version: event.version }] };
   if (event.type === 'error') return settleMessage(message, event.detail);
   if (event.type === 'done')
     return settleMessage({ ...message, content: event.message.content });
   const parts = [...(message.parts ?? [])];
+  if (event.type === 'calendar_action') {
+    if (!parts.some((p) => p.kind === 'calendar_action' && p.id === event.id))
+      parts.push({ kind: 'calendar_action', id: event.id });
+    return { ...message, parts };
+  }
   if (event.type === 'token' || event.type === 'message') {
     const idx = parts.findIndex((p) => p.kind === 'text' && p.id === event.id);
     const previous = idx < 0 ? undefined : parts[idx];
@@ -210,6 +252,7 @@ export async function consumeStream(
         if (++events > MAX_STREAM_EVENTS)
           throw new Error('Trop d’événements dans la réponse.');
         const event = parseEvent(data);
+        if (!event) continue;
         if (event.type === 'error') throw new Error(event.detail);
         onEvent(event);
         if (event.type === 'done') return;
@@ -230,17 +273,21 @@ export async function runAgentStream(
   context: PanelPageContext,
   onEvent: (event: StreamEvent) => void,
   signal: AbortSignal,
-  threadId: string
+  threadId: string,
+  documentIds?: string[],
+  onAccepted?: () => void,
 ): Promise<void> {
   const panel_context: Record<string, string> = { page: context.page };
   for (const [key, value] of Object.entries(context.params))
     panel_context[`param_${key}`] = value;
-  const response = await fetch('/api/agent/chat/stream', {
+  const response = await authFetch('/api/agent/chat/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messages: history.map(({ role, content }) => ({ role, content })),
       thread_id: threadId,
+      ...(documentIds !== undefined ? { document_ids: documentIds } : {}),
+      supports_suggestions: true,
       panel_context,
     }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]),
@@ -252,5 +299,6 @@ export async function runAgentStream(
       )}`
     );
   if (!response.body) throw new Error('Le serveur ne fournit pas de stream.');
+  onAccepted?.();
   await consumeStream(response.body, onEvent);
 }

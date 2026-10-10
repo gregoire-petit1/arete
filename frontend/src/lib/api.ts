@@ -1,3 +1,5 @@
+import { authFetch } from "./auth";
+
 const API_BASE = "/api";
 
 /** A non-2xx answer; `detail` is FastAPI's message (French) when it sent one. */
@@ -30,11 +32,11 @@ function recordOrNull<T extends { id: number }>(data: unknown): T | null {
     : null;
 }
 
-async function fetchAPI<T>(
+export async function fetchAPI<T>(
   endpoint: string,
   options?: RequestInit
 ): Promise<T> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const response = await authFetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
@@ -120,7 +122,7 @@ export const goalsApi = {
 export const athleteFactsApi = {
   list: () => fetchAPI<import("@/types").AthleteFact[]>("/athlete-facts"),
 
-  create: (fact: { kind: import("@/types").FactKind; text: string; since?: string }) =>
+  create: (fact: { kind: import("@/types").FactKind; text: string; since?: string; valid_until?: string }) =>
     fetchAPI<import("@/types").AthleteFact>("/athlete-facts", {
       method: "POST",
       body: JSON.stringify(fact),
@@ -128,15 +130,17 @@ export const athleteFactsApi = {
 
   update: (
     id: number,
-    patch: Partial<Pick<import("@/types").AthleteFact, "kind" | "text" | "status" | "since">>
+    patch: Partial<Pick<import("@/types").AthleteFact, "kind" | "text" | "status" | "since" | "evidence" | "valid_until" | "source_ref">> & { expected_revision: number }
   ) =>
     fetchAPI<import("@/types").AthleteFact>(`/athlete-facts/${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     }),
 
-  remove: (id: number) =>
-    fetchAPI<void>(`/athlete-facts/${id}`, { method: "DELETE" }),
+  history: (id: number) => fetchAPI<import("@/types").AthleteFact[]>(`/athlete-facts/${id}/history`),
+
+  remove: (id: number, revision: number) =>
+    fetchAPI<void>(`/athlete-facts/${id}?expected_revision=${revision}`, { method: "DELETE" }),
 };
 
 // ========================= //
@@ -243,7 +247,7 @@ export const garminApi = {
   uploadFit: async (file: File, autoMatch = true) => {
     const formData = new FormData();
     formData.append("file", file);
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE}/garmin/upload-fit?auto_match=${autoMatch}`,
       {
         method: "POST",
@@ -301,7 +305,7 @@ export const strengthApi = {
     const formData = new FormData();
     // The browser sets the multipart boundary; forcing a Content-Type breaks it.
     formData.append("file", clip.blob, `dictation.${clip.extension}`);
-    const response = await fetch(`${API_BASE}/strength/sessions/transcribe`, {
+    const response = await authFetch(`${API_BASE}/strength/sessions/transcribe`, {
       method: "POST",
       body: formData,
       signal,
@@ -317,6 +321,24 @@ export const strengthApi = {
       method: "POST",
       body: JSON.stringify({ text, date, save }),
     }),
+
+  getExercises: () =>
+    fetchAPI<import("@/types").LibraryExercise[]>("/strength/exercises"),
+
+  getExerciseHistory: (exerciseId: number, limit = 50) =>
+    fetchAPI<import("@/types").ExerciseHistoryEntry[]>(
+      `/strength/exercises/${exerciseId}/history?limit=${limit}`
+    ),
+
+  getExerciseRecords: (exerciseId: number) =>
+    fetchAPI<import("@/types").ExercisePersonalRecords>(
+      `/strength/exercises/${exerciseId}/prs`
+    ),
+
+  getExerciseSuggestion: (exerciseId: number) =>
+    fetchAPI<import("@/types").ExerciseSuggestionResponse>(
+      `/strength/exercises/${exerciseId}/suggestion`
+    ),
 
   getMuscleStats: (days = 7) =>
     fetchAPI<import("@/types").MuscleStatsResponse>(
@@ -354,6 +376,35 @@ export const strengthApi = {
 export const healthApi = {
   check: () =>
     fetchAPI<{ status: string; database: string }>("/health"),
+};
+
+// ========================= //
+// AUTH API                  //
+// ========================= //
+
+/** Whether the server requires sign-in; when it does, Clerk's key for the browser. */
+export interface AuthConfig {
+  enabled: boolean;
+  publishable_key: string | null;
+}
+
+/** The signed-in account; `athlete_id` stays null until the owner attaches an athlete. */
+export interface AuthMe {
+  email: string;
+  name: string | null;
+  athlete_id: number | null;
+  is_owner: boolean;
+}
+
+export const authApi = {
+  /** Public and never authenticated: it decides whether the gate loads Clerk at all. */
+  config: async () => {
+    const response = await fetch(`${API_BASE}/auth/config`);
+    if (!response.ok) throw new ApiError(response.status, await response.text());
+    return response.json() as Promise<AuthConfig>;
+  },
+
+  me: () => fetchAPI<AuthMe>("/auth/me"),
 };
 
 // ========================= //
@@ -465,6 +516,8 @@ export const analyticsApi = {
     fetchAPI<import("@/types").CardioSessionsResponse>(
       `/analytics/sessions?limit=${limit}&offset=${offset}`
     ),
+  getSessionDetail: (id: number) =>
+    fetchAPI<import("@/types").ActivityDetail>(`/analytics/sessions/${id}/detail`),
   updateSession: (id: number, data: { rpe?: number | null; notes?: string }) =>
     fetchAPI<{ success: boolean }>(`/analytics/sessions/${id}`, {
       method: "PATCH",

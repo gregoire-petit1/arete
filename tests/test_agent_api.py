@@ -176,7 +176,7 @@ def test_page_reads_show_what_the_athlete_sees():
 
 
 @pytest.mark.parametrize(
-    "page", ["dashboard", "analytics", "planning", "log", "settings"]
+    "page", ["dashboard", "analytics", "planning", "log", "settings", "profile"]
 )
 def test_get_page_context_all_pages_parse(page):
     out = json.loads(get_page_context.invoke({"page": page}))
@@ -416,6 +416,35 @@ class TestBuildChatModel:
         ]
         # The free router once answered a briefing with a safety classifier.
         assert "openrouter/free" not in payload["extra_body"]["models"]
+
+    def test_only_auxiliary_openrouter_calls_disable_reasoning(self, monkeypatch):
+        from arete import coaching
+
+        self._openrouter(monkeypatch)
+        with patch.object(coaching, "build_agent") as assemble:
+            coaching._assemble("chat")
+        models = assemble.call_args.kwargs
+        coach_payload = self._payload(models["model"])
+        draft_payload = self._payload(models["suggestion_model"])
+        assert "reasoning" not in coach_payload["extra_body"]
+        assert draft_payload["extra_body"]["reasoning"] == {"enabled": False}
+        assert draft_payload["max_completion_tokens"] == 512
+        assert (
+            draft_payload["extra_body"]["provider"]
+            == coach_payload["extra_body"]["provider"]
+        )
+        assert models["suggestion_model"].max_retries == 0
+
+    @pytest.mark.parametrize("provider", ["ollama", "github"])
+    def test_openrouter_reasoning_controls_do_not_reach_other_providers(
+        self, monkeypatch, provider
+    ):
+        from arete.agent.models.providers import build_chat_model
+
+        monkeypatch.setenv("LLM_PROVIDER", provider)
+        monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+        payload = self._payload(build_chat_model(openrouter_reasoning=False))
+        assert "reasoning" not in (payload.get("extra_body") or {})
 
     def test_a_pinned_model_is_never_rerouted_silently(self, monkeypatch):
         from arete.agent.models.providers import build_chat_model
@@ -683,16 +712,12 @@ class TestAnalyticsPageRead:
 
 
 class TestLedgerTools:
-    """The journal's tools, described for a journal — and safe to append with."""
+    """The journal supports targeted corrections without arbitrary file creation."""
 
     def _tools(self):
         from arete.agent.backends.memory import build_memory_filesystem
 
         return {t.name: t for t in build_memory_filesystem().tools}
-
-    def test_no_tool_can_delete_a_journal_file(self):
-        # Rotation is the server's job; a delete could only lose data.
-        assert "delete" not in self._tools()
 
     def test_reading_points_at_the_end_of_the_journal(self):
         """`read_file` reads 100 lines from the top; new entries are appended.
@@ -702,9 +727,15 @@ class TestLedgerTools:
         """
         assert "fin" in self._tools()["read_file"].description
 
-    def test_the_filesystem_only_reads(self):
-        # Writes go through append_journal: dated, deduplicated, bounded.
-        assert set(self._tools()) == {"read_file", "ls", "glob", "grep"}
+    def test_the_filesystem_can_correct_and_delete_but_not_create(self):
+        assert set(self._tools()) == {
+            "read_file",
+            "ls",
+            "glob",
+            "grep",
+            "edit_file",
+            "delete",
+        }
 
 
 def test_settings_page_data_has_no_identity_fields():
@@ -713,3 +744,11 @@ def test_settings_page_data_has_no_identity_fields():
     settings = get_page_data("settings")["settings"]
     assert "email" not in settings and "display_name" not in settings
     assert "lthr" in settings  # the coaching fields stay
+
+
+def test_every_supported_page_can_be_injected_without_a_model_call(monkeypatch):
+    from arete.agent.runtime.context import PANEL_PAGES
+
+    monkeypatch.setattr(sections, "get_page_data", lambda page: {"page": page})
+    for page in sorted(PANEL_PAGES):
+        assert "Page ouverte par l'athlète" in page_section(_page(page))

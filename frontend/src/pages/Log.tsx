@@ -1,3 +1,4 @@
+import { PlayerSummary } from '@/components/PlayerSummary';
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
@@ -6,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { EmptyState, ErrorState, LoadingState, MuscleMap } from '@/components';
 import { Button, Modal, ModalHeader, Panel } from '@/components/ui';
 import { settingsApi, strengthApi } from '@/lib/api';
-import { CardioTab, LogSessionModal, SessionDetailModal, SessionRow, WeeklyVolumeTracker } from './log/index';
+import { CardioTab, ExerciseProgress, LogSessionModal, SessionDetailModal, SessionRow, WeeklyVolumeTracker } from './log/index';
 import { invalidateAfterSession, qk, strengthSessionsQuery } from '@/lib/queryKeys';
 
 type Tab = 'force' | 'cardio';
@@ -26,7 +27,13 @@ export function LogPage() {
   const setActiveTab = (tab: Tab) => setSearchParams(tab === 'force' ? {} : { tab }, { replace: true });
   const [toDelete, setToDelete] = useState<number | null>(null);
   const [showNewSession, setShowNewSession] = useState(false);
-  const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
+  const sessionParam = searchParams.get('session');
+  const selectedSessionId = sessionParam && /^\d+$/.test(sessionParam) && Number.isSafeInteger(Number(sessionParam)) ? Number(sessionParam) : null;
+  const setSelectedSessionId = (id: number | null) => setSearchParams(previous => { const next = new URLSearchParams(previous); if (id === null) next.delete('session'); else next.set('session', String(id)); return next; });
+  // The exercise in the progress panel lives in the URL, so a record elsewhere can link to it.
+  const exerciseParam = searchParams.get('exercise');
+  const selectedExerciseId = exerciseParam && /^\d+$/.test(exerciseParam) ? Number(exerciseParam) : null;
+  const setSelectedExerciseId = (id: number | null) => setSearchParams(previous => { const next = new URLSearchParams(previous); if (id === null) next.delete('exercise'); else next.set('exercise', String(id)); return next; }, { replace: true });
 
   const { data: settings } = useQuery({ queryKey: qk.settings, queryFn: settingsApi.get });
 
@@ -70,6 +77,7 @@ export function LogPage() {
           )}
         </header>
 
+        <PlayerSummary />
         <div className="flex gap-1 mb-6">
           {TABS.map((tab) => (
             <button
@@ -118,6 +126,7 @@ export function LogPage() {
                   )}
                 </div>
               </Panel>
+              <ExerciseProgress exerciseId={selectedExerciseId} onSelect={setSelectedExerciseId} />
             </div>
           </div>
         )}

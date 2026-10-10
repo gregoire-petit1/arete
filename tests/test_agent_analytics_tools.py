@@ -32,8 +32,11 @@ def test_analytics_toolkit_registered():
         "get_training_advice",
         "get_personal_records",
         "list_recent_sessions",
+        "get_activity_detail",
     }
     assert tk.instructions == ANALYTICS_INSTRUCTIONS
+    # Read-only: background profiles may run it, it writes nothing.
+    assert "get_activity_detail" in tk.read_tools
 
 
 def test_tool_names_match_the_registry():

@@ -22,6 +22,7 @@ from arete.strength.models import (
     SessionExercise,
     StrengthSession,
 )
+from arete.strength.progression import ExerciseSession, WorkSet
 
 
 class StrengthRepository:
@@ -319,39 +320,55 @@ class StrengthRepository:
 
     def create_session(self, session: StrengthSession) -> int:
         """Create a new strength session."""
+        from arete.dataio.game_events import capture
+
         conn = self._get_connection()
-        result = conn.execute(
-            """
-            INSERT INTO app.strength_sessions (
-                user_id, date, name, program, duration_min,
-                overall_rpe, fatigue_level, sleep_quality, notes, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            RETURNING id
-            """,
-            [
-                session.user_id,
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            result = conn.execute(
+                """
+                INSERT INTO app.strength_sessions (
+                    user_id, date, name, program, duration_min,
+                    overall_rpe, fatigue_level, sleep_quality, notes, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                RETURNING id
+                """,
+                [
+                    session.user_id,
+                    session.date,
+                    session.name,
+                    session.program,
+                    session.duration_min,
+                    session.overall_rpe,
+                    session.fatigue_level,
+                    session.sleep_quality,
+                    session.notes,
+                    datetime.now(),
+                ],
+            ).fetchone()
+            if result is None:
+                raise RuntimeError("Failed to insert session")
+            session_id: int = result[0]
+
+            # Create exercises and sets
+            for ex in session.exercises:
+                ex.session_id = session_id
+                self._create_session_exercise(conn, ex)
+
+            capture(
+                conn,
+                f"strength:{session_id}",
                 session.date,
-                session.name,
-                session.program,
-                session.duration_min,
-                session.overall_rpe,
-                session.fatigue_level,
-                session.sleep_quality,
-                session.notes,
-                datetime.now(),
-            ],
-        ).fetchone()
-        if result is None:
-            raise RuntimeError("Failed to insert session")
-        session_id: int = result[0]
-
-        # Create exercises and sets
-        for ex in session.exercises:
-            ex.session_id = session_id
-            self._create_session_exercise(conn, ex)
-
-        conn.close()
-        return session_id
+                session.name or "Force",
+                any(s.reps > 0 for e in session.exercises for s in e.sets),
+            )
+            conn.execute("COMMIT")
+            return session_id
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
     def _create_session_exercise(
         self, conn: duckdb.DuckDBPyConnection, exercise: SessionExercise
@@ -516,30 +533,41 @@ class StrengthRepository:
     def delete_session(self, session_id: int) -> bool:
         """Delete a strength session and all related data."""
         conn = self._get_connection()
-
-        # Delete sets first (cascade)
-        conn.execute(
-            """
-            DELETE FROM app.exercise_sets
-            WHERE session_exercise_id IN (
-                SELECT id FROM app.session_exercises WHERE session_id = ?
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            # Delete sets first (cascade)
+            conn.execute(
+                """
+                DELETE FROM app.exercise_sets
+                WHERE session_exercise_id IN (
+                    SELECT id FROM app.session_exercises WHERE session_id = ?
+                )
+                """,
+                [session_id],
             )
-            """,
-            [session_id],
-        )
 
-        # Delete session exercises
-        conn.execute(
-            "DELETE FROM app.session_exercises WHERE session_id = ?", [session_id]
-        )
+            # Delete session exercises
+            conn.execute(
+                "DELETE FROM app.session_exercises WHERE session_id = ?", [session_id]
+            )
 
-        # Delete session
-        result = conn.execute(
-            "DELETE FROM app.strength_sessions WHERE id = ? RETURNING id", [session_id]
-        ).fetchone()
+            # Delete session
+            result = conn.execute(
+                "DELETE FROM app.strength_sessions WHERE id = ? RETURNING id",
+                [session_id],
+            ).fetchone()
 
-        conn.close()
-        return result is not None
+            conn.execute(
+                "UPDATE app.game_events SET eligible=false,reason='removed',processed=false WHERE source_key=?",
+                [f"strength:{session_id}"],
+            )
+            conn.execute("COMMIT")
+            return result is not None
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
 
     # ─────────────────────────────────────────────────────────────────────
     # Statistics
@@ -558,8 +586,9 @@ class StrengthRepository:
             SELECT ss.date, se.id,
                    COUNT(es.id) as total_sets,
                    SUM(CASE WHEN NOT es.is_warmup THEN 1 ELSE 0 END) as working_sets,
-                   MAX(es.weight_kg) as max_weight,
-                   SUM(es.reps * COALESCE(es.weight_kg, 0)) as volume,
+                   MAX(CASE WHEN NOT es.is_warmup THEN es.weight_kg END) as max_weight,
+                   SUM(CASE WHEN NOT es.is_warmup
+                       THEN es.reps * COALESCE(es.weight_kg, 0) END) as volume,
                    AVG(CASE WHEN NOT es.is_warmup THEN es.rpe END) as avg_rpe
             FROM app.session_exercises se
             JOIN app.strength_sessions ss ON se.session_id = ss.id
@@ -585,6 +614,60 @@ class StrengthRepository:
             }
             for row in results
         ]
+
+    def working_sessions(
+        self,
+        exercise_ids: list[int],
+        *,
+        exclude_session_id: int | None = None,
+        before: date | None = None,
+    ) -> dict[int, list[ExerciseSession]]:
+        """Working sets (never warm-ups) per exercise, oldest session first.
+
+        One statement for any number of exercises: the save path asks for
+        every exercise of the session at once.
+        """
+        if not exercise_ids:
+            return {}
+        query = f"""
+            SELECT se.exercise_id, ss.id, ss.date, se.id, se.target_reps,
+                   es.reps, es.weight_kg, es.rpe, es.rir,
+                   COALESCE(es.is_failure, FALSE)
+            FROM app.exercise_sets es
+            JOIN app.session_exercises se ON es.session_exercise_id = se.id
+            JOIN app.strength_sessions ss ON se.session_id = ss.id
+            WHERE se.exercise_id IN ({", ".join("?" * len(exercise_ids))})
+              AND NOT COALESCE(es.is_warmup, FALSE)
+        """
+        params: list = list(exercise_ids)
+        if exclude_session_id is not None:
+            query += " AND ss.id <> ?"
+            params.append(exclude_session_id)
+        if before is not None:
+            query += " AND ss.date < ?"
+            params.append(before)
+        query += " ORDER BY ss.date, ss.id, se.id, es.set_number"
+        conn = self._get_connection()
+        try:
+            rows = conn.execute(query, params).fetchall()
+        finally:
+            conn.close()
+
+        grouped: dict[int, dict[int, ExerciseSession]] = {}
+        for ex_id, session_id, day, se_id, target, reps, kg, rpe, rir, fail in rows:
+            sessions = grouped.setdefault(ex_id, {})
+            if se_id not in sessions:
+                sessions[se_id] = ExerciseSession(
+                    session_id=session_id,
+                    date=day,
+                    sets=[],
+                    target_reps=target,
+                    session_exercise_id=se_id,
+                )
+            sessions[se_id].sets.append(
+                WorkSet(reps=reps or 0, weight_kg=kg, rpe=rpe, rir=rir, is_failure=fail)
+            )
+        return {ex_id: list(by_se.values()) for ex_id, by_se in grouped.items()}
 
     def muscle_set_rows(
         self, start_date: date | None = None, end_date: date | None = None
@@ -764,21 +847,30 @@ class StrengthRepository:
         """Link a strength session to a Garmin activity."""
         conn = self._get_connection()
 
-        # Check if session exists
-        result = conn.execute(
-            "SELECT id FROM app.strength_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
-
-        if not result:
+        # Link and invalidation are one commit so a crash cannot leave stale rewards.
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            result = conn.execute(
+                "SELECT id FROM app.strength_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if not result:
+                conn.execute("ROLLBACK")
+                return False
+            conn.execute(
+                "UPDATE app.strength_sessions SET actual_session_id = ? WHERE id = ?",
+                (garmin_id, session_id),
+            )
+            conn.execute(
+                "UPDATE app.game_events SET processed=false WHERE source_key=? OR source_key=?",
+                [f"strength:{session_id}", f"actual:{garmin_id}"],
+            )
+            conn.execute("COMMIT")
+            return True
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
             conn.close()
-            return False
-
-        conn.execute(
-            "UPDATE app.strength_sessions SET actual_session_id = ? WHERE id = ?",
-            (garmin_id, session_id),
-        )
-        conn.close()
-        return True
 
 
 _SESSION_COLUMNS = """id, user_id, date, name, program, duration_min,

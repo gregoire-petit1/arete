@@ -24,11 +24,14 @@ from arete.dataio.queries import (
     earliest_session_date,
     overview_rows,
     sql_in,
+    terrain_rows,
 )
 from arete.dataio.settings import athlete_zone_model
+from arete.features import insights
 from arete.features import overview as ov
 from arete.features.fitness import DailyTSS
 from arete.features.periods import PeriodWindow, resolve_period
+from arete.features.terrain import VAM_MINUTES
 from arete.features.workload import (
     DailyLoad,
     calculate_acute_load,
@@ -140,12 +143,27 @@ def _acwr(loads: list[DailyLoad], target: date) -> tuple[float | None, str | Non
     return round(value, 2), ACWR_ZONE_FR.get(get_acwr_zone(value).value)
 
 
+def effort_pace(row: OverviewRow) -> tuple[int | None, bool]:
+    """(pace the trend reads, whether it is grade-adjusted) for one run.
+
+    A hilly run (at least ``insights.FLAT_M_PER_KM`` of climbing per km) with
+    a GAP from its streams is read at its GAP, so a mountain week does not
+    look like lost form; a flat run keeps the pace it always had.
+    """
+    km = (row.distance_m or 0) / 1000
+    hilly = km > 0 and (row.ascent_m or 0) / km >= insights.FLAT_M_PER_KM
+    if hilly and row.gap_sec_km:
+        return row.gap_sec_km, True
+    return row.avg_pace_sec_km, False
+
+
 def get_overview(period: str = "30d"):
     """Every analytics card for one period, with the previous one as reference.
 
-    Four statements on one cursor (the zone model reads the settings on its
+    Five statements on one cursor (the zone model reads the settings on its
     own): the first session date, every session from the CTL warm-up on, the
-    long runs with laps, and the health metrics. The cards slice the sessions.
+    long runs with laps, the health metrics, and the stored terrain of every
+    session on foot (the climbing records are all-time). The cards slice them.
     """
     with db_connection() as con:
         earliest = earliest_session_date(con)
@@ -156,6 +174,7 @@ def get_overview(period: str = "30d"):
         rows = overview_rows(con, tss_start, window.end)
         drifts = drift_rows(con, start, window.end, MIN_DRIFT_DURATION_SEC)
         health = daily_metrics_range(con, start, window.end)
+        terrain = terrain_rows(con)
 
     shown = _between(rows, start, window.end)
     runs = [r for r in shown if r.sport in RUNNING_SPORTS]
@@ -168,9 +187,10 @@ def get_overview(period: str = "30d"):
         else []
     )
     paces = [
-        (r.date, r.avg_pace_sec_km, r.distance_m, r.duration_sec)
+        (r.date, pace, r.distance_m, r.duration_sec, graded)
         for r in runs
-        if r.avg_pace_sec_km is not None
+        for pace, graded in [effort_pace(r)]
+        if pace is not None
     ]
     efficiency = [
         (r.date, r.avg_hr, r.avg_pace_sec_km, r.duration_sec)
@@ -188,6 +208,12 @@ def get_overview(period: str = "30d"):
         (r.date, r.avg_cadence, r.avg_pace_sec_km)
         for r in runs
         if r.avg_cadence is not None
+    ]
+    climbs_vam = [(t.date, t.session_id, t.name, t.vam) for t in terrain]
+    descents = [
+        (t.date, json.loads(t.descent_json))
+        for t in terrain
+        if t.sport in RUNNING_SPORTS and t.descent_json and start <= t.date
     ]
     pmc_series = fitness_series(
         {t.date: t.tss for t in _daily_tss(rows, tss_start, window.end)}, window.end
@@ -213,6 +239,8 @@ def get_overview(period: str = "30d"):
             "pace": ov.build_pace_card(paces, window),
             "elevation": ov.build_elevation_card(climbs, window, RUNNING_SPORTS),
             "cadence": ov.build_cadence_card(cadences, window),
+            "vam": ov.build_vam_card(climbs_vam, window, VAM_MINUTES),
+            "descent": ov.build_descent_card(descents, window),
             **recovery,
         },
     }
@@ -223,9 +251,14 @@ def get_records(sport: str = "running"):
     sports = SPORT_GROUPS.get(sport, RUNNING_SPORTS)
     with db_connection() as con:
         rows = best_effort_rows(con, sports)
+    bests = best_efforts(rows)
+    return {"records": [bests[n] for n in EFFORT_NAMES if n in bests]}
 
+
+def best_efforts(rows: Sequence[tuple]) -> dict[str, dict]:
+    """Fastest effort per canonical distance over ``best_effort_rows`` rows."""
     bests: dict[str, dict] = {}
-    for efforts_json, row_date, activity_name in rows:
+    for efforts_json, row_date, activity_name, activity_id in rows:
         efforts = (
             json.loads(efforts_json) if isinstance(efforts_json, str) else efforts_json
         )
@@ -243,9 +276,9 @@ def get_records(sport: str = "running"):
                     "time_display": ov.format_hms(elapsed),
                     "date": str(row_date),
                     "activity_name": activity_name or "",
+                    "activity_id": activity_id,
                 }
-
-    return {"records": [bests[n] for n in EFFORT_NAMES if n in bests]}
+    return bests
 
 
 # ---------- Session CRUD ----------
@@ -322,3 +355,31 @@ def list_sessions(limit: int = 20, offset: int = 0, *, for_model: bool = False):
             }
         )
     return {"sessions": sessions}
+
+
+def get_session(session_id: int) -> dict | None:
+    """Exact source of a personal record; never match an activity by its title."""
+    with db_connection() as con:
+        row = con.execute(
+            "SELECT id,date,name,sport,duration_sec,distance_m,avg_hr,hr_zones_json,source FROM app.actual_sessions WHERE id=? AND user_id=1",
+            [session_id],
+        ).fetchone()
+    if row is None:
+        return None
+    return dict(
+        zip(
+            (
+                "id",
+                "date",
+                "name",
+                "sport",
+                "duration_sec",
+                "distance_m",
+                "avg_hr",
+                "hr_zones_json",
+                "source",
+            ),
+            row,
+            strict=True,
+        )
+    )

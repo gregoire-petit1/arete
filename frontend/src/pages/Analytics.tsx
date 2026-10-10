@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import type { Period } from '@/types';
 import { analyticsApi } from '@/lib/api';
 import { CHART, COLORS } from '@/lib/chartTheme';
 import {
   CadenceCard,
+  DescentCard,
   EfficiencyCard,
   ElevationCard,
   LoadCard,
@@ -17,6 +19,7 @@ import {
   Section,
   SectionNav,
   SportsCard,
+  VamCard,
   VolumeCard,
   ZonesCard,
 } from './analytics/index';
@@ -90,7 +93,15 @@ export function AnalyticsPage() {
               </p>
             )}
           </div>
-          <PeriodSelector period={period} onChange={setPeriod} />
+          <div className="flex flex-wrap items-center gap-3">
+            <PeriodSelector period={period} onChange={setPeriod} />
+            <Link
+              to="/analytics/bilan"
+              className="px-3 py-1 text-xs font-mono uppercase tracking-wider rounded border border-neon-gold/30 text-neon-gold hover:bg-neon-gold/10"
+            >
+              Bilan annuel
+            </Link>
+          </div>
         </div>
 
         <SectionNav active={active} onJump={jump} />
@@ -115,6 +126,8 @@ export function AnalyticsPage() {
       <Section def={SECTIONS[3]}>
         <ElevationCard card={cards?.elevation} {...state} />
         <CadenceCard card={cards?.cadence} {...state} />
+        <VamCard card={cards?.vam} previousLabel={previousLabel} loading={isLoading} error={isError} />
+        <DescentCard card={cards?.descent} previousLabel={previousLabel} loading={isLoading} error={isError} />
       </Section>
 
       <Section def={SECTIONS[4]}>

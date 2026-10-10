@@ -12,7 +12,7 @@ export const SECTIONS: SectionDef[] = [
   { id: 'charge', title: 'Charge', intro: "Combien j'ai encaissé, et où en est la forme." },
   { id: 'intensite', title: 'Intensité', intro: 'À quelle intensité, et réparti sur quels sports.' },
   { id: 'efficacite', title: 'Efficacité', intro: 'Ce que le cœur paie pour une allure donnée.' },
-  { id: 'terrain', title: 'Terrain & foulée', intro: 'Le dénivelé encaissé et la mécanique de la foulée.' },
+  { id: 'terrain', title: 'Terrain & foulée', intro: 'Le dénivelé encaissé, la vitesse en montée et en descente, la mécanique de la foulée.' },
   { id: 'recuperation', title: 'Récupération', intro: 'Ce que la montre dit du sommeil et de la fraîcheur.' },
 ];
 

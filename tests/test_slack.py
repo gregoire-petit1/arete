@@ -341,7 +341,7 @@ def test_slack_migration_on_existing_database(ledger):
     with db_connection() as con:
         con.execute("DROP TABLE app.slack_deliveries")
         con.execute("DROP TABLE app.slack_execution")
-        con.execute("DELETE FROM app.schema_version WHERE version = 17")
+        con.execute("DELETE FROM app.schema_version WHERE version = 35")
     init_db()
     with db_connection() as con:
         assert con.execute(

@@ -10,7 +10,11 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
+
+if TYPE_CHECKING:
+    from arete.agent.profiles.models import AgentProfile
+    from arete.services.calendar import CalendarService
 
 from arete.agent.runtime.budget import MAX_TOOL_CONCURRENCY
 
@@ -25,7 +29,9 @@ MAX_PANEL_CONTEXT_CHARS = 64_000
 
 #: Route names the frontend can send. Anything else is rejected at the API
 #: boundary so ``get_page_context`` can never be called with junk.
-PANEL_PAGES = frozenset({"dashboard", "planning", "analytics", "log", "settings"})
+PANEL_PAGES = frozenset(
+    {"dashboard", "planning", "analytics", "log", "settings", "profile"}
+)
 
 
 @dataclass
@@ -33,6 +39,10 @@ class RunStats:
     """What one run cost: model requests are the scarce resource on a free tier."""
 
     model_calls: int = 0
+    suggestion_calls: int = 0
+    memory_searches: int = 0
+    memory_ms: int = 0
+    memory_tokens: int = 0
     tool_calls: int = 0
     model_ms: int = 0
     first_token_ms: int | None = None
@@ -51,7 +61,14 @@ class AgentContext:
     source: dict[str, Any] = field(default_factory=dict)
     # Selected by the server entrypoint, never from panel_context or messages.
     profile: Literal["chat", "briefing", "feedback", "review"] = "chat"
+    resolved_profile: AgentProfile | None = field(default=None, init=False, repr=False)
+    calendar: CalendarService | None = field(default=None, init=False, repr=False)
     thread_id: str | None = None
+    # Clerk user id from the verified request identity, never from the body.
+    account_id: str = ""
+    document_ids: tuple[str, ...] | None = None
+    # Only interactive HTTP chat requests need a next-message draft.
+    suggest_reply: bool = False
     attachment_manifest: str = ""
     document_import_pending: bool = False
     current_date: date = field(default_factory=date.today)

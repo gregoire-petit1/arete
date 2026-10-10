@@ -34,3 +34,11 @@ open the live DuckDB as a second writer. Commits and each push require explicit 
 authorization. Keep the current branch name unless asked to rename it. UI copy is
 French; code and commits are English. See AGENTS.md for the full workflow and
 runtime constraints.
+
+<!-- OPENWIKI:START -->
+
+## OpenWiki
+
+@AGENTS.md
+
+<!-- OPENWIKI:END -->

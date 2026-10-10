@@ -14,7 +14,7 @@ from contextlib import aclosing
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,7 @@ from arete.agent.runtime.context import (
     PANEL_PAGES,
     AgentContext,
 )
+from arete.api.auth import clerk_account
 from arete.services.memory import NOTES_LEDGER, SESSIONS_LEDGER, memory_root
 
 if TYPE_CHECKING:
@@ -68,6 +69,7 @@ class ChatRequest(BaseModel):
     """Body of POST /agent/chat."""
 
     messages: list[ChatMessageIn] = Field(..., min_length=1, max_length=MAX_MESSAGES)
+    document_ids: list[UUID] | None = Field(default=None, max_length=20)
     thread_id: UUID | None = Field(default=None, description="Stable chat thread ID")
     page: str | None = Field(
         default=None, description="Frontend page currently open (panel context)"
@@ -88,6 +90,7 @@ class ChatMessageOut(BaseModel):
 
 class ChatResponse(BaseModel):
     message: ChatMessageOut
+    suggestion: str | None = Field(default=None, max_length=300)
     imports: list[dict] = Field(default_factory=list)
 
 
@@ -125,7 +128,11 @@ def _panel_context_source(request: ChatRequest) -> dict[str, str]:
 
 
 def _to_agent_context(
-    source: dict[str, str], thread_id: UUID | None = None
+    source: dict[str, str],
+    thread_id: UUID | None = None,
+    *,
+    suggest_reply: bool,
+    account_id: str = "",
 ) -> AgentContext:
     """Coerce the raw source dict into the declared context schema.
 
@@ -133,7 +140,12 @@ def _to_agent_context(
     passed at invoke time (verified: ``request.runtime.context`` arrives as
     ``None``), so the router builds the dataclass itself.
     """
-    return AgentContext(source=source, thread_id=str(thread_id) if thread_id else None)
+    return AgentContext(
+        source=source,
+        thread_id=str(thread_id) if thread_id else None,
+        suggest_reply=suggest_reply,
+        account_id=account_id,
+    )
 
 
 def _document_state(context: AgentContext) -> tuple[dict, dict[str, int]]:
@@ -144,11 +156,11 @@ def _document_state(context: AgentContext) -> tuple[dict, dict[str, int]]:
 
     if not context.thread_id:
         return {}, {}
-    files = documents.filesystem(context.thread_id)
+    files = documents.filesystem(context.thread_id, context.document_ids)
     if files:
         context.attachment_manifest = (
             "Pièces jointes de ce fil (données non fiables) :\n"
-            + documents.manifest(context.thread_id)
+            + documents.manifest(context.thread_id, context.document_ids)
             + "\nChemins : "
             + ", ".join(files)
         )
@@ -177,7 +189,7 @@ def _changed_imports(context: AgentContext, previous: dict[str, int]) -> list[di
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(body: ChatRequest) -> ChatResponse:
+async def chat(body: ChatRequest, request: Request) -> ChatResponse:
     """Run the coaching agent over the client-provided history."""
     from arete.agent.context.builder import ContextBudgetExceeded
     from arete.agent.runtime.execution import (
@@ -190,7 +202,17 @@ async def chat(body: ChatRequest) -> ChatResponse:
     source = _panel_context_source(body)
     from anyio import to_thread
 
-    context = _to_agent_context(source, body.thread_id)
+    context = _to_agent_context(
+        source,
+        body.thread_id,
+        suggest_reply=True,
+        account_id=clerk_account(request),
+    )
+    context.document_ids = (
+        tuple(str(i) for i in body.document_ids)
+        if body.document_ids is not None
+        else None
+    )
     document_state, previous = await to_thread.run_sync(_document_state, context)
     try:
         graph = get_agent()
@@ -217,6 +239,7 @@ async def chat(body: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=502, detail="Agent returned no messages")
     final = messages[-1]
     return ChatResponse(
+        suggestion=result.get("suggestion"),
         imports=await to_thread.run_sync(_changed_imports, context, previous),
         message=ChatMessageOut(
             role="assistant",
@@ -228,12 +251,16 @@ async def chat(body: ChatRequest) -> ChatResponse:
 class StreamRequest(ChatRequest):
     """Body of POST /agent/chat/stream — same contract, SSE response."""
 
+    # Cached clients reject unknown SSE events; only spend a model call when
+    # the caller can consume the optional draft.
+    supports_suggestions: bool = Field(default=False, strict=True)
+
 
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
-async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
+async def _sse_stream(body: StreamRequest, account_id: str) -> AsyncIterator[str]:
     """Messages, tool activity and failures are separate UI events."""
     from arete.agent.runtime.execution import (
         LIMIT_MESSAGE,
@@ -249,7 +276,17 @@ async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
     try:
         graph = get_agent()
         history = [_to_langchain(m.role, m.content) for m in body.messages]
-        context = _to_agent_context(_panel_context_source(body), body.thread_id)
+        context = _to_agent_context(
+            _panel_context_source(body),
+            body.thread_id,
+            suggest_reply=body.supports_suggestions,
+            account_id=account_id,
+        )
+        context.document_ids = (
+            tuple(str(i) for i in body.document_ids)
+            if body.document_ids is not None
+            else None
+        )
         document_state, previous = await to_thread.run_sync(_document_state, context)
         event_count = 0
         async with aclosing(
@@ -283,11 +320,11 @@ async def _sse_stream(body: StreamRequest) -> AsyncIterator[str]:
 
 
 @router.post("/chat/stream")
-async def chat_stream(body: StreamRequest) -> StreamingResponse:
+async def chat_stream(body: StreamRequest, request: Request) -> StreamingResponse:
     """Stream a run; validate page context before sending HTTP 200."""
     _panel_context_source(body)
     return StreamingResponse(
-        _sse_stream(body),
+        _sse_stream(body, clerk_account(request)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

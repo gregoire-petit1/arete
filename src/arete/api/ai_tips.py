@@ -1,5 +1,6 @@
 """HTTP coaching cards: domain evidence plus optional model enrichment."""
 
+import logging
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -7,8 +8,13 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from arete.services import coaching_rules as rules
-from arete.services.coaching_repository import BriefingRepository
+from arete.services.coaching_repository import (
+    BriefingRepository,
+    SessionFeedbackRepository,
+)
 from arete.services.coaching_rules import PostSessionResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tips", tags=["tips"])
 
@@ -66,6 +72,14 @@ def post_session_feedback(body: PostSessionRequest) -> PostSessionResponse:
     feedback, source = coaching.enrich_session_feedback(
         result.feedback, result.highlights, evidence
     )
+    if body.session_type == "cardio":
+        # Kept for the session page; the card under the upload shows it now.
+        try:
+            SessionFeedbackRepository().save(
+                body.session_id, text=feedback, source=source, trigger="api"
+            )
+        except Exception:
+            logger.warning("Could not store the session feedback", exc_info=True)
     return PostSessionResponse(
         feedback=feedback, highlights=result.highlights, source=source
     )

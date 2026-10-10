@@ -13,6 +13,7 @@ const runs = vi.hoisted(
     [] as {
       history: ChatMessage[];
       threadId: string;
+      documentIds?: string[];
       emit: (e: StreamEvent) => void;
       resolve: () => void;
       reject: (e: Error) => void;
@@ -22,9 +23,9 @@ const runs = vi.hoisted(
 vi.mock('@/lib/agentStream', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/agentStream')>()),
   runAgentStream: vi.fn(
-    (history, _context, emit, signal, threadId) =>
+    (history, _context, emit, signal, threadId, documentIds) =>
       new Promise<void>((resolve, reject) => {
-        runs.push({ history, emit, resolve, reject, signal, threadId });
+        runs.push({ history, emit, resolve, reject, signal, threadId, documentIds });
         signal.addEventListener(
           'abort',
           () => reject(new DOMException('Stopped', 'AbortError')),
@@ -289,6 +290,55 @@ it('refetches the visible planning window as soon as a session is created', asyn
   await act(async () => {
     runs[0].resolve();
   });
+});
+
+
+it('snapshots selected documents per message and preserves them for retry across thread changes', async () => {
+  const { result } = renderHook(() => useCoachThreads(context, true), { wrapper });
+  const first = result.current.active.id;
+  act(() => result.current.attachments(['document-a']));
+  act(() => { result.current.send('Programme A'); });
+  expect(runs[0].documentIds).toEqual(['document-a']);
+  expect(result.current.active.attachmentIds).toEqual([]);
+  expect(result.current.active.messages[0].attachmentIds).toEqual(['document-a']);
+  act(() => result.current.create());
+  act(() => result.current.attachments(['document-b']));
+  await act(async () => { runs[0].reject(new Error('Réseau indisponible')); });
+  expect(result.current.active.attachmentIds).toEqual(['document-b']);
+  act(() => result.current.select(first));
+  act(() => { result.current.retry(); });
+  expect(runs[1].documentIds).toEqual(['document-a']);
+  await act(async () => { runs[1].resolve(); });
+});
+
+it('refuses an over-limit document request before clearing the draft', () => {
+  const { result } = renderHook(() => useCoachThreads(context, true), { wrapper });
+  act(() => result.current.attachments(Array.from({ length: 21 }, (_, i) => `doc-${i}`)));
+  act(() => result.current.draft('À conserver'));
+  act(() => { expect(result.current.send()).toBe(false); });
+  expect(runs).toHaveLength(0);
+  expect(result.current.active.draft).toBe('À conserver');
+  expect(result.current.error).toContain('20 documents');
+});
+
+it.each(['interrupted', 'done'] as const)('never replays a whole tool run after %s and retains the next draft', async status => {
+  const { result } = renderHook(() => useCoachThreads(context, true), { wrapper });
+  act(() => { result.current.send('Modifie mes notes'); });
+  act(() => runs[0].emit({ type: 'tool_start', id: 'edit', name: 'edit_file', args: { text: '{}', truncated: false } }));
+  act(() => { result.current.draft('Mon prochain message'); result.current.attachments(['next-document']); });
+  await act(async () => {
+    if (status === 'interrupted') result.current.stop();
+    else {
+      runs[0].emit({ type: 'tool_end', id: 'edit', name: 'edit_file', status: 'done', output: { text: '{}', truncated: false }, elapsed_ms: 100 });
+      runs[0].emit({ type: 'done', message: { role: 'assistant', content: 'Notes mises à jour.' } });
+      runs[0].resolve();
+    }
+  });
+  act(() => { expect(result.current.retry()).toBe(false); });
+  expect(runs).toHaveLength(1);
+  expect(result.current.active.draft).toBe('Mon prochain message');
+  expect(result.current.active.attachmentIds).toEqual(['next-document']);
+  expect(result.current.active.messages).toHaveLength(2);
 });
 
 it('refreshes the athlete facts after the coach remembers one', async () => {

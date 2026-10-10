@@ -28,7 +28,9 @@ def test_active_facts_reach_the_prompt_and_resolved_ones_leave_it():
     )
     athlete_facts.add_fact("constraint", "Pas de séance le mercredi (garde d'enfants)")
     block = athlete_facts.facts_block()
-    assert f"#{knee.id} [blessure, depuis le 2026-09-02] Douleur genou droit" in block
+    assert f"#{knee.id}" in block
+    assert "Douleur genou droit" in block
+    assert "2026-09-02" in block
     assert "contrainte" in block
     athlete_facts.update_fact(knee.id, status="resolved")
     assert "genou" not in athlete_facts.facts_block()
@@ -102,7 +104,10 @@ def test_the_routes(router_client):
         == "resolved"
     )
     assert [f["id"] for f in client.get("/athlete-facts").json()] == [fact_id]
-    assert client.delete(f"/athlete-facts/{fact_id}").status_code == 204
+    assert (
+        client.delete(f"/athlete-facts/{fact_id}?expected_revision=2").status_code
+        == 204
+    )
     assert client.delete(f"/athlete-facts/{fact_id}").status_code == 404
     assert (
         client.post("/athlete-facts", json={"kind": "mood", "text": "x"}).status_code

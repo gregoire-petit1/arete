@@ -232,6 +232,7 @@ body {
 /* Assistant prose owns its typography; activity cards have their own surface. */
 .coach-markdown { min-width: 0; font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; color: var(--color-text-primary); }
 .coach-markdown + .coach-markdown { margin-top: 1rem; }
+.coach-answer-part + .coach-answer-part { margin-top: 1rem; }
 .coach-markdown > :first-child { margin-top: 0; }
 .coach-markdown > :last-child { margin-bottom: 0; }
 .coach-markdown p { margin: 0.7em 0; }
@@ -267,3 +268,46 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .coach-panel { animation: none; }
 }
+
+/* Approved Chiron Figma variants: 3 px travel, 1.28 s cycle, 280 ms stagger.
+   Only decorative presence loops; real SSE events own the response state. */
+.coach-presence { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; width: 32px; height: 16px; }
+.coach-presence > span { width: 5px; height: 5px; border-radius: 50%; background: var(--color-neon-cyan); opacity: .25; animation: coach-wave 1.28s ease-in-out infinite; }
+.coach-presence > span:nth-child(2) { animation-delay: .28s; }
+.coach-presence > span:nth-child(3) { animation-delay: .56s; }
+@keyframes coach-wave {
+  0%, 43.75%, 100% { opacity: .25; transform: translateY(0); }
+  17.1875%, 21.875% { opacity: 1; transform: translateY(-3px); }
+}
+.coach-confirmation { display: inline-block; flex-shrink: 0; width: 16px; height: 16px; background: var(--color-success-green); mask: url('./assets/coach/confirmation.svg') center / contain no-repeat; animation: coach-confirm .26s ease-out both; }
+@keyframes coach-confirm { from { opacity: .2; transform: scale(.7); } to { opacity: 1; transform: scale(1); } }
+.coach-status-label { animation: fade-in .16s ease-out both; }
+/* Fade each text block once on insertion, never each streamed token. */
+.coach-answer-part { animation: fade-in .12s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .coach-presence > span { animation: none; opacity: .7; transform: none; }
+  .coach-confirmation, .coach-status-label, .coach-answer-part { animation: none; }
+}
+
+/* Original Figma palettes; preserve the existing UI's semantic token owners. */
+html[data-theme='performance'], html[data-theme='odyssey'] { color-scheme: light; }
+html[data-theme='performance'] {
+  --color-void: #F4F5EF; --color-abyss: #FFFFFF; --color-shadow: #E8EBDF;
+  --color-text-primary: #17281E; --color-text-secondary: #56665A; --color-text-muted: #56665A;
+  --color-neon-cyan: #17281E; --color-neon-purple: #456144; --color-neon-gold: #456144;
+  --color-success-green: #325B47; --color-danger-red: #A92832; --color-warning-orange: #79551F;
+  --color-info-blue: #245A83; --rpg-selection: #D5FF3F;
+  --color-chart-surface: #FFFFFF; --color-chart-grid: #CCD3C7; --color-chart-axis: #56665A;
+  --color-chart-label: #56665A; --color-chart-text: #17281E;
+}
+html[data-theme='odyssey'] {
+  --color-void: #F5EBDD; --color-abyss: #FFF9EF; --color-shadow: #EDDDC9;
+  --color-text-primary: #3B3432; --color-text-secondary: #6B594C; --color-text-muted: #6B594C;
+  --color-neon-cyan: #96472D; --color-neon-purple: #79551F; --color-neon-gold: #79551F;
+  --color-success-green: #325B47; --color-danger-red: #A92832; --color-warning-orange: #79551F;
+  --color-info-blue: #245A83; --rpg-selection: #EDDDC9;
+  --color-chart-surface: #FFF9EF; --color-chart-grid: #D9C3A9; --color-chart-axis: #6B594C;
+  --color-chart-label: #6B594C; --color-chart-text: #3B3432;
+}
+.rpg-tab[aria-current='page'] { background: var(--rpg-selection, color-mix(in srgb, var(--color-neon-cyan) 10%, transparent)); color: var(--color-neon-cyan); }
+.rpg-surface { background: var(--color-abyss); border: 1px solid color-mix(in srgb, var(--color-text-muted) 25%, transparent); border-radius: 4px; }

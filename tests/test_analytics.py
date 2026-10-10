@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from datetime import date, timedelta
 from unittest.mock import patch
@@ -24,6 +25,8 @@ CARD_KEYS = {
     "pace",
     "elevation",
     "cadence",
+    "vam",
+    "descent",
     "readiness",
     "hrv",
     "sleep",
@@ -44,6 +47,7 @@ def stub_queries():
         "drift_rows": [],
         "daily_metrics_range": [],
         "earliest_session_date": None,
+        "terrain_rows": [],
     }
     patches = {
         name: patch(f"arete.services.analytics.{name}", return_value=value)
@@ -140,13 +144,62 @@ class TestOverview:
         assert cards["elevation"]["headline"]["value"] == 620
         assert cards["cadence"]["headline"]["value"] == 174
 
+    def test_the_pace_trend_reads_gap_on_hilly_runs_only(self, client, stub_queries):
+        run = {"distance_m": 10000.0, "avg_pace_sec_km": 400, "gap_sec_km": 330}
+        stub_queries["overview_rows"].return_value = [
+            _row(TODAY - timedelta(days=1), ascent_m=600.0, **run),  # 60 m/km
+            _row(TODAY - timedelta(days=2), ascent_m=40.0, **run),  # 4 m/km: flat
+            _row(
+                TODAY - timedelta(days=3),
+                ascent_m=600.0,
+                distance_m=10000.0,
+                avg_pace_sec_km=400,
+            ),  # no streams: no GAP
+        ]
+        card = client.get("/analytics/overview?period=30d").json()["cards"]["pace"]
+        assert card["secondary"][0]["value"] == 400.0  # median of 330, 400, 400
+        assert sum(p["n_graded"] for p in card["series"]) == 1
+
+    def test_climbing_records_are_all_time_descents_are_runs(
+        self, client, stub_queries
+    ):
+        from arete.dataio.queries import TerrainRow
+
+        bands = json.dumps(
+            [
+                {"min": -2, "max": 2, "sec": 600, "m": 2000},
+                {"min": -15, "max": -10, "sec": 300, "m": 1200},
+            ]
+        )
+        stub_queries["terrain_rows"].return_value = [
+            TerrainRow(
+                1, TODAY - timedelta(days=300), "Brévent", "running", {30: 1300}, None
+            ),
+            TerrainRow(
+                2, TODAY - timedelta(days=2), "Lac Blanc", "hiking", {30: 1100}, bands
+            ),
+            TerrainRow(
+                3, TODAY - timedelta(days=1), "Petit Balcon", "running", {}, bands
+            ),
+        ]
+        cards = client.get("/analytics/overview?period=30d").json()["cards"]
+        assert cards["vam"]["headline"]["value"] == 1100
+        assert cards["vam"]["secondary"][0]["value"] == 1300
+        # The hike's descent is not running: only one run's bands count.
+        steep = next(p for p in cards["descent"]["series"] if p["min"] == -15)
+        assert steep["minutes"] == 5
+
     def test_no_data_still_renders_cards(self, client, stub_queries):
         cards = client.get("/analytics/overview?period=7d").json()["cards"]
         assert cards["volume"]["headline"]["value"] == 0.0
         assert cards["hrv"]["headline"]["value"] is None
-        assert all(len(c["series"]) in (0, 7) for c in cards.values())
+        assert all(
+            len(c["series"]) in (0, 7)
+            for key, c in cards.items()
+            if key != "vam"  # one point per climbing duration
+        )
 
-    def test_overview_costs_four_statements_on_one_cursor(
+    def test_overview_costs_five_statements_on_one_cursor(
         self, client, monkeypatch, statement_log
     ):
         real = analytics.db_connection
@@ -158,7 +211,7 @@ class TestOverview:
 
         monkeypatch.setattr(analytics, "db_connection", counting_connection)
         assert client.get("/analytics/overview?period=30d").status_code == 200
-        assert len(statement_log) == 4
+        assert len(statement_log) == 5
 
 
 class TestOverviewSeries:
@@ -191,6 +244,26 @@ class TestOverviewSeries:
         assert [t.date for t in got] == [t.date for t in expected]
         assert [t.tss for t in got] == pytest.approx([t.tss for t in expected])
 
+    def test_overview_rows_carry_the_stored_gap(self, seeded):
+        con, start, end = seeded
+        (session_id,) = con.execute(
+            "SELECT id FROM app.actual_sessions WHERE source = 'test' "
+            "ORDER BY date LIMIT 1"
+        ).fetchone()
+        con.execute(
+            "INSERT INTO app.activity_terrain "
+            "(actual_session_id, model_version, gap_sec_km) VALUES (?, 1, 287)",
+            [session_id],
+        )
+        try:
+            rows = overview_rows(con, start, end)
+        finally:
+            con.execute(
+                "DELETE FROM app.activity_terrain WHERE actual_session_id = ?",
+                [session_id],
+            )
+        assert sorted(r.gap_sec_km or 0 for r in rows) == [0, 0, 287]
+
     def test_daily_loads_match_the_sql_series(self, seeded):
         con, start, end = seeded
         rows = overview_rows(con, start, end)
@@ -207,8 +280,14 @@ class TestRecords:
                 '{"name": "5K", "elapsed_time": 1250}]',
                 date(2026, 5, 1),
                 "Morning Run",
+                101,
             ),
-            ('[{"name": "1K", "elapsed_time": 234}]', date(2026, 4, 20), "Fast Run"),
+            (
+                '[{"name": "1K", "elapsed_time": 234}]',
+                date(2026, 4, 20),
+                "Fast Run",
+                101,
+            ),
         ]
         records = client.get("/analytics/records?sport=running").json()["records"]
         one_k = next(r for r in records if r["name"] == "1K")
@@ -231,6 +310,7 @@ class TestRecords:
                 '{"name": "marathon", "elapsed_time": 13769}]',
                 date(2026, 5, 1),
                 "Ultra",
+                101,
             )
         ]
         records = client.get("/analytics/records").json()["records"]
@@ -248,6 +328,7 @@ class TestRecords:
                 '{"name": "Half-Marathon", "elapsed_time": 6795}]',
                 date(2026, 5, 1),
                 "Long one",
+                101,
             )
         ]
         records = client.get("/analytics/records").json()["records"]
@@ -268,6 +349,7 @@ class TestRecords:
                 '{"name": "5K", "elapsed_time": 1272}]',
                 date(2026, 5, 1),
                 "Track",
+                101,
             )
         ]
         records = client.get("/analytics/records").json()["records"]
@@ -281,6 +363,7 @@ class TestRecords:
                 '[{"name": "Half-Marathon", "elapsed_time": 5535}]',
                 date(2026, 5, 1),
                 "Semi",
+                101,
             )
         ]
         record = client.get("/analytics/records").json()["records"][0]

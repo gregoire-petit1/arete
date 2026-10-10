@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Modal } from '@/components/ui';
+import { authFetch } from '@/lib/auth';
 
 interface GarminLoginModalProps {
   isOpen: boolean;
@@ -22,7 +23,7 @@ export function GarminLoginModal({ isOpen, onClose, onSuccess }: GarminLoginModa
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: { email: string; password: string; mfa_code?: string }) => {
-      const res = await fetch('/api/garmin/sync/login', {
+      const res = await authFetch('/api/garmin/sync/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(credentials),
