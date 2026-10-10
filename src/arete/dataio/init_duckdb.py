@@ -659,6 +659,15 @@ def _m31_activity_streams(con) -> None:
         con.execute(DDL[start : DDL.index(");", start) + 2])
 
 
+def _m34_calendar_plan_sync(con) -> None:
+    """The training plan followed into Google Calendar (columns only)."""
+    from arete.services.calendar_repository import CALENDAR_DDL, PLAN_SYNC_DDL
+
+    for statement in (CALENDAR_DDL + PLAN_SYNC_DDL).strip().split(";"):
+        if statement.strip():
+            con.execute(statement)
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -681,6 +690,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (19, _m19_gamification),
     (20, _m20_personal_memory),
     (31, _m31_activity_streams),
+    (34, _m34_calendar_plan_sync),
 ]
 
 

@@ -138,7 +138,14 @@ def daily_sync() -> dict[str, str]:
     else:
         status["strava"] = "not connected"
 
-    # Before the briefing that reads the journal the feedback files.
+    # After every plan change of the run (adaptation, completed sessions).
+    from arete.calendar import sync_training_plan
+    from arete.services.calendar_plan import DAILY
+
+    status["google_calendar"] = sync_training_plan(DAILY)
+
+    # Before the briefing that reads the journal the feedback files; after the
+    # bounded calendar run, so a slow model cannot starve it.
     if synced_ids:
         status["feedback"] = write_sync_feedback(synced_ids)
 

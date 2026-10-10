@@ -338,3 +338,52 @@ class TestFrenchExerciseNames:
     def test_ascii_notation_still_parses(self):
         parsed = parse_line("bench press 4x8 @80")
         assert parsed and parsed[0]["name"] == "bench press"
+
+
+class TestSetQualifiers:
+    """RIR, tempo and warm-ups: read here, stored at save, kept out of records."""
+
+    def test_reps_in_reserve(self):
+        parsed = parse_line("squat 5x5 @100 RIR 2")
+        assert parsed and {s["rir"] for s in parsed[0]["sets"]} == {2}
+
+    def test_tempo_is_stored_dashed(self):
+        for line in (
+            "bench press 4x6 @80 tempo 3-1-1-0",
+            "bench press 4x6 @80 tempo 3110",
+        ):
+            parsed = parse_line(line)
+            assert parsed and parsed[0]["sets"][0]["tempo"] == "3-1-1-0", line
+
+    def test_qualifiers_in_any_order(self):
+        parsed = parse_line("Bench press 4x8 80kg r2' RPE 8 tempo 3110 RIR 1")
+        assert parsed
+        first = parsed[0]["sets"][0]
+        assert (first["rest_sec"], first["rpe"], first["rir"]) == (120, 8.0, 1)
+
+    def test_warmup_sets_are_marked_and_do_not_set_the_target(self):
+        for line in (
+            "squat 2x5@60 echauf, 5x5@100",
+            "squat: 5@60 échauffement, 5x5@100",
+            "2x5@60 wu, 5x5@100 squat",
+            "squat 2x5@60 warm-up, 5x5@100",
+        ):
+            parsed = parse_line(line)
+            assert parsed, line
+            sets = parsed[0]["sets"]
+            assert sets[0]["is_warmup"] is True, line
+            assert all(not s["is_warmup"] for s in sets if s["weight_kg"] == 100)
+            assert parsed[0]["target_reps"] == "5", line
+
+    def test_line_effort_describes_the_work_sets_only(self):
+        parsed = parse_line("squat 2x5@60 wu, 3x5@100 RPE 8 RIR 2")
+        assert parsed
+        warmups = [s for s in parsed[0]["sets"] if s["is_warmup"]]
+        work = [s for s in parsed[0]["sets"] if not s["is_warmup"]]
+        assert all(s["rpe"] is None and s["rir"] is None for s in warmups)
+        assert all(s["rpe"] == 8.0 and s["rir"] == 2 for s in work)
+
+    def test_a_name_starting_like_a_marker_is_still_a_name(self):
+        parsed = parse_line("3x10 wide pull ups")
+        assert parsed and parsed[0]["name"] == "wide pull ups"
+        assert not parsed[0]["sets"][0]["is_warmup"]

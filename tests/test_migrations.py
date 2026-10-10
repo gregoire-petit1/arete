@@ -289,3 +289,41 @@ def test_m31_creates_the_stream_and_feedback_tables_once(tmp_path, monkeypatch):
     assert columns["heart_rate"] == "SMALLINT[]" and columns["lat"] == "FLOAT[]"
     assert {"actual_session_id", "text", "source", "trigger"} <= feedback
     assert recorded == 1
+
+
+def test_m34_adds_the_plan_sync_columns_once(tmp_path, monkeypatch):
+    from arete.services.calendar_repository import PLAN_SYNC_DDL
+
+    path = tmp_path / "plan-sync.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    # "ALTER TABLE <table> ADD COLUMN IF NOT EXISTS <column> <type>;"
+    added = [
+        (line.split()[2], line.split()[8])
+        for line in PLAN_SYNC_DDL.strip().splitlines()
+    ]
+    with duckdb.connect(str(path)) as con:
+        for table, column in added:
+            con.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+        con.execute(
+            "INSERT INTO app.calendar_connections (connection_key, enabled) VALUES ('k', TRUE)"
+        )
+        con.execute(
+            "INSERT INTO app.planned_sessions (date, sport, session_type) VALUES ('2026-10-12', 'running', 'endurance')"
+        )
+        con.execute("DELETE FROM app.schema_version WHERE version = 34")
+    init_duckdb.main()
+    init_duckdb.main()  # recorded once, then skipped
+    with duckdb.connect(str(path), read_only=True) as con:
+        for table, column in added:
+            columns = {r[0] for r in con.execute(f"DESCRIBE {table}").fetchall()}
+            assert column in columns
+        assert con.execute(
+            "SELECT enabled, plan_sync, plan_calendar FROM app.calendar_connections"
+        ).fetchone() == (True, False, None)
+        assert con.execute(
+            "SELECT session_type, google_event_id FROM app.planned_sessions"
+        ).fetchone() == ("endurance", None)
+        assert con.execute(
+            "SELECT count(*) FROM app.schema_version WHERE version = 34"
+        ).fetchone() == (1,)

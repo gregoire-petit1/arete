@@ -322,6 +322,24 @@ export const strengthApi = {
       body: JSON.stringify({ text, date, save }),
     }),
 
+  getExercises: () =>
+    fetchAPI<import("@/types").LibraryExercise[]>("/strength/exercises"),
+
+  getExerciseHistory: (exerciseId: number, limit = 50) =>
+    fetchAPI<import("@/types").ExerciseHistoryEntry[]>(
+      `/strength/exercises/${exerciseId}/history?limit=${limit}`
+    ),
+
+  getExerciseRecords: (exerciseId: number) =>
+    fetchAPI<import("@/types").ExercisePersonalRecords>(
+      `/strength/exercises/${exerciseId}/prs`
+    ),
+
+  getExerciseSuggestion: (exerciseId: number) =>
+    fetchAPI<import("@/types").ExerciseSuggestionResponse>(
+      `/strength/exercises/${exerciseId}/suggestion`
+    ),
+
   getMuscleStats: (days = 7) =>
     fetchAPI<import("@/types").MuscleStatsResponse>(
       `/strength/stats/muscles?days=${days}`

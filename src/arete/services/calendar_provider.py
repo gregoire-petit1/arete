@@ -65,6 +65,7 @@ class CalendarHTTP:
                         403: "Permission Google insuffisante.",
                         404: "Événement ou calendrier introuvable.",
                         409: "Conflit Calendar.",
+                        410: "Événement déjà supprimé.",
                         412: "Événement modifié depuis la proposition : nouvelle validation nécessaire.",
                         429: "Quota Google Calendar atteint. Réessaie plus tard.",
                     }

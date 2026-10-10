@@ -4,12 +4,25 @@ export interface CalendarSelection {
   readable: string[];
   writable: string[];
 }
+/** The training plan followed into one writable calendar. */
+export interface PlanSyncStatus {
+  enabled: boolean;
+  calendar_id: string | null;
+  /** ISO timestamp of the last run, whatever its outcome. */
+  synced_at: string | null;
+  /** French message of the last run's failure, null when it succeeded. */
+  error: string | null;
+  /** Events Arete created and still tracks (kept after turning it off). */
+  events: number;
+}
 export interface CalendarStatus {
   configured: boolean;
   connected: boolean;
   selection: CalendarSelection;
   /** Google scopes to grant before connecting; absent when not configured. */
   scopes?: string[];
+  /** Absent when Calendar is not configured on this server. */
+  plan?: PlanSyncStatus;
 }
 export interface GoogleCalendarInfo {
   id: string;
@@ -62,6 +75,10 @@ export const calendarApi = {
   calendars: () => fetchAPI<GoogleCalendarInfo[]>(`${base}/calendars`),
   select: (selection: CalendarSelection) =>
     fetchAPI<CalendarStatus>(`${base}/selection`, mutation("PUT", selection)),
+  planSync: (body: { enabled: boolean; calendar_id?: string }) =>
+    fetchAPI<CalendarStatus>(`${base}/plan-sync`, mutation("PUT", body)),
+  removePlanEvents: () =>
+    fetchAPI<CalendarStatus>(`${base}/plan-sync/remove`, mutation("POST")),
   action: (id: string) =>
     fetchAPI<CalendarAction>(`${base}/actions/${encodeURIComponent(id)}`),
   decide: (id: string, decision: "approve" | "reject") =>

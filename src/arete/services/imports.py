@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from uuid import UUID, uuid4
 
+from arete.dataio import plan_changes
 from arete.dataio.db import db_connection
 from arete.services.documents import DocumentError, extraction_for, list_documents
 from arete.services.documents import document_transaction as transaction
@@ -271,6 +272,7 @@ def confirm(
             "UPDATE app.coach_imports SET session_ids=? WHERE id=?",
             [json.dumps(ids), draft_id],
         )
+    plan_changes.touch()
     return ids
 
 

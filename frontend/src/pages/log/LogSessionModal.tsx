@@ -8,6 +8,7 @@ import type { ParsedWorkout, WorkoutTranscription } from '@/types';
 import { toLocalISODate } from '@/lib/dates';
 import { invalidateAfterSession } from '@/lib/queryKeys';
 import { VoiceDictation, type VoiceDictationHandle } from './VoiceDictation';
+import { RecordsCelebration, SuggestionNote } from './progression';
 
 const today = () => toLocalISODate();
 
@@ -126,7 +127,8 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
               placeholder={`Bench press 4x8 80kg
 4x10 @60 incline db press r2'
 5x(10 pull ups, 15 dips) r1'30
-(dips) 3x amrap`}
+(dips) 3x amrap
+squat 2x5@60 echauf, 5x5@100 RIR 2`}
               rows={8}
             />
           </Field>
@@ -194,30 +196,39 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
           </div>
 
           <div className="space-y-3 max-h-[40vh] overflow-y-auto">
-            {parseResult.exercises.map((ex, i) => (
-              <div
-                key={i}
-                className={cn(
-                  'p-3 rounded border bg-abyss',
-                  ex.exercise_matched ? 'border-success-green/30' : 'border-warning-orange/30'
-                )}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-mono text-sm text-text-primary">{ex.name}</span>
-                  {ex.exercise_matched ? (
-                    <span className="text-[10px] font-mono text-success-green">✓ RECONNU</span>
-                  ) : (
-                    <span className="text-[10px] font-mono text-warning-orange">⚠ INCONNU</span>
+            {parseResult.exercises.map((ex, i) => {
+              const warmups = ex.sets.filter((s) => s.is_warmup).length;
+              // Describe the work, not the first warm-up.
+              const work = ex.sets.find((s) => !s.is_warmup) ?? ex.sets[0];
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    'p-3 rounded border bg-abyss',
+                    ex.exercise_matched ? 'border-success-green/30' : 'border-warning-orange/30'
                   )}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-mono text-sm text-text-primary">{ex.name}</span>
+                    {ex.exercise_matched ? (
+                      <span className="text-[10px] font-mono text-success-green">✓ RECONNU</span>
+                    ) : (
+                      <span className="text-[10px] font-mono text-warning-orange">⚠ INCONNU</span>
+                    )}
+                  </div>
+                  <div className="text-xs font-mono text-text-muted">
+                    {ex.sets.length - warmups} série(s) •
+                    {work?.weight_kg && ` ${work.weight_kg} kg`}
+                    {work?.is_failure ? " × jusqu'à l'échec" : work?.reps && ` × ${work.reps} rép.`}
+                    {work?.rpe && ` @ RPE ${work.rpe}`}
+                    {work?.rir != null && ` • RIR ${work.rir}`}
+                    {work?.tempo && ` • tempo ${work.tempo}`}
+                    {warmups > 0 && ` • + ${warmups} d'échauffement`}
+                  </div>
+                  {ex.progression && <SuggestionNote suggestion={ex.progression} />}
                 </div>
-                <div className="text-xs font-mono text-text-muted">
-                  {ex.sets.length} série(s) •
-                  {ex.sets[0]?.weight_kg && ` ${ex.sets[0].weight_kg} kg`}
-                  {ex.sets[0]?.is_failure ? " × jusqu'à l'échec" : ex.sets[0]?.reps && ` × ${ex.sets[0].reps} rép.`}
-                  {ex.sets[0]?.rpe && ` @ RPE ${ex.sets[0].rpe}`}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {unparsed.length > 0 && (
@@ -268,6 +279,7 @@ export function LogSessionModal({ open, onClose }: LogSessionModalProps) {
               {parseResult.message || `${parseResult.exercises.length} exercice(s) enregistré(s)`}
             </p>
           </div>
+          <RecordsCelebration records={parseResult.records ?? []} />
           {feedback.isLoading && (
             <p className="text-sm font-mono text-text-muted flex items-center justify-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin text-neon-cyan" />

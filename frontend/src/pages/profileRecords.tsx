@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { documentRequest } from '@/lib/documents';
 
 interface Exercise {
@@ -86,6 +87,14 @@ export function StrengthRecords() {
             </dd>
           </div>
         </dl>
+      )}
+      {id && (
+        <Link
+          to={`/log?exercise=${id}`}
+          className="inline-block font-mono text-xs text-neon-cyan"
+        >
+          Voir la progression →
+        </Link>
       )}
     </section>
   );

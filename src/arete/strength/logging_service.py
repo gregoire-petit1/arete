@@ -14,11 +14,12 @@ not when an agent is dictating and the athlete only reads a sentence.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date as date_type
 from typing import TYPE_CHECKING
 
 from arete.strength.models import ExerciseSet, SessionExercise, StrengthSession
+from arete.strength.progression import Record, new_records
 from arete.strength.repository import StrengthRepository
 
 if TYPE_CHECKING:
@@ -37,6 +38,22 @@ class DroppedExercise:
 
 
 @dataclass(frozen=True)
+class SessionRecord:
+    """A personal record set by the session just saved."""
+
+    exercise_id: int
+    exercise: str
+    record: Record
+
+    def as_dict(self) -> dict:
+        return {
+            "exercise_id": self.exercise_id,
+            "exercise": self.exercise,
+            **self.record.as_dict(),
+        }
+
+
+@dataclass(frozen=True)
 class SaveOutcome:
     """What a save actually did — including what it refused to write."""
 
@@ -44,6 +61,7 @@ class SaveOutcome:
     saved: list[str] = field(default_factory=list)
     dropped: list[DroppedExercise] = field(default_factory=list)
     message: str = ""
+    records: list[SessionRecord] = field(default_factory=list)
 
 
 def athlete_abbreviations(user_id: int = 1) -> dict[str, str]:
@@ -125,7 +143,11 @@ def save_parsed_session(
                         reps=parsed_set.reps if parsed_set.reps is not None else 0,
                         weight_kg=parsed_set.weight_kg,
                         rpe=parsed_set.rpe,
+                        rir=parsed_set.rir,
+                        rest_sec=parsed_set.rest_sec,
+                        tempo=parsed_set.tempo,
                         is_warmup=parsed_set.is_warmup,
+                        is_failure=parsed_set.is_failure,
                     )
                 )
             session.exercises.append(session_exercise)
@@ -152,8 +174,45 @@ def save_parsed_session(
     if dropped:
         message += f"; {len(dropped)} not recognised and left out"
     return SaveOutcome(
-        session_id=session_id, saved=saved, dropped=dropped, message=message
+        session_id=session_id,
+        saved=saved,
+        dropped=dropped,
+        message=message,
+        records=session_records(repo, session_id, session),
     )
+
+
+def session_records(
+    repo: StrengthRepository, session_id: int, session: StrengthSession
+) -> list[SessionRecord]:
+    """The personal records the saved session beat, against every other one.
+
+    Never raises: a failed comparison costs the celebration, not the save.
+    """
+    names = {
+        ex.exercise_id: ex.exercise.name
+        for ex in session.exercises
+        if ex.exercise_id is not None and ex.exercise is not None
+    }
+    try:
+        history = repo.working_sessions(list(names))
+    except Exception as exc:  # noqa: BLE001 - the session is already saved
+        logger.warning("Could not compare session %s to records: %s", session_id, exc)
+        return []
+    found: list[SessionRecord] = []
+    for exercise_id, name in names.items():
+        sessions = history.get(exercise_id, [])
+        current = [s for s in sessions if s.session_id == session_id]
+        previous = [s for s in sessions if s.session_id != session_id]
+        if not current:
+            continue
+        # An exercise logged twice in one session is one performance.
+        done = replace(current[0], sets=[st for s in current for st in s.sets])
+        found.extend(
+            SessionRecord(exercise_id, name, record)
+            for record in new_records(previous, done)
+        )
+    return found
 
 
 def complete_planned_strength(day: date_type) -> None:

@@ -75,3 +75,32 @@ class TestFrenchSpelling:
             ("mollets debout", "calf_raises"),
         ]:
             assert match_exercise(spoken).exercise_id == expected, spoken
+
+
+def test_strength_v2_catalogue_reaches_the_new_entries():
+    from arete.data.exercises_catalog import EXERCISES_BY_ID
+    from arete.features.muscles import CANONICAL
+
+    for spoken, expected in [
+        ("hip thrust", "hip_thrust"),
+        ("fentes", "lunges"),
+        ("presse à cuisses", "leg_press"),
+        ("leg curl", "leg_curl"),
+        ("leg extension", "leg_extension"),
+        ("gainage", "plank"),
+        ("gainage latéral", "side_plank"),
+        ("face pull", "face_pull"),
+        ("marche du fermier", "farmer_carry"),
+        ("épaulé en puissance", "power_clean"),
+        ("épaulé-jeté", "clean_and_jerk"),
+        ("arraché", "snatch"),
+    ]:
+        assert match_exercise(spoken).exercise_id == expected, spoken
+        entry = EXERCISES_BY_ID[expected]
+        muscles = set(entry["primary_muscles"]) | set(entry["secondary_muscles"])
+        assert muscles <= set(CANONICAL), expected
+
+
+def test_a_shoulder_press_is_not_taken_for_a_leg_press():
+    assert match_exercise("développé militaire").exercise_id == "shoulder_press"
+    assert match_exercise("presse militaire").exercise_id != "leg_press"

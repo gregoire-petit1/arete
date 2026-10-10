@@ -6,6 +6,9 @@ rest. A human filling the form sees that happen. An athlete dictating to a
 coach reads one sentence, so the drop has to be in the transcript before
 anything is written — hence two tools rather than one.
 
+``get_strength_progress`` is a plain read: trend, records and the
+deterministic next-session load of one exercise.
+
 ``read_workout`` is the dry run: it parses, reports what matched and what did
 not, and touches nothing. ``save_workout`` writes. Both go through
 ``strength.logging_service``, the same code the Log page posts to, so the
@@ -29,6 +32,8 @@ from arete.agent.runtime.budget import MAX_TOOL_OUTPUT_CHARS
 
 #: Enough for a long session; past it the text is not a workout.
 MAX_WORKOUT_TEXT_CHARS = 4_000
+#: An exercise name, not a paragraph.
+MAX_EXERCISE_NAME_CHARS = 100
 
 
 def _out(payload: Any) -> str:
@@ -76,6 +81,7 @@ def _summarize(parsed: Any) -> dict[str, Any]:
                         "reps": s.reps,
                         "weight_kg": s.weight_kg,
                         "rpe": s.rpe,
+                        "rir": s.rir,
                         "warmup": s.is_warmup,
                     }
                     for s in exercise.sets
@@ -149,6 +155,7 @@ def save_workout(text: str, date_str: str = "") -> str:
             "session_id": outcome.session_id,
             "saved_exercises": outcome.saved,
             "message": outcome.message,
+            "personal_records": [r.as_dict() for r in outcome.records],
             **{
                 k: v
                 for k, v in _summarize(parsed).items()
@@ -158,4 +165,27 @@ def save_workout(text: str, date_str: str = "") -> str:
     )
 
 
-STRENGTH_TOOLS: list[BaseTool] = [read_workout, save_workout]
+@tool
+def get_strength_progress(exercise: str) -> str:
+    """Progression of one strength exercise: e1RM trend (last sessions),
+    personal records and the next-session load. `next_session` is computed
+    by fixed rules (double progression, RIR/RPE) and becomes a deload when
+    today's readiness is low; quote its numbers and `reason`, never invent
+    a load. Warm-up sets are excluded everywhere.
+
+    Args:
+        exercise: The exercise as the athlete names it ("squat", "développé couché").
+    """
+    if not exercise or not exercise.strip():
+        return _error("exercise is empty; name the exercise")
+    if len(exercise) > MAX_EXERCISE_NAME_CHARS:
+        return _error(f"exercise name too long (max {MAX_EXERCISE_NAME_CHARS})")
+    try:
+        from arete.services.strength_progress import strength_progress
+
+        return _out(strength_progress(exercise.strip()))
+    except Exception as exc:
+        return _error(f"{type(exc).__name__}: {exc}")
+
+
+STRENGTH_TOOLS: list[BaseTool] = [read_workout, save_workout, get_strength_progress]

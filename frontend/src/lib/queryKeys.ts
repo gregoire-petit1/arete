@@ -23,12 +23,19 @@ export const qk = {
   muscleStats: (days?: number) =>
     days ? (['muscleStats', days] as const) : (['muscleStats'] as const),
   garminCandidates: (sessionId: number) => ['garminCandidates', sessionId] as const,
+  /** The exercise library (only exercises already logged or created). */
+  exercises: ['exercises'] as const,
+  /** One exercise's history, records or suggestion; `['strengthProgress']` is all of them. */
+  strengthProgress: (id?: number, part?: 'history' | 'records' | 'suggestion') =>
+    id == null ? (['strengthProgress'] as const) : (['strengthProgress', id, part] as const),
 
   cardioSessions: ['cardioSessions'] as const,
   /** One cardio session's page: laps, analysis, streams. */
   sessionDetail: (id?: number) =>
     id == null ? (['sessionDetail'] as const) : (['sessionDetail', id] as const),
   analytics: ['analytics'] as const,
+  /** Under `analytics`: a logged session refreshes the year in review too. */
+  yearReview: (year: number) => ['analytics', 'year-review', year] as const,
   playerStats: ['player-stats'] as const,
   fitness: ['fitness'] as const,
   workload: ['workload'] as const,
@@ -82,6 +89,9 @@ export function invalidateAfterSession(queryClient: QueryClient): void {
     qk.matchSummary(),
     qk.strengthSessions,
     qk.muscleStats(),
+    qk.exercises,
+    qk.strengthProgress(),
+    ['strengthRecords'],
     qk.cardioSessions,
     qk.sessionDetail(),
     qk.analytics,

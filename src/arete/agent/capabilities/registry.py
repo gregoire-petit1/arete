@@ -48,7 +48,9 @@ PLANNING_INSTRUCTIONS += """
 STRENGTH_INSTRUCTIONS = """Toolkit `strength` chargé. Règles:
 - Toujours `read_workout` d'abord, puis tu dis à l'athlète ce qui a été compris et ce qui ne l'a pas été, et seulement ensuite `save_workout`.
 - Ce qui est dans `not_recognised` est perdu à l'enregistrement: cite les noms et propose les `did_you_mean`.
-- Passe le texte tel qu'il l'a dit. N'invente jamais une série, une charge ou un RPE."""
+- Passe le texte tel qu'il l'a dit. N'invente jamais une série, une charge ou un RPE.
+- Progression ou charge à viser sur un exercice : `get_strength_progress`, puis cite `next_session` (charge, séries, raison) tel quel.
+- Après `save_workout`, félicite chaque entrée de `personal_records`, sans en ajouter."""
 
 
 #: All registered toolkits. Registering a new one is one line here.
@@ -110,11 +112,12 @@ CAPABILITIES: dict[str, Toolkit] = {
         id="strength",
         description=(
             "Enregistrer une séance de musculation dictée : lire ce que "
-            "l'athlète décrit, vérifier ce qui est reconnu, puis sauvegarder."
+            "l'athlète décrit, vérifier ce qui est reconnu, puis sauvegarder ; "
+            "suivre la progression d'un exercice (e1RM, records, charge suivante)."
         ),
         tools=STRENGTH_TOOLS,
         instructions=STRENGTH_INSTRUCTIONS,
-        read_tools=frozenset({"read_workout"}),
+        read_tools=frozenset({"read_workout", "get_strength_progress"}),
     ),
 }
 

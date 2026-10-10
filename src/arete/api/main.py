@@ -17,6 +17,7 @@ from arete.api.analytics import router as analytics_router
 from arete.api.athlete_facts import router as athlete_facts_router
 from arete.api.auth import AuthMiddleware, auth_misconfigured
 from arete.api.auth import router as auth_router
+from arete.api.data_export import router as data_export_router
 from arete.api.documents import router as documents_router
 from arete.api.gamification import router as gamification_router
 from arete.api.garmin import router as garmin_router
@@ -24,6 +25,7 @@ from arete.api.garmin_export import router as garmin_export_router
 from arete.api.garmin_health import router as garmin_health_router
 from arete.api.garmin_sync import router as garmin_sync_router
 from arete.api.goals import router as goals_router
+from arete.api.google_calendar import PlanSyncMiddleware
 from arete.api.google_calendar import router as google_calendar_router
 from arete.api.metrics import router as metrics_router
 from arete.api.notifications import router as notifications_router
@@ -31,6 +33,7 @@ from arete.api.plan import router as plan_router
 from arete.api.settings import router as settings_router
 from arete.api.strava import router as strava_router
 from arete.api.strength import router as strength_router
+from arete.api.year_review import router as year_review_router
 from arete.config import config
 from arete.dataio.db import db_connection
 from arete.dataio.init_duckdb import main as init_schema
@@ -80,6 +83,8 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Arete API", version="0.1.0", lifespan=lifespan)
+# Innermost: follows the plan into Google Calendar once the response is sent.
+app.add_middleware(PlanSyncMiddleware)
 app.add_middleware(MirrorMiddleware)
 # Added last, so it runs first: a refused request never reaches the mirror.
 app.add_middleware(AuthMiddleware)
@@ -177,5 +182,7 @@ for router in (
     notifications_router,
     goals_router,
     athlete_facts_router,
+    data_export_router,
+    year_review_router,
 ):
     app.include_router(router)
