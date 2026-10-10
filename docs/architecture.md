@@ -218,7 +218,10 @@ system-skills routes of the same filesystem middleware, so their reads are
 redacted too), and any system prompt from `facts_block()`/`journal_block()`
 onward (the context builder appends attachments, page, surface and retrieved
 memory passages after them, so this also drops those) are replaced by
-`[REDACTED:<label>]` before the client sends them; setup and exported data are
+`[REDACTED:<label>]` before the client sends them. This does not scrub the
+athlete's own chat turns: a question typed straight into chat can still name
+an injury or a mood in clear, since redacting human/model conversation text
+generally would defeat tracing's purpose; setup and exported data are
 described in the
 [deployment runbook](deployment.md#langsmith-agent-tracing). Missing usage remains
 unknown, not zero.
