@@ -321,6 +321,26 @@ it('refuses an over-limit document request before clearing the draft', () => {
   expect(result.current.error).toContain('20 documents');
 });
 
+it.each(['interrupted', 'done'] as const)('never replays a whole tool run after %s and retains the next draft', async status => {
+  const { result } = renderHook(() => useCoachThreads(context, true), { wrapper });
+  act(() => { result.current.send('Modifie mes notes'); });
+  act(() => runs[0].emit({ type: 'tool_start', id: 'edit', name: 'edit_file', args: { text: '{}', truncated: false } }));
+  act(() => { result.current.draft('Mon prochain message'); result.current.attachments(['next-document']); });
+  await act(async () => {
+    if (status === 'interrupted') result.current.stop();
+    else {
+      runs[0].emit({ type: 'tool_end', id: 'edit', name: 'edit_file', status: 'done', output: { text: '{}', truncated: false }, elapsed_ms: 100 });
+      runs[0].emit({ type: 'done', message: { role: 'assistant', content: 'Notes mises à jour.' } });
+      runs[0].resolve();
+    }
+  });
+  act(() => { expect(result.current.retry()).toBe(false); });
+  expect(runs).toHaveLength(1);
+  expect(result.current.active.draft).toBe('Mon prochain message');
+  expect(result.current.active.attachmentIds).toEqual(['next-document']);
+  expect(result.current.active.messages).toHaveLength(2);
+});
+
 it('refreshes the athlete facts after the coach remembers one', async () => {
   queryClient.setQueryData(qk.athleteFacts, []);
   queryClient.setQueryData(qk.planned(), []);

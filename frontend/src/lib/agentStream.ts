@@ -28,6 +28,9 @@ export interface CalendarActionPart {
 }
 export type ChatPart = ToolPart | TextPart | CalendarActionPart;
 export interface ChatMessage {
+  /** Local transport state; restored conversations are always settled. */
+  startedAt?: number;
+  streamAccepted?: boolean;
   attachmentIds?: string[];
   workouts?: WorkoutUpdate[];
   imports?: { id: string; version: number }[];
@@ -74,7 +77,7 @@ export function requestWindow(history: ChatMessage[]): ChatMessage[] {
 const MAX_STREAM_BYTES = 2_000_000;
 const MAX_STREAM_EVENTS = 12_000;
 const MAX_STREAM_READS = 24_000;
-const STREAM_TIMEOUT_MS = 310_000;
+export const STREAM_TIMEOUT_MS = 310_000;
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object';
@@ -271,7 +274,8 @@ export async function runAgentStream(
   onEvent: (event: StreamEvent) => void,
   signal: AbortSignal,
   threadId: string,
-  documentIds?: string[]
+  documentIds?: string[],
+  onAccepted?: () => void,
 ): Promise<void> {
   const panel_context: Record<string, string> = { page: context.page };
   for (const [key, value] of Object.entries(context.params))
@@ -295,5 +299,6 @@ export async function runAgentStream(
       )}`
     );
   if (!response.body) throw new Error('Le serveur ne fournit pas de stream.');
+  onAccepted?.();
   await consumeStream(response.body, onEvent);
 }
