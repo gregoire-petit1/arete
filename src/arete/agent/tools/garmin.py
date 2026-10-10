@@ -65,7 +65,7 @@ def list_garmin_devices(config: RunnableConfig) -> str:
                 )
             )
         )
-    except (ValueError, ConnectionError, TimeoutError, PermissionError) as exc:
+    except (ValueError, PermissionError) as exc:
         return _json({"error": str(exc)})
 
 
@@ -96,10 +96,13 @@ def export_garmin_sessions(
 def reconcile_garmin_session(session_id: int, config: RunnableConfig) -> str:
     """Verify an uncertain Garmin outcome before considering another explicit export."""
     try:
-        garmin_export.reconcile(
+        state = garmin_export.reconcile(
             session_id, deadline=config.get("configurable", {}).get("workout_deadline")
         )
-        return _json(garmin_export.inspect_session(session_id, include_steps=False))
+        view = garmin_export.inspect_session(session_id, include_steps=False)
+        if state["state"] in {"uncertain", "conflict", "failed"}:
+            view["error"] = state["error"] or "Vérification Garmin incomplète."
+        return _json(view)
     except ValueError as exc:
         return _json({"error": str(exc)})
 

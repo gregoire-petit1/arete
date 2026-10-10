@@ -4,9 +4,13 @@ from collections.abc import Callable
 from typing import Any
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware
+from langchain.agents.middleware import AgentMiddleware, ToolRetryMiddleware
 from langchain_core.language_models import BaseChatModel
+from langchain_core.tools import BaseTool
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import Timeout as RequestsTimeout
 
+from arete.agent.capabilities.registry import CAPABILITIES
 from arete.agent.middlewares.autosuggestion import AutoSuggestionMiddleware
 from arete.agent.middlewares.capabilities import ToolkitMiddleware
 from arete.agent.middlewares.context import (
@@ -19,6 +23,10 @@ from arete.agent.middlewares.observability import ModelTelemetryMiddleware
 from arete.agent.middlewares.policy import ProfilePolicyMiddleware
 from arete.agent.profiles.models import AgentProfile
 from arete.agent.prompts.coach import SYSTEM_SKILL
+from arete.agent.runtime.budget import (
+    MAX_READ_TOOL_RETRIES,
+    READ_TOOL_RETRY_DELAY_SECONDS,
+)
 from arete.agent.runtime.context import AgentContext
 from arete.agent.tools.journal import append_journal, remember_fact
 from arete.agent.tools.pages import get_page_context
@@ -44,6 +52,34 @@ def build_agent(
     ]
     if profile.page_context:
         middleware.append(ToolEventMiddleware())
+    # Wrap dynamic execution, but never replay writes or infer retryability
+    # from error strings. Each attempt still traverses ToolkitMiddleware's budget.
+    retry_tools: list[BaseTool | str] = [
+        name
+        for name in sorted(
+            {name for tk in CAPABILITIES.values() for name in tk.read_tools}
+        )
+    ]
+    middleware.append(
+        ToolRetryMiddleware(
+            tools=retry_tools,
+            max_retries=MAX_READ_TOOL_RETRIES,
+            retry_on=(
+                ConnectionError,
+                TimeoutError,
+                RequestsConnectionError,
+                RequestsTimeout,
+            ),
+            on_failure=lambda exc: (
+                f"Lecture impossible après nouvelle tentative : {type(exc).__name__}: {exc}. "
+                "Signale les données indisponibles ; ne les invente pas."
+            ),
+            initial_delay=READ_TOOL_RETRY_DELAY_SECONDS,
+            max_delay=READ_TOOL_RETRY_DELAY_SECONDS,
+            backoff_factor=1.0,
+            jitter=False,
+        )
+    )
     middleware.append(ToolkitMiddleware())
     if profile.journal_tools:
         middleware.append(filesystem)
