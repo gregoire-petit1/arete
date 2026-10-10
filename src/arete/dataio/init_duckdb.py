@@ -470,6 +470,13 @@ CREATE TABLE IF NOT EXISTS app.slack_execution (
     event_key VARCHAR
 );
 INSERT INTO app.slack_execution (id) VALUES (1) ON CONFLICT DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS app.system_skills (
+    bundle VARCHAR NOT NULL,
+    path VARCHAR NOT NULL,
+    content VARCHAR NOT NULL,
+    PRIMARY KEY (bundle, path)
+);
 """
 
 
@@ -736,6 +743,13 @@ def _m37_slack_deliveries(con) -> None:
     con.execute(DDL[start:end])
 
 
+def _m38_system_skills(con) -> None:
+    # Shared server instructions contain no athlete data or credentials.
+    start = DDL.index("CREATE TABLE IF NOT EXISTS app.system_skills")
+    end = DDL.index(";", start) + 1
+    con.execute(DDL[start:end])
+
+
 def _m39_user_roles(con) -> None:
     """Administrators besides the owner. DuckDB adds no constraint with a
     column, so it stays nullable and readers treat NULL as 'athlete'."""
@@ -771,7 +785,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (35, _m35_athlete_accounts),
     (36, _m36_private_relations),
     (37, _m37_slack_deliveries),
-    # 38 is reserved for linking Slack accounts to athletes.
+    (38, _m38_system_skills),
     (39, _m39_user_roles),
 ]
 

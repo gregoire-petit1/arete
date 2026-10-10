@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Spinner } from '@/components/ui/Spinner';
+import { AretePresence } from '@/components/AreteBrand';
 
 /** Full-page frame for what the gate shows in place of the app. */
 export function GateScreen({ children }: { children: ReactNode }) {
@@ -13,7 +13,7 @@ export function GateSpinner() {
   return (
     <GateScreen>
       <span role="status" aria-label="Chargement…">
-        <Spinner className="text-neon-cyan" />
+        <AretePresence size={40} />
       </span>
     </GateScreen>
   );

@@ -1,5 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http';
 import { test, expect, type Page } from '@playwright/test';
+import { DEFAULT_SETTINGS } from '../src/pages/settings/types';
 
 async function fixture(page: Page, enabled = true) {
   let response: ServerResponse | undefined;
@@ -25,6 +26,7 @@ async function fixture(page: Page, enabled = true) {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/auth/config')) return route.fulfill({ json: { enabled: false } });
     if (path.endsWith('/settings/gamification')) return route.fulfill({ json: { enabled, opted_in: enabled, available: true, version: 1 } });
+    if (path === '/api/settings') return route.fulfill({ json: { ...DEFAULT_SETTINGS, user_id: 1, theme: 'pierre' } });
     if (path.includes('/settings')) return route.fulfill({ json: {} });
     return route.fulfill({ json: [] });
   });
@@ -68,7 +70,7 @@ test('Chiron composer: inline file picker, draft removal and reuse before sendin
   });
   try {
     const panel = await openCoach(page);
-    await page.evaluate(() => document.documentElement.dataset.theme = 'performance');
+    await page.evaluate(() => document.documentElement.dataset.theme = 'pierre');
     const composer = panel.locator('footer');
     const attach = composer.getByRole('button', { name: 'Joindre un fichier', exact: true });
     await expect(attach).toBeVisible();
@@ -102,7 +104,7 @@ test('Chiron composer: inline file picker, draft removal and reuse before sendin
     await library.click();
     await expect(composer.getByRole('button', { name: `Consulter ${doc.name}` })).toBeVisible();
     await expect(composer.getByLabel('Message au coach')).toHaveValue('Adapte ce programme à ma semaine.');
-    for (const theme of ['performance', 'odyssey']) {
+    for (const theme of ['pierre', 'prune']) {
       await page.setViewportSize({ width: 390, height: 844 });
       await page.evaluate(value => document.documentElement.dataset.theme = value, theme);
       await expect(attach).toBeInViewport();
@@ -135,31 +137,29 @@ test('Chiron: real SSE states, one motion cycle, immediate text and an interrupt
     await panel.getByRole('button', { name: 'Envoyer', exact: true }).click();
     await expect(panel.getByRole('status')).toHaveText('Chiron prépare sa réponse');
     await expect(panel.locator('.coach-activity details')).not.toHaveAttribute('open');
-    // Sample the rendered CSS animation over its entire cycle, including the
-    // stagger, then resume playback. No screenshot can prove these timings.
-    const frames = await panel.locator('.coach-presence').evaluate(element => {
-      const dots = Array.from(element.children);
-      const animations = dots.map(dot => dot.getAnimations()[0]);
-      animations.forEach(animation => animation.pause());
-      const result = [240, 520, 800, 1279].map(time => {
-        animations.forEach(animation => animation.currentTime = time);
-        return dots.map(dot => ({ opacity: Number(getComputedStyle(dot).opacity), transform: getComputedStyle(dot).transform }));
+    // Sample the actual orbit over a full 1.4 s turn; the laurel never rotates.
+    const frames = await panel.locator('.activity-orbit').evaluate(element => {
+      const animation = element.getAnimations()[0];
+      animation.pause();
+      const result = [0, 350, 700, 1400].map(time => {
+        animation.currentTime = time;
+        return getComputedStyle(element).transform;
       });
-      animations.forEach(animation => animation.play());
+      animation.play();
       return result;
     });
-    for (let i = 0; i < 3; i++) {
-      expect(frames[i][i].opacity).toBeGreaterThan(.9);
-      expect(frames[i][i].transform).toContain('-3');
-    }
-    expect(frames[3].every(dot => dot.opacity < .4)).toBe(true);
+    expect(new Set(frames.slice(0, 3)).size).toBe(3);
+    await expect(panel.locator('.activity-presence .arete-mark')).toHaveCSS('transform', 'none');
     await page.screenshot({ path: '../.context/chiron-latency-desktop.png', animations: 'disabled' });
     stream.send({ type: 'tool_start', id: 'read', name: 'read_file', args: preview });
     await expect(panel.getByRole('status')).toHaveText('Lecture de tes notes');
     stream.send({ type: 'tool_end', id: 'read', name: 'read_file', status: 'done', output: preview, elapsed_ms: 40 });
-    await expect(panel.getByRole('status')).toHaveText('Notes consultées');
+    await expect(panel.getByRole('status')).toHaveText('Notes consultées · préparation de la réponse');
+    await expect(panel.locator('.activity-orbit')).toBeVisible();
     stream.send({ type: 'token', id: 'answer', text: 'J’ai retrouvé ton ancien objectif.' });
     await expect(panel.getByText('J’ai retrouvé ton ancien objectif.', { exact: true })).toBeVisible({ timeout: 1_000 });
+    await expect(panel.locator('.activity-orbit')).toHaveCount(0);
+    await expect(panel.getByRole('status')).toHaveText('Réponse en cours');
     const prose = await panel.locator('.coach-answer-part').elementHandle();
     stream.send({ type: 'token', id: 'answer', text: ' Je mets les notes à jour.' });
     await expect(panel.locator('.coach-answer-part')).toContainText('Je mets les notes à jour.');
@@ -179,7 +179,7 @@ test('Chiron: real SSE states, one motion cycle, immediate text and an interrupt
   } finally { await stream.close(); }
 });
 
-for (const theme of ['odyssey', 'performance']) {
+for (const theme of ['pierre', 'prune']) {
   test(`mobile ${theme}: reduced motion, stable layout and confirmed result`, async ({ page }) => {
     const stream = await fixture(page);
     try {
@@ -190,12 +190,11 @@ for (const theme of ['odyssey', 'performance']) {
       await panel.getByLabel('Message au coach').fill('Mets à jour mes notes.');
       await panel.getByRole('button', { name: 'Envoyer', exact: true }).click();
       await expect(panel.getByRole('status')).toHaveText('Chiron prépare sa réponse');
-      const animations = await panel.locator('.coach-presence > span').evaluateAll(dots => dots.map(dot => getComputedStyle(dot).animationName));
-      expect(animations).toEqual(['none', 'none', 'none']);
+      await expect(panel.locator('.activity-orbit')).toHaveCSS('animation-name', 'none');
       stream.send({ type: 'tool_start', id: 'edit', name: 'edit_file', args: preview });
       stream.send({ type: 'tool_end', id: 'edit', name: 'edit_file', status: 'done', output: preview, elapsed_ms: 40 });
-      await expect(panel.getByRole('status')).toHaveText('Notes mises à jour');
-      await expect(panel.locator('.coach-confirmation')).toHaveCSS('animation-name', 'none');
+      await expect(panel.getByRole('status')).toHaveText('Notes mises à jour · préparation de la réponse');
+      await expect(panel.locator('.coach-confirmation')).toHaveCount(0);
       stream.send({ type: 'token', id: 'answer', text: 'Tes notes sont à jour.' });
       stream.send({ type: 'done', message: { role: 'assistant', content: 'Tes notes sont à jour.' } });
       await expect(panel.getByText('Tes notes sont à jour.', { exact: true })).toBeVisible();
@@ -205,29 +204,32 @@ for (const theme of ['odyssey', 'performance']) {
         return bounds.left < 0 || bounds.right > innerWidth || child.scrollWidth > child.clientWidth + 1;
       }).map(child => child.className));
       expect(overflowing).toEqual([]);
-      await expect(panel.getByRole('img')).toHaveCount(0); // Decorative portrait remains hidden to screen readers.
-      const portrait = panel.locator('header img');
-      expect(await portrait.evaluate(image => ({ width: image.clientWidth, height: image.clientHeight, loaded: (image as HTMLImageElement).naturalWidth > 0 }))).toEqual({ width: 36, height: 36, loaded: true });
+      await expect(panel.getByRole('img')).toHaveCount(0); // Decorative avatar remains hidden to screen readers.
+      const mark = panel.locator('header .arete-mark');
+      await expect(mark).toHaveCSS('width', '36px');
+      await expect(mark).toHaveCSS('height', '36px');
+      await expect(mark).toHaveCSS('mask-image', /url\(/);
+      await expect(panel.locator('.coach-confirmation')).toHaveCSS('animation-name', 'none');
       await page.screenshot({ path: `../.context/chiron-latency-${theme}-mobile.png`, animations: 'disabled' });
       expect(stream.requests()).toBe(1);
     } finally { await stream.close(); }
   });
 }
 
-test('the existing opt-out keeps the original coach interface', async ({ page }) => {
+test('the existing opt-out keeps its composer and uses the shared coach presence', async ({ page }) => {
   const stream = await fixture(page, false);
   try {
     const panel = await openCoach(page);
     await expect(panel.getByRole('heading', { name: 'Coach Arete', exact: true })).toBeVisible();
     await panel.getByLabel('Message au coach').fill('Ma forme ?');
     await panel.getByRole('button', { name: 'Envoyer', exact: true }).click();
-    await expect(panel.locator('.coach-presence')).toHaveCount(0);
-    await expect(panel.getByText('Voir l’activité')).toHaveCount(0);
+    await expect(panel.locator('.activity-presence')).toBeVisible();
+    await expect(panel.getByText('Voir l’activité')).toBeVisible();
     await expect(panel.getByRole('button', { name: 'Arrêter la réponse' })).toBeVisible();
   } finally { await stream.close(); }
 });
 
-for (const theme of ['odyssey', 'performance']) {
+for (const theme of ['pierre', 'prune']) {
   test(`compact ${theme} composer preserves newlines and scrolls only vertically`, async ({ page }) => {
     const stream = await fixture(page);
     const doc = { id: '11111111-1111-4111-8111-111111111111', name: 'Programme.md', size: 18, sha256: '0'.repeat(64), status: 'ready' };
@@ -269,3 +271,60 @@ for (const theme of ['odyssey', 'performance']) {
     } finally { await stream.close(); }
   });
 }
+
+
+test('Arete: file drop, inline draft and active SSE survive tab navigation', async ({ page }) => {
+  const stream = await fixture(page);
+  const doc = { id: '11111111-1111-4111-8111-111111111111', name: 'Plan.md', size: 18, sha256: '0'.repeat(64), status: 'ready' };
+  let uploaded = false;
+  await page.route('**/api/agent/threads/*/documents**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/finalize')) { uploaded = true; return route.fulfill({ json: doc }); }
+    if (path.includes('/chunks/')) return route.fulfill({ json: { uploaded: true } });
+    if (route.request().method() === 'POST') return route.fulfill({ json: doc });
+    return route.fulfill({ json: uploaded ? [doc] : [] });
+  });
+  try {
+    const panel = await openCoach(page);
+    const input = panel.getByLabel('Message au coach');
+    const inputNode = await input.elementHandle();
+    await input.fill('Adapte ma semaine avec ce fichier.');
+    const transfer = await page.evaluateHandle(() => {
+      const data = new DataTransfer();
+      data.items.add(new File(['Footing 30 minutes'], 'Plan.md', { type: 'text/markdown' }));
+      return data;
+    });
+    await panel.dispatchEvent('dragenter', { dataTransfer: transfer });
+    await expect(panel.getByText('Dépose tes fichiers ici')).toBeVisible();
+    await panel.dispatchEvent('drop', { dataTransfer: transfer });
+    await expect(panel.getByText('Dépose tes fichiers ici')).toHaveCount(0);
+    await expect(panel.locator('footer').getByRole('button', { name: 'Consulter Plan.md' })).toBeVisible();
+    expect(stream.requests()).toBe(0);
+    const navigation = page.getByRole('navigation', { name: 'Navigation principale' });
+    await navigation.getByRole('link', { name: 'Réglages', exact: true }).click();
+    await expect(page).toHaveURL(/settings/);
+    await expect(input).toHaveValue('Adapte ma semaine avec ce fichier.');
+    await expect(panel.locator('footer').getByRole('button', { name: 'Consulter Plan.md' })).toBeVisible();
+    expect(await inputNode!.evaluate(node => node === document.querySelector('[aria-label="Message au coach"]'))).toBe(true);
+    await panel.getByRole('button', { name: 'Envoyer', exact: true }).click();
+    await expect.poll(() => stream.requests()).toBe(1);
+    stream.send({ type: 'tool_start', id: 'planning', name: 'read_file', args: preview });
+    await input.fill('Garde mon dimanche libre.');
+    await navigation.getByRole('link', { name: 'Planning', exact: true }).click();
+    await expect(page).toHaveURL(/planning/);
+    await expect(panel.getByRole('status')).toHaveText('Lecture de tes notes');
+    await expect(input).toHaveValue('Garde mon dimanche libre.');
+    expect(await inputNode!.evaluate(node => node === document.querySelector('[aria-label="Message au coach"]'))).toBe(true);
+    stream.send({ type: 'tool_end', id: 'planning', name: 'read_file', status: 'done', output: preview, elapsed_ms: 80 });
+    await expect(panel.locator('.activity-orbit')).toBeVisible();
+    stream.send({ type: 'token', id: 'answer', text: 'Voici les ajustements proposés.' });
+    await expect(panel.getByText('Voici les ajustements proposés.', { exact: true })).toBeVisible();
+    await expect(panel.locator('.activity-orbit')).toHaveCount(0);
+    stream.send({ type: 'done', message: { role: 'assistant', content: 'Voici les ajustements proposés.' } });
+    await expect(panel.getByRole('button', { name: 'Envoyer', exact: true })).toBeEnabled();
+    stream.send({ type: 'suggestion', text: 'Une autre suggestion' });
+    await expect(input).toHaveValue('Garde mon dimanche libre.');
+    expect(stream.requests()).toBe(1);
+    await page.screenshot({ path: '../.context/arete-brand/verified-navigation.png', animations: 'disabled' });
+  } finally { await stream.close(); }
+});

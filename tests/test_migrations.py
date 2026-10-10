@@ -379,6 +379,29 @@ def test_a_missing_version_below_the_latest_still_runs(tmp_path, monkeypatch):
     assert versions == [17]  # recorded once, and the unknown 9999 is ignored
 
 
+def test_m38_creates_system_skills_even_below_a_recorded_future_version(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "skills.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = migration_connection(str(path))
+    con.execute("DROP TABLE app.system_skills")
+    con.execute("DELETE FROM app.schema_version WHERE version=38")
+    con.execute("INSERT INTO app.schema_version (version) VALUES (9999)")
+    con.close()
+    init_duckdb.main()
+    init_duckdb.main()
+    con = migration_connection(str(path), read_only=True)
+    try:
+        assert con.execute("SELECT * FROM app.system_skills").fetchall() == []
+        assert con.execute(
+            "SELECT count(*) FROM app.schema_version WHERE version=38"
+        ).fetchone() == (1,)
+    finally:
+        con.close()
+
+
 def test_m31_creates_the_stream_and_feedback_tables_once(tmp_path, monkeypatch):
     path = tmp_path / "streams.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { MessageFeedback } from './MessageFeedback';
 import { readFeedback, writeFeedback, type MessageFeedback as Feedback } from '@/lib/agentFeedback';
@@ -18,7 +18,8 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
 it('waits for acknowledgement, prevents double clicks, toggles and changes votes', async () => {
   let resolve!: () => void;
-  vi.mocked(writeFeedback).mockReturnValueOnce(new Promise<void>(r => { resolve = r; }));
+  // A request starting is not its acknowledgement: settle each vote explicitly.
+  vi.mocked(writeFeedback).mockImplementation(() => new Promise<void>(r => { resolve = r; }));
   render(<Harness />);
   const up = screen.getByRole('button', { name: 'Réponse utile' });
   fireEvent.click(up);
@@ -29,10 +30,23 @@ it('waits for acknowledgement, prevents double clicks, toggles and changes votes
   await act(async () => resolve());
   expect(up.getAttribute('aria-pressed')).toBe('true');
   expect(screen.getByRole('status').textContent).toBe('Enregistré');
-  fireEvent.click(screen.getByRole('button', { name: 'Réponse peu utile' }));
-  await waitFor(() => expect(writeFeedback).toHaveBeenLastCalledWith(trace, 'thread-a', 'user_score', 0));
-  fireEvent.click(screen.getByRole('button', { name: 'Réponse peu utile' }));
-  await waitFor(() => expect(writeFeedback).toHaveBeenLastCalledWith(trace, 'thread-a', 'user_score', null));
+  const down = screen.getByRole('button', { name: 'Réponse peu utile' });
+  fireEvent.click(down);
+  expect(writeFeedback).toHaveBeenLastCalledWith(trace, 'thread-a', 'user_score', 0);
+  expect(down.hasAttribute('disabled')).toBe(true);
+  expect(down.getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(down);
+  expect(writeFeedback).toHaveBeenCalledTimes(2);
+  await act(async () => resolve());
+  expect(down.hasAttribute('disabled')).toBe(false);
+  expect(down.getAttribute('aria-pressed')).toBe('true');
+  expect(up.getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(down);
+  expect(writeFeedback).toHaveBeenLastCalledWith(trace, 'thread-a', 'user_score', null);
+  await act(async () => resolve());
+  expect(writeFeedback).toHaveBeenCalledTimes(3);
+  expect(down.getAttribute('aria-pressed')).toBe('false');
+  expect(screen.getByRole('status').textContent).toBe('Enregistré');
 });
 
 it('supports arbitrary composed emojis and keeps votes independent from reactions', async () => {

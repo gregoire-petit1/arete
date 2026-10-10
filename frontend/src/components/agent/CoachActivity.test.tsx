@@ -32,13 +32,13 @@ it('reports the actual tool, distinguishes reads from writes and confirms only t
   expect(screen.getByRole('status').textContent).toBe('Lecture de tes notes');
   message = applyEvent(message, { type: 'tool_end', id: 'read', name: 'read_file', status: 'done', output: preview, elapsed_ms: 15 });
   rerender(<CoachActivity message={message} />);
-  expect(screen.getByRole('status').textContent).toBe('Notes consultées');
+  expect(screen.getByRole('status').textContent).toBe('Notes consultées · préparation de la réponse');
   message = applyEvent(message, { type: 'tool_start', id: 'edit', name: 'edit_file', args: preview });
   rerender(<CoachActivity message={message} />);
   expect(screen.getByRole('status').textContent).toBe('Mise à jour de tes notes');
   message = applyEvent(message, { type: 'tool_end', id: 'edit', name: 'edit_file', status: 'done', output: preview, elapsed_ms: 15 });
   rerender(<CoachActivity message={message} />);
-  expect(screen.getByRole('status').textContent).toBe('Notes mises à jour');
+  expect(screen.getByRole('status').textContent).toBe('Notes mises à jour · préparation de la réponse');
 });
 
 it('does not let one completed parallel action conceal another pending or failed action', () => {
@@ -82,4 +82,34 @@ it('detects a connection lost between requests before the next offline event', (
   connection.mockReturnValue(false);
   rerender(<CoachActivity message={message} />);
   expect(screen.getByText(/Connexion perdue/)).toBeTruthy();
+});
+
+
+it('keeps waiting after tool completion, stops motion on the first text and never delays tokens', () => {
+  message = applyEvent(message, { type: 'tool_start', id: 'read', name: 'read_file', args: preview });
+  message = applyEvent(message, { type: 'tool_end', id: 'read', name: 'read_file', status: 'done', output: preview, elapsed_ms: 15 });
+  const { container, rerender } = render(<CoachActivity message={message} />);
+  expect(container.querySelector('.activity-orbit')).not.toBeNull();
+  expect(container.querySelector('.coach-confirmation')).toBeNull();
+  message = applyEvent(message, { type: 'token', id: 'answer', text: 'Voici' });
+  rerender(<CoachActivity message={message} />);
+  expect(screen.getByRole('status').textContent).toBe('Réponse en cours');
+  expect(container.querySelector('.activity-orbit')).toBeNull();
+  rerender(<CoachActivity message={settleMessage(message)} />);
+  expect(screen.getByRole('status').textContent).toBe('Notes consultées');
+  expect(container.querySelector('.coach-confirmation')).not.toBeNull();
+});
+
+it('stops the orbit when offline, cancelled or past the transport deadline', () => {
+  const connection = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+  const { container, rerender } = render(<CoachActivity message={message} />);
+  expect(container.querySelector('.activity-orbit')).not.toBeNull();
+  act(() => { connection.mockReturnValue(false); window.dispatchEvent(new Event('offline')); });
+  expect(container.querySelector('.activity-orbit')).toBeNull();
+  act(() => { connection.mockReturnValue(true); window.dispatchEvent(new Event('online')); });
+  expect(container.querySelector('.activity-orbit')).not.toBeNull();
+  act(() => vi.advanceTimersByTime(STREAM_TIMEOUT_MS));
+  expect(container.querySelector('.activity-orbit')).toBeNull();
+  rerender(<CoachActivity message={settleMessage(message, undefined, true)} />);
+  expect(container.querySelector('.activity-orbit')).toBeNull();
 });

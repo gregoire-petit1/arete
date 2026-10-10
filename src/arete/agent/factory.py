@@ -4,7 +4,11 @@ from collections.abc import Callable
 from typing import Any
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware, ToolRetryMiddleware
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelFallbackMiddleware,
+    ToolRetryMiddleware,
+)
 from langchain_core.language_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from requests.exceptions import ConnectionError as RequestsConnectionError
@@ -24,6 +28,7 @@ from arete.agent.middlewares.policy import ProfilePolicyMiddleware
 from arete.agent.profiles.models import AgentProfile
 from arete.agent.prompts.coach import SYSTEM_SKILL
 from arete.agent.runtime.budget import (
+    MAX_MODEL_FALLBACKS,
     MAX_READ_TOOL_RETRIES,
     READ_TOOL_RETRY_DELAY_SECONDS,
 )
@@ -44,7 +49,10 @@ def build_agent(
     filesystem: AgentMiddleware[Any, Any, Any],
     calendar: CalendarFactory | None = None,
     suggestion_model: BaseChatModel | None = None,
+    fallback_models: tuple[BaseChatModel, ...] = (),
+    skills: AgentMiddleware[Any, Any, Any] | None = None,
 ):
+    assert len(fallback_models) <= MAX_MODEL_FALLBACKS, "Too many fallback models"
     middleware = [
         ProfilePolicyMiddleware(profile.id, profile=profile, calendar=calendar),
         *execution_limits(),
@@ -82,6 +90,8 @@ def build_agent(
     middleware.append(ToolkitMiddleware())
     if profile.journal_tools:
         middleware.append(filesystem)
+        if skills is not None:
+            middleware.append(skills)
     middleware.append(
         ContextBuilderMiddleware(
             context_tokens=context_tokens, output_tokens=output_tokens
@@ -92,6 +102,10 @@ def build_agent(
             context_tokens=context_tokens, output_tokens=output_tokens
         )
     )
+    # Context/policy errors must not trigger fallback. Each provider attempt is
+    # measured separately; model fallback never encloses tool execution.
+    if fallback_models:
+        middleware.append(ModelFallbackMiddleware(*fallback_models))
     middleware.append(ModelTelemetryMiddleware())
     if profile.id == "chat" and suggestion_model is not None:
         middleware.append(

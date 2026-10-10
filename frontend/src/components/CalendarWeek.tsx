@@ -47,7 +47,7 @@ function CalendarDay({ date, planned, actual, isToday, today, onClick }: Calenda
         'flex flex-col p-2 rounded transition-all duration-200',
         'border min-h-[120px]',
         onClick ? 'cursor-pointer hover:scale-[1.02]' : 'cursor-default',
-        isToday && 'border-neon-cyan shadow-[0_0_15px_rgba(0,240,255,0.3)]',
+        isToday && 'border-neon-cyan shadow-[0_0_15px_color-mix(in_srgb,var(--color-neon-cyan)_30%,transparent)]',
         hasCompleted && !isToday && 'border-success-green/40 bg-success-green/5',
         hasPending && !hasCompleted && !isToday && 'border-text-muted/30 bg-abyss/50',
         isRest && 'border-text-muted/10 bg-void/50'
