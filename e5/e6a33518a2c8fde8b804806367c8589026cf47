@@ -1,0 +1,21 @@
+tests/test_strava_api.py
+  s_ae2eec6921d568::t_604d862d99095a 306-317
+src/arete/api/strava.py
+  s_ae2eec6921d568::t_604d862d99095a 31-36,38-49,197-199,211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5e6a33518a2c8fde8b804806367c8589026cf47",
+  "prompts": {},
+  "sessions": {
+    "s_ae2eec6921d568": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c6dc0d54-eeb3-4620-9a6e-b2a6ed9a099f",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Nicolas Edmond <nicolas@mac-1.home>"
+    }
+  }
+}
