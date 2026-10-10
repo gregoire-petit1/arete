@@ -51,8 +51,8 @@ export function SessionDetailPage() {
   });
 
   return (
-    <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
-      <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
+    <div className="page-shell bg-void">
+      <div className="page-content space-y-4 sm:space-y-6">
         <Link
           to="/log?tab=cardio"
           className="inline-flex items-center gap-1 text-xs font-mono text-text-muted hover:text-neon-cyan"
@@ -95,7 +95,7 @@ function SessionView({ detail }: { detail: ActivityDetail }) {
       <header className="flex items-start gap-3 animate-fade-down">
         {icon}
         <div className="min-w-0 flex-1">
-          <h1 className="text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wide break-words">
+          <h1 className="page-title text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wide break-words">
             {session.name || sportLabel(session.sport)}
           </h1>
           <p className="text-xs sm:text-sm font-mono text-text-muted mt-1">

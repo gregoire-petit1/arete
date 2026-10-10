@@ -5,6 +5,7 @@ import { STREAM_TIMEOUT_MS, type ChatMessage } from '@/lib/agentStream';
 import { cn } from '@/lib/utils';
 import { markWorkout, measureWorkout } from '@/lib/workoutPerformance';
 import { ToolActivity } from './ToolActivity';
+import { AretePresence } from '../AreteBrand';
 
 const LONG_WAIT_SECONDS = 8;
 const CLOCK_TICK_MS = 1_000;
@@ -40,8 +41,8 @@ function useElapsedSeconds(startedAt: number | undefined, running: boolean) {
 }
 
 /** Decorative motion never announces fake progress or delays streamed text. */
-export function CoachPresence() {
-  return <span className="coach-presence" aria-hidden="true"><span /><span /><span /></span>;
+export function CoachPresence({ active = true }: { active?: boolean }) {
+  return <AretePresence active={active} />;
 }
 
 export function CoachActivity({ message }: { message: ChatMessage }) {
@@ -67,16 +68,16 @@ export function CoachActivity({ message }: { message: ChatMessage }) {
     : running ? toolLabel(running)
       : failed ? 'Une action a échoué'
         : uncertain ? 'Résultat à vérifier'
-          : confirmed ? toolLabel(last)
-            : hasText ? 'Réponse en cours'
+          : pending && hasText ? 'Réponse en cours'
+            : confirmed ? pending ? `${toolLabel(last)} · préparation de la réponse` : toolLabel(last)
               : message.streamAccepted ? 'Chiron prépare sa réponse' : 'Demande envoyée';
   const statusKey = `${running?.id ?? last?.id ?? 'response'}:${label}`;
 
   if (!pending && !tools.length && !interrupted) return null;
   return (
     <div className="coach-activity mb-3 min-w-0 space-y-2 text-[13px] leading-relaxed">
-      <p role="status" aria-atomic="true" className={cn('flex min-h-5 items-center gap-2 text-text-secondary', confirmed && !interrupted && 'text-success-green')}>
-        {pending && !confirmed && !failed ? <CoachPresence />
+      <p role="status" aria-atomic="true" className={cn('flex min-h-8 items-center gap-2 text-text-secondary', !pending && confirmed && !interrupted && 'text-success-green')}>
+        {pending && !interrupted ? <CoachPresence active={online && !hasText && !failed && !uncertain && elapsed < STREAM_TIMEOUT_MS / CLOCK_TICK_MS} />
           : confirmed && !interrupted ? <span key={statusKey} className="coach-confirmation" aria-hidden="true" />
             : <CircleAlert aria-hidden="true" className="size-4 shrink-0 text-text-muted" />}
         <span key={statusKey} className="coach-status-label min-w-0">{label}</span>

@@ -285,14 +285,14 @@ export function YearReviewPage() {
   });
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 space-y-4">
+    <div className="page-shell space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           <Link to="/analytics" className="inline-flex items-center gap-1 text-xs font-mono text-text-muted hover:text-neon-cyan">
             <ArrowLeft className="w-3 h-3" aria-hidden />
             Analyses
           </Link>
-          <h1 className="text-xl font-bold font-mono text-neon-cyan tracking-wider uppercase">Bilan {year}</h1>
+          <h1 className="page-title text-xl font-bold font-mono text-neon-cyan tracking-wider uppercase">Bilan {year}</h1>
           {data && (
             <p className="text-xs text-text-muted font-mono mt-1">
               Du {longDate(data.start)} au {longDate(data.end)}
