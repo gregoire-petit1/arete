@@ -113,8 +113,8 @@ do not add tests that merely repeat an implementation. Live model evaluations in
   scripts. A local DuckDB file (`make dev`, tests) allows one writer: a script that
   opens it while a backend runs makes the API answer 500.
 - Deployment is described in `docs/deployment.md`. In short: a PR labelled
-  `preview` gets a preview from CI; `main` merges through the merge queue and
-  every green run deploys it to https://arete-main-arete15.vercel.app (database
+  `preview` gets a preview from CI; every green CI run on `main` deploys it to
+  https://arete-main-arete15.vercel.app (database
   `md:arete_preview`); production ships in batches through the manual **Deploy
   production** workflow, which refuses a commit the preview does not serve
   healthy. The boot clones a MotherDuck database before migrating it, and
