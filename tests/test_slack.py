@@ -25,7 +25,7 @@ def configured(monkeypatch):
         "SLACK_SIGNING_SECRET": "test-secret",
         "SLACK_BOT_TOKEN": "test-token",
         "SLACK_TEAM_ID": "T123",
-        "SLACK_USER_ID": "U123",
+        "SLACK_CHANNEL_ID": "C123",
     }.items():
         monkeypatch.setenv(name, value)
     worker = AsyncMock()
@@ -102,14 +102,16 @@ def test_invalid_signatures_rejected(router_client, configured, payload, options
 @pytest.mark.parametrize(
     "changes",
     [
-        {"user": "U999"},
         {"channel_type": "channel"},
+        {"channel": "C999", "channel_type": "channel"},
         {"bot_id": "B123"},
         {"subtype": "message_changed"},
         {"files": [{"id": "F123"}]},
     ],
 )
-def test_only_athletes_plain_dm_runs(router_client, configured, payload, changes):
+def test_only_plain_text_dm_or_dedicated_channel_runs(
+    router_client, configured, payload, changes
+):
     payload["event"].update(changes)
     assert (
         router_client(api.router).post("/slack/events", **signed(payload)).status_code
@@ -130,7 +132,7 @@ def test_other_workspace_ignored(router_client, configured, payload):
 def test_missing_configuration_fails_closed(
     router_client, configured, payload, monkeypatch
 ):
-    monkeypatch.delenv("SLACK_USER_ID")
+    monkeypatch.delenv("SLACK_TEAM_ID")
     assert (
         router_client(api.router).post("/slack/events", **signed(payload)).status_code
         == 503
@@ -146,6 +148,35 @@ def test_allowed_dm_schedules_exact_message(
         == 200
     )
     configured.assert_awaited_once_with(message, "test-token")
+
+
+def test_any_member_dm_is_scheduled_for_resolution(
+    router_client, configured, payload, message
+):
+    payload["event"]["user"] = "U999"
+    router_client(api.router).post("/slack/events", **signed(payload))
+    configured.assert_awaited_once_with(replace(message, user="U999"), "test-token")
+
+
+def test_dedicated_channel_mention_is_scheduled(
+    router_client, configured, payload, message
+):
+    payload["authorizations"] = [{"is_bot": True, "user_id": "UBOT"}]
+    payload["event"].update(
+        {"channel": "C123", "channel_type": "channel", "text": "<@UBOT> séance ?"}
+    )
+    router_client(api.router).post("/slack/events", **signed(payload))
+    configured.assert_awaited_once_with(
+        replace(
+            message,
+            channel="C123",
+            text="<@UBOT> séance ?",
+            in_channel=True,
+            mentioned=True,
+            bot_user="UBOT",
+        ),
+        "test-token",
+    )
 
 
 def test_receipt_sent_before_background_work(configured, payload, monkeypatch):
@@ -262,7 +293,9 @@ def test_retry_invokes_coach_and_posts_once(ledger, message):
         await slack.dispatch(message, client=client, produce=produce)
 
     asyncio.run(run())
-    produce.assert_awaited_once_with(client.history.return_value, message.thread_id)
+    produce.assert_awaited_once_with(
+        client.history.return_value, message.thread_id, "private"
+    )
     client.reply.assert_awaited_once_with(message, "Repos aujourd’hui.")
 
 
@@ -341,7 +374,8 @@ def test_slack_migration_on_existing_database(ledger):
     with db_connection() as con:
         con.execute("DROP TABLE app.slack_deliveries")
         con.execute("DROP TABLE app.slack_execution")
-        con.execute("DELETE FROM app.schema_version WHERE version = 37")
+        con.execute("DROP TABLE app.slack_athletes")
+        con.execute("DELETE FROM app.schema_version WHERE version IN (37, 38)")
     init_db()
     with db_connection() as con:
         assert con.execute(
@@ -393,27 +427,35 @@ def test_slack_reuses_chat_graph_and_thread_metadata(monkeypatch):
     monkeypatch.setattr(coaching, "get_agent", lambda: graph)
     monkeypatch.setattr(execution, "invoke_agent", invoke)
     history = [{"role": "user", "content": "Ma séance ?"}]
-    assert asyncio.run(coaching.run_slack_coach(history, "slack:T:D:1")) == "Repos."
+    answer = asyncio.run(coaching.run_slack_coach(history, "slack:T:D:1", "public"))
+    assert answer == "Repos."
     args, kwargs = invoke.call_args
     assert args == (graph, {"messages": history})
     assert kwargs["context"].profile == "chat"
     assert kwargs["context"].thread_id == "slack:T:D:1"
+    assert kwargs["context"].slack_visibility == "public"
 
 
-def test_background_work_runs_as_the_owner_athlete(message, monkeypatch, tmp_path):
+@pytest.mark.parametrize("resolved", [7, None])
+def test_background_work_runs_as_the_resolved_athlete(
+    message, monkeypatch, tmp_path, resolved
+):
     from arete.services.athlete_scope import current_athlete_id
-    from arete.services.users import OWNER_ATHLETE_ID
 
     monkeypatch.setenv("ARETE_AUTH", "clerk")  # no implicit athlete without a scope
     monkeypatch.setenv("ARETE_DB", str(tmp_path / "scope.duckdb"))
     seen = []
 
+    async def resolve(*args, **kwargs):
+        return resolved
+
     async def dispatch(*args, **kwargs):
         seen.append(current_athlete_id())
 
+    monkeypatch.setattr(slack, "resolve", resolve)
     monkeypatch.setattr(slack, "dispatch", dispatch)
     asyncio.run(api.process_message(message, "test-token"))
-    assert seen == [OWNER_ATHLETE_ID]
+    assert seen == ([resolved] if resolved else [])
 
 
 def test_reservation_conflict_answers_busy_without_coach(ledger, message, monkeypatch):
@@ -444,3 +486,180 @@ def test_release_survives_a_transient_conflict(ledger, message, monkeypatch):
     slack.finish(message, "sent", release=True)
     monkeypatch.setattr(slack, "transaction", real)
     assert slack.reserve(replace(message, event_id="Ev2")) == "running"
+
+
+def _account(clerk_id, email, athlete_id, *, verified=True):
+    with db_connection() as con:
+        con.execute(
+            "INSERT INTO app.athletes (id) VALUES (?) ON CONFLICT DO NOTHING",
+            [athlete_id],
+        )
+        con.execute(
+            "INSERT INTO app.users (clerk_user_id, email, athlete_id, email_verified_at) "
+            "VALUES (?, ?, ?, CASE WHEN ? THEN now() END)",
+            [clerk_id, email, athlete_id, verified],
+        )
+
+
+def test_email_resolves_only_a_verified_single_athlete(ledger, monkeypatch):
+    from arete.services import slack_athletes
+
+    monkeypatch.setenv("ARETE_OWNER_EMAIL", "owner@example.com")
+    _account("c1", "Arthur@Example.com", 2)
+    _account("c2", "unverified@example.com", 3, verified=False)
+    _account("c3", "shared@example.com", 4)
+    _account("c4", "shared@example.com", 5)
+    assert slack_athletes.athlete_for_email(" arthur@example.com ") == 2
+    assert slack_athletes.athlete_for_email("owner@example.com") == 1
+    assert slack_athletes.athlete_for_email("unverified@example.com") is None
+    assert slack_athletes.athlete_for_email("shared@example.com") is None
+    assert slack_athletes.athlete_for_email("nobody@example.com") is None
+    with db_connection() as con:
+        con.execute("UPDATE app.athletes SET deleted_at = now() WHERE id = 2")
+    assert slack_athletes.athlete_for_email("arthur@example.com") is None
+
+
+@pytest.mark.parametrize(
+    "user",
+    [
+        {"team_id": "T999"},
+        {"is_restricted": True},
+        {"is_ultra_restricted": True},
+        {"is_bot": True},
+        {"deleted": True},
+        {"is_email_confirmed": False},
+        {"profile": {}},
+    ],
+)
+def test_only_full_members_with_a_confirmed_email_are_identified(message, user):
+    body = {
+        "ok": True,
+        "user": {"team_id": "T123", "profile": {"email": "a@example.com"}} | user,
+    }
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda req: httpx.Response(200, json=body))
+        ) as http:
+            return await slack.SlackClient(http).author_email(message)
+
+    assert asyncio.run(run()) is None
+
+
+def test_unknown_author_is_told_and_never_reaches_the_coach(ledger, message):
+    client = AsyncMock(spec=slack.SlackClient)
+    client.author_email.return_value = "nobody@example.com"
+    assert asyncio.run(slack.resolve(message, client=client)) is None
+    client.reply.assert_awaited_once_with(message, slack.UNLINKED_MESSAGE)
+
+
+def test_channel_chatter_outside_arete_threads_is_ignored(ledger, message):
+    client = AsyncMock(spec=slack.SlackClient)
+    client.engaged.return_value = False
+    reply = replace(message, in_channel=True, thread_ts="1699999999.000001")
+    assert asyncio.run(slack.resolve(reply, client=client)) is None
+    client.author_email.assert_not_awaited()
+    client.reply.assert_not_awaited()
+
+
+def test_channel_thread_labels_other_participants(message):
+    reply = replace(
+        message, ts="1700000002.000001", text="Et moi ?", user="U999", in_channel=True
+    )
+    rows = [
+        {"ts": message.ts, "user": message.user, "text": "<@UBOT> séance ?"},
+        {
+            "ts": "1700000001.000001",
+            "app_id": message.app_id,
+            "bot_id": "B1",
+            "text": "Repos.",
+        },
+        {"ts": reply.ts, "user": reply.user, "text": reply.text},
+    ]
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(
+                lambda req: httpx.Response(200, json={"ok": True, "messages": rows})
+            )
+        ) as http:
+            return await slack.SlackClient(http).history(reply)
+
+    history = asyncio.run(run())
+    assert history[0]["content"] == "[Autre participant <@U123>] <@UBOT> séance ?"
+    assert history[-1] == {"role": "user", "content": "Et moi ?"}
+
+
+@pytest.mark.parametrize("public", [False, True])
+def test_channel_answer_is_public_only_with_consent(ledger, message, public):
+    from arete.services import slack_athletes
+
+    slack_athletes.set_public_replies(public)
+    mention = replace(message, channel="C123", in_channel=True, mentioned=True)
+    client = AsyncMock(spec=slack.SlackClient)
+    client.history.return_value = [{"role": "user", "content": mention.text}]
+    client.open_dm.return_value = "D777"
+    produce = AsyncMock(return_value="Repos.")
+    asyncio.run(slack.dispatch(mention, client=client, produce=produce))
+    visibility = "public" if public else "private"
+    produce.assert_awaited_once_with(
+        client.history.return_value, mention.thread_id, visibility
+    )
+    if public:
+        client.reply.assert_awaited_once_with(mention, "Repos.")
+        client.post.assert_not_awaited()
+    else:
+        client.post.assert_awaited_once_with("D777", None, "Repos.")
+        client.reply.assert_awaited_once_with(
+            mention, slack.PRIVATE_NOTE.format(user=mention.user)
+        )
+
+
+def test_one_athlete_busy_never_blocks_another(ledger, message):
+    from arete.services.athlete_scope import athlete_scope
+
+    with athlete_scope(1):
+        assert slack.reserve(message) == "running"
+        assert slack.reserve(replace(message, event_id="Ev2")) == "busy"
+    with athlete_scope(2):
+        assert slack.reserve(replace(message, event_id="Ev3")) == "running"
+
+
+def test_preferences_are_per_athlete_and_off_by_default(
+    ledger, router_client, configured
+):
+    from arete.services import slack_athletes
+    from arete.services.athlete_scope import athlete_scope
+
+    client = router_client(api.router)
+    assert client.get("/slack/preferences").json() == {
+        "available": True,
+        "channel": True,
+        "public_replies": False,
+    }
+    assert client.put("/slack/preferences", json={"public_replies": True}).json()[
+        "public_replies"
+    ]
+    assert client.get("/slack/preferences").json()["public_replies"] is True
+    with athlete_scope(2):
+        assert slack_athletes.public_replies() is False
+
+
+def test_surface_section_tells_the_coach_who_reads():
+    from arete.agent.context.sections import surface_section
+    from arete.agent.runtime.context import AgentContext
+
+    assert surface_section(AgentContext()) == ""
+    assert "tous ses membres" in surface_section(
+        AgentContext(slack_visibility="public")
+    )
+    private = surface_section(AgentContext(slack_visibility="private"))
+    assert "seul l’athlète" in private and "Autre participant" in private
+
+
+def test_top_level_channel_chatter_costs_no_slack_call(ledger, message):
+    client = AsyncMock(spec=slack.SlackClient)
+    chatter = replace(message, in_channel=True)
+    assert asyncio.run(slack.resolve(chatter, client=client)) is None
+    client.engaged.assert_not_awaited()
+    client.author_email.assert_not_awaited()

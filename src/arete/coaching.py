@@ -95,12 +95,18 @@ def get_agent(athlete_id: int):
     return _assemble("chat")
 
 
-async def run_slack_coach(messages: list[dict[str, str]], thread_id: str) -> str:
+async def run_slack_coach(
+    messages: list[dict[str, str]],
+    thread_id: str,
+    visibility: Literal["private", "public"],
+) -> str:
     """Slack supplies its own history; reuse the chat graph and runtime limits."""
     from arete.agent.runtime.execution import invoke_agent
 
     result = await invoke_agent(
-        get_agent(), {"messages": messages}, context=AgentContext(thread_id=thread_id)
+        get_agent(),
+        {"messages": messages},
+        context=AgentContext(thread_id=thread_id, slack_visibility=visibility),
     )
     replies = result.get("messages", [])
     if not replies or not (text := replies[-1].text.strip()):

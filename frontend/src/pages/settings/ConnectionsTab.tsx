@@ -7,6 +7,7 @@ import { garminApi, stravaApi } from '@/lib/api';
 import { Button } from '@/components/ui';
 import { invalidateAfterSession } from '@/lib/queryKeys';
 import { GoogleCalendarConnection } from './GoogleCalendarConnection';
+import { SlackConnection } from './SlackConnection';
 import { useGarminSync } from './useGarminSync';
 import { GarminSyncProgress } from './GarminSyncProgress';
 import { GarminLoginModal } from '@/components/GarminLoginModal';
@@ -96,6 +97,7 @@ export function ConnectionsTab() {
 
       <div className="space-y-3">
         <GoogleCalendarConnection />
+        <SlackConnection />
         {/* Garmin */}
         <div
           className={cn(

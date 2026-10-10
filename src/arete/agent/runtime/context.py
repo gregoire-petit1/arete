@@ -71,6 +71,8 @@ class AgentContext:
     document_ids: tuple[str, ...] | None = None
     # Only interactive HTTP chat requests need a next-message draft.
     suggest_reply: bool = False
+    # Slack only: who reads the answer. None for the browser and missions.
+    slack_visibility: Literal["private", "public"] | None = None
     attachment_paths: tuple[str, ...] = ()
     document_import_pending: bool = False
     current_date: date = field(default_factory=date.today)

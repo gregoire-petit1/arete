@@ -5,7 +5,10 @@
     "background_color": "#17251d"
   },
   "features": {
-    "bot_user": { "display_name": "Arete", "always_online": false },
+    "bot_user": {
+      "display_name": "Arete",
+      "always_online": false
+    },
     "app_home": {
       "home_tab_enabled": false,
       "messages_tab_enabled": true,
@@ -13,11 +16,29 @@
     }
   },
   "oauth_config": {
-    "scopes": { "bot": ["chat:write", "im:history"] }
+    "scopes": {
+      "bot": [
+        "chat:write",
+        "im:history",
+        "im:write",
+        "users:read",
+        "users:read.email",
+        "channels:history",
+        "groups:history"
+      ]
+    }
   },
   "settings": {
     "org_deploy_enabled": false,
     "socket_mode_enabled": false,
-    "token_rotation_enabled": false
+    "token_rotation_enabled": false,
+    "event_subscriptions": {
+      "request_url": "https://arete-arete15.vercel.app/api/slack/events",
+      "bot_events": [
+        "message.im",
+        "message.channels",
+        "message.groups"
+      ]
+    }
   }
 }

@@ -232,8 +232,9 @@ class Config:
         return _env("SLACK_TEAM_ID", "") or ""
 
     @property
-    def slack_user_id(self) -> str:
-        return _env("SLACK_USER_ID", "") or ""
+    def slack_channel_id(self) -> str:
+        """The one channel where Arete answers mentions; unset = direct messages only."""
+        return _env("SLACK_CHANNEL_ID", "") or ""
 
     @property
     def web_push_vapid_public_key(self) -> str:

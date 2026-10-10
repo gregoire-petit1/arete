@@ -17,7 +17,7 @@ from arete.agent.capabilities.discovery import (
     tool_instructions_suffix,
 )
 from arete.agent.context.attachments import attachment_section
-from arete.agent.context.sections import ContextSection, page_section
+from arete.agent.context.sections import ContextSection, page_section, surface_section
 from arete.agent.runtime.budget import MAX_MODEL_CALLS
 from arete.agent.runtime.context import AgentContext
 from arete.agent.runtime.policy import ProfileSpec, resolve_policy
@@ -136,6 +136,7 @@ def build_context(
             "server",
             stable=False,
         ),
+        ContextSection("surface", surface_section(context), "server"),
     ]
     base = request.override(
         tools=[] if final_call else tools,

@@ -1,8 +1,9 @@
-"""Single-athlete Slack conversations and durable, at-most-once dispatch.
+"""Slack conversations for every athlete and durable, at-most-once dispatch.
 
-Slack owns history. The database stores delivery IDs and a single execution
-reservation, never conversation text. A crashed/ambiguous run stays reserved:
-replaying a coach that can write training data would be unsafe.
+Slack owns history. The database stores delivery IDs and one run reservation
+per athlete, never conversation text. A crashed/ambiguous run stays reserved:
+replaying a coach that can write training data would be unsafe. The caller
+resolves the author's athlete and runs ``dispatch`` in that athlete's scope.
 """
 
 from __future__ import annotations
@@ -19,6 +20,8 @@ import httpx
 from anyio import to_thread
 
 from arete.dataio.db import transaction
+from arete.services import slack_athletes
+from arete.services.athlete_scope import current_athlete_id
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,18 @@ BUSY_MESSAGE = (
     "Une demande est déjà en cours ou doit être vérifiée après une interruption. "
     "Ce message n’a pas été exécuté. Attends la réponse avant de poursuivre."
 )
+UNLINKED_MESSAGE = (
+    "Aucun compte Arete n’est associé à l’adresse e-mail de ton profil Slack. "
+    "Connecte-toi à Arete avec cette adresse, puis réessaie."
+)
+PRIVATE_NOTE = (
+    "<@{user}> je t’ai répondu en message privé. Pour recevoir les réponses ici, "
+    "active les réponses publiques dans Réglages → Connexions."
+)
+OTHER_PARTICIPANT = "[Autre participant <@{user}>] "
+
+Visibility = Literal["private", "public"]
+Producer = Callable[[list[dict[str, str]], str, Visibility], Awaitable[str]]
 
 
 @dataclass(frozen=True)
@@ -52,6 +67,11 @@ class SlackMessage:
     ts: str
     thread_ts: str
     text: str
+    # The dedicated channel rather than a direct message.
+    in_channel: bool = False
+    # The text mentions the bot user, so a channel message addresses Arete.
+    mentioned: bool = False
+    bot_user: str = ""
 
     @property
     def key(self) -> str:
@@ -72,6 +92,8 @@ class HistoryError(SlackError):
 
 def reserve(message: SlackMessage) -> Literal["running", "duplicate", "busy"]:
     """Commit ownership before any model or Slack write; never retry a conflict."""
+    athlete_id = current_athlete_id()
+    slack_athletes.ensure_row(athlete_id)
     with transaction() as con:
         if con.execute(
             "SELECT 1 FROM app.slack_deliveries WHERE event_key = ?", [message.key]
@@ -81,14 +103,14 @@ def reserve(message: SlackMessage) -> Literal["running", "duplicate", "busy"]:
         assert count is not None
         if count[0] >= MAX_DELIVERY_RECORDS:
             raise SlackError("Slack delivery ledger is full; operator review required")
-        # Touch even a busy singleton: all admissions must conflict on this row,
-        # otherwise simultaneous busy deliveries could exceed the ledger bound.
+        # Touch even a busy row: all of an athlete's admissions must conflict on
+        # it, otherwise simultaneous busy deliveries could exceed the ledger bound.
         owner = con.execute(
-            "UPDATE app.slack_execution SET event_key = coalesce(event_key, ?) "
-            "WHERE id = 1 RETURNING event_key",
-            [message.key],
+            "UPDATE app.slack_athletes SET run_event_key = coalesce(run_event_key, ?) "
+            "WHERE athlete_id = ? RETURNING run_event_key",
+            [message.key, athlete_id],
         ).fetchone()
-        assert owner is not None, "Slack execution singleton is missing"
+        assert owner is not None, "Slack athlete row is missing"
         status: Literal["running", "busy"] = (
             "running" if owner[0] == message.key else "busy"
         )
@@ -112,9 +134,9 @@ def finish(message: SlackMessage, status: str, *, release: bool) -> None:
                 )
                 if release:
                     con.execute(
-                        "UPDATE app.slack_execution SET event_key = NULL "
-                        "WHERE id = 1 AND event_key = ?",
-                        [message.key],
+                        "UPDATE app.slack_athletes SET run_event_key = NULL "
+                        "WHERE athlete_id = ? AND run_event_key = ?",
+                        [current_athlete_id(), message.key],
                     )
             return
         except duckdb.TransactionException:
@@ -130,7 +152,7 @@ class SlackClient:
     async def call(self, method: str, payload: dict) -> dict:
         # No SDK retries: an uncertain chat.postMessage must not be replayed.
         url = f"https://slack.com/api/{method}"
-        if method == "conversations.replies":
+        if method in ("conversations.replies", "users.info"):
             response = await self.http.get(url, params=payload)
         else:
             response = await self.http.post(url, json=payload)
@@ -140,9 +162,7 @@ class SlackClient:
             raise SlackError(f"Slack {method} failed")
         return result
 
-    async def history(self, message: SlackMessage) -> list[dict[str, str]]:
-        if message.thread_ts == message.ts:
-            return [{"role": "user", "content": message.text}]
+    async def _thread(self, message: SlackMessage) -> list[dict]:
         result = await self.call(
             "conversations.replies",
             {
@@ -163,14 +183,56 @@ class SlackClient:
         ):
             raise HistoryError(
                 "Le fil est trop long ou incomplet. Commence une nouvelle conversation "
-                "en envoyant un nouveau message privé à Arete."
+                "en écrivant un nouveau message à Arete."
             )
+        return rows
+
+    @staticmethod
+    def _from_this_app(row: dict, message: SlackMessage) -> bool:
+        return row.get("app_id") == message.app_id and bool(row.get("bot_id"))
+
+    async def engaged(self, message: SlackMessage) -> bool:
+        """Whether a channel thread reply belongs to a conversation with Arete."""
+        rows = await self._thread(message)
+        root = rows[0].get("text")
+        return any(self._from_this_app(row, message) for row in rows) or (
+            bool(message.bot_user)
+            and isinstance(root, str)
+            and f"<@{message.bot_user}>" in root
+        )
+
+    async def author_email(self, message: SlackMessage) -> str | None:
+        """A full member's confirmed workspace address, else None."""
+        result = await self.call("users.info", {"user": message.user})
+        user = result.get("user")
+        if (
+            not isinstance(user, dict)
+            or user.get("team_id") != message.team
+            or user.get("deleted")
+            or user.get("is_bot")
+            or user.get("is_restricted")
+            or user.get("is_ultra_restricted")
+            or user.get("is_email_confirmed") is False
+        ):
+            return None
+        email = (user.get("profile") or {}).get("email")
+        return email if isinstance(email, str) and email.strip() else None
+
+    async def history(self, message: SlackMessage) -> list[dict[str, str]]:
+        if message.thread_ts == message.ts:
+            return [{"role": "user", "content": message.text}]
+        rows = await self._thread(message)
         history = []
         for row in rows:
-            if row.get("app_id") == message.app_id and row.get("bot_id"):
+            prefix = ""
+            if self._from_this_app(row, message):
                 role = "assistant"
             elif row.get("user") == message.user and not row.get("bot_id"):
                 role = "user"
+            elif message.in_channel and row.get("user") and not row.get("bot_id"):
+                # Another member of the channel: never this athlete's own words.
+                role = "user"
+                prefix = OTHER_PARTICIPANT.format(user=row["user"])
             else:
                 raise HistoryError("Ce fil contient un participant non autorisé.")
             text = row.get("text")
@@ -183,7 +245,7 @@ class SlackClient:
                 raise HistoryError(
                     "Un message du fil est trop long. Commence un nouveau fil."
                 )
-            history.append({"role": role, "content": text})
+            history.append({"role": role, "content": prefix + text})
         # Fail closed if Slack returned stale or unexpected history. Never silently
         # lose the current objective or append it twice.
         if rows[0].get("ts") != message.thread_ts or rows[-1].get("ts") != message.ts:
@@ -196,34 +258,65 @@ class SlackClient:
             )
         return history
 
-    async def reply(self, message: SlackMessage, text: str) -> None:
+    async def open_dm(self, user: str) -> str:
+        result = await self.call("conversations.open", {"users": user})
+        channel = (result.get("channel") or {}).get("id")
+        if not isinstance(channel, str) or not channel:
+            raise SlackError("Slack conversations.open returned no channel")
+        return channel
+
+    async def post(self, channel: str, thread_ts: str | None, text: str) -> None:
         if not text.strip() or len(text) > MAX_REPLY_CHARS:
             raise SlackError("Coach answer is empty or exceeds Slack's message budget")
-        await self.call(
-            "chat.postMessage",
-            {
-                "channel": message.channel,
-                "thread_ts": message.thread_ts,
-                "text": text,
-                "mrkdwn": False,
-                "parse": "none",
-                "link_names": False,
-                "unfurl_links": False,
-                "unfurl_media": False,
-            },
-        )
+        payload: dict = {
+            "channel": channel,
+            "text": text,
+            "mrkdwn": False,
+            "parse": "none",
+            "link_names": False,
+            "unfurl_links": False,
+            "unfurl_media": False,
+        }
+        if thread_ts:
+            payload["thread_ts"] = thread_ts
+        await self.call("chat.postMessage", payload)
+
+    async def reply(self, message: SlackMessage, text: str) -> None:
+        await self.post(message.channel, message.thread_ts, text)
+
+
+async def resolve(message: SlackMessage, *, client: SlackClient) -> int | None:
+    """The author's athlete, or None once the message needs nothing more.
+
+    A channel message that neither mentions Arete nor continues one of its
+    threads is ignored. An author without a verified Arete account is told so.
+    """
+    # Top-level chatter costs no Slack call; only thread replies are checked.
+    if (
+        message.in_channel
+        and not message.mentioned
+        and (message.thread_ts == message.ts or not await client.engaged(message))
+    ):
+        return None
+    email = await client.author_email(message)
+    athlete_id = (
+        await to_thread.run_sync(slack_athletes.athlete_for_email, email)
+        if email
+        else None
+    )
+    if athlete_id is None:
+        await client.reply(message, UNLINKED_MESSAGE)
+    return athlete_id
 
 
 async def dispatch(
-    message: SlackMessage,
-    *,
-    client: SlackClient,
-    produce: Callable[[list[dict[str, str]], str], Awaitable[str]],
+    message: SlackMessage, *, client: SlackClient, produce: Producer
 ) -> None:
+    """Answer one message; the caller holds the author's athlete scope."""
     try:
         status = await to_thread.run_sync(reserve, message)
     except duckdb.TransactionException:
-        # A concurrent admission touched the singleton first. Nothing was
+        # A concurrent admission touched the reservation first. Nothing was
         # recorded or executed, so say so rather than dropping the message.
         status = "busy"
     if status == "duplicate":
@@ -237,11 +330,22 @@ async def dispatch(
         async with asyncio.timeout(MAX_JOB_SECONDS):
             if not message.text.strip() or len(message.text) > MAX_MESSAGE_CHARS:
                 raise HistoryError("Envoie un message texte de 1 à 16 000 caractères.")
+            # A channel answer is public only with the athlete's consent.
+            visibility: Visibility = (
+                "public"
+                if message.in_channel
+                and await to_thread.run_sync(slack_athletes.public_replies)
+                else "private"
+            )
             history = await client.history(message)
             started_coach = True
-            answer = await produce(history, message.thread_id)
+            answer = await produce(history, message.thread_id, visibility)
             completed_coach = True
-            await client.reply(message, answer)
+            if message.in_channel and visibility == "private":
+                await client.post(await client.open_dm(message.user), None, answer)
+                await client.reply(message, PRIVATE_NOTE.format(user=message.user))
+            else:
+                await client.reply(message, answer)
         await to_thread.run_sync(lambda: finish(message, "sent", release=True))
     except HistoryError as exc:
         await to_thread.run_sync(lambda: finish(message, "rejected", release=True))
