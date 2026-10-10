@@ -133,7 +133,10 @@ dashboard:
   production**: all through GitHub.
 - **Production.** Public URL, Clerk sign-in. A non-owner account gets its own
   private athlete (see `docs/multi-athlete.md`): empty until it connects Garmin
-  or logs sessions. The owner's data is never visible to another account.
+  or logs sessions. The owner's data is never visible to another account, as
+  long as `ARETE_OWNER_EMAIL` lists only the owner's own addresses. The owner
+  can name the collaborator administrator in Réglages → Administration, to see
+  each athlete's state, deactivate or reactivate one and unblock its daily sync.
 - **Previews.** Behind Vercel Authentication, which a non-member cannot pass
   with a login. The owner creates a *Protection Bypass for Automation* key in
   the Vercel dashboard (Settings → Deployment Protection), one per person, and

@@ -4,9 +4,11 @@ Off by default (``ARETE_AUTH`` unset): the API is as open as a self-hosted
 instance behind its own network. With ``ARETE_AUTH=clerk`` every request
 except the public paths needs a Clerk session token (``Authorization:
 Bearer``), or the long-lived ``ARETE_API_KEY`` that scripts and the MCP
-server use. Each Clerk account owns a private athlete. Verified configured
-owner emails retain access to the original athlete; other accounts get empty
+server use. Each Clerk account owns a private athlete. The first verified
+configured owner email keeps the original athlete; other accounts get empty
 training data. The scope wraps the entire response, including SSE and workers.
+Administration routes need an administrator (the owner is one by right);
+naming administrators needs the owner.
 
 Pure ASGI middleware, like the mirror's: the coach streams, and a
 ``BaseHTTPMiddleware`` would sit between the stream and the client. The Clerk
@@ -17,10 +19,12 @@ from __future__ import annotations
 
 import hmac
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Any
 
 import anyio
+import duckdb
 from fastapi import APIRouter, HTTPException, Request
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
@@ -157,19 +161,46 @@ def resolve_user(authorization: str | None) -> AppUser:
     if not isinstance(subject, str) or not subject:
         raise AuthError(401, "Session invalide ou expirée.")
     user = user_service.get_user(subject)
-    if (
-        user is None
-        or user.profile_synced_at is None
-        or datetime.now() - user.profile_synced_at > timedelta(hours=1)
-    ):
-        email, name, verified = _fetch_clerk_profile(subject)
-        user = user_service.upsert_user(subject, email, name, verified=verified)
+    if user is None or _profile_is_stale(user):
+        user = _refresh_profile(subject)
     if user.deleted_at is not None or (
         user.athlete_id is not None
         and not user_service.athlete_is_active(user.athlete_id)
     ):
         raise AuthError(403, "Ce compte a été désactivé.")
     return user
+
+
+#: One profile refresh at a time per instance: a dashboard sends a dozen
+#: requests at once, and each would fetch Clerk and rewrite the same row.
+_refresh_lock = threading.Lock()
+
+
+def _profile_is_stale(user: AppUser) -> bool:
+    return user.profile_synced_at is None or (
+        datetime.now() - user.profile_synced_at > timedelta(hours=1)
+    )
+
+
+def _refresh_profile(subject: str) -> AppUser:
+    """Provision or refresh the account from Clerk, once for a burst.
+
+    Another instance may write the same row at the same moment: its write wins
+    and is read back, rather than answering 503 for a conflict.
+    """
+    with _refresh_lock:
+        user = user_service.get_user(subject)
+        if user is not None and not _profile_is_stale(user):
+            return user
+        email, name, verified = _fetch_clerk_profile(subject)
+        try:
+            return user_service.upsert_user(subject, email, name, verified=verified)
+        except (duckdb.TransactionException, duckdb.ConstraintException):
+            user = user_service.get_user(subject)
+            if user is None:
+                raise
+            logger.info("Account %s was refreshed concurrently", user.id)
+            return user
 
 
 # ----------------------------------------------------------- middleware --
@@ -238,6 +269,24 @@ def current_user(request: Request) -> AppUser:
     return AppUser(
         id=0, clerk_user_id="", email="", name=None, athlete_id=OWNER_ATHLETE_ID
     )
+
+
+def require_admin(request: Request) -> AppUser:
+    """An administrator, the owner included; anyone else is refused."""
+    user = current_user(request)
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Réservé aux administrateurs.")
+    return user
+
+
+def require_owner(request: Request) -> AppUser:
+    """The owner of the instance (athlete 1), who alone names administrators."""
+    user = current_user(request)
+    if not user.is_owner:
+        raise HTTPException(
+            status_code=403, detail="Réservé au propriétaire de cette instance."
+        )
+    return user
 
 
 def clerk_account(request: Request) -> str:

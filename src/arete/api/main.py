@@ -10,6 +10,7 @@ from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.responses import JSONResponse
 
 from arete import scheduler
+from arete.api.admin import router as admin_router
 from arete.api.agent import router as agent_router
 from arete.api.ai_tips import router as ai_tips_router
 from arete.api.analytics import router as analytics_router
@@ -201,5 +202,6 @@ for router in (
     data_export_router,
     year_review_router,
     slack_router,
+    admin_router,
 ):
     app.include_router(router)

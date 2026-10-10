@@ -360,3 +360,20 @@ def start() -> asyncio.Task[None] | None:
         logger.info("Automatic sync disabled (ARETE_AUTO_SYNC_HOUR unset)")
         return None
     return asyncio.create_task(run_forever(hour), name="arete-daily-sync")
+
+
+def release_sync_lease(athlete_id: int) -> bool:
+    """Let the next dispatch claim an athlete whose run failed or was stopped.
+
+    For an administrator who has checked what that run already did outside
+    (Garmin, Strava, the calendar): the day's sync starts again from the top.
+    A lease still within its nominal length belongs to a run in progress and
+    stays, so two runs never overlap. False when nothing was released.
+    """
+    with db_connection() as con:
+        row = con.execute(
+            "UPDATE app.athletes SET sync_lease_until=NULL "
+            "WHERE id=? AND sync_lease_until < current_timestamp RETURNING id",
+            [athlete_id],
+        ).fetchone()
+    return row is not None

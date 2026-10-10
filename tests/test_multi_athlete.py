@@ -201,17 +201,13 @@ def test_game_and_notifications_are_per_athlete(athletes):
 
 
 def test_account_deletion_retains_email_and_hides_private_data(athletes):
-    from arete.services.users import (
-        athlete_is_active,
-        deactivate_current_athlete,
-        get_user,
-    )
+    from arete.services.users import athlete_is_active, deactivate_athlete, get_user
 
     first, second = athletes
     repo = GarminRepository()
     with athlete_scope(second.athlete_id):
         identifier = repo.create_planned_session(planned("deleted athlete"))
-        deactivate_current_athlete()
+        deactivate_athlete(second.athlete_id, actor=first)
         assert repo.get_planned_session(identifier) is None
         assert not repo.update_planned_session_fields(
             identifier, description="resurrected"
@@ -711,3 +707,50 @@ def test_garmin_failure_does_not_expire_the_arete_session(
     assert response.status_code == 400
     assert "secret detail" not in response.text
     assert client.get("/auth/me", headers=who).status_code == 200
+
+
+def test_reactivation_restores_the_athlete_and_its_logins(athletes):
+    from arete.services.users import (
+        athlete_is_active,
+        deactivate_athlete,
+        get_user,
+        reactivate_athlete,
+    )
+
+    first, second = athletes
+    repo = GarminRepository()
+    with athlete_scope(second.athlete_id):
+        identifier = repo.create_planned_session(planned("paused athlete"))
+    deactivate_athlete(second.athlete_id, actor=first)
+    reactivate_athlete(second.athlete_id)
+    assert athlete_is_active(second.athlete_id)
+    assert get_user(second.clerk_user_id).deleted_at is None
+    with athlete_scope(second.athlete_id):
+        assert repo.get_planned_session(identifier).description == "paused athlete"
+
+
+def test_a_released_lease_is_claimed_by_the_next_dispatch(athletes, monkeypatch):
+    from arete import scheduler
+
+    first, second = athletes
+    con = connect()
+    con.execute(
+        "UPDATE app.athletes SET sync_lease_until = current_timestamp - INTERVAL 1 SECOND "
+        "WHERE id=?",
+        [second.athlete_id],
+    )
+    con.close()
+    seen = []
+    monkeypatch.setattr(
+        scheduler,
+        "daily_sync",
+        lambda: seen.append(current_athlete_id()) or {"sync": "ok"},
+    )
+    monkeypatch.setattr(scheduler, "write_daily_briefing", lambda: "rules")
+    monkeypatch.setattr(scheduler, "write_weekly_review", lambda: "rules")
+    scheduler.run_scheduled_batch()
+    assert seen == [first.athlete_id]
+    assert scheduler.release_sync_lease(second.athlete_id) is True
+    assert scheduler.release_sync_lease(second.athlete_id) is False
+    scheduler.run_scheduled_batch()
+    assert seen == [first.athlete_id, second.athlete_id]

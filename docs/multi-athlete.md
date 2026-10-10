@@ -2,8 +2,12 @@
 
 Each Clerk subject maps to a login account in `app.users` and one private athlete
 in `app.athletes`. A new account receives empty training data and its own settings.
-The configured owner's verified email can claim the historical athlete (ID 1).
-Subsequent email changes update contact details without changing that mapping.
+The first account to sign in with a verified address listed in `ARETE_OWNER_EMAIL`
+claims the historical athlete (ID 1). A listed address on another person's account
+gets its own athlete instead: athlete 1's data and Garmin session stay with the
+address that holds it. Attaching a second login of the owner is a deliberate
+`UPDATE app.users SET athlete_id = 1`. Subsequent email changes update contact
+details without changing that mapping.
 Email is retained with its verification timestamp; storing it does not subscribe
 the account to a newsletter or implement an email delivery service.
 
@@ -51,7 +55,7 @@ TLS impersonation across workers without storing a password or using pickle.
   credential is privileged. New SQL requires both a scope review and cross-account
   behavior tests; the structural test catches literal raw private-table reads.
 - Sessions, goals and accounts use soft deletion. Account deactivation closes all
-  mapped logins and retains the login email. Explicit document deletion, forgotten
+  mapped logins and retains the login email; reactivation reopens them. Explicit document deletion, forgotten
   facts and disconnected credentials retain their existing physical purge semantics.
 - Files live under the historical root for athlete 1 and `athletes/<id>/` for
   others. Database file mirrors, Garmin MFA and coach caches are partitioned.
@@ -60,6 +64,26 @@ TLS impersonation across workers without storing a password or using pickle.
 - Browser conversations use athlete-specific storage keys; account changes clear
   API/query caches and remount the app. Private API responses are network-only in
   the service worker. Switching accounts revokes the old device push channel.
+
+## Roles and administration
+
+`app.users.role` is `athlete` or `admin` (migration 39). The owner, every login of
+athlete 1, administers by right whatever the column says; `/auth/me` returns
+`role` and `is_admin`. **Réglages → Administration**, shown to administrators,
+lists each athlete with its logins, role, last activity (refreshed hourly with the
+Clerk profile) and daily sync, and acts on the account tables only, never on an
+athlete's private data:
+
+- **Désactiver / Réactiver** an athlete: its logins are refused at once and its
+  data is hidden, then restored as it was. Nobody deactivates athlete 1, and only
+  the owner deactivates an administrator's athlete.
+- **Libérer la synchro**: clears a lease kept by a failed or stopped daily run, so
+  the next window runs the day again. Check first what that run already did at
+  Garmin, Strava or the calendar. A lease within its 15 minutes belongs to a run
+  in progress and is not released.
+- **Nommer admin / Retirer admin**: the owner only, never on its own logins.
+
+A change applies at the account's next request: every request reads its row.
 
 ## Migrations and deployment
 

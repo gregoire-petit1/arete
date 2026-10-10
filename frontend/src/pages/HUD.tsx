@@ -445,8 +445,11 @@ export function DashboardPage() {
               ) : (
                 <p className="text-sm font-mono text-text-muted">
                   Pas de données santé aujourd&apos;hui.{' '}
-                  <Link to="/settings?tab=system" className="text-neon-cyan hover:underline">
-                    Synchroniser
+                  <Link
+                    to={garminConnected ? '/settings?tab=system' : '/settings?tab=connections'}
+                    className="text-neon-cyan hover:underline"
+                  >
+                    {garminConnected ? 'Synchroniser' : 'Connecter Garmin'}
                   </Link>
                 </p>
               )}
