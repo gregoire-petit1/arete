@@ -29,11 +29,13 @@ differs between Production and Preview, and `dataio/db.py` refuses to open
 1. **Pull request.** CI runs the checks the diff needs (`scripts/ci/select_checks.py`)
    on the branch merged into `main`. A PR with the `preview` label also gets a
    deployment, commented on the PR and replaced on each push.
-2. **Merge.** `main` only takes pull requests, through the merge queue: the
-   queue re-runs CI on the exact result of merging, in order, so a PR green on
-   an old base cannot break `main`, and conflicts surface before the merge.
-   `gh pr merge --auto --merge` enqueues once the checks pass; nobody has to
-   approve.
+2. **Merge.** `main` only takes pull requests; `gh pr merge --auto --merge`
+   merges once the checks pass, and nobody has to approve. The checks are not
+   strict (a PR green on an older `main` still merges): GitHub's merge queue,
+   which would re-run CI on the exact merge result, is only offered to
+   repositories owned by an organisation. With two people the window is short,
+   and a merge that breaks `main` shows up at once as a red "Deploy preview".
+   Rebase or merge `main` into a long-lived branch before merging it.
 3. **Preview of main.** Every green CI run on `main` deploys it to the fixed
    preview URL. The deployment's first request migrates `arete_preview`; the
    workflow checks `/api/health` and moves the fixed URL only onto a healthy
