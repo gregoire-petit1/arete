@@ -12,7 +12,15 @@ import { sportLabel } from '@/lib/fr';
 import { qk } from '@/lib/queryKeys';
 import { getSportColor, getSportIconComponent } from '@/lib/sport';
 import { cn, formatDurationCompact, formatPace } from '@/lib/utils';
-import type { ActivityDetail, ActivityIntervals, ActivityLap, ActivityMetrics, ActivitySplit } from '@/types';
+import type {
+  ActivityDetail,
+  ActivityIntervals,
+  ActivityLap,
+  ActivityMetrics,
+  ActivitySplit,
+  ActivityTerrain,
+  ActivityWeather,
+} from '@/types';
 import { RouteTrace } from './session/RouteTrace';
 import { StreamChart } from './session/StreamChart';
 
@@ -27,6 +35,10 @@ const SOURCE_LABEL: Record<string, string> = {
 const km = (m: number | null | undefined) => (m ? `${(m / 1000).toFixed(2)} km` : '—');
 const pace = (sec: number | null | undefined) => (sec ? `${formatPace(sec)} /km` : '—');
 const pct = (v: number) => `${v > 0 ? '+' : ''}${v.toLocaleString('fr-FR')} %`;
+const VAM_MINUTES = ['5', '10', '20', '30', '60'];
+/** Above these the heart pays for the conditions, not only for the pace. */
+const HOT_C = 25;
+const HIGH_M = 1500;
 
 /** A cardio session's page: summary, coach, charts, analysis, laps, zones, route. */
 export function SessionDetailPage() {
@@ -75,6 +87,8 @@ function SessionView({ detail }: { detail: ActivityDetail }) {
   });
   const start = session.start_time ? new Date(session.start_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : null;
   const speed = session.avg_speed_mps ? `${(session.avg_speed_mps * 3.6).toFixed(1)} km/h` : '—';
+  const gap = foot ? detail.terrain?.gap_sec_km : null;
+  const climbs = detail.terrain && Object.keys(detail.terrain.vam).length > 0;
 
   return (
     <>
@@ -95,7 +109,11 @@ function SessionView({ detail }: { detail: ActivityDetail }) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <Stat label="Durée" value={formatDurationCompact(session.moving_time_sec ?? session.duration_sec)} />
         <Stat label="Distance" value={km(session.distance_m)} />
-        <Stat label={foot ? 'Allure' : 'Vitesse'} value={foot ? pace(session.avg_pace_sec_km) : speed} />
+        <Stat
+          label={foot ? 'Allure' : 'Vitesse'}
+          value={foot ? pace(session.avg_pace_sec_km) : speed}
+          sub={gap ? `GAP ${pace(gap)}` : undefined}
+        />
         <Stat label="FC moy / max" value={session.avg_hr ? `${session.avg_hr} / ${session.max_hr ?? '—'}` : '—'} />
         <Stat label="Dénivelé +" value={session.ascent_m ? `${Math.round(session.ascent_m)} m` : '—'} />
         <Stat label="Cadence" value={session.avg_cadence ? `${session.avg_cadence}` : '—'} />
@@ -154,6 +172,13 @@ function SessionView({ detail }: { detail: ActivityDetail }) {
         </div>
       )}
 
+      {(climbs || gap || detail.weather) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          {detail.terrain && (climbs || gap) && <Terrain terrain={detail.terrain} />}
+          {detail.weather && <Weather weather={detail.weather} />}
+        </div>
+      )}
+
       {detail.laps.length > 0 && <LapsTable laps={detail.laps} foot={foot} />}
       {detail.splits.length > 0 && <SplitsTable splits={detail.splits} />}
 
@@ -169,11 +194,12 @@ function SessionView({ detail }: { detail: ActivityDetail }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="p-2 sm:p-3 bg-abyss rounded border border-text-muted/20 min-w-0">
       <div className="text-[10px] sm:text-xs font-mono text-text-muted uppercase truncate">{label}</div>
       <div className="text-base sm:text-lg font-mono text-text-primary mt-0.5 truncate">{value}</div>
+      {sub && <div className="text-[11px] sm:text-xs font-mono text-neon-gold truncate">{sub}</div>}
     </div>
   );
 }
@@ -230,6 +256,53 @@ function Analysis({ metrics, foot }: { metrics: ActivityMetrics; foot: boolean }
           hint={metrics.power_vi !== undefined ? `Indice de variabilité : ${metrics.power_vi.toLocaleString('fr-FR')}` : undefined}
         />
       )}
+    </Panel>
+  );
+}
+
+function Terrain({ terrain }: { terrain: ActivityTerrain }) {
+  const effort = terrain.grade_factor !== null ? Math.round((terrain.grade_factor - 1) * 100) : null;
+  return (
+    <Panel title="PENTE ET MONTÉE">
+      {terrain.gap_sec_km !== null && (
+        <Row
+          label="Allure ajustée à la pente (GAP)"
+          value={pace(terrain.gap_sec_km)}
+          hint={`L'allure à plat pour le même effort (coût énergétique de Minetti)${
+            effort ? ` : la pente a pesé ${pct(effort)}.` : '.'
+          }`}
+        />
+      )}
+      {VAM_MINUTES.filter((m) => terrain.vam[m] !== undefined).map((m) => (
+        <Row key={m} label={`Vitesse ascensionnelle ${m} min`} value={`${terrain.vam[m].toLocaleString('fr-FR')} m/h`} />
+      ))}
+    </Panel>
+  );
+}
+
+function Weather({ weather }: { weather: ActivityWeather }) {
+  const hour = new Date(weather.observed_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  const temp = weather.temperature_c;
+  const altitude = weather.start_altitude_m;
+  return (
+    <Panel title="MÉTÉO AU DÉPART">
+      {temp !== null && (
+        <Row
+          label="Température"
+          value={`${Math.round(temp)} °C`}
+          hint={temp >= HOT_C ? 'Chaleur : à allure égale, la FC monte plus vite.' : undefined}
+        />
+      )}
+      {weather.humidity_pct !== null && <Row label="Humidité" value={`${Math.round(weather.humidity_pct)} %`} />}
+      {weather.wind_kmh !== null && <Row label="Vent" value={`${Math.round(weather.wind_kmh)} km/h`} />}
+      {altitude !== null && (
+        <Row
+          label="Altitude du départ"
+          value={`${Math.round(altitude).toLocaleString('fr-FR')} m`}
+          hint={altitude >= HIGH_M ? "Altitude : moins d'oxygène, l'allure seuil baisse." : undefined}
+        />
+      )}
+      <p className="text-[11px] font-mono text-text-muted mt-2">Open-Meteo, relevé de {hour}.</p>
     </Panel>
   );
 }

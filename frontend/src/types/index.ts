@@ -425,6 +425,8 @@ export type CardKey =
   | 'pace'
   | 'elevation'
   | 'cadence'
+  | 'vam'
+  | 'descent'
   | 'readiness'
   | 'hrv'
   | 'sleep'
@@ -563,6 +565,28 @@ export interface ActivityStreams {
   power_w?: (number | null)[];
 }
 
+/** What the streams say about the terrain (stored when the session arrived). */
+export interface ActivityTerrain {
+  /** Flat-equivalent distance over distance run (Minetti); 1 on the flat. */
+  grade_factor: number | null;
+  /** Grade-adjusted pace, s/km. */
+  gap_sec_km: number | null;
+  /** Best net climbing speed in m/h, keyed by minutes ("5", "10", "20", "30", "60"). */
+  vam: Record<string, number>;
+  /** Time and horizontal distance per grade band (percent). */
+  descent: { min: number; max: number; sec: number; m: number }[];
+}
+
+/** The weather at the start (Open-Meteo), read once when the session arrived. */
+export interface ActivityWeather {
+  observed_at: string;
+  temperature_c: number | null;
+  humidity_pct: number | null;
+  wind_kmh: number | null;
+  start_altitude_m: number | null;
+  source: string;
+}
+
 export interface ActivityDetail {
   session: {
     id: number;
@@ -601,6 +625,8 @@ export interface ActivityDetail {
   /** [lat, lon] pairs. */
   route: [number, number][] | null;
   feedback: { text: string; source: 'agent' | 'rules'; trigger: string; created_at: string | null } | null;
+  terrain: ActivityTerrain | null;
+  weather: ActivityWeather | null;
 }
 
 // ========================= //

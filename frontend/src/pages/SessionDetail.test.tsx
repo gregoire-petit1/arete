@@ -66,6 +66,15 @@ const detail: ActivityDetail = {
     [45.91, 6.88],
   ],
   feedback: { text: 'Répétitions régulières, bravo.', source: 'agent', trigger: 'sync', created_at: null },
+  terrain: { grade_factor: 1.12, gap_sec_km: 259, vam: { '5': 1250, '30': 980 }, descent: [] },
+  weather: {
+    observed_at: '2026-10-08T08:00:00',
+    temperature_c: 27.4,
+    humidity_pct: 61,
+    wind_kmh: 9.4,
+    start_altitude_m: 1035,
+    source: 'open-meteo-archive',
+  },
 };
 
 function renderAt(path: string) {
@@ -96,6 +105,18 @@ it('shows the summary, the coach, the intervals, the laps, the zones and the rou
   expect(screen.getByText('4:50 /km')).toBeTruthy();
 });
 
+it('shows the grade-adjusted pace, the climbing speeds and the weather', async () => {
+  vi.mocked(analyticsApi.getSessionDetail).mockResolvedValue(detail);
+  renderAt('/log/sessions/12');
+  expect(await screen.findByText('GAP 4:19 /km')).toBeTruthy();
+  expect(screen.getByText(/la pente a pesé \+12 %/)).toBeTruthy();
+  expect(screen.getByText('Vitesse ascensionnelle 30 min')).toBeTruthy();
+  expect(screen.getByText(/980 m\/h/)).toBeTruthy();
+  expect(screen.getByText('27 °C')).toBeTruthy();
+  expect(screen.getByText(/Chaleur/)).toBeTruthy();
+  expect(screen.getByText('MÉTÉO AU DÉPART')).toBeTruthy();
+});
+
 it('says why a session without a recording has no curve', async () => {
   vi.mocked(analyticsApi.getSessionDetail).mockResolvedValue({
     ...detail,
@@ -105,10 +126,13 @@ it('says why a session without a recording has no curve', async () => {
     metrics: null,
     feedback: null,
     laps: [],
+    terrain: null,
+    weather: null,
   });
   renderAt('/log/sessions/12');
   expect(await screen.findByText('PAS DE FLUX POUR CETTE SÉANCE')).toBeTruthy();
   expect(screen.queryByRole('img', { name: /Tracé GPS/ })).toBeNull();
+  expect(screen.queryByText('MÉTÉO AU DÉPART')).toBeNull();
 });
 
 it('rejects an id that is not a number without asking the server', () => {

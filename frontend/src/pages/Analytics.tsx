@@ -6,6 +6,7 @@ import { analyticsApi } from '@/lib/api';
 import { CHART, COLORS } from '@/lib/chartTheme';
 import {
   CadenceCard,
+  DescentCard,
   EfficiencyCard,
   ElevationCard,
   LoadCard,
@@ -18,6 +19,7 @@ import {
   Section,
   SectionNav,
   SportsCard,
+  VamCard,
   VolumeCard,
   ZonesCard,
 } from './analytics/index';
@@ -124,6 +126,8 @@ export function AnalyticsPage() {
       <Section def={SECTIONS[3]}>
         <ElevationCard card={cards?.elevation} {...state} />
         <CadenceCard card={cards?.cadence} {...state} />
+        <VamCard card={cards?.vam} previousLabel={previousLabel} loading={isLoading} error={isError} />
+        <DescentCard card={cards?.descent} previousLabel={previousLabel} loading={isLoading} error={isError} />
       </Section>
 
       <Section def={SECTIONS[4]}>

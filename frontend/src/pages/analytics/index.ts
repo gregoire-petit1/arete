@@ -10,5 +10,7 @@ export { EfficiencyCard } from './cards/EfficiencyCard';
 export { PaceCard } from './cards/PaceCard';
 export { ElevationCard } from './cards/ElevationCard';
 export { CadenceCard } from './cards/CadenceCard';
+export { VamCard } from './cards/VamCard';
+export { DescentCard } from './cards/DescentCard';
 export { RecoveryCard } from './cards/RecoveryCard';
 export { RecordsCard } from './cards/RecordsCard';
