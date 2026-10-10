@@ -179,3 +179,16 @@ def scrub(payload: dict) -> dict:
     scrubbed = _walk(payload, depth=0, nodes_left=nodes_left)
     assert isinstance(scrubbed, dict)
     return scrubbed
+
+
+def redact_sensitive_tool_run(name: str) -> str:
+    """The traced result of a known-sensitive tool run, whatever shape it had.
+
+    `scrub()` can only see a run's own inputs or outputs dict, never its
+    name, so it cannot redact a tool result that reaches LangSmith as a bare
+    string (no "name" key to gate on, unlike a ToolMessage or a tool_call
+    dict). A caller with the run's name in hand (the tracer, not the client)
+    should replace the whole result with this instead of calling `scrub()`.
+    """
+    assert isinstance(name, str) and name
+    return _redacted(name)

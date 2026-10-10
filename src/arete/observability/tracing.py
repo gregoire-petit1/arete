@@ -7,12 +7,18 @@ import logging
 from contextlib import contextmanager
 from threading import Lock
 
-from langchain_core.tracers.context import tracing_v2_enabled
+from langchain_core.tracers.context import tracing_v2_callback_var
+from langchain_core.tracers.langchain import LangChainTracer
+from langchain_core.tracers.schemas import Run
 from langsmith import Client, tracing_context
 from urllib3.util import Retry
 
 from arete.config import config
-from arete.observability.scrubbing import scrub
+from arete.observability.scrubbing import (
+    SENSITIVE_TOOL_NAMES,
+    redact_sensitive_tool_run,
+    scrub,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +35,25 @@ _client_lock = Lock()
 def _export_error(error: Exception) -> None:
     # SDK exceptions may contain request details; never log credentials/payloads.
     logger.warning("LangSmith trace export failed (%s)", type(error).__name__)
+
+
+class _ScrubbingTracer(LangChainTracer):
+    """Redacts a known-sensitive tool's result or error by the run's own name.
+
+    `scrub()` (the client's hide_outputs) only ever sees a run's outputs
+    dict, never its name; a tool result that reaches LangSmith as a bare
+    string, with no key to gate on, would pass through it unredacted.
+    """
+
+    def _on_tool_end(self, run: Run) -> None:
+        if run.name in SENSITIVE_TOOL_NAMES:
+            run.outputs = {"output": redact_sensitive_tool_run(run.name)}
+        super()._on_tool_end(run)
+
+    def _on_tool_error(self, run: Run) -> None:
+        if run.name in SENSITIVE_TOOL_NAMES and run.error:
+            run.error = redact_sensitive_tool_run(run.name)
+        super()._on_tool_error(run)
 
 
 def get_tracing_client() -> Client | None:
@@ -80,9 +105,11 @@ def agent_tracing():
         # Own the native tracer per invocation so cancellation can finish any
         # model spans left open by LangChain's cancelled agenerate() gather.
         # The callback manager reuses this tracer; no second instrumentation.
-        with tracing_v2_enabled(
-            project_name=config.langsmith_project, client=client
-        ) as tracer:
+        # Reimplements tracing_v2_enabled(), which cannot take a tracer
+        # subclass, to run our name-based redaction ahead of the client.
+        tracer = _ScrubbingTracer(project_name=config.langsmith_project, client=client)
+        token = tracing_v2_callback_var.set(tracer)
+        try:
             try:
                 yield
             except BaseException as error:
@@ -98,6 +125,8 @@ def agent_tracing():
                             # export errors must not replace cancellation.
                             _export_error(export_error)
                 raise
+        finally:
+            tracing_v2_callback_var.reset(token)
 
 
 def close_tracing() -> None:

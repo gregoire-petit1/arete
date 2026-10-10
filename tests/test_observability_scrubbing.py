@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
 from datetime import date
 
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
@@ -17,10 +18,65 @@ from arete.observability.scrubbing import (
     scrub,
     sensitive,
 )
+from arete.observability.tracing import _ScrubbingTracer
 from arete.services.athlete_facts import FACTS_HEADING
 from arete.services.journal import JOURNAL_HEADING
 
 FIXTURE_SENTENCE = "Sharp pain in the left knee after the long run, mood is low."
+
+
+class _RecordingTracerClient(Client):
+    """A plain run-recording Client, for tracer-level (not scrub()) tests."""
+
+    def __init__(self):
+        super().__init__(api_key="test-key", auto_batch_tracing=False)
+        self.recorded: dict = {}
+
+    def create_run(self, name, inputs, run_type, **kwargs):
+        self.recorded[str(kwargs["id"])] = {"inputs": inputs}
+
+    def update_run(self, run_id, **kwargs):
+        self.recorded[str(run_id)].update(kwargs)
+
+
+def test_scrubbing_tracer_redacts_a_bare_string_tool_result_by_run_name():
+    """A tool result that reaches the tracer as a plain string (no ToolMessage
+    wrapper, no "name" key of its own) carries no signal `scrub()` can use;
+    only the tracer, which still has the run's own name, can redact it."""
+    client = _RecordingTracerClient()
+    tracer = _ScrubbingTracer(project_name="test-project", client=client)
+    run_id = uuid.uuid4()
+    tracer.on_tool_start(
+        {"name": "read_file"}, "/notes.md", run_id=run_id, name="read_file"
+    )
+    tracer.on_tool_end(FIXTURE_SENTENCE, run_id=run_id)
+    assert client.recorded[str(run_id)]["outputs"] == {"output": "[REDACTED:read_file]"}
+
+
+def test_scrubbing_tracer_redacts_a_tool_error_that_echoes_its_input():
+    client = _RecordingTracerClient()
+    tracer = _ScrubbingTracer(project_name="test-project", client=client)
+    run_id = uuid.uuid4()
+    tracer.on_tool_start(
+        {"name": "edit_file"}, "/notes.md", run_id=run_id, name="edit_file"
+    )
+    tracer.on_tool_error(
+        ValueError(f"String '{FIXTURE_SENTENCE}' appears 2 times"), run_id=run_id
+    )
+    assert client.recorded[str(run_id)]["error"] == "[REDACTED:edit_file]"
+
+
+def test_unrelated_tool_bare_string_result_is_left_alone_by_the_tracer():
+    client = _RecordingTracerClient()
+    tracer = _ScrubbingTracer(project_name="test-project", client=client)
+    run_id = uuid.uuid4()
+    tracer.on_tool_start(
+        {"name": "get_workload"}, "{}", run_id=run_id, name="get_workload"
+    )
+    tracer.on_tool_end("12 sessions this week", run_id=run_id)
+    assert client.recorded[str(run_id)]["outputs"] == {
+        "output": "12 sessions this week"
+    }
 
 
 def test_sensitive_marker_is_redacted_by_label():
