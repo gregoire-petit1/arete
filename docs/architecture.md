@@ -215,7 +215,10 @@ Conversation messages remain browser-owned. Document originals, extracted blocks
 import drafts and outbound Garmin operation records are deliberately durable in
 DuckDB/MotherDuck (migration 13). `services/documents.py` and `services/imports.py`
 own these lifecycles. API chat hydration builds an invocation-local StateBackend
-view at `/attachments/`; the context builder receives only a bounded manifest.
+view at `/attachments/` before the first model call and rejects missing or unfinished
+selected files. The context builder derives a bounded source preview from that same
+state, with explicit partial flags and paths for reading the complete extraction.
+Browser attachment references survive the message request window.
 The filesystem composes that read-only view with the existing ledger backend.
 The model can propose a draft but has no confirmation tool; pending imports block
 ordinary coach planning writes. Human confirmation commits selected sessions once.

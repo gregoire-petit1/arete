@@ -13,6 +13,7 @@ from deepagents.middleware.filesystem import (
 )
 from pydantic import BaseModel, Field
 
+from arete.agent.backends.attachments import ATTACHMENTS_ROUTE
 from arete.services.memory import (
     NOTES_LEDGER,
     SESSIONS_LEDGER,
@@ -93,7 +94,7 @@ def build_memory_filesystem() -> FilesystemMiddleware:
     middleware = FilesystemMiddleware(
         backend=CompositeBackend(
             default=LedgerBackend(root_dir=root, virtual_mode=True, max_file_size_mb=5),
-            routes={"/attachments/": StateBackend()},
+            routes={ATTACHMENTS_ROUTE: StateBackend()},
         ),
         tools=["read_file", "ls", "glob", "grep", "edit_file", "delete"],
         custom_tool_descriptions={

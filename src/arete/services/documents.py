@@ -470,9 +470,10 @@ def filesystem(
 ) -> dict[str, str]:
     with db_connection() as con:
         rows = con.execute(
-            "SELECT id,name,extraction FROM app.visible_coach_documents WHERE thread_id=? AND status='ready' ORDER BY created_at LIMIT ?",
-            [_uuid(thread_id), MAX_THREAD_FILES],
+            "SELECT id,name,extraction,status FROM app.visible_coach_documents WHERE thread_id=? ORDER BY created_at, id LIMIT ?",
+            [_uuid(thread_id), MAX_THREAD_FILES + 1],
         ).fetchall()
+    assert len(rows) <= MAX_THREAD_FILES
     if document_ids is not None:
         selected = set(document_ids)
         available = {row[0] for row in rows}
@@ -481,9 +482,15 @@ def filesystem(
                 "Une pièce jointe sélectionnée est absente ou incomplète. Vérifie les fichiers du fil."
             )
         rows = [row for row in rows if row[0] in selected]
+    if any(row[3] != "ready" for row in rows):
+        # Legacy callers select the whole thread. Never quietly drop a file
+        # whose parsing/OCR has not completed and answer without its evidence.
+        raise DocumentError(
+            "Une pièce jointe est incomplète. Termine son extraction ou retire-la avant de répondre."
+        )
     files = {}
     total = 0
-    for document_id, name, raw in rows:
+    for document_id, name, raw, _ in rows:
         extraction = Extraction.model_validate_json(raw)
         total += len(raw.encode())
         if total > MAX_THREAD_EXTRACT_BYTES:

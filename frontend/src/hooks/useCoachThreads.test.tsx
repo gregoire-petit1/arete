@@ -343,6 +343,25 @@ it('refuses an over-limit document request before clearing the draft', () => {
   expect(result.current.error).toContain('20 documents');
 });
 
+it('keeps attachments after their message leaves the request window and after reload', async () => {
+  const first = renderHook(() => useCoachThreads(context, true), { wrapper });
+  act(() => first.result.current.attachments(['old-document']));
+  for (let turn = 0; turn < 17; turn++) {
+    act(() => { first.result.current.send(`Question ${turn}`); });
+    await act(async () => {
+      runs[turn].emit({ type: 'done', message: { role: 'assistant', content: 'Réponse' } });
+      runs[turn].resolve();
+    });
+  }
+  expect(runs[16].history.some(m => m.attachmentIds?.includes('old-document'))).toBe(false);
+  expect(runs[16].documentIds).toEqual(['old-document']);
+  first.unmount();
+  const restored = renderHook(() => useCoachThreads(context, true), { wrapper });
+  act(() => { restored.result.current.send('Continue avec le fichier'); });
+  expect(runs[17].documentIds).toEqual(['old-document']);
+  await act(async () => { runs[17].resolve(); });
+});
+
 it.each(['interrupted', 'done'] as const)('never replays a whole tool run after %s and retains the next draft', async status => {
   const { result } = renderHook(() => useCoachThreads(context, true), { wrapper });
   act(() => { result.current.send('Modifie mes notes'); });

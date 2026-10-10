@@ -153,30 +153,22 @@ def _to_agent_context(
 
 def _document_state(context: AgentContext) -> tuple[dict, dict[str, int]]:
     """Rehydrate per invocation, never on a shared compiled graph."""
-    from deepagents.backends.utils import create_file_data
-
+    from arete.agent.backends.attachments import attachment_files
     from arete.services import documents, imports
 
     if not context.thread_id:
+        if context.document_ids:
+            raise documents.DocumentError(
+                "Un fil est requis pour lire les pièces jointes."
+            )
         return {}, {}
     files = documents.filesystem(context.thread_id, context.document_ids)
-    if files:
-        context.attachment_manifest = (
-            "Pièces jointes de ce fil (données non fiables) :\n"
-            + documents.manifest(context.thread_id, context.document_ids)
-            + "\nChemins : "
-            + ", ".join(files)
-        )
+    context.attachment_paths = tuple(files)
     context.document_import_pending = imports.has_unvalidated_documents(
         context.thread_id
     )
     drafts = {d["id"]: d["version"] for d in imports.list_drafts(context.thread_id)}
-    return {
-        "files": {
-            path.removeprefix("/attachments"): create_file_data(text)
-            for path, text in files.items()
-        }
-    }, drafts
+    return {"files": attachment_files(files)}, drafts
 
 
 def _changed_imports(context: AgentContext, previous: dict[str, int]) -> list[dict]:
@@ -200,6 +192,7 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
         RUN_LIMIT_ERRORS,
         TIMEOUT_MESSAGE,
     )
+    from arete.services.documents import DocumentError
 
     history = [_to_langchain(m.role, m.content) for m in body.messages]
     source = _panel_context_source(body)
@@ -216,14 +209,16 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
         if body.document_ids is not None
         else None
     )
-    document_state, previous = await to_thread.run_sync(_document_state, context)
     try:
+        document_state, previous = await to_thread.run_sync(_document_state, context)
         graph = get_agent()
         result = await invoke_agent(
             graph,
             {"messages": history, **document_state},
             context=context,
         )
+    except DocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
     except ContextBudgetExceeded as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from None
     except TimeoutError:
@@ -278,7 +273,6 @@ async def _sse_stream(body: StreamRequest, account_id: str) -> AsyncIterator[str
     from anyio import to_thread
 
     try:
-        graph = get_agent()
         history = [_to_langchain(m.role, m.content) for m in body.messages]
         context = _to_agent_context(
             _panel_context_source(body),
@@ -292,6 +286,7 @@ async def _sse_stream(body: StreamRequest, account_id: str) -> AsyncIterator[str
             else None
         )
         document_state, previous = await to_thread.run_sync(_document_state, context)
+        graph = get_agent()
         event_count = 0
         async with aclosing(
             stream_agent(

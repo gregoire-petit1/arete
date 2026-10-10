@@ -21,14 +21,26 @@ delete incomplete files to release their reservation. Individual 3 MiB chunks ar
 idempotent, finalized bytes are checked with SHA-256, and finalization is atomic.
 Downloads also use chunks to remain below Vercel's response-body limit.
 
-Conversation history stays in browser storage. Each invocation reconstructs only
-that thread's ready documents in a Deep Agents StateBackend mounted at
-`/attachments/`. Model context receives a manifest; read-only `ls`, `glob`, `grep`
-and bounded `read_file` load content. No binary prompt injection, shell, filesystem
+Conversation history stays in browser storage. Before any model call, each invocation
+reconstructs the thread's selected, fully extracted documents in a Deep Agents
+StateBackend mounted at `/attachments/`. References from sent messages survive the
+30-message request window and browser reloads; unsent draft files are excluded.
+Missing or unfinished selected files fail explicitly before the agent starts.
+Legacy callers that omit the selection require every document in the thread to be ready.
+The context builder includes paths and source previews from that same state snapshot:
+8,000 source characters total, at most 4,000 per file, with an explicit partial flag.
+Full extractions remain in state; read-only `ls`, `glob`, `grep` and bounded
+`read_file` load the rest. Previews count towards the complete request budget and
+require no extra model call. No binary prompt injection, shell, filesystem
 write tool or auxiliary model call is introduced. An unvalidated document import
 blocks the coach's ordinary planning/workout writes. Human confirmation or explicit
 abandonment resolves the draft; abandonment keeps its documents. Deleting a thread
 removes its documents/drafts but preserves confirmed prescriptions and source quotes.
+
+This follows the [Deep Agents backend contract](https://docs.langchain.com/oss/python/deepagents/backends):
+`CompositeBackend` routes `/attachments/` to `StateBackend`, whose keys are relative
+to that mount (`/<document-id>.md`). Database hydration supplies those keys for each
+invocation; no checkpointer or server-owned conversation history is introduced.
 
 `services/documents.py` owns storage/extraction; `services/imports.py` owns validation
 and transactional confirmation. A confirmation key plus draft version makes a lost

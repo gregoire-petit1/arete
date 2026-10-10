@@ -62,3 +62,39 @@ def test_compiled_background_profile_rejects_chat_policy_before_model_execution(
             {},
             SimpleNamespace(context=AgentContext(profile="chat")),
         )
+
+
+def test_attachment_previews_are_explicitly_partial_and_keep_full_state():
+    import json
+
+    from deepagents.backends.utils import file_data_to_string
+
+    from arete.agent.backends.attachments import attachment_files
+    from arete.agent.context.attachments import (
+        MAX_ATTACHMENT_PREVIEW_CHARS,
+        MAX_FILE_PREVIEW_CHARS,
+        attachment_section,
+    )
+
+    text = "date, séance\n" * MAX_FILE_PREVIEW_CHARS + "fin du programme"
+    paths = tuple(f"/attachments/{i}.md" for i in range(20))
+    files = attachment_files(dict.fromkeys(paths, text))
+    section = attachment_section(files, paths)
+    previews = json.loads(section.split("\n", 1)[1])
+    assert all(p["partial"] for p in previews)
+    assert sum(len(p["text"]) for p in previews) <= MAX_ATTACHMENT_PREVIEW_CHARS
+    assert all(p["text"] for p in previews)
+    assert all(file_data_to_string(f) == text for f in files.values())
+    with pytest.raises(AssertionError, match="missing"):
+        attachment_section({}, paths)
+    # Attachment evidence goes through the same complete-request budget.
+    with pytest.raises(ContextBudgetExceeded):
+        validate_context(
+            SimpleNamespace(
+                messages=[HumanMessage("Lis")],
+                tools=[],
+                system_message=SystemMessage("harness " * 1000 + section),
+            ),
+            context_tokens=8192,
+            output_tokens=4096,
+        )
