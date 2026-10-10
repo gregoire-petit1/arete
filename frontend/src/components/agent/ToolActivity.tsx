@@ -22,6 +22,7 @@ const LABELS: Record<string, string> = {
   list_recent_sessions: 'Séances récentes',
   read_workout: 'Lecture de la séance',
   save_workout: 'Enregistrement de la séance',
+  get_strength_progress: 'Progression en force',
   list_planned: 'Planning',
   inspect_planned_session: 'Lecture des étapes',
   update_session_prescription: 'Modification des étapes',
