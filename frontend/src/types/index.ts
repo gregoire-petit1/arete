@@ -273,6 +273,74 @@ export interface ParsedSet {
   rpe: number | null;
   is_warmup: boolean;
   is_failure: boolean;
+  rest_sec?: number | null;
+  rir?: number | null;
+  tempo?: string | null;
+}
+
+/** Next-session load from fixed rules (double progression, RIR/RPE, deload). */
+export interface StrengthSuggestion {
+  weight_kg: number | null;
+  sets: number;
+  reps: number;
+  rep_range: string | null;
+  rule: 'increase' | 'double_progression' | 'hold' | 'decrease' | 'reps' | 'deload';
+  /** French, ready to show. */
+  reason: string;
+  based_on: string;
+  deload: boolean;
+  readiness: number | null;
+}
+
+export interface StrengthRecord {
+  kind: 'weight' | 'e1rm' | 'reps';
+  /** kg for weight/e1rm, reps for reps. */
+  value: number;
+  previous: number | null;
+  weight_kg: number | null;
+  reps: number | null;
+  date: string | null;
+}
+
+/** A record the session just saved beat. */
+export interface SessionRecord extends StrengthRecord {
+  exercise_id: number;
+  exercise: string;
+}
+
+export interface ExerciseHistoryEntry {
+  date: string;
+  session_exercise_id: number;
+  total_sets: number;
+  working_sets: number;
+  max_weight: number | null;
+  volume: number;
+  avg_rpe: number | null;
+  best_e1rm: number | null;
+  top_weight: number | null;
+  top_reps: number | null;
+}
+
+export interface ExercisePersonalRecords {
+  max_weight: number | null;
+  max_weight_reps: number | null;
+  max_weight_date: string | null;
+  estimated_1rm: number | null;
+  max_session_volume: number | null;
+  max_volume_date: string | null;
+  best_e1rm: StrengthRecord | null;
+  rep_records: StrengthRecord[];
+}
+
+export interface ExerciseSuggestionResponse {
+  suggestion: StrengthSuggestion | null;
+  readiness: { score: number; source: string; level: string } | null;
+}
+
+export interface LibraryExercise {
+  id: number;
+  name: string;
+  category: string;
 }
 
 export interface ParsedExercise {
@@ -281,6 +349,8 @@ export interface ParsedExercise {
   exercise_matched: boolean;
   sets: ParsedSet[];
   notes: string | null;
+  /** What the history suggested for this session (preview only). */
+  progression?: StrengthSuggestion | null;
 }
 
 /** What POST /strength/sessions/transcribe answers for a dictated session. */
@@ -307,6 +377,8 @@ export interface ParsedWorkout {
   message: string | null;
   /** Lines the grammar could not parse (LLM fallback disabled or failed). */
   unparsed_lines?: string[];
+  /** Personal records the saved session set. */
+  records?: SessionRecord[];
 }
 
 // ========================= //
