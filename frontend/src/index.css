@@ -229,6 +229,17 @@ body {
   background: var(--color-neon-cyan);
 }
 
+/* Keep native textarea scroll surfaces transparent in both light and dark themes. */
+.coach-composer-input {
+  overflow-wrap: anywhere;
+  scrollbar-color: var(--color-text-muted) transparent;
+}
+
+.coach-composer-input::-webkit-scrollbar-track,
+.coach-composer-input::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Assistant prose owns its typography; activity cards have their own surface. */
 .coach-markdown { min-width: 0; font-size: 14px; line-height: 1.75; overflow-wrap: anywhere; color: var(--color-text-primary); }
 .coach-markdown + .coach-markdown { margin-top: 1rem; }

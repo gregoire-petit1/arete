@@ -23,6 +23,8 @@ from arete.agent.runtime.context import (
     PANEL_PAGES,
     AgentContext,
 )
+from arete.api.agent_feedback import TraceReceipt, chat_trace
+from arete.api.agent_feedback import router as feedback_router
 from arete.api.auth import clerk_account
 from arete.services.memory import NOTES_LEDGER, SESSIONS_LEDGER, memory_root
 
@@ -49,6 +51,7 @@ async def invoke_agent(graph: Any, state: dict, *, context: AgentContext) -> dic
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["agent"])
+router.include_router(feedback_router)
 
 #: Hard bound on history size per request (bounds the envelope; a normal turn
 #: is 2-20 messages). Over it → 413, never silent truncation.
@@ -89,6 +92,7 @@ class ChatMessageOut(BaseModel):
 
 class ChatResponse(BaseModel):
     message: ChatMessageOut
+    trace: TraceReceipt | None = None
     suggestion: str | None = Field(default=None, max_length=300)
     imports: list[dict] = Field(default_factory=list)
 
@@ -238,6 +242,7 @@ async def chat(body: ChatRequest, request: Request) -> ChatResponse:
         raise HTTPException(status_code=502, detail="Agent returned no messages")
     final = messages[-1]
     return ChatResponse(
+        trace=chat_trace(context.run_id, context.thread_id, context.account_id),
         suggestion=result.get("suggestion"),
         imports=await to_thread.run_sync(_changed_imports, context, previous),
         message=ChatMessageOut(
@@ -301,7 +306,11 @@ async def _sse_stream(body: StreamRequest, account_id: str) -> AsyncIterator[str
                     yield _sse(event)
         for preview in await to_thread.run_sync(_changed_imports, context, previous):
             yield _sse(preview)
-        yield _sse(projection.done())
+        done = projection.done()
+        trace = chat_trace(context.run_id, context.thread_id, context.account_id)
+        if trace is not None:
+            done["trace"] = trace.model_dump(mode="json")
+        yield _sse(done)
     except TimeoutError:
         yield _sse(
             {

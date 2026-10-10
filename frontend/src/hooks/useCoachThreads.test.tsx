@@ -51,6 +51,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it('keeps late feedback updates on their original turn after switching or deleting threads', async () => {
+  const { result } = renderHook(() => useCoachThreads(context), { wrapper });
+  const origin = result.current.active.id;
+  const trace = { trace_id: '12345678-1234-4123-8123-123456789012', feedback_token: 'a'.repeat(64) };
+  act(() => { result.current.send('Question'); });
+  await act(async () => {
+    runs[0].emit({ type: 'done', message: { role: 'assistant', content: 'Réponse' }, trace });
+    runs[0].resolve();
+  });
+  act(() => { result.current.create(); });
+  const target = result.current.active.id;
+  const feedback = { user_score: 1 as const, reaction: '🎯', status: 'saved' as const };
+  act(() => result.current.feedback(origin, trace.trace_id, feedback));
+  expect(result.current.active.id).toBe(target);
+  expect(result.current.active.messages).toHaveLength(0);
+  expect(result.current.store.threads.find(t => t.id === origin)?.messages[1].feedback).toEqual(feedback);
+  await act(async () => result.current.remove(origin));
+  act(() => result.current.feedback(origin, trace.trace_id, feedback));
+  expect(result.current.active.id).toBe(target);
+  expect(result.current.active.messages).toHaveLength(0);
+});
+
 it('keeps background results in their originating thread and sends only the selected history', async () => {
   const { result } = renderHook(() => useCoachThreads(context), { wrapper });
   const first = result.current.active.id;

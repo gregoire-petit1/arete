@@ -5,6 +5,7 @@ import { canRetryMessage } from '@/lib/agentActivity';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { documentsApi } from '@/lib/documents';
+import type { MessageFeedback } from '@/lib/agentFeedback';
 import { invalidateAfterSession, qk } from '@/lib/queryKeys';
 import type { PanelPageContext } from '@/lib/pageContext';
 import {
@@ -280,6 +281,9 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
   })));
 
   return {
+    feedback: (threadId: string, traceId: string, feedback: MessageFeedback) => setStore(prev => updateThread(prev, threadId, t => ({
+      ...t, messages: t.messages.map(m => m.trace?.trace_id === traceId ? { ...m, feedback } : m),
+    }))),
     recordAction,
     store,
     active,

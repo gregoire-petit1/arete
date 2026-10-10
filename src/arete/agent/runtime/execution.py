@@ -59,6 +59,8 @@ def run_config(
             "model": configured_model_name(),
         },
     }
+    if context is not None:
+        result["run_id"] = context.run_id
     if context and context.thread_id is not None:
         result["metadata"]["thread_id"] = context.thread_id
         result["configurable"] = {"thread_id": context.thread_id}
