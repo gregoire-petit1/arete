@@ -1,9 +1,10 @@
 import { useLayoutEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Bot, Check, Database, Dumbbell, Palette, Save, Target, Terminal, User, Watch, X } from 'lucide-react';
+import { Bot, Check, Database, Dumbbell, Palette, Save, Target, Terminal, User, Users, Watch, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ErrorState, LoadingState } from '@/components';
+import { useAuthState } from '@/components/auth/authState';
 import { Button, Spinner } from '@/components/ui';
 import { settingsApi, type UserSettings } from '@/lib/api';
 import { DataTab } from './settings/DataTab';
@@ -11,6 +12,7 @@ import { GamificationTab } from './settings/GamificationTab';
 import { qk } from '@/lib/queryKeys';
 import { applyTheme } from '@/lib/theme';
 import {
+  AdminTab,
   AppearanceTab,
   CoachTab,
   ConnectionsTab,
@@ -33,16 +35,23 @@ const TABS = [
   { id: 'data', label: 'DONNÉES', icon: Database },
   { id: 'system', label: 'SYSTÈME', icon: Terminal },
 ] as const;
+/** Listed for the owner and admins only. */
+const ADMIN_TAB = { id: 'admin', label: 'ADMINISTRATION', icon: Users } as const;
 
-type TabId = (typeof TABS)[number]['id'];
+type Tab = (typeof TABS)[number] | typeof ADMIN_TAB;
+type TabId = Tab['id'];
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
-const isTabId = (value: string | null): value is TabId => TABS.some((tab) => tab.id === value);
+const isTabId = (tabs: readonly Tab[], value: string | null): value is TabId =>
+  tabs.some((tab) => tab.id === value);
 
 export function SettingsPage() {
+  const { isAdmin } = useAuthState();
+  // A tab missing from the list, the admin one included, opens the profile.
+  const tabs: readonly Tab[] = isAdmin ? [...TABS, ADMIN_TAB] : TABS;
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const activeTab: TabId = isTabId(tabParam) ? tabParam : 'profile';
+  const activeTab: TabId = isTabId(tabs, tabParam) ? tabParam : 'profile';
   const setActiveTab = (tab: TabId) => setSearchParams(tab === 'profile' ? {} : { tab }, { replace: true });
   const queryClient = useQueryClient();
 
@@ -136,7 +145,7 @@ export function SettingsPage() {
         <div className="flex flex-col md:flex-row gap-4 md:gap-6">
           <nav className="md:w-48 md:shrink-0 -mx-4 px-4 md:mx-0 md:px-0 overflow-x-auto animate-fade-left">
             <div className="flex md:flex-col gap-1">
-              {TABS.map((tab) => (
+              {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   type="button"
@@ -166,6 +175,7 @@ export function SettingsPage() {
             {activeTab === 'appearance' && <AppearanceTab {...tabProps} />}
             {activeTab === 'data' && <DataTab />}
             {activeTab === 'system' && <SystemTab />}
+            {activeTab === 'admin' && <AdminTab />}
           </div>
         </div>
       </div>

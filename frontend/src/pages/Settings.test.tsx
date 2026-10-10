@@ -3,8 +3,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
+import { AUTH_DISABLED, AuthStateContext, type AuthState } from '@/components/auth/authState';
 import { SettingsProvider } from '@/contexts/SettingsContext';
-import { settingsApi } from '@/lib/api';
+import { adminApi, settingsApi } from '@/lib/api';
 import { initializeTheme } from '@/lib/theme';
 import { SettingsPage } from './Settings';
 import { DEFAULT_SETTINGS } from './settings/types';
@@ -26,14 +27,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function openAppearance(path = '/settings') {
-  const view = render(
+function mount(path: string, auth: AuthState = AUTH_DISABLED) {
+  return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={[path]}>
-        <SettingsProvider><SettingsPage /></SettingsProvider>
-      </MemoryRouter>
+      <AuthStateContext.Provider value={auth}>
+        <MemoryRouter initialEntries={[path]}>
+          <SettingsProvider><SettingsPage /></SettingsProvider>
+        </MemoryRouter>
+      </AuthStateContext.Provider>
     </QueryClientProvider>,
   );
+}
+
+function openAppearance(path = '/settings') {
+  const view = mount(path);
   if (path === '/settings') {
     fireEvent.click(screen.getByRole('button', { name: 'APPARENCE' }));
   }
@@ -83,4 +90,29 @@ it('does not persist a preview when saving fails', async () => {
   view.unmount();
   initializeTheme();
   expect(document.documentElement.dataset.theme).toBe('dark');
+});
+
+const SIGNED_IN: AuthState = { ...AUTH_DISABLED, enabled: true, email: 'ana@exemple.fr' };
+
+it('shows the administration tab to admins only', async () => {
+  vi.spyOn(adminApi, 'accounts').mockResolvedValue([]);
+  const view = mount('/settings');
+  expect(screen.queryByRole('button', { name: 'ADMINISTRATION' })).toBeNull();
+  view.unmount();
+  const signedIn = mount('/settings', SIGNED_IN);
+  expect(screen.queryByRole('button', { name: 'ADMINISTRATION' })).toBeNull();
+  signedIn.unmount();
+
+  mount('/settings', { ...SIGNED_IN, isAdmin: true });
+  fireEvent.click(screen.getByRole('button', { name: 'ADMINISTRATION' }));
+  expect(await screen.findByRole('heading', { name: 'COMPTES ET ATHLÈTES' })).toBeTruthy();
+  expect(adminApi.accounts).toHaveBeenCalled();
+});
+
+it('falls back to the profile tab on an admin deep link for a non-admin', () => {
+  const accounts = vi.spyOn(adminApi, 'accounts').mockResolvedValue([]);
+  mount('/settings?tab=admin', SIGNED_IN);
+  expect(screen.getByRole('heading', { name: 'PROFIL' })).toBeTruthy();
+  expect(screen.queryByRole('heading', { name: 'COMPTES ET ATHLÈTES' })).toBeNull();
+  expect(accounts).not.toHaveBeenCalled();
 });

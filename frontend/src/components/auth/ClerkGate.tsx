@@ -55,7 +55,11 @@ export function AccountButton() {
   return <UserButton />;
 }
 
-type Account = { status: 'error' } | { status: 'ready'; me: AuthMe };
+type Account =
+  | { status: 'error' }
+  /** The server answered 403: its word on this account (deactivated…), which a retry cannot change. */
+  | { status: 'refused'; detail: string | null }
+  | { status: 'ready'; me: AuthMe };
 
 function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishableKey'>) {
   const { isLoaded, isSignedIn, sessionId, getToken, signOut } = useAuth();
@@ -103,7 +107,13 @@ function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishab
       (error: unknown) => {
         // A 401 is already in the hands of the unauthorized hook below.
         if (!cancelled && !(error instanceof ApiError && error.status === 401)) {
-          setAccount({ key, value: { status: 'error' } });
+          setAccount({
+            key,
+            value:
+              error instanceof ApiError && error.status === 403
+                ? { status: 'refused', detail: error.detail }
+                : { status: 'error' },
+          });
         }
       }
     ).catch(() => {
@@ -154,6 +164,7 @@ function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishab
       email: me?.email ?? null,
       athleteId: me?.athlete_id ?? null,
       isOwner: me?.is_owner ?? false,
+      isAdmin: me?.is_admin ?? false,
       signOut: leave,
       grantGoogleScopes,
     }),
@@ -183,7 +194,18 @@ function SessionGate({ onSessionEnd, children }: Omit<ClerkGateProps, 'publishab
       </GateScreen>
     );
   }
-  if (current.me.athlete_id === null) return <WaitingPage email={current.me.email} signOut={leave} />;
+  if (current.status === 'refused') {
+    return <AccountNotice message={current.detail ?? 'Accès refusé pour ce compte.'} signOut={leave} />;
+  }
+  if (current.me.athlete_id === null) {
+    return (
+      <AccountNotice
+        message="Ton compte est créé, mais aucun athlète ne lui est encore associé. Demande l'accès au propriétaire de cette instance."
+        email={current.me.email}
+        signOut={leave}
+      />
+    );
+  }
   return <AuthStateContext.Provider key={key} value={value}>{children}</AuthStateContext.Provider>;
 }
 
@@ -205,18 +227,26 @@ function SignInPage() {
   );
 }
 
-function WaitingPage({ email, signOut }: { email: string; signOut: () => Promise<void> }) {
+/** A signed-in account that cannot open the app (yet, or any more): why, as whom, and the way out. */
+function AccountNotice({
+  message,
+  email,
+  signOut,
+}: {
+  message: string;
+  email?: string;
+  signOut: () => Promise<void>;
+}) {
   return (
     <GateScreen>
       <div className="glass-panel w-full max-w-md p-6 space-y-4 animate-fade-up">
         <h1 className="text-xl font-bold font-mono tracking-wider text-neon-cyan">[ARETE]</h1>
-        <p className="text-sm text-text-primary">
-          Ton compte est créé, mais aucun athlète ne lui est encore associé. Demande l'accès au
-          propriétaire de cette instance.
-        </p>
-        <p className="text-xs font-mono text-text-muted">
-          Connecté en tant que <span className="text-text-secondary">{email}</span>
-        </p>
+        <p className="text-sm text-text-primary">{message}</p>
+        {email && (
+          <p className="text-xs font-mono text-text-muted">
+            Connecté en tant que <span className="text-text-secondary">{email}</span>
+          </p>
+        )}
         <SignOutButton signOut={signOut} />
       </div>
     </GateScreen>

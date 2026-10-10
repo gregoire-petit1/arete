@@ -388,12 +388,17 @@ export interface AuthConfig {
   publishable_key: string | null;
 }
 
+export type AccountRole = "athlete" | "admin";
+
 /** The signed-in account; `athlete_id` stays null until the owner attaches an athlete. */
 export interface AuthMe {
   email: string;
   name: string | null;
   athlete_id: number | null;
   is_owner: boolean;
+  role: AccountRole;
+  /** The owner, or an account with the admin role. */
+  is_admin: boolean;
 }
 
 export const authApi = {
@@ -405,6 +410,50 @@ export const authApi = {
   },
 
   me: () => fetchAPI<AuthMe>("/auth/me"),
+};
+
+// ========================= //
+// ADMIN API                 //
+// ========================= //
+
+/** One (athlete, login) pair: an athlete with two logins has two, one without any has `user_id` null. */
+export interface AdminAccount {
+  athlete_id: number;
+  user_id: number | null;
+  email: string | null;
+  name: string | null;
+  role: AccountRole;
+  is_owner: boolean;
+  last_seen_at: string | null;
+  last_sync_at: string | null;
+  /** Set while the automatic sync holds the athlete; `lease_stuck` once it outlived its deadline. */
+  sync_lease_until: string | null;
+  lease_stuck: boolean;
+  deactivated_at: string | null;
+}
+
+/** Admins and the owner; the server enforces who may do what and answers a French `detail` otherwise. */
+export const adminApi = {
+  accounts: () => fetchAPI<AdminAccount[]>("/admin/accounts"),
+
+  /** Owner only, never on an owner's row. */
+  setRole: (userId: number, role: AccountRole) =>
+    fetchAPI<AuthMe>(`/admin/accounts/${userId}/role`, {
+      method: "POST",
+      body: JSON.stringify({ role }),
+    }),
+
+  deactivate: (athleteId: number) =>
+    fetchAPI<void>(`/admin/athletes/${athleteId}/deactivate`, { method: "POST" }),
+
+  reactivate: (athleteId: number) =>
+    fetchAPI<void>(`/admin/athletes/${athleteId}/reactivate`, { method: "POST" }),
+
+  /** `released` is false when no sync held the athlete any more. */
+  releaseLease: (athleteId: number) =>
+    fetchAPI<{ released: boolean }>(`/admin/athletes/${athleteId}/release-lease`, {
+      method: "POST",
+    }),
 };
 
 // ========================= //
