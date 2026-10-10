@@ -104,8 +104,19 @@ def _without_nulls(row: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in row.items() if v is not None and v != ""}
 
 
+#: Completed sessions a Planning read lists, newest first, from the window's start.
+#: The plan alone already fills ~20k of the 32k-character bound on real data.
+PLANNING_DONE_LIMIT = 15
+
+
 def _planning() -> dict[str, Any]:
+    """The plan of the window, and what was actually done in its past days.
+
+    The plan alone hid the athlete's sessions: asked to keep today's run and
+    clear the rest, the coach saw no run and deleted every planned session.
+    """
     from arete.garmin.repository import GarminRepository
+    from arete.services.analytics import list_sessions
     from arete.services.planning import _session_to_dict
 
     today = date.today()
@@ -122,7 +133,15 @@ def _planning() -> dict[str, Any]:
     return {
         "window": {"from": start.isoformat(), "to": end.isoformat()},
         "planned_sessions": rows,
-        "beyond_the_window": "planning toolkit: list_planned(start_date, end_date)",
+        "done_sessions": [
+            _without_nulls(s)
+            for s in list_sessions(limit=PLANNING_DONE_LIMIT, for_model=True)[
+                "sessions"
+            ]
+            if s["date"] >= start.isoformat()
+        ],
+        "beyond_the_window": "planning toolkit: list_planned(start_date, end_date); "
+        "done sessions: list_recent_sessions",
     }
 
 

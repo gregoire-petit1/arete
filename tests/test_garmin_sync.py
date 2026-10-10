@@ -693,3 +693,81 @@ def test_sync_stream_reports_failure_without_success_or_replay(router_client):
     assert "private" not in response.text
     work.assert_called_once()
     enrich.assert_not_called()
+
+
+def _coach_sync(events, *, deadline=None, authenticated=True):
+    """Run the coach's sync over scripted events; returns (result, work, enrich)."""
+    from arete.services import garmin_sync as service
+
+    def work(**kwargs):
+        yield from events
+
+    recent = {
+        "sessions": [{"id": 42, "date": "2026-10-10"}, {"id": 7, "date": "2026-10-01"}]
+    }
+    with (
+        patch.object(GarminSyncClient, "is_authenticated", return_value=authenticated),
+        patch.object(
+            GarminSyncClient, "iter_sync_activities", side_effect=work
+        ) as started,
+        patch("arete.services.session_conditions.enrich_sessions") as enrich,
+        patch("arete.services.analytics.list_sessions", return_value=recent),
+    ):
+        return service.sync_recent(deadline=deadline), started, enrich
+
+
+def test_coach_sync_returns_the_imported_sessions_it_enriched():
+    from arete.garmin.sync import SyncProgress
+    from arete.services.garmin_sync import MAX_ACTIVITIES
+
+    result, started, enrich = _coach_sync(
+        [
+            SyncProgress("fetching"),
+            SyncResult(
+                success=True,
+                activities_synced=1,
+                activities_skipped=3,
+                session_ids=[42],
+            ),
+        ]
+    )
+    started.assert_called_once_with(max_activities=MAX_ACTIVITIES)
+    enrich.assert_called_once_with([42])
+    assert result["complete"] is True
+    assert result["imported"] == 1
+    assert result["already_present"] == 3
+    assert result["sessions"] == [{"id": 42, "date": "2026-10-10"}]
+
+
+def test_coach_sync_stops_between_steps_when_the_run_runs_out_of_time():
+    from time import monotonic
+
+    from arete.garmin.sync import SyncProgress
+
+    result, _, enrich = _coach_sync(
+        [SyncProgress("fetching"), SyncResult(success=True, session_ids=[42])],
+        deadline=monotonic() + 1,
+    )
+    assert result["complete"] is False
+    assert "list_recent_sessions" in result["error"]
+    enrich.assert_not_called()
+
+
+def test_coach_sync_needs_a_garmin_connection_before_any_work():
+    with pytest.raises(PermissionError, match="Réglages"):
+        _coach_sync([], authenticated=False)
+
+
+def test_coach_sync_refuses_an_overlapping_run_for_the_same_athlete():
+    from arete.garmin.sync import SyncProgress
+    from arete.services import garmin_sync as service
+
+    def overlapping():
+        yield SyncProgress("fetching")
+        with pytest.raises(RuntimeError, match="déjà en cours"):
+            service.sync_recent()
+        yield SyncResult(success=True)
+
+    result, _, _ = _coach_sync(overlapping())
+    assert result["complete"] is True
+    assert not service._running

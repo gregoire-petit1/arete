@@ -99,8 +99,17 @@ def test_domain_and_static_tool_errors_are_visible_to_model(async_mode, name, ar
     assert context.stats.tool_calls == 1
 
 
+def _planned_on(monkeypatch, day):
+    monkeypatch.setattr(
+        garmin_export,
+        "inspect_session",
+        lambda session_id, include_steps=True: {"session": {"date": day}},
+    )
+
+
 @pytest.mark.parametrize("async_mode", [False, True])
 def test_partial_garmin_write_is_not_replayed_or_discarded(monkeypatch, async_mode):
+    _planned_on(monkeypatch, "2999-01-01")
     payload = {
         "results": [{"session_id": 113, "state": "uncertain"}],
         "blocked": 113,
@@ -203,3 +212,44 @@ def test_run_deadline_cancels_retry_backoff(monkeypatch):
 
     asyncio.run(cancel_during_backoff())
     assert devices.call_count == 1
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_garmin_sync_gets_the_run_deadline_and_refreshes_the_page(
+    monkeypatch, async_mode
+):
+    from arete.services import garmin_sync
+
+    sync = Mock(return_value={"complete": True, "sessions": [{"id": 42}]})
+    monkeypatch.setattr(garmin_sync, "sync_recent", sync)
+    context = AgentContext()
+    context.page_section = "stale page"
+    result = run(graph_for("sync_garmin_activities", {}), async_mode, context)
+    message = next(m for m in result["messages"] if m.type == "tool")
+    assert json.loads(message.content)["sessions"] == [{"id": 42}]
+    assert (context.deadline is not None) is async_mode  # set by invoke_agent
+    assert sync.call_args.kwargs["deadline"] == context.deadline
+    assert context.page_section != "stale page"
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_garmin_sync_failure_is_never_replayed(monkeypatch, async_mode):
+    from arete.services import garmin_sync
+
+    sync = Mock(side_effect=ConnectionError("garmin offline"))
+    monkeypatch.setattr(garmin_sync, "sync_recent", sync)
+    with pytest.raises(ConnectionError):
+        run(graph_for("sync_garmin_activities", {}), async_mode)
+    assert sync.call_count == 1
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_a_past_session_is_never_exported(monkeypatch, async_mode):
+    _planned_on(monkeypatch, "2000-01-01")
+    export = Mock()
+    monkeypatch.setattr(garmin_export, "export_batch", export)
+    result = run(graph_for("export_garmin_sessions", {"session_ids": [21]}), async_mode)
+    message = next(m for m in result["messages"] if m.type == "tool")
+    assert message.status == "error"
+    assert "[21]" in json.loads(message.content)["error"]
+    export.assert_not_called()

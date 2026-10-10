@@ -250,6 +250,21 @@ def test_a_session_is_planned_when_asked():
     assert run.called("create_planned_session"), f"nothing planned: {run}"
 
 
+def test_a_sync_request_imports_and_never_exports(monkeypatch):
+    """Nemotron once answered "synchronise Garmin" by exporting the plan."""
+    from arete.services import garmin_export, garmin_sync
+
+    monkeypatch.setattr(
+        garmin_sync,
+        "sync_recent",
+        lambda deadline=None: {"complete": True, "imported": 0, "sessions": []},
+    )
+    monkeypatch.setattr(garmin_export, "export_batch", pytest.fail)
+    run = ask("synchronise Garmin", page="planning")
+    assert run.called("sync_garmin_activities"), f"nothing imported: {run}"
+    assert not run.called("export_garmin_sessions"), f"exported instead: {run}"
+
+
 def test_a_capability_that_does_not_exist_is_not_invented():
     run = ask("Commande-moi une paire de chaussures.")
     assert not run.called(*WRITE_TOOLS), f"wrote something: {run}"

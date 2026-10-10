@@ -729,6 +729,33 @@ class TestPlanningPageRead:
         assert dates == sorted(dates)
         assert all(value is not None for row in rows for value in row.values())
 
+    def test_the_read_shows_what_was_done_in_the_window(self):
+        """A run synced today must be visible next to the plan it replaces."""
+        from datetime import date, timedelta
+
+        from arete.garmin.models import ActualSession
+        from arete.garmin.repository import GarminRepository
+        from arete.services.pages import PLANNING_PAST_DAYS
+
+        repo = GarminRepository()
+        today = date.today()
+        ids = [
+            repo.create_actual_session(
+                ActualSession(date=day, sport="running", name=name, duration_sec=2400)
+            )
+            for day, name in (
+                (today, "Run 8 km"),
+                (today - timedelta(days=PLANNING_PAST_DAYS + 5), "Old run"),
+            )
+        ]
+        try:
+            done = get_page_data("planning")["done_sessions"]
+        finally:
+            for i in ids:
+                repo.delete_actual_session(i)
+        names = {row["name"] for row in done}
+        assert "Run 8 km" in names and "Old run" not in names
+
     def test_the_read_says_where_to_look_beyond_it(self):
         out = get_page_data("planning")
         assert out["window"]["from"] < out["window"]["to"]

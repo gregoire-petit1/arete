@@ -155,6 +155,7 @@ loaded instructions, a bounded journal excerpt and, for chat, the open page: its
 data read by the server at the first model boundary (`context/sections.py`, through
 `services/pages.py`) and its route/URL parameters labelled as untrusted client data.
 The Log selection includes the selected strength session or the cardio detail digest.
+The Planning read adds the sessions done since its window's start (at most 15).
 Domain actions invalidate this invocation-local cache for the next model call; reads
 reuse it. There is no page-context tool. A
 question about the screen therefore needs no tool call. The journal is read again
@@ -330,6 +331,12 @@ The daily sync hands the sessions Garmin imported to
 numbered sections split by `services/session_feedback.py`. A missing, failed or
 misnumbered answer leaves each session its rule text. The server files the
 journal entries and stores the texts; the feedback profile still binds no tool.
+
+Chat can run the sync button's import itself (`sync_garmin_activities`,
+`services/garmin_sync.py`): at most 20 activities, one run per athlete and
+process, stopped between activities 60 s before the run deadline, never
+replayed. It returns the imported sessions, and as a write it drops the cached
+page so the next model call reads it again. It writes no sync feedback.
 
 ## Optional athlete RPG
 
