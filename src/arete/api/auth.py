@@ -35,13 +35,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 #: Reachable without a credential: the health probe, what the browser needs
 #: before signing in, OAuth callbacks (their own state), the cron (its own
-#: secret) and the API schema (no data in it).
+#: secret), Slack events (their own signature) and the API schema (no data in it).
 PUBLIC_PATHS = frozenset(
     {
         "/health",
         "/auth/config",
         "/strava/callback",
         "/cron/daily-sync",
+        "/slack/events",
         "/openapi.json",
     }
 )

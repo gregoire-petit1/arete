@@ -82,6 +82,8 @@ def test_enforced_mode_requires_a_credential(client, enforced):
     # The Strava callback arrives from the provider's redirect, with no session:
     # it keeps its own state check and must not be turned away at the door.
     assert client.get("/strava/callback").status_code != 401
+    # Slack events carry Slack's signature, checked by their own route.
+    assert "www-authenticate" not in client.post("/slack/events").headers
 
 
 def test_each_account_gets_its_own_athlete(client, enforced):

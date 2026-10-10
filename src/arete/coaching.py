@@ -95,6 +95,19 @@ def get_agent(athlete_id: int):
     return _assemble("chat")
 
 
+async def run_slack_coach(messages: list[dict[str, str]], thread_id: str) -> str:
+    """Slack supplies its own history; reuse the chat graph and runtime limits."""
+    from arete.agent.runtime.execution import invoke_agent
+
+    result = await invoke_agent(
+        get_agent(), {"messages": messages}, context=AgentContext(thread_id=thread_id)
+    )
+    replies = result.get("messages", [])
+    if not replies or not (text := replies[-1].text.strip()):
+        raise RuntimeError("Agent returned an empty Slack answer")
+    return str(text)
+
+
 @_serialized
 @lru_cache(maxsize=MAX_CACHED_ATHLETES)
 def build_briefing_agent(athlete_id: int):

@@ -163,6 +163,22 @@ context schema accounting and completion events. Service/API tests cover domain
 behavior and wire compatibility. Trace regression tests cover cancellation, parent spans, metadata and export
 failures. Live model evaluations remain opt-in.
 
+## Slack transport
+
+`api/slack.py` verifies Slack signatures and restricts invocation to one configured
+athlete in one workspace, in direct messages only; the Clerk gate lists it as a
+public path because the signature is its credential. It acknowledges first, then
+runs an attached ASGI background task in the owner athlete's scope. That task owns
+mirror hydration and flush;
+the general mirror middleware bypasses this endpoint to protect Slack's receipt
+deadline. `services/slack.py` owns bounded Slack history, responses and durable
+delivery reservations; it receives `coaching.run_slack_coach` as its producer.
+The composition root reuses the chat graph and runtime. Slack threads own their
+history; browser state is unchanged. Migration 37 stores delivery IDs and a single
+execution reservation, not conversation text. Failed ambiguous runs stay reserved
+for operator review and are never replayed. See [Slack setup](slack.md) for limits,
+installation, crash behavior and recovery.
+
 ## Document imports and outbound workouts
 
 Conversation messages remain browser-owned. Document originals, extracted blocks,

@@ -457,6 +457,18 @@ CREATE TABLE IF NOT EXISTS app.activity_weather (
     source             VARCHAR NOT NULL,      -- 'open-meteo-forecast', 'open-meteo-archive'
     created_at         TIMESTAMP DEFAULT now()
 );
+
+-- Slack owns conversation text. These rows prevent write replay.
+CREATE TABLE IF NOT EXISTS app.slack_deliveries (
+    event_key VARCHAR PRIMARY KEY,
+    status VARCHAR NOT NULL,
+    updated_at TIMESTAMP DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS app.slack_execution (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    event_key VARCHAR
+);
+INSERT INTO app.slack_execution (id) VALUES (1) ON CONFLICT DO NOTHING;
 """
 
 
@@ -716,6 +728,13 @@ def _m36_private_relations(con) -> None:
     migrate(con)
 
 
+def _m37_slack_deliveries(con) -> None:
+    """Durable deduplication is required across concurrent Vercel instances."""
+    start = DDL.index("CREATE TABLE IF NOT EXISTS app.slack_deliveries")
+    end = DDL.index("ON CONFLICT DO NOTHING;", start) + len("ON CONFLICT DO NOTHING;")
+    con.execute(DDL[start:end])
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -742,6 +761,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (34, _m34_calendar_plan_sync),
     (35, _m35_athlete_accounts),
     (36, _m36_private_relations),
+    (37, _m37_slack_deliveries),
 ]
 
 

@@ -8,6 +8,9 @@
       "root": ".",
       "framework": "fastapi",
       "entrypoint": "asgi.py",
+      "functions": {
+        "asgi.py": { "maxDuration": 300 }
+      },
       "buildCommand": "python scripts/bundle_duckdb_extensions.py"
     },
     "frontend": {

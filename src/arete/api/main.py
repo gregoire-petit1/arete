@@ -30,6 +30,7 @@ from arete.api.metrics import router as metrics_router
 from arete.api.notifications import router as notifications_router
 from arete.api.plan import router as plan_router
 from arete.api.settings import router as settings_router
+from arete.api.slack import router as slack_router
 from arete.api.strava import router as strava_router
 from arete.api.strength import router as strength_router
 from arete.api.year_review import router as year_review_router
@@ -199,5 +200,6 @@ for router in (
     athlete_facts_router,
     data_export_router,
     year_review_router,
+    slack_router,
 ):
     app.include_router(router)
