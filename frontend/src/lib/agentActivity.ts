@@ -48,3 +48,14 @@ export function canRetryMessage(message: ChatMessage): boolean {
     && !message.imports?.length
     && !message.parts?.some(part => part.kind === 'tool' || part.kind === 'calendar_action');
 }
+
+export function hasAnswerText(message: ChatMessage): boolean {
+  return !!message.content.trim()
+    || !!message.parts?.some(part => part.kind === 'text' && part.text.trim());
+}
+
+/** Chiron is thinking: pending, not interrupted, and no answer text yet. Its
+ * laurel then turns in the status line instead of heading the message. */
+export function isThinking(message: ChatMessage): boolean {
+  return message.pending === true && !message.interrupted && !message.error && !hasAnswerText(message);
+}

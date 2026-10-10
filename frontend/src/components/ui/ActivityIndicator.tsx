@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 export function ActivityIndicator({ active = true, size = 32, children }: {
   active?: boolean;
   size?: number;
-  children?: ReactNode;
+  children: ReactNode;
 }) {
   return (
     <span className="activity-presence" style={{ width: size, height: size }} aria-hidden="true">
