@@ -115,8 +115,10 @@ def migrate(con: duckdb.DuckDBPyConnection) -> None:
 
 
 def _rebuild(con: duckdb.DuckDBPyConnection, table: str) -> None:
+    # MotherDuck attaches every database of the account: read this one's DDL.
     row = con.execute(
-        "SELECT sql FROM duckdb_tables() WHERE schema_name='app' AND table_name=?",
+        "SELECT sql FROM duckdb_tables() WHERE database_name=current_database() "
+        "AND schema_name='app' AND table_name=?",
         [table],
     ).fetchone()
     assert row is not None, f"Missing private relation: {table}"
