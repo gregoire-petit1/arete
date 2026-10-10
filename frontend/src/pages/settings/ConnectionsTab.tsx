@@ -7,6 +7,8 @@ import { garminApi, stravaApi } from '@/lib/api';
 import { Button } from '@/components/ui';
 import { invalidateAfterSession } from '@/lib/queryKeys';
 import { GoogleCalendarConnection } from './GoogleCalendarConnection';
+import { useGarminSync } from './useGarminSync';
+import { GarminSyncProgress } from './GarminSyncProgress';
 import { GarminLoginModal } from '@/components/GarminLoginModal';
 
 export function ConnectionsTab() {
@@ -22,19 +24,12 @@ export function ConnectionsTab() {
     retry: false,
   });
 
-  const garminSync = useMutation({
-    mutationFn: () => garminApi.syncActivities({ max_activities: 50, download_fit: true }),
-    onSuccess: (result) => {
-      setGarminResult(`${result.activities_synced} séance(s) importée(s)${result.errors.length ? ` · ${result.errors.length} erreur(s)` : ''}`);
-      queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
-      invalidateAfterSession(queryClient);
-    },
-    onError: (error: Error) => setGarminResult(error.message),
-  });
+  const garminSync = useGarminSync();
   const garminLogout = useMutation({
     mutationFn: garminApi.logout,
     onSuccess: () => {
       setGarminResult('Garmin déconnecté. Tes séances importées sont conservées.');
+      garminSync.reset();
       queryClient.invalidateQueries({ queryKey: ['syncStatus'] });
     },
     onError: (error: Error) => setGarminResult(error.message),
@@ -120,13 +115,15 @@ export function ConnectionsTab() {
           {garminConnected ? (
             <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
               <span className="flex items-center gap-1 text-xs text-success-green"><Check className="w-4 h-4" />Connecté</span>
-              <Button size="sm" loading={garminSync.isPending} disabled={garminLogout.isPending} onClick={() => garminSync.mutate()}>SYNCHRONISER</Button>
+              <Button size="sm" disabled={garminSync.isPending || garminLogout.isPending} onClick={() => { setGarminResult(null); garminSync.mutate({ max_activities: 50, download_fit: true }); }}>SYNCHRONISER</Button>
               <Button variant="danger" size="sm" aria-label="Déconnecter Garmin" loading={garminLogout.isPending} disabled={garminSync.isPending} onClick={() => garminLogout.mutate()}><LogOut className="w-3 h-3" /></Button>
             </div>
           ) : (
             <Button size="sm" disabled={garminLoading || garminError} onClick={() => setShowGarminLogin(true)}>CONNECTER GARMIN</Button>
           )}
         </div>
+
+        <GarminSyncProgress progress={garminSync.progress} isPending={garminSync.isPending} result={garminSync.data} error={garminSync.error} />
 
         {/* Strava */}
         <div
