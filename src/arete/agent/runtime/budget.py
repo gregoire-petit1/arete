@@ -2,7 +2,7 @@
 
 MAX_TOOL_CONCURRENCY = 4
 MAX_RUN_SECONDS = 300
-#: A runaway turn must not burn a sixth of a 50-request free daily quota.
+#: Bound free-tier requests, reserving the last call for a tool-free answer.
 MAX_MODEL_CALLS = 8
 MAX_TOOL_CALLS = 32
 MAX_READ_TOOL_RETRIES = 1

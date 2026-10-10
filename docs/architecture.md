@@ -50,7 +50,8 @@ Production sync entrypoints run in AnyIO workers and bridge model execution onto
 the server event loop. This avoids sharing the SDK's cached async HTTP connections
 across short-lived event loops. Async callers use `invoke_agent` directly.
 
-The execution envelope is five minutes, 8 main graph model calls, 32 tool calls,
+The execution envelope is five minutes, 8 main graph model calls (the last binds
+no tools and asks for an answer stating any incomplete work), 32 tool calls,
 and four simultaneous tool executions per invocation. Interactive chat may add one
 optional next-message completion (512 output tokens, five seconds, zero SDK retries). Framework recursion is a
 separate 100-step backstop. A model call gives up after 60 s, or 30 s without a

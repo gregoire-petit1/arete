@@ -1,5 +1,6 @@
 """Document/import boundaries: durable bytes, provenance and human-only writes."""
 
+import asyncio
 import hashlib
 import io
 import json
@@ -285,6 +286,71 @@ def test_statebackend_reads_documents_and_rejects_writes(
     )
     other, _ = _document_state(AgentContext(thread_id=str(uuid4())))
     assert other["files"] == {}
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_attachment_grep_returns_matching_lines_by_default(
+    tmp_path, monkeypatch, async_mode
+):
+    from deepagents.backends.utils import create_file_data
+    from langchain.agents import create_agent
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from arete.agent.backends.memory import build_memory_filesystem
+    from arete.agent.runtime.context import AgentContext
+
+    monkeypatch.setattr("arete.agent.backends.memory.memory_root", lambda: tmp_path)
+
+    class Model(GenericFakeChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    path = "/attachments/plan.md"
+    args = {"path": path, "pattern": "2026-10-12", "max_count": 1}
+    graph = create_agent(
+        Model(
+            messages=iter(
+                [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {"name": "grep", "args": args, "id": "content"},
+                            {
+                                "name": "grep",
+                                "args": {**args, "output_mode": "files_with_matches"},
+                                "id": "files",
+                            },
+                        ],
+                    ),
+                    AIMessage(content="Fin."),
+                ]
+            )
+        ),
+        middleware=[build_memory_filesystem()],
+        context_schema=AgentContext,
+    )
+    state = {
+        "messages": [HumanMessage("Lis la semaine du 12 octobre")],
+        "files": {
+            "/plan.md": create_file_data(
+                "[Feuil1!B40]\n2026-10-12\n[Feuil1!A43]\n2026-10-12"
+            )
+        },
+    }
+    result = (
+        asyncio.run(graph.ainvoke(state, context=AgentContext()))
+        if async_mode
+        else graph.invoke(state, context=AgentContext())
+    )
+    outputs = {m.tool_call_id: m for m in result["messages"] if m.type == "tool"}
+    assert all(m.status == "success" for m in outputs.values())
+    assert path in outputs["content"].content
+    assert "2: 2026-10-12" in outputs["content"].content
+    assert "4: 2026-10-12" not in outputs["content"].content
+    assert "incomplete" in outputs["content"].content
+    assert path in outputs["files"].content
+    assert "2026-10-12" not in outputs["files"].content
 
 
 def test_existing_planning_writes_blocked_during_import(document_db):
