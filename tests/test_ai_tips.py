@@ -274,13 +274,13 @@ class TestTipUsesSettings:
     def test_the_rule_floor_passes_settings_through(self):
         from unittest.mock import patch
 
-        from arete.services.coaching_rules import daily_rule_tip
+        from arete.services.coaching_rules import daily_rule_tip, rule_facts
 
         with patch(
             "arete.services.coaching_rules.get_user_settings",
             return_value={"fatigue_threshold": 60, "fitness_goal": "recovery"},
         ):
-            tip, _ = daily_rule_tip()
+            tip, _ = daily_rule_tip(rule_facts())
         assert isinstance(tip, str) and tip
 
 
@@ -318,7 +318,15 @@ class TestDailyEndpoint:
         from unittest.mock import patch
 
         from arete.services.coaching_repository import BriefingRepository
+        from arete.services.coaching_rules import RuleFacts
 
+        trained = RuleFacts(
+            acwr=1.0,
+            tsb=-3.0,
+            readiness_score=71.0,
+            fatigue_threshold=85,
+            fitness_goal="build",
+        )
         repo = BriefingRepository()
         repo.delete_for_day(date.today())
         try:
@@ -327,7 +335,7 @@ class TestDailyEndpoint:
                 patch("arete.coaching.run_briefing", return_value="Écrit ce matin."),
                 patch(
                     "arete.services.briefing._rule_floor",
-                    return_value=("floor", "info"),
+                    return_value=("floor", "info", trained),
                 ),
             ):
                 body = client.get("/tips/daily").json()

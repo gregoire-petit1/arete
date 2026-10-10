@@ -353,8 +353,8 @@ def test_the_briefing_costs_one_request_and_reads_well(caplog):
     from arete.services.briefing import _rule_floor, briefing_facts
 
     caplog.set_level(logging.INFO, logger="arete.observability.agent")
-    rule_text, _ = _rule_floor(date.today())
-    text = mission(run_briefing, briefing_facts(date.today(), rule_text))
+    rule_text, _, facts = _rule_floor(date.today())
+    text = mission(run_briefing, briefing_facts(date.today(), rule_text, facts))
     assert briefing_problems(text) == [], text
     assert "profile=briefing calls=1 tools=0" in caplog.text
 

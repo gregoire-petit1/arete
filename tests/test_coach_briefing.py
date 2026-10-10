@@ -7,20 +7,46 @@ reaching the dashboard, and the day's briefing is produced once.
 
 from __future__ import annotations
 
+import threading
+from contextlib import ExitStack
 from datetime import date, timedelta
 from functools import partial
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import anyio
 import pytest
 
 from arete.coaching import generate_briefing, get_or_create_briefing
+from arete.services import briefing as briefing_service
+from arete.services.athlete_scope import athlete_scope
 from arete.services.coaching_repository import BriefingRepository
+from arete.services.coaching_rules import RuleFacts
+
+#: An athlete with a training history: there is something to coach on.
+TRAINED = RuleFacts(
+    acwr=1.0, tsb=-3.0, readiness_score=71.0, fatigue_threshold=85, fitness_goal="build"
+)
 
 
 @pytest.fixture
 def repo():
     return BriefingRepository()
+
+
+@pytest.fixture
+def fresh_athletes(tmp_path, monkeypatch):
+    """Two accounts just created in their own database: no training data."""
+    from arete.dataio.init_duckdb import main as init_schema
+    from arete.services.users import upsert_user
+
+    monkeypatch.setenv("ARETE_DB", str(tmp_path / "fresh.duckdb"))
+    monkeypatch.setenv("ARETE_DATA_DIR", str(tmp_path / "files"))
+    monkeypatch.delenv("ARETE_AUTH", raising=False)
+    init_schema()
+    return [
+        upsert_user(name, f"{name}@example.com", name, verified=True).athlete_id
+        for name in ("first", "second")
+    ]
 
 
 @pytest.fixture(autouse=True)
@@ -79,7 +105,8 @@ class TestGenerate:
         with (
             patch("arete.coaching.run_briefing", return_value="Ta charge monte."),
             patch(
-                "arete.services.briefing._rule_floor", return_value=("floor", "alert")
+                "arete.services.briefing._rule_floor",
+                return_value=("floor", "alert", TRAINED),
             ),
         ):
             b = generate_briefing(target_date=clean_day)
@@ -96,7 +123,8 @@ class TestGenerate:
                 side_effect=RuntimeError("model is away"),
             ),
             patch(
-                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+                "arete.services.briefing._rule_floor",
+                return_value=("floor", "info", TRAINED),
             ),
         ):
             b = generate_briefing(target_date=clean_day)
@@ -111,7 +139,8 @@ class TestGenerate:
         with (
             patch("arete.services.briefing.briefing_enabled", return_value=False),
             patch(
-                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+                "arete.services.briefing._rule_floor",
+                return_value=("floor", "info", TRAINED),
             ),
             patch("arete.coaching.run_briefing") as run,
         ):
@@ -131,6 +160,65 @@ class TestGenerate:
             b = generate_briefing(target_date=clean_day)
         assert b.text and b.priority == "info"
 
+    def test_an_athlete_without_data_gets_the_floor_without_a_model_request(
+        self, fresh_athletes, clean_day, enabled
+    ):
+        # The model could only restate the rule sentence, at a request a day.
+        with (
+            athlete_scope(fresh_athletes[1]),
+            patch("arete.coaching.run_briefing") as run,
+        ):
+            b = generate_briefing(target_date=clean_day)
+        run.assert_not_called()
+        assert (b.source, b.status) == ("rules", "ok")
+        assert b.text.startswith("Enregistre tes séances")
+
+    def test_a_plan_built_before_any_sync_still_gets_the_coach(
+        self, fresh_athletes, clean_day, enabled
+    ):
+        # No history yet, but today's session is something to coach on.
+        from arete.garmin.models import PlannedSession, SessionType
+        from arete.garmin.repository import GarminRepository
+
+        with athlete_scope(fresh_athletes[1]):
+            GarminRepository().create_planned_session(
+                PlannedSession(
+                    date=clean_day,
+                    sport="running",
+                    session_type=SessionType.ENDURANCE,
+                    description="Footing",
+                )
+            )
+            with patch(
+                "arete.coaching.run_briefing", return_value="Footing tranquille."
+            ) as run:
+                b = generate_briefing(target_date=clean_day)
+        run.assert_called_once()
+        assert b.source == "agent"
+
+    @pytest.mark.parametrize(
+        "broken",
+        [
+            ["arete.services.coaching_rules.rule_facts"],
+            [
+                "arete.services.coaching_rules.training_loads",
+                "arete.services.metrics.load_form",
+            ],
+        ],
+        ids=["facts", "reads"],
+    )
+    def test_unknown_facts_still_run_the_model(self, clean_day, enabled, broken):
+        # A failed read is not an empty history: it never silences the coach.
+        with ExitStack() as stack:
+            for target in broken:
+                stack.enter_context(patch(target, side_effect=RuntimeError("db down")))
+            run = stack.enter_context(
+                patch("arete.coaching.run_briefing", return_value="Écrit.")
+            )
+            b = generate_briefing(target_date=clean_day)
+        run.assert_called_once()
+        assert b.source == "agent"
+
     def test_an_overlong_briefing_is_refused(self, clean_day, enabled):
         from arete.services.briefing import MAX_BRIEFING_CHARS
 
@@ -140,7 +228,8 @@ class TestGenerate:
         with (
             patch("arete.coaching.build_briefing_agent") as build,
             patch(
-                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+                "arete.services.briefing._rule_floor",
+                return_value=("floor", "info", TRAINED),
             ),
         ):
             build.return_value.ainvoke = AsyncMock(return_value={"messages": [_Msg()]})
@@ -160,7 +249,8 @@ class TestGenerate:
         with (
             patch("arete.coaching.build_briefing_agent") as build,
             patch(
-                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+                "arete.services.briefing._rule_floor",
+                return_value=("floor", "info", TRAINED),
             ),
         ):
             build.return_value.ainvoke = AsyncMock(return_value={"messages": [_Msg()]})
@@ -173,7 +263,8 @@ class TestGetOrCreate:
         with (
             patch("arete.coaching.run_briefing", return_value="written") as run,
             patch(
-                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+                "arete.services.briefing._rule_floor",
+                return_value=("floor", "info", TRAINED),
             ),
         ):
             first = get_or_create_briefing(target_date=clean_day)
@@ -187,11 +278,55 @@ class TestGetOrCreate:
         with (
             patch("arete.coaching.run_briefing", return_value="written"),
             patch(
-                "arete.services.briefing._rule_floor", return_value=("floor", "info")
+                "arete.services.briefing._rule_floor",
+                return_value=("floor", "info", TRAINED),
             ),
         ):
             b = get_or_create_briefing(target_date=clean_day, trigger="scheduler")
         assert b.trigger == "scheduler"
+
+    def test_briefings_of_two_athletes_are_produced_concurrently(
+        self, fresh_athletes, clean_day, enabled
+    ):
+        # One lock for everyone made each athlete wait out the others' runs.
+        first, second = fresh_athletes
+        first_producing, second_done = threading.Event(), threading.Event()
+
+        def produce_first(_facts: str) -> str:
+            first_producing.set()
+            assert second_done.wait(timeout=5), "the second athlete was held up"
+            return "Premier."
+
+        def write(athlete_id, produce, done=None) -> None:
+            with athlete_scope(athlete_id):
+                briefing_service.get_or_create_briefing(
+                    produce=produce, target_date=clean_day
+                )
+            if done is not None:
+                done.set()
+
+        with patch(
+            "arete.services.briefing._rule_floor",
+            return_value=("floor", "info", TRAINED),
+        ):
+            threads = [threading.Thread(target=write, args=(first, produce_first))]
+            threads[0].start()
+            assert first_producing.wait(timeout=5)
+            threads.append(
+                threading.Thread(
+                    target=write,
+                    args=(second, Mock(return_value="Second."), second_done),
+                )
+            )
+            threads[1].start()
+            for thread in threads:
+                thread.join(timeout=10)
+        assert not any(thread.is_alive() for thread in threads)
+        for athlete_id, text in ((first, "Premier."), (second, "Second.")):
+            with athlete_scope(athlete_id):
+                stored = BriefingRepository().get_for_day(clean_day)
+            assert stored is not None
+            assert (stored.text, stored.source) == (text, "agent")
 
 
 # ---------------------------------------------------------------------------
@@ -492,14 +627,33 @@ class TestBriefingFacts:
         assert "Séance(s) prévue(s) aujourd'hui :\n- indisponible" in facts
 
     def test_the_agent_receives_the_facts(self, clean_day, enabled):
-        with patch("arete.coaching.run_briefing", return_value="ok") as run:
+        with (
+            patch("arete.services.coaching_rules.rule_facts", return_value=TRAINED),
+            patch("arete.coaching.run_briefing", return_value="ok") as run,
+        ):
             generate_briefing(target_date=clean_day)
         assert "Nous sommes mercredi 2031-01-01." in run.call_args.args[0]
+
+    def test_facts_are_computed_once_per_briefing(self, clean_day, enabled):
+        with (
+            patch(
+                "arete.services.coaching_rules.rule_facts", return_value=TRAINED
+            ) as facts,
+            patch("arete.coaching.run_briefing", return_value="ok") as run,
+        ):
+            generate_briefing(target_date=clean_day)
+        assert facts.call_count == 1
+        # The model reads the floor's numbers rather than a second computation.
+        assert "(ACWR, sur 28 jours) : 1.00" in run.call_args.args[0]
 
     def test_concurrent_first_requests_produce_once(self, clean_day, enabled):
         from concurrent.futures import ThreadPoolExecutor
 
         with (
+            patch(
+                "arete.services.briefing._rule_floor",
+                return_value=("floor", "info", TRAINED),
+            ),
             patch("arete.coaching.run_briefing", return_value="ok") as run,
             ThreadPoolExecutor(max_workers=3) as pool,
         ):

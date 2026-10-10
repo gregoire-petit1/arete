@@ -20,10 +20,14 @@ import logging
 import threading
 from collections.abc import Callable
 from datetime import date, timedelta
+from typing import TYPE_CHECKING
 
 from arete.dataio.settings import get_user_settings
 from arete.services.athlete_scope import resolve_athlete_id
 from arete.services.coaching_repository import Briefing, BriefingRepository
+
+if TYPE_CHECKING:
+    from arete.services.coaching_rules import RuleFacts
 
 logger = logging.getLogger(__name__)
 
@@ -39,20 +43,26 @@ def briefing_enabled(user_id: int | None = None) -> bool:
     return bool(settings.get("coach_briefing_enabled", True))
 
 
-def _rule_floor(target_date: date) -> tuple[str, str]:
-    """The deterministic tip and its priority — never raises."""
-    from arete.services.coaching_rules import daily_rule_tip
+def _rule_floor(target_date: date) -> tuple[str, str, RuleFacts | None]:
+    """The deterministic tip, its priority and its facts — never raises.
+
+    The facts are read once per briefing and handed to the model's facts too.
+    They are None when they could not be computed: unknown, not empty.
+    """
+    from arete.services.coaching_rules import daily_rule_tip, rule_facts
 
     try:
-        text, priority = daily_rule_tip(target_date)
-        return text, priority
+        facts = rule_facts(target_date)
+        text, priority = daily_rule_tip(facts)
     except Exception:
         logger.warning("Rule-based tip failed", exc_info=True)
         return (
             "Pas assez de données pour un conseil aujourd'hui. "
             "Synchronise tes activités pour en avoir un.",
             "info",
+            None,
         )
+    return text, priority, facts
 
 
 _WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
@@ -85,19 +95,24 @@ def _block(title: str, read: Callable[[], list[str]]) -> str:
     return f"{title} :\n" + "\n".join(f"- {line}" for line in lines or ["aucune"])
 
 
-def briefing_facts(target_date: date, rule_text: str) -> str:
+def briefing_facts(
+    target_date: date, rule_text: str, facts: RuleFacts | None = None
+) -> str:
     """Everything the briefing needs, computed here so the model needs no tool.
 
     The agent used to read its load and form through tools — at least three
     model requests and 99 s on the free tier — while the rule floor had just
-    computed the same numbers. It never saw today's plan either.
+    computed the same numbers. It never saw today's plan either. ``facts``
+    are the floor's; without them the load section reads its own.
     """
     from arete.garmin.repository import GarminRepository
     from arete.services.analytics import list_sessions
     from arete.services.coaching_rules import rule_facts
 
     def load() -> list[str]:
-        facts = rule_facts(target_date)
+        nonlocal facts
+        if facts is None:
+            facts = rule_facts(target_date)
         if facts.readiness_score is None:
             readiness = "Préparation : indisponible"
         elif facts.readiness_source == "garmin_training":
@@ -240,12 +255,12 @@ def generate_briefing(
 
     The rule floor is computed first and always: it supplies the priority (the
     card's colour must not depend on a model) and it is the text we store when
-    the agent is disabled or fails.
+    the agent is disabled or fails, or when there is nothing to coach on.
     """
     user_id = resolve_athlete_id(user_id)
     target_date = target_date or date.today()
     repo = BriefingRepository()
-    rule_text, priority = _rule_floor(target_date)
+    rule_text, priority, facts = _rule_floor(target_date)
 
     def store(text: str, source: str, status: str, error: str | None) -> Briefing:
         repo.create(
@@ -278,8 +293,15 @@ def generate_briefing(
         logger.info("Coach briefing disabled; storing the rule tip")
         return store(rule_text, "rules", "ok", None)
 
+    # No load, no form, no readiness and nothing planned for the day: a model
+    # request would only restate the rule text. Facts that could not be read
+    # (None) still go to the model, and so does a plan built before any sync.
+    if facts is not None and facts.is_empty and not _plans_the_day(target_date):
+        logger.info("Coach briefing: no training data; model skipped")
+        return store(rule_text, "rules", "ok", None)
+
     try:
-        text = produce(briefing_facts(target_date, rule_text))
+        text = produce(briefing_facts(target_date, rule_text, facts))
     except Exception as exc:
         # A visible failure beats a silently empty card: the failed row is
         # kept for the audit view, and the floor is what gets served.
@@ -300,8 +322,37 @@ def generate_briefing(
     return store(text, "agent", "ok", None)
 
 
-#: Two tabs opening the dashboard at once must not pay for two briefings.
-_produce_lock = threading.Lock()
+def _plans_the_day(target_date: date) -> bool:
+    """Whether a session is planned that day; True when the plan cannot be read."""
+    from arete.garmin.repository import GarminRepository
+
+    try:
+        return bool(
+            GarminRepository().list_planned_sessions(
+                start_date=target_date, end_date=target_date, status=None, limit=1
+            )
+        )
+    except Exception:
+        logger.warning("Could not read the day's plan", exc_info=True)
+        return True
+
+
+#: Two tabs of one athlete opening the dashboard at once must not pay for two
+#: briefings, and one athlete's run (up to five minutes) must not hold up the
+#: others: one lock per athlete. Past this many athletes the table starts over,
+#: which at worst lets a concurrent request produce a duplicate briefing (one
+#: extra model request, never an error).
+MAX_PRODUCE_LOCKS = 256
+_produce_locks: dict[int, threading.Lock] = {}
+_produce_locks_guard = threading.Lock()
+
+
+def _athlete_lock(user_id: int) -> threading.Lock:
+    """The lock that serializes one athlete's briefing production."""
+    with _produce_locks_guard:
+        if user_id not in _produce_locks and len(_produce_locks) >= MAX_PRODUCE_LOCKS:
+            _produce_locks.clear()
+        return _produce_locks.setdefault(user_id, threading.Lock())
 
 
 def get_or_create_briefing(
@@ -317,7 +368,7 @@ def get_or_create_briefing(
     existing = BriefingRepository().get_for_day(target_date, user_id=user_id)
     if existing is not None:
         return existing
-    with _produce_lock:
+    with _athlete_lock(user_id):
         existing = BriefingRepository().get_for_day(target_date, user_id=user_id)
         if existing is not None:
             return existing
