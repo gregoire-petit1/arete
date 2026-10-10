@@ -9,10 +9,11 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Generator
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from garminconnect import GarminConnectTooManyRequestsError
 
@@ -34,6 +35,8 @@ from arete.garmin.threshold import refresh_threshold
 from arete.strava.merge import garmin_takeover
 
 logger = logging.getLogger(__name__)
+
+MAX_SYNC_ACTIVITIES = 200
 
 
 # Rate limiting configuration (conservative to avoid bans)
@@ -59,6 +62,16 @@ class SyncResult:
     last_activity_date: date | None = None
     #: Sessions this run created or took over from Strava, for the feedback.
     session_ids: list[int] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SyncProgress:
+    """Observed work, not an estimate of elapsed time."""
+
+    stage: Literal["preparing", "fetching", "processing", "fit", "saving", "finalizing"]
+    completed: int = 0
+    total: int | None = None
+    activity_name: str | None = None
 
 
 @dataclass
@@ -294,6 +307,8 @@ class GarminSyncClient:
         limit: int = 50,
     ) -> list[GarminActivity]:
         """Fetch activities between two dates (inclusive), newest first."""
+        if not 1 <= limit <= MAX_SYNC_ACTIVITIES:
+            raise ValueError("limit must be between 1 and 200")
         end_date = end_date or date.today()
         start_date = start_date or end_date - timedelta(days=30)
         self._rate_limit()
@@ -305,7 +320,7 @@ class GarminSyncClient:
             raise
 
         activities = []
-        for data in raw[: min(limit, 100)]:
+        for data in raw[:limit]:
             if not isinstance(data, dict):
                 continue
             try:
@@ -348,26 +363,40 @@ class GarminSyncClient:
         download_fit: bool = True,
         max_activities: int | None = None,
     ) -> SyncResult:
-        """Sync activities from Garmin Connect to local database.
+        """Run the same workflow without exposing intermediate progress."""
+        for event in self.iter_sync_activities(
+            start_date, end_date, download_fit, max_activities
+        ):
+            if isinstance(event, SyncResult):
+                return event
+        raise AssertionError("Sync must produce a terminal result")
 
-        Args:
-            start_date: Start date for sync. Defaults to last synced date.
-            end_date: End date for sync. Defaults to today.
-            download_fit: Whether to download FIT files.
-            max_activities: Maximum activities to sync. Defaults to rate limit.
+    def iter_sync_activities(
+        self,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        download_fit: bool = True,
+        max_activities: int | None = None,
+    ) -> Generator[SyncProgress | SyncResult, None, None]:
+        """Yield progress around bounded work without a background job or queue.
 
-        Returns:
-            SyncResult with sync statistics.
+        Closing stops before the next step. An in-flight Garmin call or
+        database write cannot be undone.
         """
+        yield SyncProgress("preparing")
         result = SyncResult(success=False)
+        effective_max: int = (
+            max_activities
+            if max_activities is not None
+            else int(RATE_LIMITS["max_activities_per_sync"])
+        )
+
+        if not 1 <= effective_max <= MAX_SYNC_ACTIVITIES:
+            raise ValueError("max_activities must be between 1 and 200")
+
         # Garmin retests the threshold on its own: pick it up before parsing, so
         # the sessions arriving now are read against the current zones.
         self.refresh_threshold()
-        effective_max: int = (
-            max_activities
-            if max_activities
-            else int(RATE_LIMITS["max_activities_per_sync"])
-        )
 
         # Default to syncing from last activity
         if start_date is None:
@@ -382,15 +411,19 @@ class GarminSyncClient:
         logger.info(f"Syncing activities from {start_date} to {end_date}")
 
         try:
+            yield SyncProgress("fetching")
             activities = self.get_activities(
                 start_date=start_date, end_date=end_date, limit=effective_max
             )
 
-            for activity in activities:
+            total = len(activities)
+            yield SyncProgress("processing", total=total)
+            for index, activity in enumerate(activities):
                 try:
                     # Check if already synced
                     if self._is_already_synced(activity.activity_id):
                         result.activities_skipped += 1
+                        yield SyncProgress("processing", index + 1, total)
                         continue
 
                     # Convert and save
@@ -399,10 +432,17 @@ class GarminSyncClient:
                     # Optionally download and parse FIT for detailed data
                     streams: ActivityStreams | None = None
                     if download_fit:
+                        yield SyncProgress("fit", index, total, activity.activity_name)
                         fit_path = self.download_fit_file(activity.activity_id)
                         if fit_path:
                             session, streams = self._enrich_from_fit(session, fit_path)
+                        else:
+                            result.errors.append(
+                                f"Fichier FIT indisponible : {activity.activity_name} "
+                                f"({activity.activity_id}). Données détaillées indisponibles."
+                            )
 
+                    yield SyncProgress("saving", index, total, activity.activity_name)
                     # Same workout already imported from Strava? Garmin takes it over.
                     twin = self.repository.find_overlapping_session(
                         session.start_time, session.duration_sec
@@ -439,6 +479,7 @@ class GarminSyncClient:
                     error_msg = f"Failed to sync activity {activity.activity_id}: {e}"
                     logger.error(error_msg)
                     result.errors.append(error_msg)
+                yield SyncProgress("processing", index + 1, total)
 
             result.success = True
             logger.info(
@@ -452,7 +493,7 @@ class GarminSyncClient:
             result.errors.append(f"Garmin API error: {e}")
             logger.error(f"Sync failed: {e}")
 
-        return result
+        yield result
 
     def _is_already_synced(self, activity_id: int) -> bool:
         """Check if activity is already in database."""

@@ -525,3 +525,171 @@ def test_sync_status_reports_the_last_garmin_import(router_client):
         body = router_client(garmin_sync.router).get("/garmin/sync/status").json()
     assert body["last_sync"] == imported.isoformat()
     assert body["activities_synced"] == 3
+
+
+def test_progress_tracks_skips_fit_failures_and_committed_work():
+    from arete.garmin.sync import GarminActivity, SyncProgress
+
+    repo = MagicMock()
+    repo.find_overlapping_session.return_value = None
+    repo.get_potential_matches.return_value = []
+    repo.create_actual_session.side_effect = [42, RuntimeError("write failed")]
+    client = GarminSyncClient(client=MagicMock(), repository=repo)
+    activities = [
+        GarminActivity.from_api_response(
+            {
+                "activityId": n,
+                "activityName": f"Course {n}",
+                "startTimeLocal": "2026-10-01T08:00:00",
+            }
+        )
+        for n in (1, 2, 3)
+    ]
+    with (
+        patch.object(client, "refresh_threshold"),
+        patch.object(client, "get_activities", return_value=activities),
+        patch.object(client, "_is_already_synced", side_effect=[True, False, False]),
+        patch.object(client, "download_fit_file", return_value=None),
+    ):
+        events = list(client.iter_sync_activities(start_date=date(2026, 10, 1)))
+    progress = [event for event in events if isinstance(event, SyncProgress)]
+    assert [p.completed for p in progress if p.stage == "processing"] == [0, 1, 2, 3]
+    assert [p.activity_name for p in progress if p.stage == "fit"] == [
+        "Course 2",
+        "Course 3",
+    ]
+    result = events[-1]
+    assert isinstance(result, SyncResult)
+    assert result.activities_skipped == 1
+    assert result.activities_synced == 1
+    assert result.session_ids == [42]
+    assert len(result.errors) == 3  # Two missing FIT files, one failed write.
+
+
+def test_closing_progress_before_fit_stops_before_download_or_write():
+    from arete.garmin.sync import GarminActivity
+
+    client = GarminSyncClient(client=MagicMock(), repository=MagicMock())
+    activity = GarminActivity.from_api_response(
+        {
+            "activityId": 1,
+            "activityName": "Course",
+            "startTimeLocal": "2026-10-01T08:00:00",
+        }
+    )
+    with (
+        patch.object(client, "refresh_threshold"),
+        patch.object(client, "get_activities", return_value=[activity]),
+        patch.object(client, "_is_already_synced", return_value=False),
+        patch.object(client, "download_fit_file") as download,
+    ):
+        work = client.iter_sync_activities(start_date=date(2026, 10, 1))
+        assert [next(work).stage for _ in range(4)] == [
+            "preparing",
+            "fetching",
+            "processing",
+            "fit",
+        ]
+        work.close()
+    download.assert_not_called()
+    client.repository.create_actual_session.assert_not_called()
+
+
+def test_requested_200_activities_are_not_silently_capped_at_100():
+    client = GarminSyncClient(client=MagicMock())
+    client.client.activities.return_value = [
+        {"activityId": n, "startTimeLocal": "2026-10-01T08:00:00"} for n in range(210)
+    ]
+    assert len(client.get_activities(limit=200)) == 200
+
+
+def test_sync_stream_protocol_and_enrichment(router_client):
+    import json
+
+    from arete.api.garmin_sync import router
+    from arete.garmin.sync import SyncProgress
+
+    with (
+        patch.object(GarminSyncClient, "is_authenticated", return_value=True),
+        patch.object(
+            GarminSyncClient,
+            "iter_sync_activities",
+            return_value=(
+                event
+                for event in [
+                    SyncProgress("fetching"),
+                    SyncProgress("processing", 1, 1),
+                    SyncResult(
+                        success=True,
+                        activities_synced=1,
+                        session_ids=[42],
+                        last_activity_date=date(2026, 10, 1),
+                    ),
+                ]
+            ),
+        ),
+        patch("arete.services.session_conditions.enrich_sessions") as enrich,
+    ):
+        response = router_client(router).post("/garmin/sync/activities/stream", json={})
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    events = [
+        json.loads(frame.removeprefix("data: "))
+        for frame in response.text.strip().split("\n\n")
+    ]
+    assert [event["type"] for event in events] == [
+        "progress",
+        "progress",
+        "progress",
+        "done",
+    ]
+    assert events[-2]["stage"] == "finalizing"
+    assert events[-1]["last_activity_date"] == "2026-10-01"
+    assert "session_ids" not in events[-1]
+    enrich.assert_called_once_with([42])
+
+
+def test_sync_stream_auth_and_validation_happen_before_work(router_client):
+    from arete.api.garmin_sync import router
+
+    with (
+        patch.object(GarminSyncClient, "is_authenticated", return_value=False),
+        patch.object(GarminSyncClient, "iter_sync_activities") as work,
+    ):
+        api = router_client(router)
+        assert api.post("/garmin/sync/activities/stream", json={}).status_code == 409
+        assert (
+            api.post(
+                "/garmin/sync/activities/stream", json={"max_activities": 201}
+            ).status_code
+            == 422
+        )
+    work.assert_not_called()
+
+
+def test_sync_stream_reports_failure_without_success_or_replay(router_client):
+    import json
+
+    from arete.api.garmin_sync import router
+    from arete.garmin.sync import SyncProgress
+
+    def failing_work(**kwargs):
+        yield SyncProgress("fetching")
+        raise RuntimeError("private upstream details")
+
+    with (
+        patch.object(GarminSyncClient, "is_authenticated", return_value=True),
+        patch.object(
+            GarminSyncClient, "iter_sync_activities", side_effect=failing_work
+        ) as work,
+        patch("arete.services.session_conditions.enrich_sessions") as enrich,
+    ):
+        response = router_client(router).post("/garmin/sync/activities/stream", json={})
+    events = [
+        json.loads(frame.removeprefix("data: "))
+        for frame in response.text.strip().split("\n\n")
+    ]
+    assert [event["type"] for event in events] == ["progress", "error"]
+    assert "private" not in response.text
+    work.assert_called_once()
+    enrich.assert_not_called()

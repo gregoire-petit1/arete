@@ -15,16 +15,16 @@ test('connect Garmin with MFA, sync and disconnect from Connections', async ({ p
       connected = body.mfa_code === '123456';
       return route.fulfill({ json: { success: connected, needs_mfa: !connected } });
     }
-    if (path.endsWith('/garmin/sync/activities')) {
+    if (path.endsWith('/garmin/sync/activities/stream')) {
       expect(connected).toBe(true);
       imported++;
-      return route.fulfill({ json: { success: true, activities_synced: 1, errors: [] } });
+      return route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify({ type: 'done', success: true, activities_synced: 1, activities_merged: 0, activities_matched: 0, activities_skipped: 0, errors: [], last_activity_date: null })}\n\n` });
     }
     if (path.endsWith('/garmin/sync/logout')) {
       connected = false;
       return route.fulfill({ json: { success: true } });
     }
-    if (path.includes('/settings')) return route.fulfill({ json: {} });
+    if (path.includes('/settings')) return route.fulfill({ json: { theme: 'odyssey' } });
     if (path.endsWith('/strava/status')) return route.fulfill({ json: { connected: false } });
     return route.fulfill({ json: [] });
   });
@@ -41,7 +41,7 @@ test('connect Garmin with MFA, sync and disconnect from Connections', async ({ p
     { email: '', password: '', mfa_code: '123456' },
   ]);
   await page.getByRole('button', { name: 'SYNCHRONISER', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('1 séance(s) importée(s)');
+  await expect(page.getByText('1 importées · 0 fusionnées · 0 déjà présentes')).toBeVisible();
   await page.getByRole('heading', { name: 'SERVICES CONNECTÉS' }).locator('..').screenshot({ path: '../.context/garmin-connected.png' });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('button', { name: 'Déconnecter Garmin' })).toBeVisible();
@@ -49,6 +49,67 @@ test('connect Garmin with MFA, sync and disconnect from Connections', async ({ p
   await page.screenshot({ path: '../.context/garmin-connected-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Déconnecter Garmin' }).click();
   await expect(page.getByRole('button', { name: 'CONNECTER GARMIN' })).toBeVisible();
-  await expect(page.getByRole('status')).toContainText('séances importées sont conservées');
+  await expect(page.getByText('Garmin déconnecté. Tes séances importées sont conservées.')).toBeVisible();
   expect(imported).toBe(1);
+});
+
+test('one live progress bar follows Garmin work in System, including partial failures', async ({ page }) => {
+  await page.route('**/api/**', route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith('/auth/config')) return route.fulfill({ json: { enabled: false } });
+    if (path.endsWith('/settings/gamification')) return route.fulfill({ json: { available: false, opted_in: false } });
+    if (path.endsWith('/garmin/sync/status')) return route.fulfill({ json: { garmin_authenticated: true, user_email: 'EDMOND', activities_synced: 86, last_sync: '2026-10-10T14:06:31' } });
+    if (path.endsWith('/garmin/health/status')) return route.fulfill({ json: { days_stored: 8, last_date: '2026-10-10' } });
+    if (path.endsWith('/health')) return route.fulfill({ json: { status: 'ok', database: 'connected' } });
+    if (path.includes('/settings')) return route.fulfill({ json: { theme: 'odyssey' } });
+    return route.fulfill({ json: [] });
+  });
+  // A controlled response body verifies intermediate renders, not only the final JSON.
+  await page.addInitScript(() => {
+    const original = window.fetch.bind(window);
+    const state = window as typeof window & { syncController?: ReadableStreamDefaultController<Uint8Array>; syncRequests?: number };
+    localStorage.setItem('arete.theme.v1', 'odyssey');
+    window.fetch = async (input, init) => {
+      if (String(input).endsWith('/garmin/sync/activities/stream')) {
+        state.syncRequests = (state.syncRequests ?? 0) + 1;
+        const stream = new ReadableStream<Uint8Array>({ start(controller) { state.syncController = controller; } });
+        return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } });
+      }
+      return original(input, init);
+    };
+  });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/settings?tab=system');
+  const launch = page.getByRole('button', { name: 'SYNCHRONISER LES ACTIVITÉS' });
+  await expect(launch).toHaveCount(1);
+  await page.getByLabel('Période').selectOption('365');
+  await page.getByLabel('Activités maximum').fill('200');
+  await launch.click();
+  await expect(page.getByRole('progressbar')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'SYNCHRONISATION EN COURS' })).toBeDisabled();
+  await expect(page.getByLabel('Période')).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Se déconnecter de Garmin' })).toBeDisabled();
+  const emit = (event: Record<string, unknown>) => page.evaluate(event => {
+    const state = window as typeof window & { syncController: ReadableStreamDefaultController<Uint8Array> };
+    state.syncController.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+  }, event);
+  await emit({ type: 'progress', stage: 'fetching', completed: 0, total: null, activity_name: null });
+  await expect(page.getByRole('status')).toContainText('Récupération des activités Garmin');
+  await emit({ type: 'progress', stage: 'fit', completed: 12, total: 24, activity_name: 'Sortie longue · 18 km' });
+  await expect(page.getByText('12 / 24 activités traitées')).toBeVisible();
+  await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '52');
+  const panel = page.getByText('SYNCHRONISATION GARMIN', { exact: true }).locator('..');
+  await panel.screenshot({ path: '../.context/garmin-sync-progress.png' });
+  await page.setViewportSize({ width: 390, height: 1100 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await panel.screenshot({ path: '../.context/garmin-sync-progress-mobile.png' });
+  await emit({ type: 'progress', stage: 'finalizing', completed: 0, total: null, activity_name: null });
+  await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '95');
+  await emit({ type: 'done', success: true, activities_synced: 20, activities_merged: 1, activities_matched: 0, activities_skipped: 3, errors: ['Un fichier FIT indisponible'], last_activity_date: null });
+  await expect(page.getByRole('status')).toContainText('terminée avec des erreurs');
+  await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+  await page.getByText('1 erreur(s) à consulter').click();
+  await expect(page.getByText('Un fichier FIT indisponible')).toBeVisible();
+  await expect(launch).toBeEnabled();
+  expect(await page.evaluate(() => (window as typeof window & { syncRequests: number }).syncRequests)).toBe(1);
 });
