@@ -1,0 +1,45 @@
+name: Deploy production
+
+# Production ships by hand, in batches, rather than on every merge into main:
+# each deployment stores a ~430 MB function against the plan's 10 GB, and the
+# first request a deployment serves migrates the real database, so back it up
+# first when the batch carries a migration (README, "Deploying").
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      PRODUCTION_URL: https://arete-arete15.vercel.app
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm install --global vercel@63.1.2
+      - name: Deploy main to production
+        run: vercel deploy --prod --archive=tgz --yes --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      # The first request runs any pending migration; the answer shows the result.
+      - name: Check the health of production
+        run: |
+          curl -fsS --retry 5 --retry-delay 10 --retry-all-errors \
+            "$PRODUCTION_URL/api/health" | tee -a "$GITHUB_STEP_SUMMARY"
+      # The live deployment and the previous one, for an instant rollback.
+      - name: Keep the two newest production deployments
+        run: scripts/ci/prune_deployments.sh 2 --environment production
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

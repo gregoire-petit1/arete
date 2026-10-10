@@ -1,0 +1,30 @@
+name: Preview cleanup
+
+# A closed or merged PR's previews are dead weight: each one stores a ~430 MB
+# function against the plan's 10 GB of function storage.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  remove:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm install --global vercel@63.1.2
+      - name: Remove the PR's previews
+        run: scripts/ci/prune_deployments.sh 0 --meta pr="$PR"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}

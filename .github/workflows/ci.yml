@@ -6,6 +6,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # `labeled`: adding the `preview` label deploys the PR's preview.
+    types: [opened, synchronize, reopened, labeled]
   # Full verification remains available before opening a PR.
   workflow_dispatch:
 
@@ -129,16 +131,19 @@ jobs:
           path: .context/browser-results
           include-hidden-files: true
 
-  # Previews deploy here, once every affected check above is green, instead of on
-  # each push from Vercel's Git integration (`git.deploymentEnabled` in
-  # vercel.json keeps that for main only). A pull_request run checks out
-  # the merge of the branch into main, so the preview is what merging would
-  # ship; a conflicting branch has no merge commit, no run, no preview.
+  # Previews deploy here, once every affected check above is green, and only
+  # for a PR labelled `preview`: each deployment stores a ~430 MB function
+  # against the plan's 10 GB. Vercel's Git integration deploys nothing
+  # (`git.deploymentEnabled` in vercel.json); production ships through the
+  # manual "Deploy production" workflow. A pull_request run checks out the
+  # merge of the branch into main, so the preview is what merging would ship;
+  # a conflicting branch has no merge commit, no run, no preview.
   preview:
     if: >-
       !cancelled() &&
       github.event_name == 'pull_request' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'preview') &&
       needs.lint.result == 'success' && needs.lint.outputs.preview == 'true' &&
       (needs.test.result == 'success' || needs.test.result == 'skipped') &&
       (needs.typecheck.result == 'success' || needs.typecheck.result == 'skipped') &&
@@ -161,10 +166,16 @@ jobs:
       - name: Deploy the preview
         id: deploy
         run: |
-          url=$(vercel deploy --archive=tgz --yes --token "$VERCEL_TOKEN")
+          url=$(vercel deploy --archive=tgz --yes --token "$VERCEL_TOKEN" --meta pr="$PR")
           echo "url=$url" >> "$GITHUB_OUTPUT"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+      - name: Remove the PR's superseded previews
+        run: scripts/ci/prune_deployments.sh 1 --meta pr="$PR"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
       - name: Link the preview on the pull request
         run: |
           gh pr comment "$PR" --edit-last --create-if-none --body \
