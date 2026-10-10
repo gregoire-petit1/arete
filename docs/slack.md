@@ -1,7 +1,7 @@
 # Arete in Slack
 
-Every athlete can talk to the coach in Slack: in **direct messages**, and in one
-**dedicated channel** when it is mentioned. It answers in a thread; replying in
+Every athlete can talk to the coach in Slack: in **direct messages**, and in
+**every channel Arete was invited to** when it is mentioned. It answers in a thread; replying in
 that thread continues the conversation, and a new message starts a new one. It
 uses the existing chat coach, including its training-write capabilities and
 journal. Files, edits and shared channels are ignored. Slack and browser
@@ -19,9 +19,9 @@ thread, the answer reads and writes **their** data. Other members' messages in
 the thread are labelled `[Autre participant <@U…>]`, and the coach is told never
 to attribute them to the athlete or store them in its memory.
 
-In the channel, Arete answers a message that mentions it or that replies in one
-of its threads. An answer is **public only if the athlete enabled** « Autoriser
-Arete à me répondre en public dans le canal Slack » (Réglages → Connexions, off by
+In a channel, Arete answers a message that mentions it or that replies in one
+of its threads; Slack only sends messages from channels the app is a member of. An answer is **public only if the athlete enabled** « Autoriser
+Arete à me répondre en public dans les canaux Slack » (Réglages → Connexions, off by
 default); otherwise the answer goes to the athlete's DM with a short note in the
 thread. The coach's prompt says who will read the answer.
 
@@ -31,7 +31,7 @@ thread. The coach's prompt says who will read the answer.
    select workspace `T0C7ZT5V0F7`, and paste [`slack-manifest.json`](../slack-manifest.json).
    Bot scopes: `chat:write`, `im:history`, `im:write` (DM answers to channel
    mentions), `users:read` and `users:read.email` (identity), `channels:history`
-   and `groups:history` (the dedicated channel). No user token, no Socket Mode.
+   and `groups:history` (channels Arete is invited to). No user token, no Socket Mode.
 2. Install the app from **OAuth & Permissions** (reinstall after a scope change).
    Set these variables on the Arete Vercel project, in Production only:
 
@@ -40,13 +40,12 @@ thread. The coach's prompt says who will read the answer.
    | `SLACK_SIGNING_SECRET` | Basic Information → App Credentials → Signing Secret |
    | `SLACK_BOT_TOKEN` | OAuth & Permissions → Bot User OAuth Token (`xoxb-…`) |
    | `SLACK_TEAM_ID` | `T0C7ZT5V0F7` |
-   | `SLACK_CHANNEL_ID` | The dedicated channel's ID (optional: unset = DMs only) |
 
    Pipe copied values through `tr -d '[:space:]'` into `vercel env add`; never put
    secrets in source, command arguments or chat. A new deployment applies them.
 3. The manifest subscribes to `message.im`, `message.channels` and
    `message.groups` at `https://arete-arete15.vercel.app/api/slack/events`. Invite
-   Arete to the dedicated channel (`/invite @Arete`).
+   Arete to each channel where it should answer (`/invite @Arete`); removing it stops it there.
 4. Send Arete a DM, then mention it in the channel. Check one `Agent run:` log per
    answered message, and that a member without an Arete account gets the
    "no account" reply.

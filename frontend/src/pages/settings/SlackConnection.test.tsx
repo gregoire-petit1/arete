@@ -11,7 +11,6 @@ beforeEach(() => vi.clearAllMocks());
 afterEach(cleanup);
 const prefs = (over: Partial<SlackPreferences> = {}): SlackPreferences => ({
   available: true,
-  channel: true,
   public_replies: false,
   ...over,
 });
@@ -39,10 +38,4 @@ it("shows nothing when Slack is not configured", async () => {
   const { container } = mount();
   await waitFor(() => expect(slackApi.preferences).toHaveBeenCalled());
   expect(container.innerHTML).toBe("");
-});
-it("offers no public switch without a dedicated channel", async () => {
-  vi.mocked(slackApi.preferences).mockResolvedValue(prefs({ channel: false }));
-  mount();
-  await screen.findByText("Slack");
-  expect(screen.queryByRole("checkbox")).toBeNull();
 });

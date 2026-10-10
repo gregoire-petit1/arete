@@ -125,12 +125,10 @@ async def events(request: Request, background: BackgroundTasks) -> dict:
     event = payload.get("event")
     if not isinstance(event, dict):
         raise HTTPException(400, "Invalid Slack event")
-    # Plain text from a person, in a direct message or the dedicated channel.
-    # Who the author is gets resolved after the receipt, from their profile.
-    in_channel = bool(config.slack_channel_id) and (
-        event.get("channel") == config.slack_channel_id
-        and event.get("channel_type") in ("channel", "group")
-    )
+    # Plain text from a person, in a direct message or a channel Arete was
+    # invited to (Slack only sends those). Who the author is gets resolved
+    # after the receipt, from their profile.
+    in_channel = event.get("channel_type") in ("channel", "group")
     if (
         payload.get("team_id") != config.slack_team_id
         or event.get("type") != "message"
@@ -182,7 +180,6 @@ def _preferences(public_replies: bool) -> dict:
             and config.slack_bot_token
             and config.slack_team_id
         ),
-        "channel": bool(config.slack_channel_id),
         "public_replies": public_replies,
     }
 

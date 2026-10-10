@@ -26,26 +26,25 @@ export function SlackConnection() {
           Écris à Arete en message privé sur Slack. Il te reconnaît à l’adresse
           e-mail de ton profil Slack, qui doit être celle de ton compte Arete.
         </p>
-        {data.channel && (
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              className="accent-neon-cyan mt-0.5"
-              checked={data.public_replies}
-              disabled={update.isPending}
-              onChange={(e) => update.mutate(e.target.checked)}
-            />
-            <span className="text-sm text-text-secondary">
-              Autoriser Arete à me répondre en public dans le canal Slack
-              <br />
-              <span className="text-xs text-text-muted">
-                Tous les membres du canal liront ses réponses, avec tes données
-                d’entraînement et de récupération. Désactivé : quand tu le
-                mentionnes dans le canal, il te répond en message privé.
-              </span>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="accent-neon-cyan mt-0.5"
+            checked={data.public_replies}
+            disabled={update.isPending}
+            onChange={(e) => update.mutate(e.target.checked)}
+          />
+          <span className="text-sm text-text-secondary">
+            Autoriser Arete à me répondre en public dans les canaux Slack
+            <br />
+            <span className="text-xs text-text-muted">
+              Dans chaque canal où Arete est invité, tous les membres liront
+              ses réponses, avec tes données d’entraînement et de récupération.
+              Désactivé : quand tu le mentionnes dans un canal, il te répond en
+              message privé.
             </span>
-          </label>
-        )}
+          </span>
+        </label>
         {update.isError && (
           <p className="text-xs text-danger-red" role="alert">
             Réglage Slack non enregistré. Réessaie.
