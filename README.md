@@ -41,6 +41,18 @@ first parent, including deleted and renamed paths. Backend tests use two isolate
 workers in CI; local `make test` stays serial. Run browser tests locally with
 `npm --prefix frontend run test:browser` after installing Playwright Chromium.
 
+### Deploying
+
+Each Vercel deployment stores its own ~430 MB Python function, and the Hobby
+plan allows 10 GB of function storage, so nothing deploys on its own. Add the
+`preview` label to a PR to get a preview once its checks pass (linked in a PR
+comment); each new preview replaces the PR's previous one, and closing the PR
+removes them. Merging into `main` does not deploy: dispatch **Deploy production**
+in GitHub Actions to ship everything merged since the last release. It deploys
+`main`, calls `/api/health` (the first request runs pending migrations, so back
+up the database before a batch that carries one), then keeps only the live and
+the previous production deployments, for an instant rollback.
+
 The Vite dev server proxies `/api/*` to the backend. The schema is (re)initialized on every backend start; scripts that run without the API need `uv run python -c "from arete.dataio.init_duckdb import main; main()"` first.
 
 ## Docker
