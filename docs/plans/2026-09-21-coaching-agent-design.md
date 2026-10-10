@@ -37,7 +37,7 @@ fallback list. `LLM_MODEL` can still pin a specific model.
 
 The panel is not a chatbot in a vacuum: it knows which route is open. The frontend
 stamps `{page, path, param_*}` into `panel_context` on every request; the API layer
-is the single writer of that key (mirrors Cortex's `agent-run-context.ts`), and
+is the single writer of that key, and
 `RuntimeContextMiddleware` renders it as a `HumanMessage` at the request tail on
 every model call.
 

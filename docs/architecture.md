@@ -1,6 +1,6 @@
 # Coaching stack: responsibilities and dependencies
 
-Arete uses the Cortex ownership pattern with one coaching runtime and three
+Arete gives each behavior one owner, with one coaching runtime and three
 server-selected profiles. Browser-owned conversations, HTTP endpoints, tool names,
 DuckDB tables and ledger paths remain compatible. There are no placeholder layers
 for delegation, MCP, authentication or providers Arete does not use.
@@ -55,8 +55,13 @@ and four simultaneous tool executions per invocation. Interactive chat may add o
 optional next-message completion (512 output tokens, five seconds, zero SDK retries). Framework recursion is a
 separate 100-step backstop. A model call gives up after 60 s, or 30 s without a
 streamed chunk, with two SDK retries; on OpenRouter the request carries a
-fallback list of at most three models. Tools and failed runs are never
-automatically replayed. Already-started
+fallback list of at most three models. ToolRetryMiddleware permits one retry
+after 250 ms for ConnectionError/TimeoutError from catalog-declared read-only
+tools. Both attempts count toward the 32-tool execution budget and share the
+run deadline; no additional model call is required. Returned domain errors are
+marked as error ToolMessages with their complete payload preserved. Writes,
+Garmin reconciliation (which changes local operation state), validation failures
+and failed runs are never automatically replayed. Already-started
 synchronous operations cannot be forcibly cancelled or rolled back.
 
 ## Capability and context ownership
@@ -138,7 +143,9 @@ Optional LangSmith tracing remains invocation-scoped, including stream
 cancellation cleanup, dynamic tool spans and browser thread IDs. Provider usage logs
 retain reported cache/input/output details and model timing without logging the
 athlete's prompts. Opt-in LangSmith traces include full inputs, outputs and tool
-results, as described in the README. Missing usage remains unknown, not zero.
+results; setup and exported data are described in the
+[deployment runbook](deployment.md#langsmith-agent-tracing). Missing usage remains
+unknown, not zero.
 Each invocation also logs one `Agent run:` line (`RunStats` on the run context):
 model calls, tool calls, model time, time to first token and served models.
 

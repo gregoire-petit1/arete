@@ -28,6 +28,38 @@ WORKOUT = "/workout-service/workout"
 SCHEDULE = "/workout-service/schedule"
 
 
+def _schedule_date(scheduled: Any, workout_id: int) -> date:
+    """Validate schedule readback before trusting it for a remote mutation.
+
+    Schedule details can use calendarDate and a nested workout, unlike the
+    monthly calendar's flat date/workoutId. Never infer a missing remote date
+    from our intended date: that would hide a real conflict.
+    """
+    if not isinstance(scheduled, dict):
+        raise DocumentError("Réponse de programmation Garmin invalide.")
+    nested = scheduled.get("workout")
+    identifiers = [scheduled.get("workoutId")]
+    if isinstance(nested, dict):
+        identifiers.append(nested.get("workoutId"))
+    identifiers = [value for value in identifiers if value is not None]
+    if not identifiers or any(str(value) != str(workout_id) for value in identifiers):
+        raise DocumentError("La programmation Garmin ne correspond pas à cette séance.")
+    values = [
+        scheduled[key]
+        for key in ("calendarDate", "scheduledDate", "date")
+        if scheduled.get(key) is not None
+    ]
+    if not values or any(not isinstance(value, str) for value in values):
+        raise DocumentError("Date de programmation Garmin absente ou invalide.")
+    try:
+        days = [date.fromisoformat(value[:10]) for value in values]
+    except ValueError as exc:
+        raise DocumentError("Date de programmation Garmin invalide.") from exc
+    if len(set(days)) != 1:
+        raise DocumentError("Dates de programmation Garmin contradictoires.")
+    return days[0]
+
+
 def _get(con, session_id: int) -> dict | None:
     cursor = con.execute(
         "SELECT * FROM app.visible_garmin_exports WHERE session_id=?", [session_id]
@@ -326,15 +358,14 @@ def _adopt_legacy(
             "L’ancien export Garmin diffère de la séance ; aucune copie créée."
         )
     scheduled = exchange.call("GET", f"{SCHEDULE}/{row[1]}")
-    if int(scheduled.get("workoutId", 0)) != int(row[0]):
-        raise DocumentError("Le calendrier Garmin ne correspond pas à l’ancien export.")
+    remote_date = _schedule_date(scheduled, int(row[0]))
     return exchange.update(
         session_id,
         state["operation_id"],
         workout_id=int(row[0]),
         schedule_id=int(row[1]),
         remote_snapshot=remote,
-        remote_date=date.fromisoformat(str(scheduled["date"])[:10]),
+        remote_date=remote_date,
     )
 
 
@@ -486,15 +517,15 @@ def export(
         exchange.update(session_id, state["operation_id"], remote_snapshot=remote)
         if schedule_id:
             scheduled = exchange.call("GET", f"{SCHEDULE}/{schedule_id}")
-            remote_date = str(scheduled.get("date", ""))[:10]
-            if state["remote_date"] and remote_date != str(state["remote_date"]):
+            remote_date = _schedule_date(scheduled, workout_id)
+            if state["remote_date"] and remote_date != state["remote_date"]:
                 return exchange.update(
                     session_id,
                     state["operation_id"],
                     state="conflict",
                     error="La date a changé dans Garmin Connect.",
                 )
-            if remote_date != day.isoformat():
+            if remote_date != day:
                 exchange.update(session_id, state["operation_id"], phase="unscheduling")
                 writing = True
                 exchange.call("DELETE", f"{SCHEDULE}/{schedule_id}")
@@ -523,10 +554,7 @@ def export(
             )
             writing = False
         verified = exchange.call("GET", f"{SCHEDULE}/{schedule_id}")
-        if (
-            str(verified.get("date", ""))[:10] != day.isoformat()
-            or int(verified.get("workoutId", 0)) != workout_id
-        ):
+        if _schedule_date(verified, workout_id) != day:
             return exchange.update(
                 session_id,
                 state["operation_id"],
@@ -640,10 +668,7 @@ def reconcile(session_id: int, *, client=None, deadline: float | None = None) ->
         if state["phase"] in {"unscheduling", "removing"} and schedule_id:
             try:
                 scheduled = exchange.call("GET", f"{SCHEDULE}/{schedule_id}")
-                if int(scheduled.get("workoutId", 0)) != workout_id:
-                    raise DocumentError(
-                        "La programmation ne correspond plus à cette séance."
-                    )
+                remote_date = _schedule_date(scheduled, workout_id)
             except LookupError:
                 schedule_id = None
                 remote_date = None
@@ -669,14 +694,15 @@ def reconcile(session_id: int, *, client=None, deadline: float | None = None) ->
             remote_date = day
         elif schedule_id:
             scheduled = exchange.call("GET", f"{SCHEDULE}/{schedule_id}")
-            remote_date = date.fromisoformat(str(scheduled["date"])[:10])
-            if state["remote_date"] and remote_date != state["remote_date"]:
-                return _update(
-                    session_id,
-                    state["operation_id"],
-                    state="conflict",
-                    error="La date distante a été modifiée.",
-                )
+            remote_date = _schedule_date(scheduled, workout_id)
+        expected_date = state["remote_date"] or state["intended_date"]
+        if schedule_id and expected_date and remote_date != expected_date:
+            return _update(
+                session_id,
+                state["operation_id"],
+                state="conflict",
+                error="La date distante a été modifiée.",
+            )
         if state["phase"] == "pushing":
             return _update(
                 session_id,
@@ -735,10 +761,8 @@ def remove(session_id: int, *, client=None, _skipped: bool = False) -> dict:
                 )
             if state["schedule_id"]:
                 calendar = exchange.call("GET", f"{SCHEDULE}/{state['schedule_id']}")
-                if int(calendar.get("workoutId", 0)) != workout_id or (
-                    state["remote_date"]
-                    and str(calendar.get("date", ""))[:10] != str(state["remote_date"])
-                ):
+                remote_date = _schedule_date(calendar, workout_id)
+                if state["remote_date"] and remote_date != state["remote_date"]:
                     return _update(
                         session_id,
                         state["operation_id"],

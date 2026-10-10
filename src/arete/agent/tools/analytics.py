@@ -111,6 +111,8 @@ def get_workload(days: int = 28) -> str:
 
         payload = get_workload_metrics(days=days).model_dump(mode="json")
         return _out(_without_meaningless_acwr(_disambiguate_window(payload, days)))
+    except (ConnectionError, TimeoutError):
+        raise  # Read-only transient failures are retried by ToolRetryMiddleware.
     except Exception as exc:
         return _error(f"{type(exc).__name__}: {exc}")
 
@@ -131,6 +133,8 @@ def get_fitness(days: int = 42) -> str:
 
         payload = get_fitness_metrics(days=days).model_dump(mode="json")
         return _out(_disambiguate_window(payload, days))
+    except (ConnectionError, TimeoutError):
+        raise  # Read-only transient failures are retried by ToolRetryMiddleware.
     except Exception as exc:
         return _error(f"{type(exc).__name__}: {exc}")
 
@@ -151,6 +155,8 @@ def get_training_advice(sport_type: str = "mixed") -> str:
         from arete.services.metrics import get_recommendations
 
         return _out(get_recommendations(sport_type=sport_type).model_dump(mode="json"))  # type: ignore[arg-type]
+    except (ConnectionError, TimeoutError):
+        raise  # Read-only transient failures are retried by ToolRetryMiddleware.
     except Exception as exc:
         return _error(f"{type(exc).__name__}: {exc}")
 
@@ -193,6 +199,8 @@ def list_recent_sessions(limit: int = 20, offset: int = 0) -> str:
         from arete.services.analytics import list_sessions
 
         return _out(list_sessions(limit=limit, offset=offset, for_model=True))
+    except (ConnectionError, TimeoutError):
+        raise  # Read-only transient failures are retried by ToolRetryMiddleware.
     except Exception as exc:
         return _error(f"{type(exc).__name__}: {exc}")
 
@@ -215,6 +223,8 @@ def get_activity_detail(session_id: int) -> str:
         return _out(activity_detail_for_model(session_id))
     except (LookupError, PermissionError) as exc:
         return _error(str(exc))
+    except (ConnectionError, TimeoutError):
+        raise  # Read-only transient failures are retried by ToolRetryMiddleware.
     except Exception as exc:
         return _error(f"{type(exc).__name__}: {exc}")
 
