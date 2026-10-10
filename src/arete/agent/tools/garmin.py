@@ -73,13 +73,32 @@ def list_garmin_devices(config: RunnableConfig) -> str:
 def export_garmin_sessions(
     session_ids: list[int], config: RunnableConfig, device_id: int | None = None
 ) -> str:
-    """Export 1–5 distinct planned session ids on explicit request; default Garmin Connect.
+    """Send 1–5 distinct planned session ids TO Garmin on explicit request; default Garmin Connect.
 
+    Only when the athlete asks to send, export or schedule named sessions:
+    "synchroniser Garmin" is an import (sync_garmin_activities), never this.
     Stops at the first failure. Never replay an uncertain write or the entire batch.
     device_id is only for explicitly requested, verified watch transfer.
     """
     options = config.get("configurable", {})
+    context = options.get("arete_context")
+    today = getattr(context, "current_date", None) or date.today()
     try:
+        # A model once read "synchronise Garmin" as an export of last week's plan.
+        past = [
+            session_id
+            for session_id in session_ids
+            if str(
+                garmin_export.inspect_session(session_id, include_steps=False)[
+                    "session"
+                ]["date"]
+            )[:10]
+            < today.isoformat()
+        ]
+        if past:
+            return _json(
+                {"error": f"Séances passées, jamais exportées vers Garmin : {past}."}
+            )
         return _json(
             garmin_export.export_batch(
                 session_ids,
@@ -109,8 +128,9 @@ def reconcile_garmin_session(session_id: int, config: RunnableConfig) -> str:
 
 @tool
 def sync_garmin_activities(config: RunnableConfig) -> str:
-    """Import the athlete's new Garmin Connect activities now, like the sync button.
+    """Import the athlete's completed activities FROM Garmin Connect, like the sync button.
 
+    This is what "synchronise Garmin" means; it never sends planned sessions.
     Once per turn, when asked to sync or when a recent session is missing.
     Returns the imported sessions; never call it again to retry.
     """

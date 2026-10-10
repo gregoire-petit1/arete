@@ -36,7 +36,8 @@ GARMIN_INSTRUCTIONS = """Toolkit `garmin` chargé. Règles:
 - Destination par défaut Garmin Connect. Charge les appareils uniquement si un transfert montre est demandé.
 - Distingue séance enregistrée, programmation Garmin vérifiée et transfert demandé. La réception montre n’est pas vérifiable ici.
 - Les cartes montrent les résultats : réponse finale brève, avec les séances réussies et celles qui restent à traiter.
-- Quand l’athlète demande une synchro Garmin, ou qu’une séance récente qu’il évoque manque, appelle sync_garmin_activities une seule fois, sans relance automatique. Commente les séances qu’elle renvoie ; sans séance importée, dis-le.
+- « Synchroniser Garmin » veut dire importer les activités réalisées : sync_garmin_activities, jamais export_garmin_sessions. Appelle-la aussi quand une séance récente que l’athlète évoque manque. Une seule fois, sans relance automatique ; commente les séances renvoyées, ou dis qu’aucune n’est arrivée.
+- N’exporte que sur une demande explicite d’envoyer ou programmer des séances : jamais de ton initiative, jamais une séance passée.
 """
 
 PLANNING_INSTRUCTIONS += """
