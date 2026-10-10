@@ -1,12 +1,11 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { CircleAlert, ChevronRight } from 'lucide-react';
-import { messageTools, toolLabel } from '@/lib/agentActivity';
+import { hasAnswerText, messageTools, toolLabel } from '@/lib/agentActivity';
 import { STREAM_TIMEOUT_MS, type ChatMessage } from '@/lib/agentStream';
 import { cn } from '@/lib/utils';
 import { markWorkout, measureWorkout } from '@/lib/workoutPerformance';
 import { ToolActivity } from './ToolActivity';
 import { AretePresence } from '../AreteBrand';
-import { ActivityIndicator } from '../ui/ActivityIndicator';
 
 const LONG_WAIT_SECONDS = 8;
 const CLOCK_TICK_MS = 1_000;
@@ -62,7 +61,7 @@ export function CoachActivity({ message }: { message: ChatMessage }) {
   const uncertain = tools.some(tool => tool.status === 'interrupted');
   const last = tools.at(-1);
   const confirmed = !running && !failed && !uncertain && last?.status === 'done';
-  const hasText = !!message.content.trim() || message.parts?.some(part => part.kind === 'text' && part.text.trim());
+  const hasText = hasAnswerText(message);
   const interrupted = message.interrupted || !!message.error;
   const label = interrupted
     ? message.interrupted ? 'Réponse interrompue' : 'Réponse incomplète'
@@ -78,8 +77,9 @@ export function CoachActivity({ message }: { message: ChatMessage }) {
   return (
     <div className="coach-activity mb-3 min-w-0 space-y-2 text-[13px] leading-relaxed">
       <p role="status" aria-atomic="true" className={cn('flex min-h-8 items-center gap-2 text-text-secondary', !pending && confirmed && !interrupted && 'text-success-green')}>
-        {/* The message header already shows the laurel: only the orbit moves here. */}
-        {pending && !interrupted ? <ActivityIndicator size={24} active={online && !hasText && !failed && !uncertain && elapsed < STREAM_TIMEOUT_MS / CLOCK_TICK_MS} />
+        {/* While Chiron thinks, its laurel turns here and the message has no header;
+            once text arrives the header shows it, so this line keeps no icon. */}
+        {pending && !interrupted ? !hasText && <CoachPresence active={online && !failed && !uncertain && elapsed < STREAM_TIMEOUT_MS / CLOCK_TICK_MS} />
           : confirmed && !interrupted ? <span key={`confirmation:${statusKey}`} className="coach-confirmation" aria-hidden="true" />
             : <CircleAlert aria-hidden="true" className="size-4 shrink-0 text-text-muted" />}
         <span key={`label:${statusKey}`} className="coach-status-label min-w-0">{label}</span>

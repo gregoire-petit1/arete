@@ -114,12 +114,15 @@ it('stops the orbit when offline, cancelled or past the transport deadline', () 
   expect(container.querySelector('.activity-orbit')).toBeNull();
 });
 
-it('animates the wait without repeating the laurel the message header shows', () => {
+it('turns the laurel while Chiron thinks and drops it once the answer is written', () => {
   message = applyEvent(message, { type: 'tool_start', id: 'read', name: 'read_file', args: preview });
   message = applyEvent(message, { type: 'tool_end', id: 'read', name: 'read_file', status: 'done', output: preview, elapsed_ms: 15 });
-  const { container } = render(<CoachActivity message={message} />);
+  const { rerender } = render(<CoachActivity message={message} />);
   const status = screen.getByRole('status');
   expect(status.textContent).toBe('Notes consultées · préparation de la réponse');
   expect(status.querySelector('.activity-orbit')).toBeTruthy();
-  expect(container.querySelector('.arete-mark')).toBeNull();
+  expect(status.querySelector('.activity-presence .arete-mark')).toBeTruthy();
+  // The message header shows the laurel from the first word on: never twice.
+  rerender(<CoachActivity message={applyEvent(message, { type: 'token', id: 'answer', text: 'Repos.' })} />);
+  expect(screen.getAllByRole('status')[0].querySelector('.arete-mark')).toBeNull();
 });

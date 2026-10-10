@@ -31,7 +31,7 @@ import { ThreadHistory } from './agent/ThreadHistory';
 import { AgentMarkdown } from './agent/AgentMarkdown';
 import { ToolActivity } from './agent/ToolActivity';
 import { CoachActivity, CoachPresence } from './agent/CoachActivity';
-import { canRetryMessage } from '@/lib/agentActivity';
+import { canRetryMessage, isThinking } from '@/lib/agentActivity';
 import { DocumentAttachments, type AttachmentsHandle } from './agent/DocumentAttachments';
 import { DocumentImports } from './agent/DocumentImports';
 import { CalendarActionCard } from './agent/CalendarActionCard';
@@ -384,9 +384,12 @@ export function AgentSidePanel({
                     </div>
                   ) : (
                     <div className="min-w-0">
-                      <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-text-muted">
-                        <AreteMark size={24} /> {rpg ? 'CHIRON' : 'ARETE'}
-                      </div>
+                      {/* While Chiron thinks, its laurel turns in the status line instead. */}
+                      {!isThinking(message) && (
+                        <div className="mb-3 flex items-center gap-2 text-[11px] font-medium text-text-muted">
+                          <AreteMark size={24} /> CHIRON
+                        </div>
+                      )}
                       <CoachActivity message={message} />
                       <MessageSurfaces message={message} chiron locked={busy} onAction={text => coach.recordAction(active.id, text)} />
                       <div className="mt-1 flex flex-wrap items-center gap-x-0.5">

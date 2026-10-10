@@ -149,11 +149,12 @@ test('Chiron: real SSE states, one motion cycle, immediate text and an interrupt
       return result;
     });
     expect(new Set(frames.slice(0, 3)).size).toBe(3);
-    // One laurel, in the message header (ARE-6); the status line keeps only the orbit.
-    await expect(panel.locator('.coach-activity .arete-mark')).toHaveCount(0);
-    const laurel = panel.locator('.coach-activity').locator('xpath=..').locator('.arete-mark');
-    await expect(laurel).toHaveCount(1);
-    await expect(laurel).toHaveCSS('transform', 'none');
+    // While Chiron thinks, its one laurel turns in the status line, still itself,
+    // and the message has no header yet (ARE-6).
+    const answer = panel.locator('.coach-activity').locator('xpath=..');
+    await expect(panel.locator('.activity-presence .arete-mark')).toHaveCSS('transform', 'none');
+    await expect(answer.locator('.arete-mark')).toHaveCount(1);
+    await expect(answer.getByText('CHIRON', { exact: true })).toHaveCount(0);
     await page.screenshot({ path: '../.context/chiron-latency-desktop.png', animations: 'disabled' });
     stream.send({ type: 'tool_start', id: 'read', name: 'read_file', args: preview });
     await expect(panel.getByRole('status')).toHaveText('Lecture de tes notes');
@@ -162,6 +163,10 @@ test('Chiron: real SSE states, one motion cycle, immediate text and an interrupt
     await expect(panel.locator('.activity-orbit')).toBeVisible();
     stream.send({ type: 'token', id: 'answer', text: 'J’ai retrouvé ton ancien objectif.' });
     await expect(panel.getByText('J’ai retrouvé ton ancien objectif.', { exact: true })).toBeVisible({ timeout: 1_000 });
+    // From the first word on, the header names Chiron and the status keeps no laurel.
+    await expect(answer.getByText('CHIRON', { exact: true })).toBeVisible();
+    await expect(answer.locator('.arete-mark')).toHaveCount(1);
+    await expect(panel.locator('.coach-activity .arete-mark')).toHaveCount(0);
     await expect(panel.locator('.activity-orbit')).toHaveCount(0);
     await expect(panel.getByRole('status')).toHaveText('Réponse en cours');
     const prose = await panel.locator('.coach-answer-part').elementHandle();
