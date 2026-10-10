@@ -314,10 +314,12 @@ contracts, limits and the distinction between shipped behavior and Figma scope.
 so the coach's stream is not buffered) and the `/auth/config` and `/auth/me`
 routes. Off by default; with `ARETE_AUTH=clerk` every non-public request
 carries a Clerk session token or the instance's API key, verified in a worker
-thread. `services/users.py` owns the accounts table and the one rule that
-attaches an account to the athlete: its e-mail is one of the owner's. Services never import
-`arete.api.auth`; the athlete's data stays `user_id = 1`, so nothing below the
-boundary changed. `services/google_tokens.py` reads the signed-in user's Google
+thread. `services/users.py` owns the accounts table, the rule that attaches an
+account to an athlete (its own, or athlete 1 for the first verified owner
+address) and the roles: the owner administers by right and names
+administrators. `api/admin.py` exposes the accounts behind `require_admin`, and
+naming an administrator behind `require_owner` (both in `api/auth.py`); the
+scheduler owns releasing a sync lease. Services never import `arete.api.auth`. `services/google_tokens.py` reads the signed-in user's Google
 token from Clerk for Calendar, and
 `services/oauth_state.py` signs the Strava OAuth state the callback demands.
 

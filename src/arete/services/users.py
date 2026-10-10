@@ -1,15 +1,36 @@
-"""Login accounts, retained contact details and private athlete provisioning."""
+"""Login accounts, retained contact details and private athlete provisioning.
+
+Roles: the owner (athlete 1) administers the instance by right and alone
+names administrators, who see every athlete's state and can deactivate,
+reactivate or unblock one. Every other account is an athlete.
+"""
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from arete.config import config
 from arete.dataio.db import connect
 
+logger = logging.getLogger(__name__)
+
 OWNER_ATHLETE_ID = 1
-_COLUMNS = "id, clerk_user_id, email, name, athlete_id, email_verified_at, profile_synced_at, deleted_at"
+ROLES = ("athlete", "admin")
+_COLUMNS = (
+    "id, clerk_user_id, email, name, athlete_id, email_verified_at, "
+    "profile_synced_at, deleted_at, coalesce(role, 'athlete')"
+)
+
+
+class AccountError(Exception):
+    """An administration rule refused the action; ``status`` is its HTTP answer."""
+
+    def __init__(self, message: str, status: int = 409) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass(frozen=True)
@@ -22,10 +43,15 @@ class AppUser:
     email_verified_at: datetime | None = None
     profile_synced_at: datetime | None = None
     deleted_at: datetime | None = None
+    role: str = "athlete"
 
     @property
     def is_owner(self) -> bool:
         return self.athlete_id == OWNER_ATHLETE_ID
+
+    @property
+    def is_admin(self) -> bool:
+        return self.is_owner or self.role == "admin"
 
     def to_dict(self) -> dict:
         return {
@@ -33,6 +59,8 @@ class AppUser:
             "name": self.name,
             "athlete_id": self.athlete_id,
             "is_owner": self.is_owner,
+            "role": self.role,
+            "is_admin": self.is_admin,
         }
 
 
@@ -96,6 +124,15 @@ def upsert_user(
         assert row is not None
         user = _from_row(row)
         if user.athlete_id is None and user.deleted_at is None:
+            if legacy_owner and _owner_held_by_another_address(con, email):
+                # An owner address listed for someone else must not hand them
+                # the original athlete's data and credentials: they get theirs.
+                logger.warning(
+                    "%s is an owner address, but athlete 1 belongs to another "
+                    "account: provisioning a new athlete",
+                    email,
+                )
+                legacy_owner = False
             athlete_id = OWNER_ATHLETE_ID
             if not legacy_owner:
                 created = con.execute(
@@ -132,6 +169,15 @@ def upsert_user(
     return _from_row(row)
 
 
+def _owner_held_by_another_address(con: Any, email: str) -> bool:
+    """Athlete 1 is claimed once: later claims must come from the same address."""
+    holders = con.execute(
+        "SELECT email FROM app.users WHERE athlete_id=? AND deleted_at IS NULL",
+        [OWNER_ATHLETE_ID],
+    ).fetchall()
+    return any(str(row[0]).strip().lower() != email for row in holders)
+
+
 def athlete_is_active(athlete_id: int) -> bool:
     con = connect()
     try:
@@ -155,20 +201,99 @@ def list_users() -> list[AppUser]:
     return [_from_row(r) for r in rows]
 
 
-def deactivate_current_athlete() -> None:
-    """Revoke every login mapped to this athlete without losing contact/history."""
-    from arete.services.athlete_scope import current_athlete_id
+@dataclass(frozen=True)
+class AthleteAccount:
+    """An athlete and one of its logins; an athlete may have none or several."""
 
+    athlete_id: int
+    user_id: int | None
+    email: str | None
+    name: str | None
+    role: str
+    last_seen_at: datetime | None
+    last_sync_at: datetime | None
+    sync_lease_until: datetime | None
+    lease_stuck: bool
+    deactivated_at: datetime | None
+
+    @property
+    def is_owner(self) -> bool:
+        return self.athlete_id == OWNER_ATHLETE_ID
+
+    def to_dict(self) -> dict:
+        # Stored timestamps are the server's local time: say which one.
+        def aware(value: datetime | None) -> datetime | None:
+            return value.astimezone() if value is not None else None
+
+        return {
+            "athlete_id": self.athlete_id,
+            "user_id": self.user_id,
+            "email": self.email,
+            "name": self.name,
+            "role": self.role,
+            "is_owner": self.is_owner,
+            "last_seen_at": aware(self.last_seen_at),
+            "last_sync_at": aware(self.last_sync_at),
+            "sync_lease_until": aware(self.sync_lease_until),
+            "lease_stuck": self.lease_stuck,
+            "deactivated_at": aware(self.deactivated_at),
+        }
+
+
+def list_accounts() -> list[AthleteAccount]:
+    """Every athlete with its logins, for administrators; no private data.
+
+    ``last_seen_at`` moves with the hourly profile refresh. A lease past its
+    expiry belongs to a scheduled run that failed or was stopped.
+    """
+    con = connect()
+    try:
+        rows = con.execute(
+            "SELECT a.id, u.id, u.email, u.name, coalesce(u.role, 'athlete'), "
+            "u.last_seen_at, a.last_sync_at, a.sync_lease_until, "
+            "coalesce(a.sync_lease_until < current_timestamp, false), a.deleted_at "
+            "FROM app.athletes a LEFT JOIN app.users u ON u.athlete_id = a.id "
+            "ORDER BY a.id, u.id"
+        ).fetchall()
+    finally:
+        con.close()
+    return [AthleteAccount(*row) for row in rows]
+
+
+def deactivate_athlete(athlete_id: int, *, actor: AppUser) -> None:
+    """Close every login of the athlete; its data stays, hidden from everyone.
+
+    Nobody deactivates the owner's athlete, and only the owner deactivates an
+    administrator's (an administrator cannot lock themselves out either).
+    """
+    if athlete_id == OWNER_ATHLETE_ID:
+        raise AccountError("L'athlète du propriétaire ne peut pas être désactivé.")
     con = connect()
     try:
         con.execute("BEGIN TRANSACTION")
+        if (
+            con.execute(
+                "SELECT 1 FROM app.athletes WHERE id=?", [athlete_id]
+            ).fetchone()
+            is None
+        ):
+            raise AccountError("Athlète inconnu.", 404)
+        administrator = con.execute(
+            "SELECT 1 FROM app.users WHERE athlete_id=? AND deleted_at IS NULL "
+            "AND role='admin' LIMIT 1",
+            [athlete_id],
+        ).fetchone()
+        if administrator is not None and not actor.is_owner:
+            raise AccountError(
+                "Seul le propriétaire peut désactiver un administrateur.", 403
+            )
         con.execute(
             "UPDATE app.athletes SET deleted_at=current_timestamp WHERE id=? AND deleted_at IS NULL",
-            [current_athlete_id()],
+            [athlete_id],
         )
         con.execute(
             "UPDATE app.users SET deleted_at=current_timestamp WHERE athlete_id=? AND deleted_at IS NULL",
-            [current_athlete_id()],
+            [athlete_id],
         )
         con.execute("COMMIT")
     except BaseException:
@@ -176,3 +301,48 @@ def deactivate_current_athlete() -> None:
         raise
     finally:
         con.close()
+
+
+def reactivate_athlete(athlete_id: int) -> None:
+    """Reopen the athlete and its logins; the data reappears as it was."""
+    con = connect()
+    try:
+        con.execute("BEGIN TRANSACTION")
+        row = con.execute(
+            "UPDATE app.athletes SET deleted_at=NULL WHERE id=? RETURNING id",
+            [athlete_id],
+        ).fetchone()
+        if row is None:
+            raise AccountError("Athlète inconnu.", 404)
+        con.execute(
+            "UPDATE app.users SET deleted_at=NULL WHERE athlete_id=?", [athlete_id]
+        )
+        con.execute("COMMIT")
+    except BaseException:
+        con.execute("ROLLBACK")
+        raise
+    finally:
+        con.close()
+
+
+def set_role(user_id: int, role: str) -> AppUser:
+    """The owner names or removes an administrator; the owner's own logins keep
+    their right, which comes from the athlete, not from this column."""
+    assert role in ROLES, f"Unknown role: {role}"
+    con = connect()
+    try:
+        row = con.execute(
+            f"SELECT {_COLUMNS} FROM app.users WHERE id=?", [user_id]
+        ).fetchone()
+        if row is None:
+            raise AccountError("Compte inconnu.", 404)
+        if _from_row(row).is_owner:
+            raise AccountError("Le propriétaire est administrateur d'office.")
+        updated = con.execute(
+            f"UPDATE app.users SET role=? WHERE id=? RETURNING {_COLUMNS}",
+            [role, user_id],
+        ).fetchone()
+    finally:
+        con.close()
+    assert updated is not None
+    return _from_row(updated)

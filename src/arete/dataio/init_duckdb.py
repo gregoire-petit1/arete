@@ -392,6 +392,7 @@ CREATE TABLE IF NOT EXISTS app.users (
     email           VARCHAR NOT NULL,
     name            VARCHAR,
     athlete_id      INTEGER,                   -- NULL until an athlete is attached
+    role            VARCHAR DEFAULT 'athlete', -- or 'admin' (the owner administers by right)
     created_at      TIMESTAMP DEFAULT now(),
     last_seen_at    TIMESTAMP DEFAULT now()
 );
@@ -749,6 +750,14 @@ def _m38_system_skills(con) -> None:
     con.execute(DDL[start:end])
 
 
+def _m39_user_roles(con) -> None:
+    """Administrators besides the owner. DuckDB adds no constraint with a
+    column, so it stays nullable and readers treat NULL as 'athlete'."""
+    con.execute(
+        "ALTER TABLE app.users ADD COLUMN IF NOT EXISTS role VARCHAR DEFAULT 'athlete'"
+    )
+
+
 MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (1, _m1_exercise_abbreviations),
     (2, _m2_analytics_columns),
@@ -777,6 +786,7 @@ MIGRATIONS: list[tuple[int, Callable[[Any], None]]] = [
     (36, _m36_private_relations),
     (37, _m37_slack_deliveries),
     (38, _m38_system_skills),
+    (39, _m39_user_roles),
 ]
 
 
