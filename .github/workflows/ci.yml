@@ -203,6 +203,10 @@ jobs:
     needs: [lint, test, typecheck, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Shown as "Preview" in the repository's Deployments, with the fixed URL.
+    environment:
+      name: Preview
+      url: https://arete-main-arete15.vercel.app
     env:
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
