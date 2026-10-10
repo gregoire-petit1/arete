@@ -157,6 +157,16 @@ and the MotherDuck connection warm, and alerts on the 503 that a pending
 migration or a lost database produces. No header is needed: production is not
 behind Vercel Authentication.
 
+## Daily sync
+
+Vercel Cron calls `/api/cron/daily-sync` in six daily windows, 07:00 to 12:00
+UTC (`vercel.json`): Hobby runs each cron once a day, within its hour, and only
+on the production deployment. The endpoint answers 401 unless the environment
+has `CRON_SECRET`, which Vercel sends as a bearer token. Each dispatch syncs the
+athletes still owed today within the function's 300 seconds; the rules, and how
+to park or force an athlete, are in `docs/multi-athlete.md`. A preview syncs
+only when called by hand with that header.
+
 ## Local stack
 
 `make dev` runs the API and Vite on a local DuckDB file. `make docker` builds

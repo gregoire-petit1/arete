@@ -62,6 +62,24 @@ class TestCronDailySync:
         assert response.status_code == 200
         assert response.json() == expected
 
+    def test_every_cron_window_runs_the_sync_once_a_day(self):
+        """Hobby refuses a deployment with a cron more frequent than daily.
+
+        Several daily entries on the same path are its way to dispatch the
+        sync more than once a day; each dispatch skips what is already done.
+        """
+        import json
+        import re
+        from pathlib import Path
+
+        crons = json.loads((Path(__file__).parents[1] / "vercel.json").read_text())[
+            "crons"
+        ]
+        schedules = [cron["schedule"] for cron in crons]
+        assert {cron["path"] for cron in crons} == {"/api/cron/daily-sync"}
+        assert len(set(schedules)) == len(schedules) > 1
+        assert all(re.fullmatch(r"0 \d{1,2} \* \* \*", s) for s in schedules)
+
 
 def test_booting_the_app_leaves_the_heavy_stacks_out(tmp_path):
     """A cold serverless instance imports the app before its first request.

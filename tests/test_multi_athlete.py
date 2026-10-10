@@ -327,12 +327,160 @@ def test_scheduler_failure_is_not_replayed_and_other_athletes_continue(
     monkeypatch.setattr(scheduler, "write_daily_briefing", lambda: "rules")
     monkeypatch.setattr(scheduler, "write_weekly_review", lambda: "rules")
     result = scheduler.run_scheduled_batch()
-    assert (
-        "manual recovery" in result["athletes"][str(athletes[0].athlete_id)]["status"]
-    )
+    assert result["athletes"][str(athletes[0].athlete_id)] == {
+        "status": "failed; next attempt tomorrow"
+    }
     assert result["athletes"][str(athletes[1].athlete_id)]["sync"] == "ok"
     assert scheduler.run_scheduled_batch()["athletes"] == {}
     assert seen == [u.athlete_id for u in athletes]
+
+
+def _stub_scheduled_work(monkeypatch, seen):
+    from arete import scheduler
+
+    monkeypatch.setattr(
+        scheduler,
+        "daily_sync",
+        lambda: seen.append(current_athlete_id()) or {"sync": "ok"},
+    )
+    monkeypatch.setattr(scheduler, "write_daily_briefing", lambda: "rules")
+    monkeypatch.setattr(scheduler, "write_weekly_review", lambda: "rules")
+
+
+def _set_lease(athlete_id, expression):
+    con = connect()
+    con.execute(
+        f"UPDATE app.athletes SET sync_lease_until = {expression} WHERE id=?",
+        [athlete_id],
+    )
+    con.close()
+
+
+def test_scheduler_reclaims_a_lease_from_a_previous_day_but_not_today(
+    athletes, monkeypatch
+):
+    from arete import scheduler
+
+    first, second = athletes
+    _set_lease(first.athlete_id, "current_timestamp - INTERVAL 1 DAY")
+    _set_lease(second.athlete_id, "current_timestamp + INTERVAL 15 MINUTE")
+    seen: list[int] = []
+    _stub_scheduled_work(monkeypatch, seen)
+    result = scheduler.run_scheduled_batch()
+    assert seen == [first.athlete_id]
+    assert list(result["athletes"]) == [str(first.athlete_id)]
+    con = connect()
+    rows = dict(
+        con.execute(
+            "SELECT id, (sync_lease_until IS NULL "
+            "AND CAST(last_sync_at AS DATE) = current_date) FROM app.athletes"
+        ).fetchall()
+    )
+    con.close()
+    assert rows[first.athlete_id] is True
+    assert rows[second.athlete_id] is False
+
+
+def test_a_failed_athlete_is_retried_by_the_next_day_s_dispatch(athletes, monkeypatch):
+    from arete import scheduler
+
+    first = athletes[0]
+    failing = True
+    seen: list[int] = []
+
+    def sync():
+        seen.append(current_athlete_id())
+        if failing and current_athlete_id() == first.athlete_id:
+            raise RuntimeError("stopped mid-run")
+        return {"sync": "ok"}
+
+    monkeypatch.setattr(scheduler, "daily_sync", sync)
+    monkeypatch.setattr(scheduler, "write_daily_briefing", lambda: "rules")
+    monkeypatch.setattr(scheduler, "write_weekly_review", lambda: "rules")
+    scheduler.run_scheduled_batch()
+    failing = False
+    # The same day never replays it ...
+    assert scheduler.run_scheduled_batch()["athletes"] == {}
+    # ... the next day's dispatch does: its lease now dates from yesterday.
+    _set_lease(first.athlete_id, "sync_lease_until - INTERVAL 1 DAY")
+    result = scheduler.run_scheduled_batch()
+    assert result["athletes"] == {
+        str(first.athlete_id): {"sync": "ok", "briefing": "rules", "review": "rules"}
+    }
+    assert seen.count(first.athlete_id) == 2
+
+
+def test_a_claim_lost_to_a_concurrent_dispatch_is_skipped_not_fatal(
+    athletes, monkeypatch
+):
+    from contextlib import contextmanager
+
+    import duckdb
+
+    from arete import scheduler
+
+    first, second = athletes
+    real_connection = scheduler.db_connection
+
+    class LosesTheFirstClaim:
+        def __init__(self, con):
+            self.con = con
+
+        def execute(self, sql, params=None):
+            if (
+                "SET sync_lease_until=current_timestamp" in sql
+                and params[1] == first.athlete_id
+            ):
+                raise duckdb.TransactionException("Conflict on update!")
+            return self.con.execute(sql, params)
+
+    @contextmanager
+    def connection():
+        with real_connection() as con:
+            yield LosesTheFirstClaim(con)
+
+    monkeypatch.setattr(scheduler, "db_connection", connection)
+    seen: list[int] = []
+    _stub_scheduled_work(monkeypatch, seen)
+    result = scheduler.run_scheduled_batch()
+    assert seen == [second.athlete_id]
+    assert list(result["athletes"]) == [str(second.athlete_id)]
+
+
+def test_model_steps_are_deferred_past_the_model_deadline(athletes, monkeypatch):
+    from itertools import chain, repeat
+
+    from arete import scheduler
+
+    first = athletes[0]
+    clock = chain([0, 0], repeat(scheduler.SCHEDULE_MODEL_SECONDS))
+    monkeypatch.setattr(scheduler, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(scheduler, "daily_sync", lambda: {"sync": "ok"})
+
+    def no_model_now():
+        raise AssertionError("a model step started after the deadline")
+
+    monkeypatch.setattr(scheduler, "write_daily_briefing", no_model_now)
+    monkeypatch.setattr(scheduler, "write_weekly_review", no_model_now)
+    result = scheduler.run_scheduled_batch()
+    # The deadline also stops claiming: the second athlete waits for a window.
+    assert result == {
+        "athletes": {
+            str(first.athlete_id): {
+                "sync": "ok",
+                "briefing": "deferred",
+                "review": "deferred",
+            }
+        },
+        "deferred": True,
+    }
+    con = connect()
+    assert con.execute(
+        "SELECT CAST(last_sync_at AS DATE) = current_date, sync_lease_until IS NULL "
+        "FROM app.athletes WHERE id=?",
+        [first.athlete_id],
+    ).fetchone() == (True, True)
+    con.close()
 
 
 def test_scheduler_defers_unclaimed_work_at_the_dispatch_deadline(
