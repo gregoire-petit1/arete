@@ -22,6 +22,8 @@ class Garmin:
         self.schedules = {}
         self.fail = None
         self.on_create = None
+        self.schedule_date_key = "calendarDate"
+        self.nested_schedule_workout = True
 
     def workout_request(self, method, path, *, timeout, payload=None):
         assert 0 < timeout <= 15
@@ -78,7 +80,11 @@ class Garmin:
             if identifier not in self.schedules:
                 raise LookupError("404")
             if method == "GET":
-                return copy.deepcopy(self.schedules[identifier])
+                record = copy.deepcopy(self.schedules[identifier])
+                record[self.schedule_date_key] = record.pop("date")
+                if self.nested_schedule_workout:
+                    record["workout"] = {"workoutId": record.pop("workoutId")}
+                return record
             if method == "DELETE":
                 del self.schedules[identifier]
                 return {}
@@ -174,6 +180,97 @@ def test_export_and_repeat_do_not_duplicate_workout_or_date(planned):
     assert service.export(planned, client=garmin)["state"] == "scheduled"
     assert len(garmin.workouts) == len(garmin.schedules) == 1
     assert sum(method == "POST" for method, _, _ in garmin.calls) == 2
+
+
+@pytest.mark.parametrize("date_key", ["calendarDate", "scheduledDate", "date"])
+@pytest.mark.parametrize("nested", [True, False])
+def test_schedule_response_variants_reconcile_without_duplicate(
+    planned, date_key, nested
+):
+    garmin = Garmin()
+    garmin.schedule_date_key = date_key
+    garmin.nested_schedule_workout = nested
+    assert service.export(planned, client=garmin)["state"] == "scheduled"
+    # Reproduce the persisted state left by the old date-only verifier.
+    with db_connection() as con:
+        con.execute(
+            "UPDATE app.garmin_exports SET state='uncertain',remote_date=NULL,error=? WHERE session_id=?",
+            ["'date'", planned],
+        )
+    count = len(garmin.calls)
+    result = service.reconcile(planned, client=garmin)
+    assert result["state"] == "ready", result
+    assert result["remote_date"] == date(2027, 1, 12)
+    assert result["error"] is None
+    assert all(method == "GET" for method, _, _ in garmin.calls[count:])
+    assert service.export(planned, client=garmin)["state"] == "scheduled"
+    assert sum(method == "POST" for method, _, _ in garmin.calls) == 2
+
+
+@pytest.mark.parametrize("action", ["export", "reconcile", "remove"])
+@pytest.mark.parametrize(
+    "response,error",
+    [
+        ({"workoutId": 1}, "Date de programmation Garmin absente"),
+        (
+            {"workoutId": 1, "calendarDate": "bad"},
+            "Date de programmation Garmin invalide",
+        ),
+        ({"workoutId": 1, "calendarDate": 123}, "Date de programmation Garmin absente"),
+        ({"workoutId": 2, "calendarDate": "2027-01-12"}, "ne correspond pas"),
+        (
+            {"workoutId": 1, "workout": {"workoutId": 2}, "date": "2027-01-12"},
+            "ne correspond pas",
+        ),
+        (
+            {"workoutId": 1, "calendarDate": "2027-01-12", "date": "2027-01-13"},
+            "Dates de programmation Garmin contradictoires",
+        ),
+    ],
+)
+def test_unverifiable_schedule_never_allows_remote_mutation(
+    planned, monkeypatch, action, response, error
+):
+    garmin = Garmin()
+    service.export(planned, client=garmin)
+    if action == "remove":
+        GarminRepository().delete_planned_session(planned)
+    original = garmin.workout_request
+
+    def readback(method, path, **kwargs):
+        result = original(method, path, **kwargs)
+        if method == "GET" and path.startswith(service.SCHEDULE):
+            return response
+        return result
+
+    monkeypatch.setattr(garmin, "workout_request", readback)
+    count = len(garmin.calls)
+    result = getattr(service, action)(planned, client=garmin)
+    assert result["state"] in {"failed", "uncertain"}
+    assert error in result["error"]
+    assert all(method == "GET" for method, _, _ in garmin.calls[count:])
+    assert len(garmin.workouts) == len(garmin.schedules) == 1
+
+
+@pytest.mark.parametrize("verified_before", [True, False])
+@pytest.mark.parametrize("phase", ["scheduled", "unscheduling", "removing"])
+def test_reconcile_preserves_real_remote_date_conflict(planned, verified_before, phase):
+    garmin = Garmin()
+    service.export(planned, client=garmin)
+    garmin.schedules[100]["date"] = "2027-01-13"
+    with db_connection() as con:
+        con.execute(
+            "UPDATE app.garmin_exports SET state='conflict',phase=? WHERE session_id=?",
+            [phase, planned],
+        )
+        if not verified_before:
+            con.execute(
+                "UPDATE app.garmin_exports SET remote_date=NULL WHERE session_id=?",
+                [planned],
+            )
+    count = len(garmin.calls)
+    assert service.reconcile(planned, client=garmin)["state"] == "conflict"
+    assert all(method == "GET" for method, _, _ in garmin.calls[count:])
 
 
 @pytest.mark.parametrize("phase", ["create", "schedule"])

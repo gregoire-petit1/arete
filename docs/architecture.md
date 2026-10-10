@@ -55,8 +55,13 @@ and four simultaneous tool executions per invocation. Interactive chat may add o
 optional next-message completion (512 output tokens, five seconds, zero SDK retries). Framework recursion is a
 separate 100-step backstop. A model call gives up after 60 s, or 30 s without a
 streamed chunk, with two SDK retries; on OpenRouter the request carries a
-fallback list of at most three models. Tools and failed runs are never
-automatically replayed. Already-started
+fallback list of at most three models. ToolRetryMiddleware permits one retry
+after 250 ms for ConnectionError/TimeoutError from catalog-declared read-only
+tools. Both attempts count toward the 32-tool execution budget and share the
+run deadline; no additional model call is required. Returned domain errors are
+marked as error ToolMessages with their complete payload preserved. Writes,
+Garmin reconciliation (which changes local operation state), validation failures
+and failed runs are never automatically replayed. Already-started
 synchronous operations cannot be forcibly cancelled or rolled back.
 
 ## Capability and context ownership
