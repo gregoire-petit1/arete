@@ -1,0 +1,377 @@
+import { createElement, type ReactNode } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft, Sparkles } from 'lucide-react';
+import { EmptyState, ErrorState, LoadingState } from '@/components';
+import { Panel, RpeBadge } from '@/components/ui';
+import { analyticsApi } from '@/lib/api';
+import { chartRows, formatElapsed, intensityLabel, isFootSport } from '@/lib/activity';
+import { CHART, COLORS, HR_ZONE_COLORS } from '@/lib/chartTheme';
+import { parseLocalDate } from '@/lib/dates';
+import { sportLabel } from '@/lib/fr';
+import { qk } from '@/lib/queryKeys';
+import { getSportColor, getSportIconComponent } from '@/lib/sport';
+import { cn, formatDurationCompact, formatPace } from '@/lib/utils';
+import type { ActivityDetail, ActivityIntervals, ActivityLap, ActivityMetrics, ActivitySplit } from '@/types';
+import { RouteTrace } from './session/RouteTrace';
+import { StreamChart } from './session/StreamChart';
+
+const ZONE_NAME = ['Z1 récupération', 'Z2 endurance', 'Z3 tempo', 'Z4 seuil', 'Z5 VO2max'];
+const SOURCE_LABEL: Record<string, string> = {
+  garmin_connect: 'Garmin',
+  fit_file: 'Fichier FIT',
+  strava: 'Strava',
+  manual: 'Saisie manuelle',
+};
+
+const km = (m: number | null | undefined) => (m ? `${(m / 1000).toFixed(2)} km` : '—');
+const pace = (sec: number | null | undefined) => (sec ? `${formatPace(sec)} /km` : '—');
+const pct = (v: number) => `${v > 0 ? '+' : ''}${v.toLocaleString('fr-FR')} %`;
+
+/** A cardio session's page: summary, coach, charts, analysis, laps, zones, route. */
+export function SessionDetailPage() {
+  const { id } = useParams();
+  const sessionId = id && /^\d+$/.test(id) ? Number(id) : null;
+  const query = useQuery({
+    queryKey: qk.sessionDetail(sessionId ?? -1),
+    queryFn: () => analyticsApi.getSessionDetail(sessionId!),
+    enabled: sessionId !== null,
+  });
+
+  return (
+    <div className="min-h-screen bg-void px-4 py-4 sm:p-6">
+      <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6">
+        <Link
+          to="/log?tab=cardio"
+          className="inline-flex items-center gap-1 text-xs font-mono text-text-muted hover:text-neon-cyan"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          JOURNAL
+        </Link>
+        {sessionId === null ? (
+          <EmptyState message="SÉANCE INTROUVABLE" />
+        ) : query.isLoading ? (
+          <LoadingState message="CHARGEMENT DE LA SÉANCE…" />
+        ) : query.isError || !query.data ? (
+          <ErrorState message="SÉANCE INTROUVABLE OU INDISPONIBLE" onRetry={() => query.refetch()} />
+        ) : (
+          <SessionView detail={query.data} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SessionView({ detail }: { detail: ActivityDetail }) {
+  const { session } = detail;
+  const foot = isFootSport(session.sport);
+  const icon = createElement(getSportIconComponent(session.sport), { size: 'lg', className: getSportColor(session.sport) });
+  const rows = detail.streams ? chartRows(detail.streams, session.sport) : [];
+  const day = parseLocalDate(session.date).toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+  const start = session.start_time ? new Date(session.start_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : null;
+  const speed = session.avg_speed_mps ? `${(session.avg_speed_mps * 3.6).toFixed(1)} km/h` : '—';
+
+  return (
+    <>
+      <header className="flex items-start gap-3 animate-fade-down">
+        {icon}
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg sm:text-2xl font-sans font-bold text-neon-cyan tracking-wide break-words">
+            {session.name || sportLabel(session.sport)}
+          </h1>
+          <p className="text-xs sm:text-sm font-mono text-text-muted mt-1">
+            {day}
+            {start && ` · ${start}`} · {sportLabel(session.sport)} · {SOURCE_LABEL[session.source] ?? session.source}
+          </p>
+        </div>
+        <RpeBadge rpe={session.rpe} />
+      </header>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+        <Stat label="Durée" value={formatDurationCompact(session.moving_time_sec ?? session.duration_sec)} />
+        <Stat label="Distance" value={km(session.distance_m)} />
+        <Stat label={foot ? 'Allure' : 'Vitesse'} value={foot ? pace(session.avg_pace_sec_km) : speed} />
+        <Stat label="FC moy / max" value={session.avg_hr ? `${session.avg_hr} / ${session.max_hr ?? '—'}` : '—'} />
+        <Stat label="Dénivelé +" value={session.ascent_m ? `${Math.round(session.ascent_m)} m` : '—'} />
+        <Stat label="Cadence" value={session.avg_cadence ? `${session.avg_cadence}` : '—'} />
+        <Stat label="Puissance" value={session.avg_watts ? `${session.avg_watts} W` : '—'} />
+        <Stat label="Calories" value={session.calories ? `${session.calories} kcal` : '—'} />
+      </div>
+
+      {detail.feedback && (
+        <Panel
+          title={
+            <span className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4" />
+              {detail.feedback.source === 'agent' ? 'LE COACH' : 'CALCULÉ À PARTIR DE LA SÉANCE'}
+            </span>
+          }
+          titleTone="text-neon-cyan"
+        >
+          <p className="text-sm font-mono text-text-secondary whitespace-pre-line">{detail.feedback.text}</p>
+        </Panel>
+      )}
+
+      {session.notes && (
+        <Panel title="NOTES">
+          <p className="text-sm font-mono text-text-secondary whitespace-pre-line">{session.notes}</p>
+        </Panel>
+      )}
+
+      {rows.length > 0 ? (
+        <Panel title="AU FIL DE LA SÉANCE">
+          <div className="space-y-4">
+            <StreamChart rows={rows} dataKey="hr" label="Fréquence cardiaque (bpm)" color={CHART.red} format={(v) => `${Math.round(v)}`} />
+            <StreamChart
+              rows={rows}
+              dataKey="pace"
+              label={foot ? 'Allure (min/km)' : 'Vitesse (km/h)'}
+              color={COLORS.neonGold}
+              format={foot ? (v) => formatPace(v) : (v) => v.toFixed(1)}
+              reversed={foot}
+            />
+            <StreamChart rows={rows} dataKey="altitude" label="Altitude (m)" color={CHART.green} format={(v) => `${Math.round(v)}`} area />
+          </div>
+        </Panel>
+      ) : (
+        <Panel animate={false}>
+          <EmptyState
+            message="PAS DE FLUX POUR CETTE SÉANCE"
+            action="Les courbes viennent du fichier FIT : séances Garmin synchronisées ou importées depuis la conservation des flux."
+          />
+        </Panel>
+      )}
+
+      {(detail.metrics || detail.intervals) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          {detail.metrics && <Analysis metrics={detail.metrics} foot={foot} />}
+          {detail.intervals && <Intervals intervals={detail.intervals} foot={foot} />}
+        </div>
+      )}
+
+      {detail.laps.length > 0 && <LapsTable laps={detail.laps} foot={foot} />}
+      {detail.splits.length > 0 && <SplitsTable splits={detail.splits} />}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        {detail.zones && <Zones zones={detail.zones} />}
+        {detail.route && (
+          <Panel title="TRACÉ">
+            <RouteTrace route={detail.route} />
+          </Panel>
+        )}
+      </div>
+    </>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="p-2 sm:p-3 bg-abyss rounded border border-text-muted/20 min-w-0">
+      <div className="text-[10px] sm:text-xs font-mono text-text-muted uppercase truncate">{label}</div>
+      <div className="text-base sm:text-lg font-mono text-text-primary mt-0.5 truncate">{value}</div>
+    </div>
+  );
+}
+
+function Row({ label, value, hint }: { label: string; value: ReactNode; hint?: string }) {
+  return (
+    <div className="py-2 border-b border-text-muted/10 last:border-0">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-xs font-mono text-text-secondary">{label}</span>
+        <span className="text-sm font-mono text-text-primary text-right">{value}</span>
+      </div>
+      {hint && <p className="text-[11px] font-mono text-text-muted mt-0.5">{hint}</p>}
+    </div>
+  );
+}
+
+function Analysis({ metrics, foot }: { metrics: ActivityMetrics; foot: boolean }) {
+  return (
+    <Panel title="ANALYSE">
+      {metrics.decoupling_pct !== undefined && (
+        <Row
+          label="Découplage cardiaque"
+          value={pct(metrics.decoupling_pct)}
+          hint="Efficacité (vitesse par battement) perdue en 2e moitié. Au-delà de 5 %, l'endurance a cédé."
+        />
+      )}
+      {metrics.hr_drift_pct !== undefined && (
+        <Row label="Dérive de la FC" value={pct(metrics.hr_drift_pct)} hint="FC moyenne de la 2e moitié par rapport à la 1re." />
+      )}
+      {foot && metrics.pace_first_half_sec_km !== undefined && metrics.pace_second_half_sec_km !== undefined && (
+        <Row
+          label="Allure 1re / 2e moitié"
+          value={`${formatPace(metrics.pace_first_half_sec_km)} / ${formatPace(metrics.pace_second_half_sec_km)}`}
+          hint={metrics.pace_fade_pct !== undefined ? `Ralentissement : ${pct(metrics.pace_fade_pct)} (négatif = 2e moitié plus rapide).` : undefined}
+        />
+      )}
+      {!foot && metrics.pace_fade_pct !== undefined && (
+        <Row label="Ralentissement en 2e moitié" value={pct(metrics.pace_fade_pct)} />
+      )}
+      {metrics.pace_cv_pct !== undefined && (
+        <Row label="Variabilité de l'allure" value={`${metrics.pace_cv_pct.toLocaleString('fr-FR')} %`} hint="Écart-type rapporté à la moyenne, arrêts exclus." />
+      )}
+      {metrics.cadence_avg !== undefined && (
+        <Row
+          label="Cadence moyenne"
+          value={`${metrics.cadence_avg}${foot ? ' pas/min' : ' tr/min'}`}
+          hint={metrics.cadence_cv_pct !== undefined ? `Variabilité : ${metrics.cadence_cv_pct.toLocaleString('fr-FR')} %` : undefined}
+        />
+      )}
+      {metrics.power_avg !== undefined && (
+        <Row
+          label="Puissance moy. / normalisée"
+          value={`${metrics.power_avg} / ${metrics.power_np ?? '—'} W`}
+          hint={metrics.power_vi !== undefined ? `Indice de variabilité : ${metrics.power_vi.toLocaleString('fr-FR')}` : undefined}
+        />
+      )}
+    </Panel>
+  );
+}
+
+function Intervals({ intervals, foot }: { intervals: ActivityIntervals; foot: boolean }) {
+  return (
+    <Panel title="FRACTIONNÉ DÉTECTÉ">
+      <p className="text-sm font-mono text-text-secondary mb-3">
+        {intervals.count} × {formatElapsed(intervals.work_avg_sec)}
+        {intervals.rest_avg_sec ? ` · récup ${formatElapsed(intervals.rest_avg_sec)}` : ''}
+        {intervals.warmup_sec ? ` · échauffement ${formatElapsed(intervals.warmup_sec)}` : ''}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs font-mono">
+          <thead className="text-text-muted">
+            <tr className="text-left">
+              <th className="py-1 pr-2 font-normal">N°</th>
+              <th className="py-1 pr-2 font-normal">Durée</th>
+              <th className="py-1 pr-2 font-normal">Distance</th>
+              {foot && <th className="py-1 pr-2 font-normal">Allure</th>}
+              <th className="py-1 font-normal">FC</th>
+            </tr>
+          </thead>
+          <tbody className="text-text-primary">
+            {intervals.work.map((rep) => (
+              <tr key={rep.n} className="border-t border-text-muted/10">
+                <td className="py-1 pr-2">{rep.n}</td>
+                <td className="py-1 pr-2">{formatElapsed(rep.duration_sec)}</td>
+                <td className="py-1 pr-2">{rep.distance_m ? `${Math.round(rep.distance_m)} m` : '—'}</td>
+                {foot && <td className="py-1 pr-2">{rep.pace_sec_km ? formatPace(rep.pace_sec_km) : '—'}</td>}
+                <td className="py-1">{rep.avg_hr ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-2 space-y-0.5 text-[11px] font-mono text-text-muted">
+        {intervals.pace_cv_pct !== null && <p>Régularité des allures : {intervals.pace_cv_pct.toLocaleString('fr-FR')} % d'écart.</p>}
+        {intervals.hr_progression_pct !== null && (
+          <p>FC de la dernière répétition vs la première : {pct(intervals.hr_progression_pct)}.</p>
+        )}
+      </div>
+    </Panel>
+  );
+}
+
+function LapsTable({ laps, foot }: { laps: ActivityLap[]; foot: boolean }) {
+  const hasIntensity = laps.some((lap) => lap.intensity !== null);
+  return (
+    <Panel title={`TOURS (${laps.length})`}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs font-mono whitespace-nowrap">
+          <thead className="text-text-muted">
+            <tr className="text-left">
+              <th className="py-1 pr-3 font-normal">N°</th>
+              {hasIntensity && <th className="py-1 pr-3 font-normal">Type</th>}
+              <th className="py-1 pr-3 font-normal">Durée</th>
+              <th className="py-1 pr-3 font-normal">Distance</th>
+              <th className="py-1 pr-3 font-normal">{foot ? 'Allure' : 'Vitesse'}</th>
+              <th className="py-1 pr-3 font-normal">FC moy</th>
+              <th className="py-1 pr-3 font-normal">FC max</th>
+              <th className="py-1 font-normal">Cadence</th>
+            </tr>
+          </thead>
+          <tbody className="text-text-primary">
+            {laps.map((lap) => (
+              <tr key={lap.n} className="border-t border-text-muted/10">
+                <td className="py-1 pr-3">{lap.n}</td>
+                {hasIntensity && <td className="py-1 pr-3 text-text-secondary">{intensityLabel(lap.intensity)}</td>}
+                <td className="py-1 pr-3">{formatElapsed(lap.duration_sec)}</td>
+                <td className="py-1 pr-3">{km(lap.distance_m)}</td>
+                <td className="py-1 pr-3">
+                  {foot ? pace(lap.pace_sec_km) : lap.speed_mps ? `${(lap.speed_mps * 3.6).toFixed(1)} km/h` : '—'}
+                </td>
+                <td className="py-1 pr-3">{lap.avg_hr ?? '—'}</td>
+                <td className="py-1 pr-3">{lap.max_hr ?? '—'}</td>
+                <td className="py-1">{lap.cadence ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+function SplitsTable({ splits }: { splits: ActivitySplit[] }) {
+  return (
+    <Panel title="KILOMÈTRES">
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs font-mono whitespace-nowrap">
+          <thead className="text-text-muted">
+            <tr className="text-left">
+              <th className="py-1 pr-3 font-normal">Km</th>
+              <th className="py-1 pr-3 font-normal">Durée</th>
+              <th className="py-1 pr-3 font-normal">Allure</th>
+              <th className="py-1 pr-3 font-normal">FC moy</th>
+              <th className="py-1 font-normal">Dénivelé</th>
+            </tr>
+          </thead>
+          <tbody className="text-text-primary">
+            {splits.map((split) => (
+              <tr key={split.n} className="border-t border-text-muted/10">
+                <td className="py-1 pr-3">{split.n}</td>
+                <td className="py-1 pr-3">{formatElapsed(split.duration_sec)}</td>
+                <td className="py-1 pr-3">{pace(split.pace_sec_km)}</td>
+                <td className="py-1 pr-3">{split.avg_hr ?? '—'}</td>
+                <td className="py-1">{split.elevation_m !== null ? `${Math.round(split.elevation_m)} m` : '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Panel>
+  );
+}
+
+function Zones({ zones }: { zones: NonNullable<ActivityDetail['zones']> }) {
+  const values = [zones.z1, zones.z2, zones.z3, zones.z4, zones.z5];
+  const total = values.reduce((a, b) => a + b, 0) || 1;
+  return (
+    <Panel title="ZONES CARDIAQUES">
+      <div className="flex h-3 rounded overflow-hidden gap-0.5 mb-3" aria-hidden>
+        {values.map((sec, i) =>
+          sec > 0 ? (
+            <div key={i} style={{ width: `${(sec / total) * 100}%`, backgroundColor: HR_ZONE_COLORS[i] }} />
+          ) : null,
+        )}
+      </div>
+      <ul className="space-y-1">
+        {values.map((sec, i) => (
+          <li key={i} className="flex items-center justify-between gap-2 text-xs font-mono">
+            <span className="flex items-center gap-2 text-text-secondary">
+              <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: HR_ZONE_COLORS[i] }} />
+              {ZONE_NAME[i]}
+            </span>
+            <span className={cn('text-text-primary', sec === 0 && 'text-text-muted')}>
+              {formatDurationCompact(sec)} · {Math.round((sec / total) * 100)} %
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}

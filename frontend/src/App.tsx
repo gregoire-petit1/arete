@@ -12,6 +12,9 @@ const ProfilePage = lazy(() => import('@/pages/Profile').then(m => ({ default: m
 const AnalyticsPage = lazy(() =>
   import('@/pages/Analytics').then((m) => ({ default: m.AnalyticsPage })),
 );
+const SessionDetailPage = lazy(() =>
+  import('@/pages/SessionDetail').then((m) => ({ default: m.SessionDetailPage })),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -67,6 +70,14 @@ function App() {
                       }
                     />
                     <Route path="/log" element={<LogPage />} />
+                    <Route
+                      path="/log/sessions/:id"
+                      element={
+                        <Suspense fallback={null}>
+                          <SessionDetailPage />
+                        </Suspense>
+                      }
+                    />
                     <Route path="/profile" element={<Suspense fallback={null}><ProfilePage /></Suspense>} />
                     <Route path="/settings" element={<SettingsPage />} />
                     {/* Legacy redirects */}

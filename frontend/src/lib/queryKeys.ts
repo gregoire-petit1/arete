@@ -25,6 +25,9 @@ export const qk = {
   garminCandidates: (sessionId: number) => ['garminCandidates', sessionId] as const,
 
   cardioSessions: ['cardioSessions'] as const,
+  /** One cardio session's page: laps, analysis, streams. */
+  sessionDetail: (id?: number) =>
+    id == null ? (['sessionDetail'] as const) : (['sessionDetail', id] as const),
   analytics: ['analytics'] as const,
   playerStats: ['player-stats'] as const,
   fitness: ['fitness'] as const,
@@ -80,6 +83,7 @@ export function invalidateAfterSession(queryClient: QueryClient): void {
     qk.strengthSessions,
     qk.muscleStats(),
     qk.cardioSessions,
+    qk.sessionDetail(),
     qk.analytics,
     qk.playerStats,
     ['game'],
