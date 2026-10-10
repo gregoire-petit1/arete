@@ -4,7 +4,8 @@ Rules propose, the model explains, the athlete applies with one tap. The
 proposals touch only sessions still to come this week (after today: today is
 the daily adaptation's), and applying one checks the session has not changed
 since it was proposed. One review per finished week; the text falls back to
-the rules' own sentence when the model fails.
+the rules' own sentence when the model fails, and is that sentence alone for
+a week with nothing planned or done.
 """
 
 from __future__ import annotations
@@ -48,6 +49,18 @@ class WeekFacts:
     @property
     def adherence(self) -> float | None:
         return self.completed / self.planned_due if self.planned_due else None
+
+    @property
+    def is_empty(self) -> bool:
+        """Nothing planned, done or missed and no training volume: nothing to review."""
+        return not (
+            self.planned_due
+            or self.completed
+            or self.missed
+            or self.minutes_done
+            or self.minutes_planned
+            or self.runs_done
+        )
 
 
 @dataclass(frozen=True)
@@ -336,7 +349,10 @@ def generate_review(
     proposals = propose(facts, upcoming)
     facts_message = facts_text(facts, proposals)
     text, source = rule_text(facts, proposals), "rules"
-    if produce is not None:
+    if facts.is_empty:
+        # The rule sentence already says all there is: no model request.
+        logger.info("Weekly review: empty week; model skipped")
+    elif produce is not None:
         try:
             text, source = produce(facts_message), "agent"
         except Exception:  # noqa: BLE001 - the rule text is the floor

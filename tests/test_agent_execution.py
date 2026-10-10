@@ -236,6 +236,17 @@ def test_last_model_call_answers_with_all_results_and_no_tools(
     assert executed == list(range(MAX_MODEL_CALLS - 1)) * 2
 
 
+def test_runs_are_attributed_to_their_athlete(monkeypatch):
+    # Model requests are a shared budget: traces show who spent them.
+    from arete.services.athlete_scope import athlete_scope
+
+    with athlete_scope(7):
+        assert run_config()["metadata"]["athlete_id"] == 7
+    # An authenticated deployment outside any scope names nobody.
+    monkeypatch.setenv("ARETE_AUTH", "clerk")
+    assert "athlete_id" not in run_config()["metadata"]
+
+
 def test_oversized_tool_batch_executes_nothing():
     executed = []
 
