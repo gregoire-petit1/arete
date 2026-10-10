@@ -30,6 +30,9 @@ export const qk = {
     id == null ? (['strengthProgress'] as const) : (['strengthProgress', id, part] as const),
 
   cardioSessions: ['cardioSessions'] as const,
+  /** One cardio session's page: laps, analysis, streams. */
+  sessionDetail: (id?: number) =>
+    id == null ? (['sessionDetail'] as const) : (['sessionDetail', id] as const),
   analytics: ['analytics'] as const,
   /** Under `analytics`: a logged session refreshes the year in review too. */
   yearReview: (year: number) => ['analytics', 'year-review', year] as const,
@@ -90,6 +93,7 @@ export function invalidateAfterSession(queryClient: QueryClient): void {
     qk.strengthProgress(),
     ['strengthRecords'],
     qk.cardioSessions,
+    qk.sessionDetail(),
     qk.analytics,
     qk.playerStats,
     ['game'],

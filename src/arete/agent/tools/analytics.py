@@ -197,10 +197,32 @@ def list_recent_sessions(limit: int = 20, offset: int = 0) -> str:
         return _error(f"{type(exc).__name__}: {exc}")
 
 
+@tool
+def get_activity_detail(session_id: int) -> str:
+    """One completed session in detail, by its id (from list_recent_sessions):
+    summary, minutes per HR zone, laps, and the analysis of its recording —
+    heart-rate drift and pace:HR decoupling, pace of each half and pace fade,
+    cadence variability, power — plus the work intervals of a structured
+    workout. Deterministic numbers; no raw stream.
+
+    Args:
+        session_id: The session's id.
+    """
+    try:
+        from arete.services.activity_detail import activity_detail_for_model
+
+        return _out(activity_detail_for_model(session_id))
+    except (LookupError, PermissionError) as exc:
+        return _error(str(exc))
+    except Exception as exc:
+        return _error(f"{type(exc).__name__}: {exc}")
+
+
 ANALYTICS_TOOLS: list[BaseTool] = [
     get_workload,
     get_fitness,
     get_training_advice,
     get_personal_records,
     list_recent_sessions,
+    get_activity_detail,
 ]

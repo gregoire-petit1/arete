@@ -30,10 +30,11 @@ class LapIntensity(str, Enum):
             return cls.OTHER
 
         # FIT SDK intensity values
+        # fitparse names 0-3 only: recovery (4) and interval (5) arrive raw.
         value_str = str(value).lower()
         if value_str == "warmup":
             return cls.WARMUP
-        elif value_str == "active":
+        elif value_str in ("active", "5", "interval"):
             return cls.ACTIVE
         elif value_str in ("4", "rest", "recovery"):
             return cls.REST
@@ -271,6 +272,7 @@ class TimeSeriesPoint:
     cadence: int | None = None  # steps per minute (running) or rpm (cycling)
     power: int | None = None  # watts
     altitude: float | None = None  # meters
+    distance_m: float | None = None  # cumulative, meters
 
     # Running dynamics (HRM-Pro)
     stance_time: float | None = None  # ms
@@ -532,9 +534,16 @@ class ActivityMetricsCalculator:
                         (second_half - first_half) / first_half
                     ) * 100
 
-        # HR:Pace decoupling
-        if hrs and speeds and len(hrs) == len(speeds):
-            metrics.hr_decoupling_pct = self._calculate_decoupling(hrs, speeds)
+        # HR:Pace decoupling, on the samples that carry both
+        paired = [
+            (p.heart_rate, p.speed_mps)
+            for p in ts.points
+            if p.heart_rate and p.speed_mps and p.speed_mps > 0.5
+        ]
+        if paired:
+            metrics.hr_decoupling_pct = self._calculate_decoupling(
+                [hr for hr, _ in paired], [speed for _, speed in paired]
+            )
 
         # Cadence metrics
         cadences = ts.cadences
@@ -588,36 +597,22 @@ class ActivityMetricsCalculator:
         return float(((second_avg - first_avg) / first_avg) * 100)
 
     def _calculate_decoupling(self, hrs: list[int], speeds: list[float]) -> float:
-        """Calculate HR:Pace decoupling (aerobic efficiency indicator).
+        """Pa:HR decoupling (aerobic efficiency indicator), paired samples.
 
-        Decoupling > 5% suggests aerobic fatigue / glycogen depletion.
+        Efficiency is speed per beat; decoupling is how much of it the second
+        half lost against the first. Positive means the heart worked harder for
+        the same speed (or the speed dropped at the same heart rate): above 5%
+        suggests aerobic fatigue / glycogen depletion.
         """
-        if len(hrs) < 20:
+        if len(hrs) < 20 or len(hrs) != len(speeds):
             return 0.0
 
         mid = len(hrs) // 2
-
-        # First half ratio
-        hr1 = statistics.mean(hrs[:mid])
-        paces_first = [1000 / s for s in speeds[:mid] if s > 0.5]
-        if not paces_first:
+        ef1 = statistics.fmean(speeds[:mid]) / statistics.fmean(hrs[:mid])
+        ef2 = statistics.fmean(speeds[mid:]) / statistics.fmean(hrs[mid:])
+        if ef1 == 0:
             return 0.0
-        pace1 = statistics.mean(paces_first)
-
-        # Second half ratio
-        hr2 = statistics.mean(hrs[mid:])
-        paces_second = [1000 / s for s in speeds[mid:] if s > 0.5]
-        if not paces_second:
-            return 0.0
-        pace2 = statistics.mean(paces_second)
-
-        if pace1 == 0 or pace2 == 0:
-            return 0.0
-
-        ratio1 = hr1 / pace1
-        ratio2 = hr2 / pace2
-
-        return ((ratio2 - ratio1) / ratio1) * 100
+        return float((ef1 - ef2) / ef1 * 100)
 
     def _calculate_normalized_power(
         self, powers: list[int], window: int = 30
@@ -626,14 +621,16 @@ class ActivityMetricsCalculator:
         if len(powers) < window:
             return None
 
-        # Rolling 30-sec average
+        # Rolling 30-sec average, from a running sum (linear in the samples)
         rolling = []
-        for i in range(len(powers) - window + 1):
-            rolling.append(statistics.mean(powers[i : i + window]))
+        total = float(sum(powers[:window]))
+        rolling.append(total / window)
+        for i in range(window, len(powers)):
+            total += powers[i] - powers[i - window]
+            rolling.append(total / window)
 
         # 4th power average, then 4th root
-        fourth_powers = [p**4 for p in rolling]
-        np = (statistics.mean(fourth_powers)) ** 0.25
+        np = statistics.fmean(p**4 for p in rolling) ** 0.25
 
         return int(np)
 

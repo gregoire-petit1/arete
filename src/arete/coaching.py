@@ -26,7 +26,7 @@ from arete.agent.runtime.context import AgentContext
 from arete.agent.runtime.execution import invoke_agent_sync
 from arete.calendar import get_calendar_service
 from arete.config import config
-from arete.services import briefing, session_feedback, weekly_review
+from arete.services import briefing, coaching_rules, session_feedback, weekly_review
 from arete.services.coaching_repository import Briefing
 
 AGENT_RECURSION_LIMIT = MAX_GRAPH_STEPS
@@ -139,6 +139,21 @@ def run_feedback(facts: str) -> str:
     return _run_mission(
         build_feedback_agent(), "feedback", facts, session_feedback.MAX_FEEDBACK_CHARS
     )
+
+
+def run_feedback_batch(facts: str, count: int) -> str:
+    """One feedback request answering ``count`` numbered sessions."""
+    return _run_mission(
+        build_feedback_agent(),
+        "feedback",
+        facts,
+        session_feedback.MAX_FEEDBACK_CHARS * count,
+    )
+
+
+def write_sync_feedback(session_ids: list[int]) -> dict[str, int]:
+    """Feedback on the sessions a sync imported, in one model request."""
+    return coaching_rules.sync_feedback(session_ids, produce=run_feedback_batch)
 
 
 def run_review(facts: str) -> str:

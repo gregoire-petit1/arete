@@ -283,6 +283,56 @@ class TestGarminSyncClient:
         repo.update_actual_session_match.assert_called_once()
         assert repo.update_actual_session_match.call_args.args[:2] == (42, 7)
 
+    def test_new_and_merged_sessions_are_reported_with_their_streams(self, tmp_path):
+        from arete.features.hr_zones import ZoneModel
+        from arete.garmin.models import ActualSession
+        from arete.garmin.streams import ActivityStreams
+
+        repo = MagicMock()
+        repo.last_garmin_import.return_value = (None, None)
+        repo.list_actual_sessions.return_value = []
+        repo.get_potential_matches.return_value = []
+        strava_twin = ActualSession(id=9, source="strava", planned_session_id=3)
+        repo.find_overlapping_session.side_effect = [None, strava_twin]
+        repo.create_actual_session.return_value = 42
+        raw = [
+            {
+                "activityId": n,
+                "startTimeLocal": f"2026-10-0{n}T08:00:00",
+                "duration": 3600,
+                "activityType": {"typeKey": "running"},
+            }
+            for n in (1, 2)
+        ]
+        streams = ActivityStreams(t=[0, 1], heart_rate=[140, 141])
+        client = GarminSyncClient(client=MagicMock(), zones=ZoneModel.from_reference())
+        client.client.activities.return_value = raw
+        client._repository = repo
+        fit = tmp_path / "a.fit"
+        with (
+            patch("arete.garmin.sync.time.sleep"),
+            patch("arete.garmin.sync.refresh_threshold", return_value={}),
+            patch.object(client, "download_fit_file", return_value=fit),
+            patch.object(
+                client, "_enrich_from_fit", side_effect=lambda s, _p: (s, streams)
+            ),
+        ):
+            result = client.sync_activities()
+        assert result.session_ids == [42, 9]
+        assert [c.args for c in repo.save_activity_streams.call_args_list] == [
+            (42, streams),
+            (9, streams),
+        ]
+
+    def test_a_stream_write_failure_keeps_the_session(self):
+        from arete.garmin.streams import ActivityStreams
+
+        repo = MagicMock()
+        repo.save_activity_streams.side_effect = RuntimeError("disk full")
+        client = GarminSyncClient(client=MagicMock())
+        client._repository = repo
+        assert client._save_streams(1, ActivityStreams(t=[0])) is False
+
     def test_sync_activities_reports_auth_error(self):
         client = self._client()
         client.client.activities.side_effect = GarminAuthError("no tokens")

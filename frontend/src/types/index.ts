@@ -494,6 +494,115 @@ export interface CardioSessionsResponse {
   sessions: CardioSession[];
 }
 
+/** One lap, Garmin FIT or Strava, in a single shape (GET /analytics/sessions/{id}/detail). */
+export interface ActivityLap {
+  n: number;
+  duration_sec: number;
+  distance_m: number | null;
+  speed_mps: number | null;
+  pace_sec_km: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  cadence: number | null;
+  /** FIT lap intensity: warmup, active, rest, cooldown (or a raw number). */
+  intensity: string | number | null;
+}
+
+export interface ActivitySplit {
+  n: number;
+  duration_sec: number;
+  distance_m: number | null;
+  pace_sec_km: number | null;
+  avg_hr: number | null;
+  elevation_m: number | null;
+}
+
+export interface ActivityIntervals {
+  count: number;
+  work_avg_sec: number;
+  rest_avg_sec: number;
+  warmup_sec: number;
+  cooldown_sec: number;
+  pace_cv_pct: number | null;
+  hr_progression_pct: number | null;
+  work: {
+    n: number;
+    lap: number;
+    duration_sec: number;
+    distance_m: number | null;
+    pace_sec_km: number | null;
+    avg_hr: number | null;
+  }[];
+}
+
+/** Derived metrics of the kept streams; a key is absent when it cannot be computed. */
+export interface ActivityMetrics {
+  hr_avg?: number;
+  hr_max?: number;
+  hr_drift_pct?: number;
+  decoupling_pct?: number;
+  pace_fade_pct?: number;
+  pace_first_half_sec_km?: number;
+  pace_second_half_sec_km?: number;
+  pace_cv_pct?: number;
+  cadence_avg?: number;
+  cadence_cv_pct?: number;
+  power_avg?: number;
+  power_np?: number;
+  power_vi?: number;
+}
+
+/** Chart-sized streams: every channel aligned on `t` (seconds from the start). */
+export interface ActivityStreams {
+  t: number[];
+  heart_rate?: (number | null)[];
+  speed_mps?: (number | null)[];
+  altitude_m?: (number | null)[];
+  distance_m?: (number | null)[];
+  cadence?: (number | null)[];
+  power_w?: (number | null)[];
+}
+
+export interface ActivityDetail {
+  session: {
+    id: number;
+    date: string;
+    start_time: string | null;
+    sport: string;
+    session_type: string | null;
+    name: string | null;
+    duration_sec: number;
+    moving_time_sec: number | null;
+    distance_m: number | null;
+    calories: number | null;
+    avg_hr: number | null;
+    max_hr: number | null;
+    avg_pace_sec_km: number | null;
+    avg_speed_mps: number | null;
+    max_speed_mps: number | null;
+    ascent_m: number | null;
+    descent_m: number | null;
+    avg_cadence: number | null;
+    max_cadence: number | null;
+    avg_watts: number | null;
+    rpe: number | null;
+    notes: string | null;
+    source: string;
+    device_name: string | null;
+    planned_session_id: number | null;
+    adherence_score: number | null;
+  };
+  zones: Record<'z1' | 'z2' | 'z3' | 'z4' | 'z5', number> | null;
+  laps: ActivityLap[];
+  splits: ActivitySplit[];
+  intervals: ActivityIntervals | null;
+  metrics: ActivityMetrics | null;
+  streams: ActivityStreams | null;
+  /** [lat, lon] pairs. */
+  route: [number, number][] | null;
+  feedback: { text: string; source: 'agent' | 'rules'; trigger: string; created_at: string | null } | null;
+}
+
 // ========================= //
 // RACE GOALS AND PLAN       //
 // ========================= //

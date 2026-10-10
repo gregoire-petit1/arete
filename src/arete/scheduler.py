@@ -79,6 +79,7 @@ def daily_sync() -> dict[str, str]:
     """Run every configured sync once. Returns a short status per source."""
     status: dict[str, str] = {}
     imported = 0  # new sessions from any source, for the notification
+    synced_ids: list[int] = []  # Garmin's, for the coach's feedback
 
     from arete.garmin.client import GarminClient
 
@@ -91,6 +92,7 @@ def daily_sync() -> dict[str, str]:
         try:
             result = GarminSyncClient(client=garmin).sync_activities(download_fit=True)
             imported += result.activities_synced
+            synced_ids = list(result.session_ids)
             status["garmin_activities"] = (
                 f"{result.activities_synced} synced, {len(result.errors)} errors"
             )
@@ -136,11 +138,16 @@ def daily_sync() -> dict[str, str]:
     else:
         status["strava"] = "not connected"
 
-    # Last: every plan change of the run (adaptation, completed sessions) is in.
+    # After every plan change of the run (adaptation, completed sessions).
     from arete.calendar import sync_training_plan
     from arete.services.calendar_plan import DAILY
 
     status["google_calendar"] = sync_training_plan(DAILY)
+
+    # Before the briefing that reads the journal the feedback files; after the
+    # bounded calendar run, so a slow model cannot starve it.
+    if synced_ids:
+        status["feedback"] = write_sync_feedback(synced_ids)
 
     if imported:
         from arete.services.notifications import notify
@@ -150,6 +157,22 @@ def daily_sync() -> dict[str, str]:
     _last_status.clear()
     _last_status.update(status)
     return status
+
+
+def write_sync_feedback(session_ids: list[int]) -> str:
+    """The coach's word on the sessions the sync imported. Never raises.
+
+    One model request for the whole batch (``coaching.write_sync_feedback``);
+    the rule text stands in for a failed or unusable answer.
+    """
+    try:
+        from arete.coaching import write_sync_feedback as write
+
+        outcome = write(session_ids)
+    except Exception as e:  # noqa: BLE001 - background job must not die
+        logger.warning("Sync feedback failed: %s", e)
+        return f"failed: {e}"
+    return f"{outcome['sessions']} sessions ({outcome['agent']} by the coach)"
 
 
 def write_daily_briefing() -> str:

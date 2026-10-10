@@ -20,7 +20,7 @@ from arete.config import config
 from arete.dataio.settings import athlete_zone_model
 from arete.features.hr_zones import ZoneModel, samples_from_laps
 from arete.garmin.client import GarminAuthError, GarminClient
-from arete.garmin.fit_parser import FITParser
+from arete.garmin.fit_parser import FITParser, laps_to_json
 from arete.garmin.matcher import SessionMatcher
 from arete.garmin.models import (
     ActivitySource,
@@ -29,6 +29,7 @@ from arete.garmin.models import (
     canonical_sport,
 )
 from arete.garmin.repository import GarminRepository
+from arete.garmin.streams import ActivityStreams, from_time_series
 from arete.garmin.threshold import refresh_threshold
 from arete.strava.merge import garmin_takeover
 
@@ -56,6 +57,8 @@ class SyncResult:
     activities_skipped: int = 0
     errors: list[str] = field(default_factory=list)
     last_activity_date: date | None = None
+    #: Sessions this run created or took over from Strava, for the feedback.
+    session_ids: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -156,28 +159,6 @@ def pace_from_speed(avg_speed_mps: float | None, sport: str) -> int | None:
     if not avg_speed_mps or avg_speed_mps <= 0 or sport not in FOOT_SPORTS_FOR_PACE:
         return None
     return int(round(1000 / avg_speed_mps))
-
-
-def laps_to_json(parsed: Any) -> str | None:
-    """Serialize FIT laps in the shape the analytics expect (Strava lap fields)."""
-    structure = getattr(parsed, "workout_structure", None)
-    if not structure or not structure.laps:
-        return None
-    laps = [
-        {
-            "lap_index": lap.lap_number,
-            "distance": round(lap.distance_m, 1),
-            "elapsed_time": int(lap.duration_sec),
-            "moving_time": int(lap.duration_sec),
-            "average_speed": lap.avg_speed_mps,
-            "average_heartrate": lap.avg_hr,
-            "max_heartrate": lap.max_hr,
-            "average_cadence": lap.avg_cadence,
-            "total_elevation_gain": None,  # not exposed per lap by the FIT parser
-        }
-        for lap in structure.laps
-    ]
-    return json.dumps(laps)
 
 
 def zones_from_laps(laps_json: str | None, zones: ZoneModel) -> str | None:
@@ -419,10 +400,11 @@ class GarminSyncClient:
                     session = activity.to_actual_session()
 
                     # Optionally download and parse FIT for detailed data
+                    streams: ActivityStreams | None = None
                     if download_fit:
                         fit_path = self.download_fit_file(activity.activity_id)
                         if fit_path:
-                            session = self._enrich_from_fit(session, fit_path)
+                            session, streams = self._enrich_from_fit(session, fit_path)
 
                     # Same workout already imported from Strava? Garmin takes it over.
                     twin = self.repository.find_overlapping_session(
@@ -436,6 +418,7 @@ class GarminSyncClient:
                         self.repository.update_actual_session_fields(
                             twin.id, **garmin_takeover(session)
                         )
+                        actual_id = twin.id
                         result.activities_merged += 1
                         if twin.planned_session_id is None and auto_match(
                             self.repository, twin.id, session, self.zones
@@ -446,6 +429,9 @@ class GarminSyncClient:
                         result.activities_synced += 1
                         if auto_match(self.repository, actual_id, session, self.zones):
                             result.activities_matched += 1
+                    result.session_ids.append(actual_id)
+                    if streams is not None:
+                        self._save_streams(actual_id, streams)
                     result.last_activity_date = activity.start_time.date()
 
                     logger.info(
@@ -481,8 +467,11 @@ class GarminSyncClient:
             }
         return str(activity_id) in self._synced_ids_cache
 
-    def _enrich_from_fit(self, session: ActualSession, fit_path: Path) -> ActualSession:
-        """Enrich session with detailed data from FIT file."""
+    def _enrich_from_fit(
+        self, session: ActualSession, fit_path: Path
+    ) -> tuple[ActualSession, ActivityStreams | None]:
+        """Enrich session with detailed data from FIT file, and keep its streams."""
+        streams = None
         try:
             parser = FITParser(zones=self.zones)
             parsed = parser.parse_file(fit_path, detailed=True)
@@ -503,11 +492,23 @@ class GarminSyncClient:
                 session.max_cadence = parsed.max_cadence
 
             session.source_file = str(fit_path.name)
+            streams = from_time_series(parsed.time_series, session.sport)
 
         except Exception as e:
             logger.warning(f"Could not parse FIT file {fit_path}: {e}")
 
-        return session
+        return session, streams
+
+    def _save_streams(self, actual_id: int, streams: ActivityStreams) -> bool:
+        """Keep a session's streams; a failure leaves the session without them."""
+        try:
+            self.repository.save_activity_streams(actual_id, streams)
+            return True
+        except Exception as e:
+            logger.warning(
+                "Could not store the streams of session %s: %s", actual_id, e
+            )
+            return False
 
     def reprocess_existing(self, fit_dir: Path | None = None) -> dict[str, int]:
         """Fill analytics columns on already-synced Garmin sessions.
@@ -533,7 +534,7 @@ class GarminSyncClient:
         except Exception as e:
             logger.warning("Could not fetch activity names: %s", e)
 
-        updated = named = matched = 0
+        updated = named = matched = kept = 0
         # Strength sessions typed in the Log complete the planned strength session of the day
         from arete.strength.repository import StrengthRepository
 
@@ -568,6 +569,13 @@ class GarminSyncClient:
                         fields["laps_json"] = laps
                     if parsed.hr_zones and parsed.hr_zones.total_sec:
                         fields["hr_zones_json"] = parsed.hr_zones.to_json()
+                    streams = from_time_series(parsed.time_series, session.sport)
+                    if (
+                        streams
+                        and session.id
+                        and self._save_streams(session.id, streams)
+                    ):
+                        kept += 1
                 except Exception as e:
                     logger.warning("FIT reparse failed for %s: %s", fit_path, e)
             elif session.laps_json:
@@ -580,17 +588,20 @@ class GarminSyncClient:
                 self.repository.update_actual_session_fields(session.id, **fields)
                 updated += 1
         logger.info(
-            "Reprocessed %d Garmin sessions (%d updated, %d named, %d matched)",
+            "Reprocessed %d Garmin sessions (%d updated, %d named, %d matched, "
+            "%d with streams)",
             len(sessions),
             updated,
             named,
             matched,
+            kept,
         )
         return {
             "sessions": len(sessions),
             "updated": updated,
             "named": named,
             "matched": matched,
+            "streams": kept,
         }
 
     def refresh_threshold(self) -> dict[str, Any]:

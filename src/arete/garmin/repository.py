@@ -15,6 +15,7 @@ from arete.garmin.models import (
     SessionStatus,
     SessionType,
 )
+from arete.garmin.streams import CHANNELS, ActivityStreams
 
 PLANNED_COLUMNS = (
     "id, user_id, date, sport, session_type, target_duration_min, "
@@ -643,6 +644,10 @@ class GarminRepository:
                 "UPDATE app.game_events SET eligible=false,reason='removed',processed=false WHERE source_key=?",
                 [f"actual:{session_id}"],
             )
+            for table in ("activity_streams", "session_feedback"):
+                conn.execute(
+                    f"DELETE FROM {table} WHERE actual_session_id = ?", [session_id]
+                )
             conn.execute("COMMIT")
             return result is not None
         except BaseException:
@@ -650,6 +655,59 @@ class GarminRepository:
             raise
         finally:
             conn.close()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Activity streams (one row per session, see garmin/streams.py)
+    # ─────────────────────────────────────────────────────────────────────
+
+    def save_activity_streams(
+        self, actual_session_id: int, streams: ActivityStreams
+    ) -> None:
+        """Store (or replace) a session's streams."""
+        columns = streams.channels()
+        placeholders = ", ".join(["?"] * (3 + len(CHANNELS)))
+        conn = self._get_connection()
+        conn.execute("BEGIN TRANSACTION")
+        try:
+            conn.execute(
+                "DELETE FROM activity_streams WHERE actual_session_id = ?",
+                [actual_session_id],
+            )
+            conn.execute(
+                "INSERT INTO activity_streams (actual_session_id, sample_count, "
+                f"t_sec, {', '.join(CHANNELS)}) VALUES ({placeholders})",
+                [
+                    actual_session_id,
+                    len(streams),
+                    streams.t,
+                    *(columns.get(name) for name in CHANNELS),
+                ],
+            )
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+        finally:
+            conn.close()
+
+    def get_activity_streams(self, actual_session_id: int) -> ActivityStreams | None:
+        """A session's streams, None when none were kept."""
+        conn = self._get_connection()
+        try:
+            row = conn.execute(
+                f"SELECT t_sec, {', '.join(CHANNELS)} FROM activity_streams"
+                " WHERE actual_session_id = ?",
+                [actual_session_id],
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            return None
+        channels = {
+            name: None if values is None else list(values)
+            for name, values in zip(CHANNELS, row[1:], strict=True)
+        }
+        return ActivityStreams(t=list(row[0]), **channels)
 
     def count_actual_sessions(self) -> int:
         """Return total count of actual sessions (efficient query)."""

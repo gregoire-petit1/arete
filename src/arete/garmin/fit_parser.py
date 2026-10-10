@@ -21,6 +21,43 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _first_present(fields: dict[str, Any], *names: str) -> Any:
+    """The first of ``names`` with a value (0 included), else None."""
+    for name in names:
+        if fields.get(name) is not None:
+            return fields[name]
+    return None
+
+
+def laps_to_json(parsed: Any) -> str | None:
+    """Serialize FIT laps in the shape the analytics expect (Strava lap fields).
+
+    ``intensity`` (warmup/active/rest/cooldown) is the FIT lap's own: it is what
+    tells a structured workout's work intervals from its recoveries.
+    """
+    structure = getattr(parsed, "workout_structure", None)
+    if not structure or not structure.laps:
+        return None
+    laps = []
+    for lap in structure.laps:
+        intensity = getattr(lap, "intensity", None)
+        laps.append(
+            {
+                "lap_index": lap.lap_number,
+                "distance": round(lap.distance_m, 1),
+                "elapsed_time": int(lap.duration_sec),
+                "moving_time": int(lap.duration_sec),
+                "average_speed": lap.avg_speed_mps,
+                "average_heartrate": lap.avg_hr,
+                "max_heartrate": lap.max_hr,
+                "average_cadence": lap.avg_cadence,
+                "total_elevation_gain": None,  # not exposed per lap by the parser
+                "intensity": getattr(intensity, "value", intensity),
+            }
+        )
+    return json.dumps(laps)
+
+
 @dataclass
 class HRZoneData:
     """Heart rate zone distribution."""
@@ -348,10 +385,12 @@ class FITParser:
             timestamp=ts,
             elapsed_sec=elapsed,
             heart_rate=fields.get("heart_rate"),
-            speed_mps=fields.get("enhanced_speed"),
+            # Older devices write only the 16-bit fields, newer ones both.
+            speed_mps=_first_present(fields, "enhanced_speed", "speed"),
             cadence=fields.get("cadence"),
             power=fields.get("power"),
-            altitude=fields.get("enhanced_altitude"),
+            altitude=_first_present(fields, "enhanced_altitude", "altitude"),
+            distance_m=fields.get("distance"),
             stance_time=fields.get("stance_time"),
             stance_time_balance=fields.get("stance_time_balance"),
             step_length=fields.get("step_length"),

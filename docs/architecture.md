@@ -175,6 +175,25 @@ for UI, limits and verification.
 Only `GarminClient` touches the remote service. See [document imports](document-imports.md)
 for resource bounds, frontend worker assets, unsupported conversions and acceptance.
 
+## Session page, kept streams and sync feedback
+
+Migration 31 keeps each FIT activity's per-second streams in
+`app.activity_streams` (one row per session, one LIST column per channel,
+`garmin/streams.py`) and the coach's word on a cardio session in
+`app.session_feedback`. Garmin sync, FIT upload and `POST /garmin/sync/reprocess`
+fill the streams. `services/activity_detail.py` reads one session for
+`GET /analytics/sessions/{id}/detail` (the `/log/sessions/:id` page) and, as a
+compact digest without any stream, for the chat's read-only
+`get_activity_detail`; Strava rows never reach the model. Analytics come from
+`garmin/time_series.py`: decoupling, pace fade, cadence variability, power and
+the work intervals of a structured workout (FIT lap intensity).
+
+The daily sync hands the sessions Garmin imported to
+`coaching.write_sync_feedback`: one feedback request for up to five sessions,
+numbered sections split by `services/session_feedback.py`. A missing, failed or
+misnumbered answer leaves each session its rule text. The server files the
+journal entries and stores the texts; the feedback profile still binds no tool.
+
 ## Optional athlete RPG
 
 `services/gamification.py` owns deterministic XP, cosmetic currency and purchases.
