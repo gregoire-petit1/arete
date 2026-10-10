@@ -113,3 +113,13 @@ it('stops the orbit when offline, cancelled or past the transport deadline', () 
   rerender(<CoachActivity message={settleMessage(message, undefined, true)} />);
   expect(container.querySelector('.activity-orbit')).toBeNull();
 });
+
+it('animates the wait without repeating the laurel the message header shows', () => {
+  message = applyEvent(message, { type: 'tool_start', id: 'read', name: 'read_file', args: preview });
+  message = applyEvent(message, { type: 'tool_end', id: 'read', name: 'read_file', status: 'done', output: preview, elapsed_ms: 15 });
+  const { container } = render(<CoachActivity message={message} />);
+  const status = screen.getByRole('status');
+  expect(status.textContent).toBe('Notes consultées · préparation de la réponse');
+  expect(status.querySelector('.activity-orbit')).toBeTruthy();
+  expect(container.querySelector('.arete-mark')).toBeNull();
+});
