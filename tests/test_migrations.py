@@ -483,6 +483,38 @@ def test_m34_adds_the_plan_sync_columns_once(tmp_path, monkeypatch):
         ).fetchone() == (1,)
 
 
+def test_m39_adds_the_role_column_once(tmp_path, monkeypatch):
+    from arete.services import users
+
+    path = tmp_path / "roles.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    monkeypatch.delenv("ARETE_AUTH", raising=False)
+    init_duckdb.main()
+    with migration_connection(str(path)) as con:
+        described = {r[0]: r for r in con.execute("DESCRIBE app.users").fetchall()}
+        assert described["role"][4] == "'athlete'"
+        con.execute("ALTER TABLE app.users DROP COLUMN role")
+        con.execute(
+            "INSERT INTO app.users (clerk_user_id, email, athlete_id) "
+            "VALUES ('legacy', 'me@example.com', 1), ('guest', 'you@example.com', 2)"
+        )
+        con.execute("DELETE FROM app.schema_version WHERE version = 39")
+    init_duckdb.main()
+    init_duckdb.main()  # recorded once, then skipped
+    with migration_connection(str(path), read_only=True) as con:
+        assert con.execute("SELECT DISTINCT role FROM app.users").fetchall() == [
+            ("athlete",)
+        ]
+        assert con.execute(
+            "SELECT count(*) FROM app.schema_version WHERE version = 39"
+        ).fetchone() == (1,)
+    owner, guest = users.get_user("legacy"), users.get_user("guest")
+    assert owner is not None and guest is not None
+    # Existing accounts stay athletes; the owner administers by right.
+    assert (owner.role, owner.is_admin) == ("athlete", True)
+    assert (guest.role, guest.is_admin) == ("athlete", False)
+
+
 def test_shared_schema_preserves_legacy_owners_children_and_next_identity(
     tmp_path, monkeypatch
 ):

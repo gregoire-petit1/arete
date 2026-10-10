@@ -93,6 +93,8 @@ def test_each_account_gets_its_own_athlete(client, enforced):
         "name": "Greg",
         "athlete_id": 1,
         "is_owner": True,
+        "role": "athlete",
+        "is_admin": True,
     }
     assert client.get("/settings", headers=_bearer("owner-token")).status_code == 200
 
@@ -128,19 +130,81 @@ def test_an_identity_provider_outage_is_a_503_not_a_leak(client, enforced, monke
     assert client.get("/settings", headers=_bearer("owner-token")).status_code == 503
 
 
+def _expire_profiles() -> None:
+    con = connect()
+    con.execute("UPDATE app.users SET profile_synced_at = now() - INTERVAL 2 HOUR")
+    con.close()
+
+
+def test_a_burst_of_stale_requests_refreshes_the_profile_once(enforced, monkeypatch):
+    # A dashboard sends a dozen requests at once; each used to fetch Clerk
+    # and rewrite the same row, and the losers' conflicts answered 503.
+    import threading
+    import time
+
+    auth.resolve_user("Bearer owner-token")
+    _expire_profiles()
+    enforced.clear()
+    fetch = auth._fetch_clerk_profile
+
+    def slow(subject):
+        time.sleep(0.2)
+        return fetch(subject)
+
+    monkeypatch.setattr(auth, "_fetch_clerk_profile", slow)
+    resolved = []
+    threads = [
+        threading.Thread(
+            target=lambda: resolved.append(auth.resolve_user("Bearer owner-token"))
+        )
+        for _ in range(8)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    assert enforced == [OWNER]
+    assert [user.athlete_id for user in resolved] == [1] * 8
+
+
+def test_a_refresh_lost_to_another_instance_keeps_the_stored_account(
+    enforced, monkeypatch
+):
+    import duckdb
+
+    stored = auth.resolve_user("Bearer owner-token")
+    _expire_profiles()
+
+    def conflict(*args, **kwargs):
+        raise duckdb.TransactionException("Conflict on update!")
+
+    monkeypatch.setattr(users, "upsert_user", conflict)
+    again = auth.resolve_user("Bearer owner-token")
+    assert (again.id, again.athlete_id) == (stored.id, 1)
+    # Without a stored account there is nothing to fall back on.
+    with pytest.raises(duckdb.TransactionException):
+        auth.resolve_user("Bearer other-token")
+
+
 class TestUsers:
-    def test_every_owner_address_gets_the_athlete(self, monkeypatch):
-        # One person, two Google accounts: both addresses are the athlete.
-        monkeypatch.setenv("ARETE_OWNER_EMAIL", "Owner@Example.com, me@home.example")
+    def test_athlete_1_is_claimed_once_then_other_listed_addresses_get_their_own(
+        self, monkeypatch
+    ):
+        # A second listed address once handed a guest the owner's data and
+        # Garmin session: whoever holds athlete 1 keeps it alone.
+        monkeypatch.setenv("ARETE_OWNER_EMAIL", "Owner@Example.com, guest@example.com")
         first = users.upsert_user("u1", "owner@example.com", "Greg", verified=True)
         assert first.athlete_id == 1 and first.is_owner
         again = users.upsert_user("u1", "OWNER@example.com", None)
         assert (again.athlete_id, again.name) == (1, "Greg")
-        home = users.upsert_user("u2", "ME@home.example", None, verified=True)
-        assert home.athlete_id == 1
+        # The same address on a new login (a recreated account) is the owner.
+        assert users.upsert_user("u4", "owner@example.com", verified=True).is_owner
+        guest = users.upsert_user("u2", "GUEST@example.com", None, verified=True)
+        assert guest.athlete_id > 1 and not guest.is_owner
         other = users.upsert_user("u3", "other@example.com", "Someone")
         assert other.athlete_id > 1
-        assert [u.clerk_user_id for u in users.list_users()] == ["u1", "u2", "u3"]
+        assert len({guest.athlete_id, other.athlete_id}) == 2
+        assert [u.clerk_user_id for u in users.list_users()] == ["u1", "u4", "u2", "u3"]
 
     def test_the_owner_e_mail_falls_back_to_settings(self, monkeypatch):
         monkeypatch.delenv("ARETE_OWNER_EMAIL", raising=False)
