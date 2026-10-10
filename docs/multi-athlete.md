@@ -84,17 +84,32 @@ and token/environment first. Verify MotherDuck migration and concurrent cursor
 behavior there before production rollout. Do not label a PR `preview` until that
 configuration is ready. Production uses the repository's manual deployment workflow.
 
-The scheduler claims at most five athletes per dispatch, stops starting work after
-240 seconds and uses per-athlete daily completion markers. An operation already
-started can exceed that dispatch deadline; provider/model budgets still apply.
-A failed or interrupted job retains its lease: it is never automatically replayed
-just because the lease timestamp passed. Inspect external side effects before
-clearing `sync_lease_until` for that athlete. The Vercel cron runs once daily at
-08:00 UTC (within that hour on Hobby) to stay within the Hobby plan's daily limit.
-Work beyond the bounded batch waits for the next daily dispatch; draining it more
-frequently requires a plan supporting sub-daily cron and a schedule change.
-An always-on Docker scheduler uses its existing five-minute tick. No queue
-infrastructure is introduced.
+## Daily sync
+
+Each athlete is synced once a day: Garmin activities and health, plan
+adaptation, Strava, the calendar and the session feedback, then the briefing
+and, on Mondays, the week's review. Vercel's Hobby plan runs a cron at most once
+a day, so `vercel.json` lists six daily windows on the same path, from 07:00 to
+12:00 UTC (each fires within its hour). The first window waits for Garmin to
+have the night's sleep and HRV, which arrive when the watch syncs after waking.
+
+A dispatch reads the athletes still owed today, oldest sync first, and claims
+them one at a time. Time bounds it rather than a count: one athlete's run lasts
+from seconds to minutes, and Vercel stops the function at 300 seconds. No
+athlete is claimed after 120 seconds and no briefing or review starts after 210;
+a deferred briefing is written when the athlete opens the dashboard, and the
+review stays one click away in Planning. Later windows take whoever is still
+owed; a window with nothing to do costs one query.
+
+Each athlete carries a daily marker (`last_sync_at`) and a lease
+(`sync_lease_until`). A failed or stopped run keeps its lease for the rest of the
+day, so the same day never replays it. The next day's dispatch reclaims a lease
+dated before today and starts a new day: every step is idempotent per day
+(activities are deduplicated by id, the scheduler writes one briefing a day and
+one review a week). Overlapping windows skip what the other claimed. To park an
+athlete, set its `sync_lease_until` far in the future; to force a run at the
+next window, clear both columns. An always-on Docker scheduler dispatches every
+five minutes after `ARETE_AUTO_SYNC_HOUR`. No queue infrastructure is introduced.
 
 ## Local validation
 

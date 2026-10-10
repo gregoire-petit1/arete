@@ -19,6 +19,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from time import monotonic
 
+import duckdb
+
 from arete.config import config
 from arete.dataio.db import db_connection
 from arete.services.athlete_scope import athlete_scope, current_athlete_id
@@ -232,66 +234,105 @@ def write_weekly_review(today: date | None = None) -> str:
     return f"{review.source}, {len(review.proposals)} proposals"
 
 
-MAX_SCHEDULED_ATHLETES = 5
-SCHEDULE_DISPATCH_SECONDS = 240
+#: Most athletes one dispatch reads. Time, not this count, bounds a dispatch:
+#: one athlete's run lasts from seconds to minutes.
+MAX_SCHEDULED_ATHLETES = 10
+#: No athlete is claimed after this, so the last one keeps three minutes before
+#: Vercel stops the function (``maxDuration`` 300 s in ``vercel.json``).
+SCHEDULE_DISPATCH_SECONDS = 120
+#: No briefing or review starts after this. The dashboard writes the day's
+#: briefing on demand, and the week's review is one click away in Planning.
+SCHEDULE_MODEL_SECONDS = 210
+#: Nominal length of a claim; reclaiming goes by calendar day, not by this.
 SCHEDULE_LEASE_SECONDS = 900
+#: Owed today and not held by a run started today. A lease dated before today
+#: belongs to a run that failed or was stopped: the next day's dispatch starts
+#: a new day (every step is idempotent per day), the same day never retries.
+_DUE = (
+    "deleted_at IS NULL "
+    "AND (last_sync_at IS NULL OR CAST(last_sync_at AS DATE) < current_date) "
+    "AND (sync_lease_until IS NULL OR CAST(sync_lease_until AS DATE) < current_date)"
+)
 
 
 def run_scheduled_batch() -> dict:
-    """Claim a bounded batch; each athlete has a durable daily marker and lease.
+    """Claim the athletes owed today, one at a time, within the function's time.
 
-    A failed/ambiguous run is not automatically replayed: its lease remains for
-    investigation. Dispatch stops at the deadline and reports deferred work.
+    Each athlete has a durable daily marker (``last_sync_at``) and a lease. A
+    failed or interrupted run keeps its lease until the next day: it is never
+    replayed the same day. Several cron windows a day may overlap; a dispatch
+    skips an athlete another one claimed first.
     """
-    deadline = monotonic() + SCHEDULE_DISPATCH_SECONDS
+    started = monotonic()
     with db_connection() as con:
         rows = con.execute(
-            "SELECT id FROM app.athletes WHERE deleted_at IS NULL "
-            "AND (last_sync_at IS NULL OR CAST(last_sync_at AS DATE)<current_date) "
-            "AND sync_lease_until IS NULL ORDER BY last_sync_at NULLS FIRST,id LIMIT ?",
+            f"SELECT id, sync_lease_until FROM app.athletes WHERE {_DUE} "
+            "ORDER BY last_sync_at NULLS FIRST, id LIMIT ?",
             [MAX_SCHEDULED_ATHLETES + 1],
         ).fetchall()
     outcomes: dict[str, dict] = {}
     deferred = len(rows) > MAX_SCHEDULED_ATHLETES
-    for (athlete_id,) in rows[:MAX_SCHEDULED_ATHLETES]:
-        if monotonic() >= deadline:
+    for athlete_id, stale_lease in rows[:MAX_SCHEDULED_ATHLETES]:
+        if monotonic() - started >= SCHEDULE_DISPATCH_SECONDS:
             deferred = True
             break
+        if not _claim(athlete_id):
+            continue
+        if stale_lease is not None:
+            logger.warning(
+                "Athlete %s: lease of a failed or stopped run (%s) reclaimed",
+                athlete_id,
+                stale_lease,
+            )
+        outcomes[str(athlete_id)] = _run_athlete(athlete_id, started)
+    return {"athletes": outcomes, "deferred": deferred}
+
+
+def _claim(athlete_id: int) -> bool:
+    """Take the athlete's lease, unless another dispatch took it first."""
+    try:
         with db_connection() as con:
-            claimed = con.execute(
-                "UPDATE app.athletes SET sync_lease_until=current_timestamp + ? * INTERVAL '1 second' "
-                "WHERE id=? AND deleted_at IS NULL AND sync_lease_until IS NULL "
-                "AND (last_sync_at IS NULL OR CAST(last_sync_at AS DATE)<current_date) RETURNING id",
+            row = con.execute(
+                "UPDATE app.athletes "
+                "SET sync_lease_until=current_timestamp + ? * INTERVAL '1 second' "
+                f"WHERE id=? AND {_DUE} RETURNING id",
                 [SCHEDULE_LEASE_SECONDS, athlete_id],
             ).fetchone()
-        if not claimed:
-            continue
-        with athlete_scope(athlete_id):
-            from arete.dataio import mirror
+    except duckdb.TransactionException:
+        logger.info("Athlete %s claimed by a concurrent dispatch", athlete_id)
+        return False
+    return row is not None
 
-            try:
-                if config.is_remote_db:
-                    mirror.hydrate()
-                status = daily_sync()
-                status["briefing"] = write_daily_briefing()
-                status["review"] = write_weekly_review()
-                record_run(datetime.now())
-                if config.is_remote_db:
-                    mirror.flush()
-                with db_connection() as con:
-                    con.execute(
-                        "UPDATE app.athletes SET last_sync_at=current_timestamp,sync_lease_until=NULL WHERE id=?",
-                        [athlete_id],
-                    )
-                outcomes[str(athlete_id)] = status
-            except Exception:
-                logger.exception(
-                    "Scheduled work failed for athlete %s; lease retained", athlete_id
+
+def _run_athlete(athlete_id: int, started: float) -> dict:
+    with athlete_scope(athlete_id):
+        from arete.dataio import mirror
+
+        try:
+            if config.is_remote_db:
+                mirror.hydrate()
+            status = daily_sync()
+            for step, write in (
+                ("briefing", write_daily_briefing),
+                ("review", write_weekly_review),
+            ):
+                late = monotonic() - started >= SCHEDULE_MODEL_SECONDS
+                status[step] = "deferred" if late else write()
+            record_run(datetime.now())
+            if config.is_remote_db:
+                mirror.flush()
+            with db_connection() as con:
+                con.execute(
+                    "UPDATE app.athletes SET last_sync_at=current_timestamp,sync_lease_until=NULL WHERE id=?",
+                    [athlete_id],
                 )
-                outcomes[str(athlete_id)] = {
-                    "status": "failed; manual recovery required"
-                }
-    return {"athletes": outcomes, "deferred": deferred}
+        except Exception:
+            logger.exception(
+                "Scheduled work failed for athlete %s; lease kept until tomorrow",
+                athlete_id,
+            )
+            return {"status": "failed; next attempt tomorrow"}
+    return status
 
 
 async def run_forever(hour: int, tick_seconds: int = TICK_SECONDS) -> None:
