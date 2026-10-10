@@ -47,7 +47,9 @@ Each Vercel deployment stores its own ~430 MB Python function, and the Hobby
 plan allows 10 GB of function storage, so nothing deploys on its own. Add the
 `preview` label to a PR to get a preview once its checks pass (linked in a PR
 comment); each new preview replaces the PR's previous one, and closing the PR
-removes them. Merging into `main` does not deploy: dispatch **Deploy production**
+removes them. Each merge into `main` deploys to the Preview environment (its own
+database) at the fixed URL https://arete-main-arete15.vercel.app, the repository's
+website link, keeping only the newest one. Production does not follow: dispatch **Deploy production**
 in GitHub Actions to ship everything merged since the last release. It deploys
 `main`, calls `/api/health` (the first request runs pending migrations, so back
 up the database before a batch that carries one), then keeps only the live and

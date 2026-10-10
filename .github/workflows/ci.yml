@@ -134,8 +134,8 @@ jobs:
   # Previews deploy here, once every affected check above is green, and only
   # for a PR labelled `preview`: each deployment stores a ~430 MB function
   # against the plan's 10 GB. Vercel's Git integration deploys nothing
-  # (`git.deploymentEnabled` in vercel.json); production ships through the
-  # manual "Deploy production" workflow. A pull_request run checks out the
+  # (`git.deploymentEnabled` in vercel.json); main goes to Preview below and
+  # production ships through the manual "Deploy production" workflow. A pull_request run checks out the
   # merge of the branch into main, so the preview is what merging would ship;
   # a conflicting branch has no merge commit, no run, no preview.
   preview:
@@ -186,3 +186,44 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
           URL: ${{ steps.deploy.outputs.url }}
+
+  # main ships to the Preview environment (its own database, `md:arete_preview`)
+  # on a fixed URL once its checks are green, so merged work can be tried before
+  # a batch goes to production. Only the newest main preview is kept.
+  main-preview:
+    if: >-
+      !cancelled() &&
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.lint.result == 'success' &&
+      (needs.test.result == 'success' || needs.test.result == 'skipped') &&
+      (needs.typecheck.result == 'success' || needs.typecheck.result == 'skipped') &&
+      (needs.frontend.result == 'success' || needs.frontend.result == 'skipped')
+    needs: [lint, test, typecheck, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      MAIN_PREVIEW_ALIAS: arete-main-arete15.vercel.app
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm install --global vercel@63.1.2
+      - name: Deploy main to Preview
+        id: deploy
+        run: |
+          url=$(vercel deploy --archive=tgz --yes --token "$VERCEL_TOKEN" --meta channel=main)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      - name: Point the fixed URL at it
+        run: vercel alias set "$URL" "$MAIN_PREVIEW_ALIAS" --token "$VERCEL_TOKEN" --scope "$VERCEL_ORG_ID"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          URL: ${{ steps.deploy.outputs.url }}
+      - name: Remove the superseded main previews
+        run: scripts/ci/prune_deployments.sh 1 meta-channel=main
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

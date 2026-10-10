@@ -115,7 +115,8 @@ do not add tests that merely repeat an implementation. Live model evaluations in
 - A pull request labelled `preview` gets its preview from the CI `preview` job
   once the checks pass, built from the branch merged into main and linked in a PR
   comment; a newer preview replaces the older one and closing the PR removes it.
-  Merging does not deploy: production ships in batches through the manual
+  Merging deploys `main` to Preview at https://arete-main-arete15.vercel.app (the
+  repository's website link); production ships in batches through the manual
   **Deploy production** workflow (back up first when the batch migrates). Vercel's
   Git integration deploys nothing. By hand, use `vercel deploy --archive=tgz`:
   `.vercelignore` is an allowlist, and loose uploads hit Vercel's 5000-file daily
