@@ -11,7 +11,6 @@ import logging
 
 from langchain_core.messages import AIMessage
 
-from arete.agent.runtime.events import MAX_SUGGESTION_CHARS
 from arete.agent.runtime.execution import MAX_RUN_SECONDS
 
 MAX_STREAM_EVENTS = 12_000
@@ -38,17 +37,6 @@ class StreamProjection:
             return []
         kind, data = part["type"], part["data"]
         if kind == "custom":
-            if isinstance(data, dict) and data.get("type") == "suggestion":
-                text = data.get("text")
-                if (
-                    not isinstance(text, str)
-                    or not text.strip()
-                    or len(text) > MAX_SUGGESTION_CHARS
-                ):
-                    # This optional event cannot invalidate the coach's answer.
-                    logger.warning("Invalid coach suggestion event; draft omitted")
-                    return []
-                return [{"type": "suggestion", "text": text}]
             return (
                 [data]
                 if isinstance(data, dict)

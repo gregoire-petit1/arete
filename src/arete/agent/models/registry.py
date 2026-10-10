@@ -7,15 +7,12 @@ from pydantic import SecretStr
 #: Named bounds, per TigerStyle: no silent SDK defaults on the agent loop.
 AGENT_TEMPERATURE = 0.3
 AGENT_MAX_TOKENS = 4096
-SUGGESTION_MAX_TOKENS = 512
-SUGGESTION_TIMEOUT_SEC = 5
-SUGGESTION_TEMPERATURE = 0.3
 #: A free model that hangs is not coming back: give up on the attempt after a
 #: minute, or 30 s without a streamed chunk, and let the native middleware try
 #: the next candidate instead of burning the whole run deadline.
 AGENT_TIMEOUT_SEC = 60
 #: Retained for a pinned model without alternatives. Composition disables SDK
-#: retries for fallback chains and suggestions to avoid multiplying attempts.
+#: retries for fallback chains to avoid multiplying attempts.
 AGENT_MAX_RETRIES = 2
 AGENT_STREAM_CHUNK_TIMEOUT_SEC = 30
 

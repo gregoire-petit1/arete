@@ -17,6 +17,8 @@ ALL = {
     **{f"toolkit:{tid}": tk.instructions for tid, tk in CAPABILITIES.items()},
 }
 REMOVED_TOOLS = (
+    "prepare_import",
+    "inspect_import",
     "get_page_context",
     "load_toolkit",
     "search_toolkits",

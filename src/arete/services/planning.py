@@ -1,7 +1,7 @@
 """Planning toolkit — create/list/update/delete planned sessions.
 
 Write access to the planning repository, exposed to the agent as a toolkit
-(loaded on demand, see ``toolkits.py``). Sessions created by the agent are
+bound directly by the server profile. Sessions created by the agent are
 stamped ``source="coach"`` so the Planning page can tell them apart.
 """
 
@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import Field, model_validator
 
 from arete.garmin.models import (
     PlannedSession,
@@ -20,12 +22,15 @@ from arete.garmin.models import (
 from arete.garmin.repository import GarminRepository
 from arete.services.prescriptions import (
     Prescription,
+    Provenance,
+    StrictModel,
     conversation_prescription,
     describe,
 )
 
 _MAX_LIST = 50
 _HORIZON_DAYS = 120
+_MAX_SOURCE_HINTS = 5
 
 
 def _repo() -> GarminRepository:
@@ -116,8 +121,10 @@ def create_planned_session(
     target_duration_min: int = 0,
     target_distance_km: float = 0.0,
     target_intensity: str = "",
-    prescription_json: str = "",
+    prescription: Prescription | None = None,
     strength_text: str = "",
+    provenance: list[Provenance] | None = None,
+    thread_id: str | None = None,
 ) -> str:
     """Create a planned training session (source stamped 'coach').
 
@@ -149,13 +156,45 @@ def create_planned_session(
     try:
         prescription = (
             conversation_prescription(
-                prescription_json, canonical_sport(sport), day, strength_text
+                prescription, canonical_sport(sport), day, strength_text
             )
-            if prescription_json
-            or strength_text
-            or canonical_sport(sport) == "strength"
+            if prescription or strength_text or canonical_sport(sport) == "strength"
             else None
         )
+        # Source evidence belongs to this conversation, never a model-selected thread.
+        sources = []
+        if provenance:
+            from arete.services.documents import extraction_for
+
+            if not thread_id:
+                raise ValueError("Un fil est requis pour citer une pièce jointe.")
+            if len(provenance) > 20:
+                raise ValueError("Maximum 20 références par séance.")
+            for source in provenance:
+                extraction = extraction_for(thread_id, str(source.document_id))
+                if not any(
+                    b.locator == source.locator and source.quote in b.text
+                    for b in extraction.blocks
+                ):
+                    # A recoverable validation error must name the real locator,
+                    # not make the model guess it again. Never repair a write silently.
+                    matches = [
+                        b.locator for b in extraction.blocks if source.quote in b.text
+                    ]
+                    hint = (
+                        f" Cet extrait existe dans {len(matches)} bloc(s) ; "
+                        f"localisateurs exacts (au plus {_MAX_SOURCE_HINTS}) : "
+                        + ", ".join(matches[:_MAX_SOURCE_HINTS])
+                        + ". Corrige locator avant de réessayer."
+                        if matches
+                        else " Relis la source : quote doit être un extrait exact du bloc, "
+                        "sans les numéros de ligne ajoutés par read_file."
+                    )
+                    raise ValueError(
+                        f"La source {source.locator} ne contient pas l’extrait cité."
+                        + hint
+                    )
+                sources.append(source.model_dump(mode="json"))
     except ValueError as exc:
         return json.dumps({"error": str(exc)}, ensure_ascii=False)
     planned = PlannedSession(
@@ -168,6 +207,7 @@ def create_planned_session(
         description=description or None,
         source="coach",
         prescription=prescription.model_dump(mode="json") if prescription else None,
+        provenance=sources or None,
     )
     session_id = _repo().create_planned_session(planned)
     created = _repo().get_planned_session(session_id)
@@ -180,110 +220,94 @@ def create_planned_session(
     )
 
 
-def update_planned_status(session_id: int, status: str) -> str:
-    """Change a planned session's status.
+class SessionChanges(StrictModel):
+    """Omission preserves a field; explicit zero/empty clears optional targets."""
 
-    Args:
-        session_id: Id of the planned session.
-        status: pending | completed | skipped | modified.
-    """
-    try:
-        st = SessionStatus(status)
-    except ValueError:
-        return json.dumps(
-            {"error": "status must be pending|completed|skipped|modified"}
-        )
-    try:
-        changed = _repo().update_planned_session_status(session_id, st)
-    except ValueError as exc:
-        return json.dumps({"error": str(exc)}, ensure_ascii=False)
-    if not changed:
-        return json.dumps({"error": f"Planned session {session_id} not found"})
-    updated = _repo().get_planned_session(session_id)
-    return json.dumps(
-        {"updated": True, "session": _session_to_dict(updated) if updated else None},
-        ensure_ascii=False,
-    )
+    date_str: date | None = None
+    session_type: SessionType | None = None
+    status: SessionStatus | None = None
+    description: str | None = Field(default=None, max_length=500)
+    target_duration_min: int | None = Field(default=None, ge=0, le=1440)
+    target_distance_km: float | None = Field(default=None, ge=0, le=1000)
+    target_hr_zone: Literal["", "Z1", "Z2", "Z3", "Z4", "Z5"] | None = None
+    target_intensity: Literal["", "easy", "moderate", "hard"] | None = None
+    prescription: Prescription | None = None
+    strength_text: str | None = Field(default=None, max_length=4000)
 
-
-_ZONES = ("Z1", "Z2", "Z3", "Z4", "Z5")
+    @model_validator(mode="after")
+    def meaningful(self):
+        if not self.model_fields_set:
+            raise ValueError("Indique au moins un champ à modifier.")
+        if any(getattr(self, key) is None for key in self.model_fields_set):
+            raise ValueError(
+                "Omet les champs inchangés ; utilise zéro ou une chaîne vide pour effacer une cible."
+            )
+        return self
 
 
 def update_planned_session(
-    session_id: int,
-    date_str: str = "",
-    session_type: str = "",
-    description: str = "",
-    target_duration_min: int = 0,
-    target_distance_km: float = 0.0,
-    target_hr_zone: str = "",
-    target_intensity: str = "",
+    session_id: int, revision: int, changes: SessionChanges
 ) -> str:
-    """Move or adjust a planned session; empty or 0 leaves a field unchanged.
-
-    Args:
-        session_id: Id of the planned session.
-        date_str: New ISO date (YYYY-MM-DD), empty = same day.
-        session_type: New type (recovery, endurance, tempo, intervals, long_run,
-            strength, hypertrophy, power, deload, cross_training, race, other).
-        description: New description.
-        target_duration_min: New duration in minutes.
-        target_distance_km: New distance in km.
-        target_hr_zone: New heart-rate zone, Z1 to Z5.
-        target_intensity: easy, moderate or hard.
-    """
-    fields: dict[str, Any] = {}
-    if date_str:
-        day = _parse_iso(date_str, "date_str")
-        if isinstance(day, str):
-            return day
-        fields["date"] = day
-    if session_type:
-        try:
-            fields["session_type"] = SessionType(session_type)
-        except ValueError:
-            return json.dumps(
-                {
-                    "error": f"Unknown session_type '{session_type}'. "
-                    f"Valid: {[t.value for t in SessionType]}"
-                }
-            )
-    zone = target_hr_zone.strip().upper()
-    if zone:
-        if zone not in _ZONES:
-            return json.dumps({"error": "target_hr_zone must be Z1|Z2|Z3|Z4|Z5"})
-        fields["target_hr_zone"] = zone
-    intensity = target_intensity.strip().lower()
-    if intensity:
-        if intensity not in ("easy", "moderate", "hard"):
-            return json.dumps({"error": "target_intensity must be easy|moderate|hard"})
-        fields["target_intensity"] = intensity
-    if description:
-        fields["description"] = description
-    if target_duration_min:
-        fields["target_duration_min"] = target_duration_min
-    if target_distance_km:
-        fields["target_distance_km"] = target_distance_km
-    if not fields:
-        return json.dumps({"error": "Nothing to change: give at least one field"})
-    # A copy already on Garmin's calendar no longer matches: mark it unsent.
+    """Apply one versioned patch; repository checks export reservations atomically."""
     try:
+        current = _repo().get_planned_session(session_id)
+        if current is None:
+            raise ValueError("Séance introuvable.")
+        fields = changes.model_dump(
+            exclude_unset=True, exclude={"prescription", "strength_text"}
+        )
+        if "date_str" in fields:
+            fields["date"] = fields.pop("date_str")
+        prescription = None
+        if changes.prescription is not None or changes.strength_text is not None:
+            prescription = conversation_prescription(
+                changes.prescription,
+                current.sport,
+                changes.date_str or current.date,
+                changes.strength_text or "",
+            )
+        targets = {
+            "target_duration_min",
+            "target_distance_km",
+            "target_hr_zone",
+            "target_intensity",
+        }
+        if (current.prescription or prescription) and any(
+            fields.get(k) for k in targets
+        ):
+            raise ValueError(
+                "Modifie la prescription pour changer les objectifs d’une séance structurée."
+            )
+        # A replacement must not leave stale scalar targets contradicting its steps.
+        if prescription:
+            fields.update({key: None for key in targets})
+        for key in targets | {"description"}:
+            if key in fields and not fields[key]:
+                fields[key] = None
         changed = _repo().update_planned_session_fields(
-            session_id, **fields, garmin_pushed_at=None
+            session_id,
+            expected_revision=revision,
+            prescription=prescription.model_dump(mode="json") if prescription else None,
+            **fields,
+            garmin_pushed_at=None,
+        )
+        if not changed:
+            raise ValueError(
+                "La séance a changé ou n’existe plus. Recharge le planning."
+            )
+        from arete.services.garmin_export import inspect_session
+
+        # Include the new export state so an existing UI card cannot remain "scheduled".
+        return json.dumps(
+            {"updated": True, **inspect_session(session_id, include_steps=False)},
+            ensure_ascii=False,
         )
     except ValueError as exc:
         return json.dumps({"error": str(exc)}, ensure_ascii=False)
-    if not changed:
-        return json.dumps({"error": f"Planned session {session_id} not found"})
-    updated = _repo().get_planned_session(session_id)
-    return json.dumps(
-        {"updated": True, "session": _session_to_dict(updated) if updated else None},
-        ensure_ascii=False,
-    )
 
 
 def delete_planned_session(session_id: int) -> str:
-    """Delete a planned session by id. Prefer update_planned_status to mark it
+    """Delete a planned session by id. Prefer update_planned_session to mark it
     skipped — deletion loses the record.
 
     Args:

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { uploadDocument, MAX_FILE_BYTES, documentsApi } from './documents';
-import { parseEvent, applyEvent } from './agentStream';
+import { parseEvent } from './agentStream';
 import { restoreConversation } from './agentConversation';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -28,18 +28,17 @@ it('rejects oversized and unsupported files before network I/O', async () => {
   expect(fetch).not.toHaveBeenCalled();
 });
 
-it('does not retry an upload or confirmation after a failed response', async () => {
+it('does not retry a deletion after a failed response', async () => {
   const fetch = vi.fn().mockRejectedValue(new Error('réseau perdu')); vi.stubGlobal('fetch', fetch);
-  await expect(documentsApi.confirm('thread', { id: 'draft', version: 1, status: 'draft', sessions: [], session_ids: [] }, [0], 'key')).rejects.toThrow('réseau perdu');
+  await expect(documentsApi.delete('thread', 'doc')).rejects.toThrow('réseau perdu');
   expect(fetch).toHaveBeenCalledTimes(1);
 });
 
-it('preserves import preview references through SSE and browser restoration', () => {
-  const event = parseEvent(JSON.stringify({ type: 'import_preview', id: '11111111-1111-4111-8111-111111111111', version: 2 }));
-  if (!event) throw new Error('Expected import preview event');
-  const message = applyEvent({ role: 'assistant', content: 'Aperçu prêt' }, event);
-  expect(restoreConversation(JSON.stringify([message]))[0].imports).toEqual(message.imports);
-  expect(() => parseEvent(JSON.stringify({ type: 'import_preview', id: 'fake', version: -1 }))).toThrow();
+it('restores old messages without reviving retired import approvals', () => {
+  const restored = restoreConversation(JSON.stringify([{ role: 'assistant', content: 'Ancien aperçu', imports: [{ id: 'old', version: 1 }] }]));
+  expect(restored[0]).not.toHaveProperty('imports');
+  expect(restored[0].content).toBe('Ancien aperçu');
+  expect(() => parseEvent(JSON.stringify({ type: 'import_preview', id: 'old', version: 1 }))).toThrow();
 });
 
 it('verifies original bytes before making them available to an inline preview', async () => {

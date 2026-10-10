@@ -202,13 +202,22 @@ class GarminRepository:
         """Update the status of a planned session."""
         return self.update_planned_session_fields(session_id, status=status)
 
-    def update_planned_session_fields(self, session_id: int, **fields: Any) -> bool:
+    def update_planned_session_fields(
+        self,
+        session_id: int,
+        *,
+        expected_revision: int | None = None,
+        prescription: dict | None = None,
+        **fields: Any,
+    ) -> bool:
         """Overwrite some fields of a planned session (whitelisted columns)."""
         unknown = set(fields) - PLANNED_EDITABLE
         if unknown:
             raise ValueError(f"Not editable on a planned session: {sorted(unknown)}")
-        if not fields:
+        if not fields and prescription is None:
             return self.get_planned_session(session_id) is not None
+        if prescription is not None:
+            fields["prescription"] = json.dumps(prescription)
         values = [
             v.value if isinstance(v, SessionType | SessionStatus) else v
             for v in fields.values()
@@ -218,7 +227,7 @@ class GarminRepository:
             conn.execute("BEGIN TRANSACTION")
             require_owned(conn, "goals", fields.get("goal_id"))
             row = conn.execute(
-                "SELECT prescription FROM visible_planned_sessions WHERE id=?",
+                "SELECT prescription,garmin_workout_id,garmin_schedule_id FROM visible_planned_sessions WHERE id=?",
                 [session_id],
             ).fetchone()
             active = conn.execute(
@@ -229,19 +238,42 @@ class GarminRepository:
                 raise ValueError(
                     "Réconcilie l’export Garmin avant de modifier la séance."
                 )
+            if prescription is not None and row and (row[1] or row[2]) and not active:
+                raise ValueError(
+                    "Vérifie d’abord l’ancien export Garmin avant de modifier ses étapes."
+                )
             if (
                 row
-                and row[0]
-                and set(fields) - {"date", "description", "status", "garmin_pushed_at"}
+                and (row[0] or prescription)
+                and any(
+                    value
+                    for key, value in fields.items()
+                    if key
+                    in {
+                        "target_duration_min",
+                        "target_distance_km",
+                        "target_hr_zone",
+                        "target_intensity",
+                        "sport",
+                        "structure_json",
+                    }
+                )
             ):
                 raise ValueError(
-                    "Modifie les étapes dans l’éditeur de prescription du Planning."
+                    "Modifie les étapes de la prescription pour changer ses objectifs."
                 )
             # Both planning editors share the version used to reserve exports.
             result = conn.execute(
-                f"UPDATE planned_sessions SET {', '.join(f'{k} = ?' for k in fields)}, revision=revision+1 WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?) RETURNING id",
-                [*values, session_id],
+                f"UPDATE planned_sessions SET {', '.join(f'{k} = ?' for k in fields)}, revision=revision+1 WHERE user_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=user_id AND scope_owner.deleted_at IS NULL) AND (id = ?){' AND revision = ?' if expected_revision is not None else ''} RETURNING id",
+                [
+                    *values,
+                    session_id,
+                    *([expected_revision] if expected_revision is not None else []),
+                ],
             ).fetchone()
+            if result is None:
+                conn.execute("ROLLBACK")
+                return False
             conn.execute(
                 "UPDATE garmin_exports SET state='dirty',updated_at=current_timestamp WHERE athlete_id = getvariable('arete_athlete_id') AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM app.athletes scope_owner WHERE scope_owner.id=athlete_id AND scope_owner.deleted_at IS NULL) AND (session_id=? AND state<>'removed') ",
                 [session_id],

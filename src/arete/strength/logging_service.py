@@ -105,7 +105,10 @@ def dropped_exercises(parsed: ParsedWorkout) -> list[DroppedExercise]:
 
 
 def save_parsed_session(
-    parsed: ParsedWorkout, repo: StrengthRepository | None = None
+    parsed: ParsedWorkout,
+    repo: StrengthRepository | None = None,
+    *,
+    require_complete: bool = False,
 ) -> SaveOutcome:
     """Persist a parsed workout. Reports what went in and what did not.
 
@@ -114,6 +117,13 @@ def save_parsed_session(
     """
     repo = repo or StrengthRepository()
     dropped = dropped_exercises(parsed)
+
+    if require_complete and (dropped or parsed.unparsed_lines):
+        return SaveOutcome(
+            session_id=None,
+            dropped=dropped,
+            message="Séance non enregistrée : corrige les éléments non reconnus.",
+        )
 
     session = StrengthSession(
         date=parsed.date,
@@ -132,6 +142,11 @@ def save_parsed_session(
                 parsed_exercise.exercise_id
             )
             if exercise is None:
+                if require_complete:
+                    return SaveOutcome(
+                        session_id=None,
+                        message=f"Exercice indisponible : {parsed_exercise.name}",
+                    )
                 dropped.append(DroppedExercise(name=parsed_exercise.name))
                 continue
             session_exercise = SessionExercise(

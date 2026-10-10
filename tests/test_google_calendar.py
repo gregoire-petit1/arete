@@ -536,7 +536,6 @@ def test_configured_calendar_is_preloaded_only_for_chat(calendar, monkeypatch):
             args = build.call_args.kwargs
             profile = build.call_args.args[0]
             if mission == "chat":
-                assert "calendar" in profile.preloaded
                 assert "calendar" in profile.capabilities
                 assert args["calendar"] is factory
             else:
@@ -552,6 +551,7 @@ def test_calendar_tools_stream_proposal_without_writing(calendar):
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain_core.messages import AIMessage, HumanMessage
 
+    from arete.agent.capabilities.registry import CAPABILITIES
     from arete.agent.middlewares.capabilities import ToolkitMiddleware
     from arete.agent.middlewares.context import ContextBuilderMiddleware
     from arete.agent.middlewares.events import ToolEventMiddleware
@@ -568,9 +568,7 @@ def test_calendar_tools_stream_proposal_without_writing(calendar):
             seen.append({t.name for t in tools})
             return self
 
-    profile = replace(
-        get_profile("chat"), capabilities=("calendar",), preloaded=("calendar",)
-    )
+    profile = replace(get_profile("chat"), capabilities=("calendar",))
     args = proposal().model_dump()
     graph = create_agent(
         Model(
@@ -587,6 +585,7 @@ def test_calendar_tools_stream_proposal_without_writing(calendar):
                 ]
             ),
         ),
+        tools=CAPABILITIES["calendar"].tools,
         middleware=[
             ProfilePolicyMiddleware(
                 "chat", profile=profile, calendar=lambda _account: calendar.service

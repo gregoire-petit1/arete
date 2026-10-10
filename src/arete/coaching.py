@@ -19,9 +19,6 @@ from arete.agent.models.providers import build_chat_model
 from arete.agent.models.registry import (
     AGENT_MAX_RETRIES,
     AGENT_MAX_TOKENS,
-    SUGGESTION_MAX_TOKENS,
-    SUGGESTION_TEMPERATURE,
-    SUGGESTION_TIMEOUT_SEC,
 )
 from arete.agent.models.routing import resolve_route
 from arete.agent.profiles.catalog import get_profile
@@ -62,7 +59,6 @@ def _assemble(profile_id: str):
         profile = replace(
             profile,
             capabilities=(*profile.capabilities, "calendar"),
-            preloaded=(*profile.preloaded, "calendar"),
         )
     route = resolve_route()
     # Use one explicit request per candidate: layering SDK retries and the
@@ -76,23 +72,6 @@ def _assemble(profile_id: str):
         for name in candidates
     )
     model = models[0]
-    suggestion_model = None
-    if profile.id == "chat":
-        suggestion_model = build_chat_model(
-            route=route,
-            max_tokens=SUGGESTION_MAX_TOKENS,
-            timeout=SUGGESTION_TIMEOUT_SEC,
-            max_retries=0,
-            temperature=SUGGESTION_TEMPERATURE,
-            # Reasoning shares the output budget and can consume all 512 tokens
-            # before producing any visible text for this simple drafting task.
-            openrouter_reasoning=False,
-        )
-        # Keep auxiliary tokens out of the coach's answer stream. LangChain
-        # still records the provider request as a child LLM span.
-        suggestion_model = suggestion_model.model_copy(
-            update={"disable_streaming": True}
-        )
     skills_backend = None
     skill_files = {}
     if profile.journal_tools:
@@ -114,7 +93,6 @@ def _assemble(profile_id: str):
         output_tokens=AGENT_MAX_TOKENS,
         filesystem=filesystem,
         calendar=calendar,
-        suggestion_model=suggestion_model,
         fallback_models=models[1:],
         skills=skills,
     )

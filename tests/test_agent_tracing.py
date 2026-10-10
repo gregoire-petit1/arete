@@ -232,8 +232,6 @@ def test_native_dynamic_and_filesystem_tools_stay_in_one_trace(
                 {"file": "notes.md", "title": "", "body": ""},
                 "journal",
             ),
-            tool_call("search_toolkits", {"query": "analytics"}, "search"),
-            tool_call("load_toolkit", {"toolkit_id": "analytics"}, "load"),
             tool_call("get_workload", {"days": 0}, "dynamic"),
             tool_call("read_file", {"file_path": "/notes.md"}, "memory"),
             AIMessage(
@@ -265,13 +263,11 @@ def test_native_dynamic_and_filesystem_tools_stay_in_one_trace(
     tools = [r for r in runs if r["run_type"] == "tool"]
     assert {r["name"] for r in tools} == {
         "append_journal",
-        "search_toolkits",
-        "load_toolkit",
         "get_workload",
         "read_file",
     }
-    assert len(tools) == 5  # No double instrumentation.
-    assert len([r for r in runs if r["run_type"] == "llm"]) == 6
+    assert len(tools) == 3  # No double instrumentation.
+    assert len([r for r in runs if r["run_type"] == "llm"]) == 4
     llms = [r for r in runs if r["run_type"] == "llm"]
     assert any(
         r["outputs"]["generations"][0][0]["message"]["kwargs"].get("usage_metadata")
@@ -292,7 +288,11 @@ def test_skill_retrieval_exports_one_child_span_before_inference(
     install_model(
         monkeypatch,
         [
-            tool_call("read_file", {"file_path": attachment}, "plan"),
+            tool_call(
+                "read_file",
+                {"file_path": "/skills/system/document-planning/SKILL.md"},
+                "plan",
+            ),
             AIMessage(content="Séance retrouvée."),
         ],
     )
@@ -311,36 +311,15 @@ def test_skill_retrieval_exports_one_child_span_before_inference(
     else:
         invoke(inputs, context=context)
     runs, roots = assert_trace_tree(recorder)
-    retrievals = [run for run in runs if run["run_type"] == "retriever"]
-    assert len(retrievals) == 1  # Native callbacks must not be double-decorated.
-    retrieval = retrievals[0]
-    assert retrieval["name"] == "SystemSkillRetriever"
-    assert retrieval["parent_run_id"] is not None
-    assert retrieval["trace_id"] == roots[0]["trace_id"]
-    assert retrieval["extra"]["metadata"]["thread_id"] == "skill-thread"
-    assert retrieval["inputs"] == {"query": question}
-    assert [doc.metadata["path"] for doc in retrieval["outputs"]["documents"]] == [
-        "/skills/system/document-planning/SKILL.md"
+    assert not [run for run in runs if run["run_type"] == "retriever"]
+    reads = [
+        run for run in runs if run["run_type"] == "tool" and run["name"] == "read_file"
     ]
-    llms = [run for run in runs if run["run_type"] == "llm"]
-    assert len(llms) == 2
-    assert retrieval["end_time"] <= min(run["start_time"] for run in llms)
-
-
-@pytest.mark.usefixtures("progressive_chat")
-def test_loaded_toolkits_do_not_leak_between_tasks(monkeypatch):
-    install_model(
-        monkeypatch,
-        [
-            tool_call("load_toolkit", {"toolkit_id": "analytics"}, "load"),
-            AIMessage(content="chat"),
-            AIMessage(content="feedback"),
-        ],
-    )
-    first = invoke(state(), context=AgentContext(profile="chat"))
-    second = invoke(state(), context=AgentContext(profile="feedback"))
-    assert first["loaded_toolkits"] == ["analytics"]
-    assert not second.get("loaded_toolkits")
+    assert len(reads) == 1
+    assert reads[0]["trace_id"] == roots[0]["trace_id"]
+    assert reads[0]["extra"]["metadata"]["thread_id"] == "skill-thread"
+    assert context.stats.skill_reads == 1
+    assert len([run for run in runs if run["run_type"] == "llm"]) == 2
 
 
 @pytest.mark.parametrize("streaming", [False, True])
@@ -485,13 +464,14 @@ def test_dynamic_tool_exception_is_traced_and_propagated(
     install_model(
         monkeypatch,
         [
-            tool_call("load_toolkit", {"toolkit_id": "analytics"}, "load"),
             tool_call("get_workload", {"days": 28}, "broken"),
         ],
     )
-    monkeypatch.setattr(
-        get_workload, "func", Mock(side_effect=RuntimeError("tool unavailable"))
-    )
+
+    def fail(days: int = 28):
+        raise RuntimeError("tool unavailable")
+
+    monkeypatch.setattr(get_workload, "func", fail)
     with pytest.raises(RuntimeError, match="tool unavailable"):
         if streaming:
 
@@ -622,32 +602,3 @@ def test_chat_turns_share_thread_metadata_without_reusing_trace_or_date(
     assert all(
         r["extra"]["metadata"]["thread_id"] == threads[r["trace_id"]] for r in runs
     )
-
-
-def test_autosuggestion_has_a_child_llm_span_and_thread_metadata(monkeypatch, recorder):
-    draft = "Oui, prépare cette séance."
-    suggestion = FakeCoach(messages=iter([AIMessage(content=draft)]))
-    coach = FakeCoach(messages=iter([AIMessage(content="Une séance facile ?")]))
-    monkeypatch.setattr(
-        agent,
-        "build_chat_model",
-        lambda **kw: suggestion if kw.get("max_tokens") == 512 else coach,
-    )
-    context = AgentContext(thread_id="suggestion-thread", suggest_reply=True)
-
-    async def consume():
-        return [part async for part in stream_run(state("Demain ?"), context=context)]
-
-    parts = asyncio.run(consume())
-    assert {"type": "suggestion", "text": draft} in [
-        p["data"] for p in parts if p["type"] == "custom"
-    ]
-    runs, _ = assert_trace_tree(recorder)
-    llms = [r for r in runs if r["run_type"] == "llm"]
-    assert len(llms) == 2
-    completion = next(r for r in llms if r["name"] == "coach_autosuggestion")
-    parent = recorder.recorded_runs[str(completion["parent_run_id"])]
-    assert parent["run_type"] == "chain"
-    assert "AutoSuggestionMiddleware" in parent["name"]
-    assert completion["extra"]["metadata"]["thread_id"] == "suggestion-thread"
-    assert context.stats.model_calls == 2

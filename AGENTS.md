@@ -71,12 +71,15 @@ responsibility a testable owner. Do not create empty architectural scaffolding.
   database (a preview included) has recorded: take a fresh number.
 - Async model clients belong to the server event loop. Sync API/scheduler work uses
   AnyIO workers and `invoke_agent_sync`; never add a fresh `asyncio.run()` per job.
-- Empty threads use fixed page-aware starters. Interactive chat may make one bounded,
-  measured, tool-free auto-suggestion call after the answer and emit a `suggestion`
-  event for the editable draft. Never overwrite user typing or send it automatically.
-  Keep HTTP, SSE, parser and browser-storage contracts aligned.
+- Empty threads use fixed page-aware starters. Answers make no auxiliary suggestion
+  call and never fill the composer automatically. Preserve manual drafts and keep
+  HTTP, SSE, parser and browser-storage contracts aligned.
+- System skills expose metadata in SYSTEM and bodies through native read_file tool
+  results in MESSAGES. Attachments select document-planning for reading, not preloading.
+  Skills grant no permissions. Toolkits bind native tools by server profile, without
+  search/load tools or model-controlled loading state.
 - Preserve optional LangSmith tracing across async invocation and stream closure.
-  Forward callbacks to dynamically executed tools and retain thread metadata. The
+  Preserve native tool callbacks and retain thread metadata. The
   context builder owns bounded journal injection and the current chat date.
 - Keep state local to the invocation. Compiled graphs are cached and multiple tabs
   or scheduled jobs may overlap. Cancellation cannot undo a committed write or

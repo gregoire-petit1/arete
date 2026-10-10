@@ -8,8 +8,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from arete.garmin.models import SessionType
-
 MAX_STEPS = 100
 MAX_REPEAT_DEPTH = 2
 MAX_EXPANDED_STEPS = 1000
@@ -111,21 +109,17 @@ class Prescription(StrictModel):
 
 class Provenance(StrictModel):
     document_id: UUID
-    locator: str = Field(min_length=1, max_length=200)
-    quote: str = Field(min_length=1, max_length=4000)
-
-
-class ImportedSession(StrictModel):
-    date: Date | None = None
-    sport: Literal[
-        "running", "cycling", "swimming", "strength", "walking", "hiking", "other"
-    ]
-    session_type: SessionType = SessionType.OTHER
-    description: str = Field(min_length=1, max_length=500)
-    prescription: Prescription
-    provenance: list[Provenance] = Field(min_length=1, max_length=20)
-    strength_text: str = Field(default="", max_length=4000)
-    uncertainties: list[str] = Field(default_factory=list, max_length=20)
+    locator: str = Field(
+        min_length=1,
+        max_length=200,
+        description="Exact block identifier shown in square brackets in the source, "
+        "e.g. lignes 1-12. Never invent a description or use read_file line numbers.",
+    )
+    quote: str = Field(
+        min_length=1,
+        max_length=4000,
+        description="Exact substring of that block, without read_file line numbers.",
+    )
 
 
 def strength_prescription(text: str, day: Date | None) -> Prescription:
@@ -185,10 +179,10 @@ def strength_sets(
 
 
 def conversation_prescription(
-    raw: str, sport: str, day: Date, strength_text: str = ""
+    prescription: Prescription | None, sport: str, day: Date, strength_text: str = ""
 ) -> Prescription:
     """Validate model input without allowing it to replace the strength grammar."""
-    if len(raw) > 32_000 or len(strength_text) > 4_000:
+    if len(strength_text) > 4_000:
         raise ValueError("Prescription trop volumineuse.")
     if strength_text and sport != "strength":
         raise ValueError('strength_text exige sport="strength".')
@@ -198,15 +192,16 @@ def conversation_prescription(
                 "Fournis le texte exact de musculation pour vérifier les séries."
             )
         parsed = strength_prescription(strength_text, day)
-        if not raw:
+        if prescription is None:
             return parsed
-        prescription = Prescription.model_validate_json(raw)
         if strength_sets(prescription) != strength_sets(parsed):
             raise ValueError(
                 "Les séries ne correspondent pas au texte reconnu par la grammaire."
             )
         return prescription
-    return Prescription.model_validate_json(raw)
+    if prescription is None:
+        raise ValueError("Une prescription structurée est requise.")
+    return prescription
 
 
 def describe(prescription: Prescription) -> str:

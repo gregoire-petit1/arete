@@ -82,7 +82,6 @@ export function restoreConversation(raw: string | null): ChatMessage[] {
         } : undefined,
         attachmentIds: Array.isArray(m.attachmentIds) && m.attachmentIds.length <= 20 && m.attachmentIds.every((id: unknown) => typeof id === 'string') ? m.attachmentIds : undefined,
         workouts: m.workouts,
-        imports: Array.isArray(m.imports) && m.imports.length <= 50 && m.imports.every((item: { id?: unknown; version?: unknown }) => typeof item.id === 'string' && Number.isInteger(item.version)) ? m.imports : undefined,
         role: m.role,
         content: m.content,
         parts,

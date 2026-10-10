@@ -31,11 +31,9 @@ const MAX_ACTIVE_RUNS = 1;
 const SAVE_DELAY_MS = 250;
 const SESSION_WRITE_TOOLS = new Set([
   'create_planned_session',
-  'update_session_prescription',
   'export_garmin_sessions',
   'reconcile_garmin_session',
   'sync_garmin_activities',
-  'update_planned_status',
   'update_planned_session',
   'delete_planned_session',
   'save_workout',
@@ -54,7 +52,6 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
   const runRef = useRef<{
     threadId: string;
     controller: AbortController;
-    draftEdited: boolean;
   } | null>(null);
   const storeRef = useRef(store);
   const active = store.threads.find((t) => t.id === store.activeId);
@@ -115,7 +112,6 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
     setStore(prev => updateThread(prev, active.id, thread => JSON.stringify(thread.attachmentIds ?? []) === JSON.stringify(ids) ? thread : { ...thread, attachmentIds: ids }));
   }, [active.id]);
   const draft = (text: string) => {
-    if (runRef.current?.threadId === active.id) runRef.current.draftEdited = true;
     setStore((prev) =>
       updateThread(prev, prev.activeId, (t) => ({ ...t, draft: text }))
     );
@@ -158,9 +154,8 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
     const threadId = active.id;
     const answerIndex = keep + 1;
     const controller = new AbortController();
-    const run = { threadId, controller, draftEdited: retrying && !!active.draft };
+    const run = { threadId, controller };
     runRef.current = run;
-    let suggestion: string | undefined;
     markWorkout('coach:request-start');
     performance.clearMarks('coach:first-feedback');
     performance.clearMarks('coach:first-text');
@@ -204,10 +199,6 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
       context,
       (event) => {
         if (controller.signal.aborted) return;
-        if (event.type === 'suggestion') {
-          suggestion = event.text;
-          return;
-        }
         if (event.type === 'workout_update') {
           if (event.thread_id !== threadId) throw new Error('Événement reçu pour un autre fil.');
           cacheWorkout(queryClient, event);
@@ -233,15 +224,9 @@ export function useCoachThreads(context: PanelPageContext, selectedDocuments = f
         if (event.type === 'done') {
           markWorkout('coach:done');
           measureWorkout('coach:total', 'coach:request-start', 'coach:done');
-          // Commit the proposed draft only once the run succeeds. A late event
-          // must neither overwrite typing (even if erased) nor touch another thread.
-          const proposed = suggestion;
-          if (proposed && !run.draftEdited) {
-            setStore(prev => updateThread(prev, threadId, t => run.draftEdited || t.draft ? t : { ...t, draft: proposed }));
-          }
+
         }
         patchAnswer((m) => applyEvent(m, event));
-        if (event.type === 'import_preview' || event.type === 'done') void queryClient.invalidateQueries({ queryKey: ['coach-imports', threadId] });
         // Refresh when the write completes, even if the final answer fails or
         // the athlete has switched threads while this run was in flight.
         if (event.type === 'tool_end' && event.status === 'done') {

@@ -157,9 +157,9 @@ test('Chiron: real SSE states, one motion cycle, immediate text and an interrupt
     await expect(answer.getByText('CHIRON', { exact: true })).toHaveCount(0);
     await page.screenshot({ path: '../.context/chiron-latency-desktop.png', animations: 'disabled' });
     stream.send({ type: 'tool_start', id: 'read', name: 'read_file', args: preview });
-    await expect(panel.getByRole('status')).toHaveText('Lecture de tes notes');
+    await expect(panel.getByRole('status')).toHaveText('Lecture d’un fichier');
     stream.send({ type: 'tool_end', id: 'read', name: 'read_file', status: 'done', output: preview, elapsed_ms: 40 });
-    await expect(panel.getByRole('status')).toHaveText('Notes consultées · préparation de la réponse');
+    await expect(panel.getByRole('status')).toHaveText('Fichier consulté · préparation de la réponse');
     await expect(panel.locator('.activity-orbit')).toBeVisible();
     stream.send({ type: 'token', id: 'answer', text: 'J’ai retrouvé ton ancien objectif.' });
     await expect(panel.getByText('J’ai retrouvé ton ancien objectif.', { exact: true })).toBeVisible({ timeout: 1_000 });
@@ -321,7 +321,7 @@ test('Arete: file drop, inline draft and active SSE survive tab navigation', asy
     await input.fill('Garde mon dimanche libre.');
     await navigation.getByRole('link', { name: 'Planning', exact: true }).click();
     await expect(page).toHaveURL(/planning/);
-    await expect(panel.getByRole('status')).toHaveText('Lecture de tes notes');
+    await expect(panel.getByRole('status')).toHaveText('Lecture d’un fichier');
     await expect(input).toHaveValue('Garde mon dimanche libre.');
     expect(await inputNode!.evaluate(node => node === document.querySelector('[aria-label="Message au coach"]'))).toBe(true);
     stream.send({ type: 'tool_end', id: 'planning', name: 'read_file', status: 'done', output: preview, elapsed_ms: 80 });

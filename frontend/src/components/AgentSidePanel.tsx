@@ -33,7 +33,6 @@ import { ToolActivity } from './agent/ToolActivity';
 import { CoachActivity, CoachPresence } from './agent/CoachActivity';
 import { canRetryMessage, isThinking } from '@/lib/agentActivity';
 import { DocumentAttachments, type AttachmentsHandle } from './agent/DocumentAttachments';
-import { DocumentImports } from './agent/DocumentImports';
 import { CalendarActionCard } from './agent/CalendarActionCard';
 
 const PAGE_LABELS: Record<string, string> = {
@@ -342,7 +341,6 @@ export function AgentSidePanel({
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6"
           >
             {!rpg && <DocumentAttachments key={active.id} threadId={active.id} collapsed={active.messages.length > 0} disabled={runningId !== null} ref={attachmentsRef} onBusy={setDocumentsBusy} onDocuments={coach.attachments} />}
-            <div className="my-3"><DocumentImports key={`imports-${active.id}`} threadId={active.id} /></div>
             {!messages.length && (
               <div className="mx-auto mt-10 max-w-sm">
                 <AreteMark size={48} />

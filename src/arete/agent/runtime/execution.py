@@ -78,17 +78,22 @@ def _elapsed_ms(started: float) -> int:
 
 async def invoke_agent(graph: Any, state: dict, *, context: AgentContext) -> dict:
     started = monotonic()
+    context.started_at = started
     context.deadline = started + MAX_RUN_SECONDS
     error = None
     try:
         with agent_tracing():
             async with asyncio.timeout(MAX_RUN_SECONDS):
-                return cast(
+                result = cast(
                     dict,
                     await graph.ainvoke(
                         state, context=context, config=run_config(context=context)
                     ),
                 )
+                # A tool-free answer is useful only once it has completed.
+                if context.stats.first_result_ms is None:
+                    context.stats.first_result_ms = _elapsed_ms(started)
+                return result
     except BaseException as exc:
         error = type(exc).__name__
         raise
@@ -115,6 +120,7 @@ async def stream_agent(
     graph: Any, state: dict, *, context: AgentContext
 ) -> AsyncGenerator[dict, None]:
     started = monotonic()
+    context.started_at = started
     context.deadline = started + MAX_RUN_SECONDS
     error = None
     try:
@@ -134,6 +140,8 @@ async def stream_agent(
                         ):
                             context.stats.first_token_ms = _elapsed_ms(started)
                         yield part
+                if context.stats.first_result_ms is None:
+                    context.stats.first_result_ms = _elapsed_ms(started)
     except BaseException as exc:
         error = type(exc).__name__
         raise

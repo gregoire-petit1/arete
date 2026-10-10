@@ -5,7 +5,7 @@ faciles, 6 × 400 m et 90 secondes de récupération, puis envoie-le sur Garmin�
 The planning toolkit persists a versioned coach prescription. The preloaded Garmin
 toolkit inspects, exports and reconciles it without OCR or an import draft. Missing
 required parameters are requested; an explicit export request supplies intent.
-Document imports retain their separate human source validation.
+Attached documents use the same direct creation tool, with typed source references checked against the current thread. No import preview or extra confirmation is required.
 
 ## Execution and UI
 
@@ -77,8 +77,8 @@ are not a usability study and do not validate the 100/200 ms design targets or I
 `create_planned_session(sport="strength", strength_text=...)` builds versioned
 steps through the existing grammar, including specified rests and optional weights.
 A title alone is rejected before persistence. The coach may compose a requested
-future workout; logging performed sets still uses `read_workout` / `save_workout`.
-Optional `prescription_json` must preserve the grammar-verified sets and may specify
+future workout; logging performed sets uses one `save_workout` call, rejecting any incomplete parse without saving a partial session.
+Optional `prescription` must preserve the grammar-verified sets and may specify
 exact Garmin exercise names. Only explicit catalog equivalents are mapped; unknown
 exercises fail conversion without a remote write. `export_garmin_sessions` uses the
 same durable reservation, scheduling, verification and optional device-transfer

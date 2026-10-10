@@ -36,7 +36,6 @@ export interface ChatMessage {
   streamAccepted?: boolean;
   attachmentIds?: string[];
   workouts?: WorkoutUpdate[];
-  imports?: { id: string; version: number }[];
   role: 'user' | 'assistant';
   content: string;
   parts?: ChatPart[];
@@ -46,8 +45,6 @@ export interface ChatMessage {
 }
 export type StreamEvent =
   | WorkoutUpdate
-  | { type: 'suggestion'; text: string }
-  | { type: 'import_preview'; id: string; version: number }
   | { type: 'calendar_action'; id: string }
   | { type: 'token'; id: string; text: string }
   | { type: 'message'; id: string; text: string }
@@ -93,19 +90,13 @@ function isPreview(value: unknown): value is Preview {
   );
 }
 
-/** Fail on malformed required events; optional drafts may be omitted with a warning. */
+/** Fail on malformed required events; retired optional events are ignored. */
 export function parseEvent(data: string): StreamEvent | null {
   const e: unknown = JSON.parse(data);
   if (!record(e)) throw new Error('Événement du coach invalide.');
   if (isWorkoutUpdate(e)) return e;
-  if (e.type === 'suggestion') {
-    // Match Python's Unicode code-point limit, including emoji. An optional
-    // draft must never turn a completed answer into a retryable failure.
-    if (typeof e.text === 'string' && e.text.trim() && Array.from(e.text).length <= MAX_SUGGESTION_CHARS) return e as StreamEvent;
-    console.warn('Suggestion du coach invalide : brouillon ignoré.');
-    return null;
-  }
-  if (e.type === 'import_preview' && typeof e.id === 'string' && /^[0-9a-f-]{36}$/i.test(e.id) && Number.isInteger(e.version) && Number(e.version) > 0) return e as StreamEvent;
+  if (e.type === 'suggestion') return null;
+
   const identified = typeof e.id === 'string' && e.id.length > 0;
   if (
     e.type === 'calendar_action' &&
@@ -169,8 +160,6 @@ export function applyEvent(
   message: ChatMessage,
   event: StreamEvent
 ): ChatMessage {
-  // Suggestions belong to the editable draft, never to conversation history.
-  if (event.type === 'suggestion') return message;
   if (event.type === 'workout_update') {
     const current = message.workouts ?? [];
     const previous = current.find(w => w.session.id === event.session.id);
@@ -178,7 +167,6 @@ export function applyEvent(
     if (!previous && current.length >= 50) throw new Error('Maximum 50 séances par réponse.');
     return { ...message, workouts: previous ? current.map(w => w.session.id === event.session.id ? event : w) : [...current, event] };
   }
-  if (event.type === 'import_preview') return { ...message, imports: [...(message.imports ?? []).filter(item => item.id !== event.id), { id: event.id, version: event.version }] };
   if (event.type === 'error') return settleMessage(message, event.detail);
   if (event.type === 'done')
     return settleMessage({ ...message, content: event.message.content, trace: event.trace });
@@ -296,7 +284,6 @@ export async function runAgentStream(
       messages: history.map(({ role, content }) => ({ role, content })),
       thread_id: threadId,
       ...(documentIds !== undefined ? { document_ids: documentIds } : {}),
-      supports_suggestions: true,
       panel_context,
     }),
     signal: AbortSignal.any([signal, AbortSignal.timeout(STREAM_TIMEOUT_MS)]),
