@@ -78,9 +78,9 @@ export function CoachActivity({ message }: { message: ChatMessage }) {
     <div className="coach-activity mb-3 min-w-0 space-y-2 text-[13px] leading-relaxed">
       <p role="status" aria-atomic="true" className={cn('flex min-h-8 items-center gap-2 text-text-secondary', !pending && confirmed && !interrupted && 'text-success-green')}>
         {pending && !interrupted ? <CoachPresence active={online && !hasText && !failed && !uncertain && elapsed < STREAM_TIMEOUT_MS / CLOCK_TICK_MS} />
-          : confirmed && !interrupted ? <span key={statusKey} className="coach-confirmation" aria-hidden="true" />
+          : confirmed && !interrupted ? <span key={`confirmation:${statusKey}`} className="coach-confirmation" aria-hidden="true" />
             : <CircleAlert aria-hidden="true" className="size-4 shrink-0 text-text-muted" />}
-        <span key={statusKey} className="coach-status-label min-w-0">{label}</span>
+        <span key={`label:${statusKey}`} className="coach-status-label min-w-0">{label}</span>
       </p>
       {pending && (!online || (!hasText && elapsed >= LONG_WAIT_SECONDS)) && (
         <p role="status" className="max-w-prose text-xs text-text-muted">
