@@ -29,6 +29,11 @@ _PROCESS_SECRET = secrets.token_hex(32)
 
 
 def _state_secret() -> str:
+    """The callback can land on another instance, so this must not vary
+    per process in production: better a predictable empty secret (the auth
+    guard already fails the whole API closed) than one two instances disagree on."""
+    if config.is_production:
+        return config.clerk_secret_key or config.cron_secret
     return config.clerk_secret_key or config.cron_secret or _PROCESS_SECRET
 
 

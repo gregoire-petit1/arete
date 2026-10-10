@@ -292,6 +292,17 @@ def test_callback_without_our_state_stores_nothing(router_client):
     save.assert_not_called()
 
 
+def test_state_secret_never_falls_back_to_the_process_secret_in_production(
+    monkeypatch,
+):
+    from arete.api import strava
+
+    monkeypatch.setenv("VERCEL_ENV", "production")
+    monkeypatch.delenv("CLERK_SECRET_KEY", raising=False)
+    monkeypatch.delenv("CRON_SECRET", raising=False)
+    assert strava._state_secret() != strava._PROCESS_SECRET
+
+
 def test_authorize_url_carries_a_signed_state(router_client):
     from urllib.parse import parse_qs, urlparse
 
