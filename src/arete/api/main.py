@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 import duckdb
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Response
 from fastapi.responses import JSONResponse
 
 from arete import scheduler
@@ -37,6 +37,7 @@ from arete.api.year_review import router as year_review_router
 from arete.config import config
 from arete.dataio.db import db_connection
 from arete.dataio.init_duckdb import main as init_schema
+from arete.dataio.init_duckdb import pending_migrations
 from arete.dataio.mirror import MirrorMiddleware
 from arete.dataio.ownership import OwnershipError
 from arete.services.documents import DocumentError
@@ -112,24 +113,37 @@ async def document_error(_request, exc: DocumentError):
 
 
 @app.get("/health")
-def health():
+def health(response: Response):
     """Health check endpoint with database status.
 
     Reads a real table rather than ``SELECT 1``, which DuckDB answers locally:
-    the probe must reach (and so keep awake) the remote database.
+    the probe must reach (and so keep awake) the remote database. A database
+    that is unreachable or behind this code's migrations (the boot swallows a
+    failed migration) answers 503: the deploy workflows and the pinger stop
+    on it rather than on a page that fails.
     """
     db_status = "connected"
     schema_version = None
+    pending: list[int] = []
     try:
         with db_connection() as con:
             row = con.execute(
                 "SELECT COALESCE(MAX(version), 0) FROM app.schema_version"
             ).fetchone()
             schema_version = row[0] if row else None
+            pending = pending_migrations(con)
     except Exception as e:
         logger.warning("DuckDB health check failed: %s", e)
         db_status = "disconnected"
-    return {"status": "ok", "database": db_status, "schema_version": schema_version}
+    healthy = db_status == "connected" and not pending
+    if not healthy:
+        response.status_code = 503
+    return {
+        "status": "ok" if healthy else "degraded",
+        "database": db_status,
+        "schema_version": schema_version,
+        "pending_migrations": pending,
+    }
 
 
 @app.get("/sync/status")

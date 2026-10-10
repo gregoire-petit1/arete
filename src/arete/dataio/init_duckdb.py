@@ -1,9 +1,11 @@
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 import duckdb
 
+from arete.config import config
 from arete.dataio.db import connect
 
 logger = logging.getLogger(__name__)
@@ -768,28 +770,85 @@ def _applied(con) -> set[int]:
     return {int(r[0]) for r in rows}
 
 
+def pending_migrations(con) -> list[int]:
+    """Versions this database lacks, in list order; empty when current.
+
+    A fresh database (no schema yet) lacks them all.
+    """
+    try:
+        applied = _applied(con)
+    except duckdb.CatalogException:
+        applied = set()
+    return [version for version, _ in MIGRATIONS if version not in applied]
+
+
+#: Backups kept per database, the newest first. Each is a zero-copy clone on
+#: MotherDuck, so keeping two costs nothing until the original diverges.
+BACKUPS_KEPT = 2
+
+
+def backup_statements(database: str, existing: list[str], now: datetime) -> list[str]:
+    """The SQL that clones ``database`` before a migration and drops old clones.
+
+    ``existing`` lists the account's databases; the clones are the ones named
+    ``<database>_bak_<UTC stamp>``, which sort by age.
+    """
+    prefix = f"{database}_bak_"
+    name = f"{prefix}{now:%Y%m%dT%H%M%S}"
+    statements = [f'CREATE DATABASE "{name}" FROM "{database}"']
+    clones = sorted((d for d in existing if d.startswith(prefix)), reverse=True)
+    for old in clones[BACKUPS_KEPT - 1 :]:
+        statements.append(f'DROP DATABASE "{old}"')
+    return statements
+
+
+def _backup_remote(con) -> None:
+    """Clone the MotherDuck database before its first pending migration.
+
+    Local files are not cloned: tests and `make dev` own their data. The clone
+    is the rollback when a migration leaves the database half-way, and the
+    deploy runbook (docs/deployment.md) names it.
+    """
+    from datetime import UTC
+
+    from arete.dataio.db import remote_database
+
+    database = remote_database()
+    existing = [
+        str(r[0])
+        for r in con.execute("SELECT database_name FROM duckdb_databases()").fetchall()
+    ]
+    for statement in backup_statements(database, existing, datetime.now(UTC)):
+        con.execute(statement)
+    logger.info("Backed up %s before migrating", database)
+
+
 def _run_migrations(con) -> None:
     """Apply every missing migration, in list order, and record it."""
     applied = _applied(con)
+    pending = [v for v, _ in MIGRATIONS if v not in applied]
+    if pending and config.is_remote_db:
+        _backup_remote(con)
     for version, migrate in MIGRATIONS:
         if version in applied:
             continue
         migrate(con)
-        con.execute("INSERT INTO app.schema_version (version) VALUES (?)", [version])
+        # Two cold instances can race on the same version: each migration is
+        # idempotent, and the second record must not fail the boot.
+        con.execute(
+            "INSERT INTO app.schema_version (version) VALUES (?) ON CONFLICT DO NOTHING",
+            [version],
+        )
         logger.info("Schema migration %d applied", version)
-    if 36 in applied and any(version not in applied for version, _ in MIGRATIONS):
+    if 36 in applied and pending:
         # A late historical migration can recreate a relation. Reapply the
         # idempotent ownership projection so it cannot reintroduce shared data.
         _m36_private_relations(con)
 
 
 def _is_current(con) -> bool:
-    try:
-        applied = _applied(con)
-    except duckdb.CatalogException:
-        return False  # a fresh database: no schema yet
     # Versions from other branches may be present; only missing ones matter.
-    return {version for version, _ in MIGRATIONS} <= applied
+    return not pending_migrations(con)
 
 
 def main():

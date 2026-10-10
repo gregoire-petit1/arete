@@ -89,9 +89,12 @@ The scheduler claims at most five athletes per dispatch, stops starting work aft
 started can exceed that dispatch deadline; provider/model budgets still apply.
 A failed or interrupted job retains its lease: it is never automatically replayed
 just because the lease timestamp passed. Inspect external side effects before
-clearing `sync_lease_until` for that athlete. A five-minute Vercel cron drains
-remaining work and requires a plan supporting sub-daily cron; an always-on Docker
-scheduler uses its existing five-minute tick. No queue infrastructure is introduced.
+clearing `sync_lease_until` for that athlete. The Vercel cron runs once daily at
+08:00 UTC (within that hour on Hobby) to stay within the Hobby plan's daily limit.
+Work beyond the bounded batch waits for the next daily dispatch; draining it more
+frequently requires a plan supporting sub-daily cron and a schedule change.
+An always-on Docker scheduler uses its existing five-minute tick. No queue
+infrastructure is introduced.
 
 ## Local validation
 
