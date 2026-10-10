@@ -203,3 +203,32 @@ def test_run_deadline_cancels_retry_backoff(monkeypatch):
 
     asyncio.run(cancel_during_backoff())
     assert devices.call_count == 1
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_garmin_sync_gets_the_run_deadline_and_refreshes_the_page(
+    monkeypatch, async_mode
+):
+    from arete.services import garmin_sync
+
+    sync = Mock(return_value={"complete": True, "sessions": [{"id": 42}]})
+    monkeypatch.setattr(garmin_sync, "sync_recent", sync)
+    context = AgentContext()
+    context.page_section = "stale page"
+    result = run(graph_for("sync_garmin_activities", {}), async_mode, context)
+    message = next(m for m in result["messages"] if m.type == "tool")
+    assert json.loads(message.content)["sessions"] == [{"id": 42}]
+    assert (context.deadline is not None) is async_mode  # set by invoke_agent
+    assert sync.call_args.kwargs["deadline"] == context.deadline
+    assert context.page_section != "stale page"
+
+
+@pytest.mark.parametrize("async_mode", [False, True])
+def test_garmin_sync_failure_is_never_replayed(monkeypatch, async_mode):
+    from arete.services import garmin_sync
+
+    sync = Mock(side_effect=ConnectionError("garmin offline"))
+    monkeypatch.setattr(garmin_sync, "sync_recent", sync)
+    with pytest.raises(ConnectionError):
+        run(graph_for("sync_garmin_activities", {}), async_mode)
+    assert sync.call_count == 1

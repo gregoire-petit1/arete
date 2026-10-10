@@ -26,6 +26,7 @@ const TOOL_LABELS: Record<string, [running: string, done: string]> = {
   list_garmin_devices: ['Recherche des appareils Garmin', 'Appareils consultés'],
   export_garmin_sessions: ['Programmation dans Garmin', 'Action Garmin terminée'],
   reconcile_garmin_session: ['Vérification Garmin', 'Vérification terminée'],
+  sync_garmin_activities: ['Synchronisation Garmin', 'Synchronisation terminée'],
   create_planned_session: ['Création d’une séance', 'Séance créée'],
   update_planned_status: ['Mise à jour d’une séance', 'Séance mise à jour'],
   update_planned_session: ['Modification d’une séance', 'Séance mise à jour'],

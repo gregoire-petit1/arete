@@ -16,7 +16,8 @@ ANALYTICS_INSTRUCTIONS = """Toolkit `analytics` chargé. Règles:
 PLANNING_INSTRUCTIONS = """Toolkit `planning` chargé. Règles:
 - Avant de planifier, utilise la charge et le planning déjà joints au contexte ; lis seulement les informations manquantes pour éviter les doublons.
 - Une séance qui ne se fera pas passe en `skipped`; ne la supprime que si l'athlète le demande.
-- Pour déplacer ou ajuster une séance prévue, `update_planned_session`: jamais supprimer puis recréer."""
+- Pour déplacer ou ajuster une séance prévue, `update_planned_session`: jamais supprimer puis recréer.
+- Avant de modifier le planning d'après une séance faite, lis les séances réalisées (`done_sessions` de la page Planning, sinon `list_recent_sessions`) ; ne conclus jamais qu'elle manque sans les avoir lues."""
 
 PLANNING_INSTRUCTIONS += """
 - Une création conversationnelle peut inclure prescription_json sans document ni aperçu d’import.
@@ -35,6 +36,7 @@ GARMIN_INSTRUCTIONS = """Toolkit `garmin` chargé. Règles:
 - Destination par défaut Garmin Connect. Charge les appareils uniquement si un transfert montre est demandé.
 - Distingue séance enregistrée, programmation Garmin vérifiée et transfert demandé. La réception montre n’est pas vérifiable ici.
 - Les cartes montrent les résultats : réponse finale brève, avec les séances réussies et celles qui restent à traiter.
+- Quand l’athlète demande une synchro Garmin, ou qu’une séance récente qu’il évoque manque, appelle sync_garmin_activities une seule fois, sans relance automatique. Commente les séances qu’elle renvoie ; sans séance importée, dis-le.
 """
 
 PLANNING_INSTRUCTIONS += """
@@ -79,7 +81,7 @@ CAPABILITIES: dict[str, Toolkit] = {
     ),
     "garmin": Toolkit(
         id="garmin",
-        description="Exporter les séances vers Garmin Connect et vérifier leur programmation.",
+        description="Importer les nouvelles activités Garmin Connect ; exporter les séances vers Garmin Connect et vérifier leur programmation.",
         tools=GARMIN_TOOLS,
         instructions=GARMIN_INSTRUCTIONS,
         read_tools=frozenset({"list_garmin_devices"}),

@@ -34,6 +34,7 @@ const SESSION_WRITE_TOOLS = new Set([
   'update_session_prescription',
   'export_garmin_sessions',
   'reconcile_garmin_session',
+  'sync_garmin_activities',
   'update_planned_status',
   'update_planned_session',
   'delete_planned_session',

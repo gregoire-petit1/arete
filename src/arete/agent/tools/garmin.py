@@ -6,7 +6,7 @@ from datetime import date
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from arete.services import garmin_export
+from arete.services import garmin_export, garmin_sync
 from arete.services.prescriptions import conversation_prescription
 
 
@@ -107,4 +107,26 @@ def reconcile_garmin_session(session_id: int, config: RunnableConfig) -> str:
         return _json({"error": str(exc)})
 
 
-GARMIN_TOOLS = [list_garmin_devices, export_garmin_sessions, reconcile_garmin_session]
+@tool
+def sync_garmin_activities(config: RunnableConfig) -> str:
+    """Import the athlete's new Garmin Connect activities now, like the sync button.
+
+    Once per turn, when asked to sync or when a recent session is missing.
+    Returns the imported sessions; never call it again to retry.
+    """
+    try:
+        return _json(
+            garmin_sync.sync_recent(
+                deadline=config.get("configurable", {}).get("workout_deadline")
+            )
+        )
+    except (PermissionError, RuntimeError) as exc:
+        return _json({"error": str(exc)})
+
+
+GARMIN_TOOLS = [
+    list_garmin_devices,
+    export_garmin_sessions,
+    reconcile_garmin_session,
+    sync_garmin_activities,
+]
