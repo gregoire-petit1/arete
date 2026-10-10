@@ -1,0 +1,42 @@
+tests/test_auth.py
+  s_ae2eec6921d568::t_5e1a77325b37aa 153
+  s_ae2eec6921d568::t_7640db1d282b9b 122,126-152
+  s_ae2eec6921d568::t_c8e7c487c7647d 154-155
+src/arete/config.py
+  s_ae2eec6921d568::t_de4981daa856aa 33-40
+  s_297c8ef5b497ca::t_c75036473cbe3e 32
+tests/test_strava_api.py
+  s_ae2eec6921d568::t_6bcd8d2cca2e26 295-305
+src/arete/api/auth.py
+  s_ae2eec6921d568::t_44fbc97feb6fc5 237-239
+  s_ae2eec6921d568::t_4b40650c5521ad 229,233-235,240,247-252
+  s_ae2eec6921d568::t_484e00a962992a 75-84,94-98,100,105-109
+src/arete/api/main.py
+  s_ae2eec6921d568::t_0d7b3659a5d2d3 75
+src/arete/api/strava.py
+  s_ae2eec6921d568::t_d241bfb50fa6b8 32-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc49bf4c8a3ae78aa4852fe06cc2275039b478ff",
+  "prompts": {},
+  "sessions": {
+    "s_297c8ef5b497ca": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "bdcbed82-6d7e-497f-9792-2c1396fdcbd6",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Nicolas Edmond <nicolas@mac-1.home>"
+    },
+    "s_ae2eec6921d568": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c6dc0d54-eeb3-4620-9a6e-b2a6ed9a099f",
+        "model": "claude-sonnet-5"
+      },
+      "human_author": "Nicolas Edmond <nicolas@mac-1.home>"
+    }
+  }
+}
