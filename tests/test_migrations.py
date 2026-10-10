@@ -66,6 +66,89 @@ def test_a_current_database_skips_the_ddl(tmp_path, monkeypatch):
     init_duckdb.main()  # would raise if the DDL ran
 
 
+def test_pending_migrations_lists_the_missing_versions(tmp_path, monkeypatch):
+    path = tmp_path / "pending.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    con = migration_connection(str(path))
+    assert init_duckdb.pending_migrations(con) == [v for v, _ in init_duckdb.MIGRATIONS]
+    con.close()
+    init_duckdb.main()
+    con = migration_connection(str(path))
+    assert init_duckdb.pending_migrations(con) == []
+    con.execute("DELETE FROM app.schema_version WHERE version IN (17, 36)")
+    assert init_duckdb.pending_migrations(con) == [17, 36]
+    con.close()
+
+
+def test_recording_a_version_twice_does_not_fail(tmp_path, monkeypatch):
+    # Two cold instances can migrate at once; the second record is a no-op.
+    path = tmp_path / "race.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = migration_connection(str(path))
+    con.execute(
+        "INSERT INTO app.schema_version (version) VALUES (?) ON CONFLICT DO NOTHING",
+        [init_duckdb.MIGRATIONS[-1][0]],
+    )
+    (count,) = con.execute("SELECT count(*) FROM app.schema_version").fetchone()
+    con.close()
+    assert count == len(init_duckdb.MIGRATIONS)
+
+
+def test_backup_statements_clone_then_keep_two():
+    from datetime import UTC, datetime
+
+    now = datetime(2026, 10, 10, 12, 30, 5, tzinfo=UTC)
+    existing = [
+        "arete",
+        "arete_preview",
+        "arete_bak_20261001T080000",
+        "arete_bak_20261005T080000",
+        "arete_preview_bak_20261009T080000",
+    ]
+    assert init_duckdb.backup_statements("arete", existing, now) == [
+        'CREATE DATABASE "arete_bak_20261010T123005" FROM "arete"',
+        'DROP DATABASE "arete_bak_20261001T080000"',
+    ]
+    assert init_duckdb.backup_statements("arete", ["arete"], now) == [
+        'CREATE DATABASE "arete_bak_20261010T123005" FROM "arete"'
+    ]
+
+
+def test_a_local_database_is_not_backed_up(tmp_path, monkeypatch):
+    path = tmp_path / "local.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = migration_connection(str(path))
+    con.execute("DELETE FROM app.schema_version WHERE version = 36")
+    con.close()
+    calls = []
+    monkeypatch.setattr(init_duckdb, "_backup_remote", lambda con: calls.append(con))
+    init_duckdb.main()
+    assert calls == []
+
+
+def test_a_remote_database_is_backed_up_before_migrating(tmp_path, monkeypatch):
+    path = tmp_path / "remote.duckdb"
+    monkeypatch.setenv("ARETE_DB", str(path))
+    init_duckdb.main()
+    con = migration_connection(str(path))
+    con.execute("DELETE FROM app.schema_version WHERE version = 36")
+    con.close()
+    monkeypatch.setattr(
+        type(init_duckdb.config), "is_remote_db", property(lambda s: True)
+    )
+    monkeypatch.setattr(
+        init_duckdb, "connect", lambda ro: migration_connection(str(path))
+    )
+    calls = []
+    monkeypatch.setattr(init_duckdb, "_backup_remote", lambda con: calls.append(con))
+    init_duckdb.main()
+    assert len(calls) == 1
+    init_duckdb.main()  # current now: no second backup
+    assert len(calls) == 1
+
+
 def test_a_database_behind_runs_its_migrations(tmp_path, monkeypatch):
     path = tmp_path / "behind.duckdb"
     monkeypatch.setenv("ARETE_DB", str(path))

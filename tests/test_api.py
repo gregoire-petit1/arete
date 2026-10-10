@@ -20,6 +20,20 @@ class TestHealth:
         data = client.get("/health").json()
         assert data["database"] == "connected"
         assert data["schema_version"] == MIGRATIONS[-1][0]
+        assert data["pending_migrations"] == []
+
+    def test_health_is_degraded_while_a_migration_is_pending(
+        self, client: TestClient, monkeypatch
+    ):
+        # The boot swallows a failed migration; the probe must not hide it.
+        from arete.api import main as api_main
+
+        monkeypatch.setattr(api_main, "pending_migrations", lambda con: [99])
+        response = client.get("/health")
+        assert response.status_code == 503
+        data = response.json()
+        assert data["status"] == "degraded"
+        assert data["pending_migrations"] == [99]
 
 
 class TestCronDailySync:

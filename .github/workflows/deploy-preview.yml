@@ -1,0 +1,84 @@
+name: Deploy preview
+
+# main ships to the Preview environment (its own database, `md:arete_preview`)
+# on a fixed URL once CI is green, so merged work runs somewhere before a batch
+# goes to production. It is its own workflow so that a failed deployment never
+# shows as a failed CI run, and so that "Deploy production" can ask one thing:
+# did this exact commit reach the preview healthy? Only the newest main
+# preview is kept.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-preview
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Shown as "Preview" in the repository's Deployments, with the fixed URL.
+    environment:
+      name: Preview
+      url: https://arete-main-arete15.vercel.app
+    env:
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      MAIN_PREVIEW_ALIAS: arete-main-arete15.vercel.app
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm install --global vercel@63.1.2
+      # `sha` lets "Deploy production" ask Vercel which commit the fixed URL serves.
+      - name: Deploy main to Preview
+        id: deploy
+        run: |
+          url=$(vercel deploy --archive=tgz --yes --token "$VERCEL_TOKEN" \
+            --meta channel=main --meta sha="$SHA")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+      # The first request migrates `arete_preview`; /health answers 503 while a
+      # migration is pending or failed, so a broken migration stops here, on the
+      # preview database: the fixed URL keeps serving the previous build and this
+      # run stays red until it is fixed.
+      - name: Check the health of the deployment
+        run: |
+          curl -fsS --retry 5 --retry-delay 10 --retry-all-errors \
+            -H "x-vercel-protection-bypass: $BYPASS" \
+            "$URL/api/health" | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          URL: ${{ steps.deploy.outputs.url }}
+      # REST, as `vercel alias set` cannot resolve `--scope` with the token.
+      - name: Point the fixed URL at it
+        run: |
+          api=https://api.vercel.com
+          id=$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "$api/v13/deployments/${URL#https://}?teamId=$VERCEL_ORG_ID" | jq -r .id)
+          curl -fsS -X POST -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"alias\":\"$MAIN_PREVIEW_ALIAS\"}" \
+            "$api/v2/deployments/$id/aliases?teamId=$VERCEL_ORG_ID" > /dev/null
+          echo "https://$MAIN_PREVIEW_ALIAS now serves $URL" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          URL: ${{ steps.deploy.outputs.url }}
+      - name: Remove the superseded main previews
+        run: scripts/ci/prune_deployments.sh 1 meta-channel=main
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
