@@ -149,7 +149,11 @@ test('Chiron: real SSE states, one motion cycle, immediate text and an interrupt
       return result;
     });
     expect(new Set(frames.slice(0, 3)).size).toBe(3);
-    await expect(panel.locator('.activity-presence .arete-mark')).toHaveCSS('transform', 'none');
+    // One laurel, in the message header (ARE-6); the status line keeps only the orbit.
+    await expect(panel.locator('.coach-activity .arete-mark')).toHaveCount(0);
+    const laurel = panel.locator('.coach-activity').locator('xpath=..').locator('.arete-mark');
+    await expect(laurel).toHaveCount(1);
+    await expect(laurel).toHaveCSS('transform', 'none');
     await page.screenshot({ path: '../.context/chiron-latency-desktop.png', animations: 'disabled' });
     stream.send({ type: 'tool_start', id: 'read', name: 'read_file', args: preview });
     await expect(panel.getByRole('status')).toHaveText('Lecture de tes notes');
