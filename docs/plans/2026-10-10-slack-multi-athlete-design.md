@@ -74,6 +74,37 @@ triggers for a Python `services` backend in `vercel.json`, the `vercel-queue`
 Python SDK, and publish latency inside Slack's three-second receipt. If any
 fails, keep today's attached task and document the gap.
 
+## Phase C — streamed answers
+
+Socket Mode is not needed: it only carries *incoming* events over a WebSocket,
+needs an always-on process Vercel functions are not, and adds an `xapp-` secret.
+Answers already leave through the Web API, which can stream.
+
+**Slack API** (checked 2026-10-10): `chat.startStream` opens a message in the
+thread (`chat:write`, already granted; Tier 2, 20+/min), `chat.appendStream`
+adds markdown (Tier 4, 100+/min, at most 12,000 characters per call) and
+`chat.stopStream` closes it. Channel streams also need `recipient_user_id` and
+`recipient_team_id`.
+
+**Flow.** The Slack producer becomes an async iterator over the coach's text,
+reusing the runtime streaming the browser's SSE already uses, without importing
+the HTTP route. The job starts the stream on the first text, buffers tokens and
+appends at most about once per second, then stops it with the final text. The
+rate tiers are per app and workspace, so the append interval grows with the
+number of concurrent streams. Tool progress can show as short `task_update`
+chunks (256 characters), e.g. « Lecture du journal… ». The 39,000-character
+reply cap still applies.
+
+**Failure.** If `startStream` fails, fall back to today's single
+`chat.postMessage`. The stream's `ts` is stored on the delivery row; a run that
+dies mid-stream (Phase B redelivery in `running`) stops that stream and posts the
+failure message under it, so no half answer is left looking complete.
+
+**Channels — open decision.** Phase C streams in DMs only. A channel answer
+would show one athlete's sessions, health and memory to every member. Before any
+channel mention is supported, choose: answer the mention privately in DM with a
+short public note, or answer in channel only with non-personal content.
+
 ## Tests
 
 - Cross-athlete: athlete B's Slack user never reads or writes athlete A's data;
@@ -83,11 +114,13 @@ fails, keep today's attached task and document the gap.
 - Unlinked DM: fixed reply, no coach, no history call.
 - Per-athlete concurrency: A busy does not block B; A ambiguous blocks only A.
 - Phase B: redelivery of `queued`, `running` and `done`; duplicate publish.
+- Phase C: append throttling under concurrent streams, `startStream` failure
+  falls back to one message, a run dying mid-stream stops it and posts the failure.
 
 ## Delivery
 
-Two PRs: A (linking, per-athlete runs, migration 38, Réglages card) then B
-(queue). Each with `make check`, the `preview` label on `arete_preview`, then
+Three PRs: A (linking, per-athlete runs, migration 38, Réglages card), B
+(queue), then C (streaming). Each with `make check`, the `preview` label on `arete_preview`, then
 Deploy production. Slack app changes: add the OIDC redirect URL
 `https://arete-arete15.vercel.app/api/slack/callback` and the `openid`,
 `profile` user scopes to `slack-manifest.json`.
