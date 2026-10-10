@@ -223,7 +223,12 @@ def get_records(sport: str = "running"):
     sports = SPORT_GROUPS.get(sport, RUNNING_SPORTS)
     with db_connection() as con:
         rows = best_effort_rows(con, sports)
+    bests = best_efforts(rows)
+    return {"records": [bests[n] for n in EFFORT_NAMES if n in bests]}
 
+
+def best_efforts(rows: Sequence[tuple]) -> dict[str, dict]:
+    """Fastest effort per canonical distance over ``best_effort_rows`` rows."""
     bests: dict[str, dict] = {}
     for efforts_json, row_date, activity_name, activity_id in rows:
         efforts = (
@@ -245,8 +250,7 @@ def get_records(sport: str = "running"):
                     "activity_name": activity_name or "",
                     "activity_id": activity_id,
                 }
-
-    return {"records": [bests[n] for n in EFFORT_NAMES if n in bests]}
+    return bests
 
 
 # ---------- Session CRUD ----------

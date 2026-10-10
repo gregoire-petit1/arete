@@ -12,6 +12,9 @@ const ProfilePage = lazy(() => import('@/pages/Profile').then(m => ({ default: m
 const AnalyticsPage = lazy(() =>
   import('@/pages/Analytics').then((m) => ({ default: m.AnalyticsPage })),
 );
+const YearReviewPage = lazy(() =>
+  import('@/pages/YearReview').then((m) => ({ default: m.YearReviewPage })),
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -63,6 +66,14 @@ function App() {
                       element={
                         <Suspense fallback={null}>
                           <AnalyticsPage />
+                        </Suspense>
+                      }
+                    />
+                    <Route
+                      path="/analytics/bilan"
+                      element={
+                        <Suspense fallback={null}>
+                          <YearReviewPage />
                         </Suspense>
                       }
                     />
