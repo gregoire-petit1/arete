@@ -112,13 +112,14 @@ do not add tests that merely repeat an implementation. Live model evaluations in
   Docker stack (`ARETE_DB=md:arete`). Read it through the HTTP API rather than
   scripts. A local DuckDB file (`make dev`, tests) allows one writer: a script that
   opens it while a backend runs makes the API answer 500.
-- A pull request labelled `preview` gets its preview from the CI `preview` job
-  once the checks pass, built from the branch merged into main and linked in a PR
-  comment; a newer preview replaces the older one and closing the PR removes it.
-  Merging deploys `main` to Preview at https://arete-main-arete15.vercel.app (the
-  repository's website link); production ships in batches through the manual
-  **Deploy production** workflow (back up first when the batch migrates). Vercel's
-  Git integration deploys nothing. By hand, use `vercel deploy --archive=tgz`:
+- Deployment is described in `docs/deployment.md`. In short: a PR labelled
+  `preview` gets a preview from CI; `main` merges through the merge queue and
+  every green run deploys it to https://arete-main-arete15.vercel.app (database
+  `md:arete_preview`); production ships in batches through the manual **Deploy
+  production** workflow, which refuses a commit the preview does not serve
+  healthy. The boot clones a MotherDuck database before migrating it, and
+  `/api/health` answers 503 while a migration is pending. Vercel's Git
+  integration deploys nothing. By hand, use `vercel deploy --archive=tgz`:
   `.vercelignore` is an allowlist, and loose uploads hit Vercel's 5000-file daily
   quota.
 - `data/`, Garmin tokens, FIT files, `PROG_*.md` and `.context/` stay untracked.

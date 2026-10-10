@@ -1,9 +1,11 @@
 name: Deploy production
 
 # Production ships by hand, in batches, rather than on every merge into main:
-# each deployment stores a ~430 MB function against the plan's 10 GB, and the
-# first request a deployment serves migrates the real database, so back it up
-# first when the batch carries a migration (README, "Deploying").
+# each deployment stores a ~430 MB function against the plan's 10 GB. Anyone
+# with write access runs it. The guard is not a reviewer but the preview: the
+# commit must already run healthy at https://arete-main-arete15.vercel.app,
+# migrations included. The first request a deployment serves migrates the real
+# database after cloning it (docs/deployment.md, "Migrations").
 on:
   workflow_dispatch:
 
@@ -27,8 +29,23 @@ jobs:
       VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
       PRODUCTION_URL: https://arete-arete15.vercel.app
+      MAIN_PREVIEW_ALIAS: arete-main-arete15.vercel.app
     steps:
       - uses: actions/checkout@v5
+      # "Deploy preview" moves the fixed URL only onto a healthy build, tagged
+      # with its commit: the URL must serve this very commit.
+      - name: Require a healthy preview of this commit
+        run: |
+          serving=$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v13/deployments/$MAIN_PREVIEW_ALIAS?teamId=$VERCEL_ORG_ID" \
+            | jq -r '.meta.sha // ""')
+          if [[ "$serving" != "$GITHUB_SHA" ]]; then
+            echo "::error::https://$MAIN_PREVIEW_ALIAS serves ${serving:-an untagged build}," \
+              "not $GITHUB_SHA. Wait for or fix 'Deploy preview' first."
+            exit 1
+          fi
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -37,7 +54,8 @@ jobs:
         run: vercel deploy --prod --archive=tgz --yes --token "$VERCEL_TOKEN"
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      # The first request runs any pending migration; the answer shows the result.
+      # The first request runs any pending migration after cloning the database;
+      # /health answers 503 until the schema is current.
       - name: Check the health of production
         run: |
           curl -fsS --retry 5 --retry-delay 10 --retry-all-errors \
