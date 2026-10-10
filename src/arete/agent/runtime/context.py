@@ -80,6 +80,11 @@ class AgentContext:
     stats: RunStats = field(default_factory=RunStats, init=False, repr=False)
     # The open page's data, cached per run and invalidated after domain actions.
     page_section: str | None = field(default=None, init=False, repr=False)
+    # Selected once by native skills discovery, stable for all model boundaries.
+    preloaded_skills: dict[str, str] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    skills_preload_limited: bool = field(default=False, init=False)
     # Async ToolNode uses gather(), ignoring RunnableConfig concurrency.
     tool_slots: asyncio.Semaphore = field(
         default_factory=lambda: asyncio.Semaphore(MAX_TOOL_CONCURRENCY),

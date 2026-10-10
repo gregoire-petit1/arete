@@ -36,6 +36,7 @@ from arete.services.coaching_repository import Briefing
 from arete.services.system_skills import publish_bundle
 
 AGENT_RECURSION_LIMIT = MAX_GRAPH_STEPS
+SYSTEM_SKILLS_ROOT = Path(__file__).parent / "agent" / "skills" / "system"
 
 
 MAX_CACHED_ATHLETES = 32
@@ -95,9 +96,7 @@ def _assemble(profile_id: str):
     skills_backend = None
     skill_files = {}
     if profile.journal_tools:
-        skill_files = publish_bundle(
-            Path(__file__).parent / "agent" / "skills" / "system"
-        )
+        skill_files = publish_bundle(SYSTEM_SKILLS_ROOT)
         skills_backend = SystemSkillsBackend(skill_files)
     filesystem = build_memory_filesystem(system_skills=skills_backend)
     skills = (
@@ -119,6 +118,27 @@ def _assemble(profile_id: str):
         fallback_models=models[1:],
         skills=skills,
     )
+
+
+def system_skill_catalog() -> list[dict]:
+    """Use native discovery without constructing a model or requiring its key."""
+    from deepagents.backends import CompositeBackend
+
+    from arete.agent.backends.skills import SYSTEM_SKILLS_ROUTE
+
+    files = publish_bundle(SYSTEM_SKILLS_ROOT)
+    backend = SystemSkillsBackend(files)
+    middleware = SystemSkillsMiddleware(
+        backend=CompositeBackend(
+            default=backend, routes={SYSTEM_SKILLS_ROUTE: backend}
+        ),
+        paths=set(files),
+    )
+    discovered = middleware.before_agent({}, None, {})["skills_metadata"]
+    return [
+        {key: skill[key] for key in ("name", "description", "path")}
+        for skill in sorted(discovered, key=lambda item: item["name"])
+    ]
 
 
 @_serialized

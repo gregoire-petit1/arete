@@ -240,6 +240,38 @@ def test_chat_endpoint_rejects_empty_messages(client):
     assert response.status_code == 422
 
 
+def test_skill_catalog_uses_native_discovery_without_building_a_model(client):
+    with patch(
+        "arete.coaching.build_chat_model", side_effect=AssertionError("No model needed")
+    ):
+        response = client.get("/agent/skills")
+    assert response.status_code == 200
+    skills = response.json()
+    assert any(skill["name"] == "document-planning" for skill in skills)
+    assert all(set(skill) == {"name", "description", "path"} for skill in skills)
+
+
+def test_invalid_skill_is_a_client_error_in_http_and_stream(client):
+    from arete.agent.context.skills import SkillSelectionError
+
+    class InvalidSkill:
+        async def ainvoke(self, state, **kwargs):
+            raise SkillSelectionError("Skill inconnu : /unknown")
+
+        async def astream(self, state, **kwargs):
+            raise SkillSelectionError("Skill inconnu : /unknown")
+            yield  # An async generator, matching the graph's streaming contract.
+
+    with patch("arete.api.agent.get_agent", return_value=InvalidSkill()):
+        body = {"messages": [{"role": "user", "content": "/unknown"}]}
+        response = client.post("/agent/chat", json=body)
+        assert response.status_code == 422
+        assert "Skill inconnu" in response.json()["detail"]
+        stream = client.post("/agent/chat/stream", json=body)
+    assert '"type": "error"' in stream.text
+    assert '"type": "done"' not in stream.text
+
+
 def test_middleware_wraps_handler_without_context():
     # Smoke: with no context at all the middleware must pass through cleanly.
     middleware = ContextBuilderMiddleware()

@@ -59,7 +59,11 @@ streamed chunk. Native LangChain `ModelFallbackMiddleware` tries the configured
 candidates in order (at most three, including the primary). The composition root
 constructs each fallback candidate with zero SDK retries and no provider-side fallback list,
 so one graph turn costs at most three requests, 72 per run before the optional
-suggestion. Each attempt is measured separately. Context validation precedes
+suggestion. Completions with neither visible text nor a valid tool call are
+rejected inside that same fallback boundary, including reasoning-only output
+that exhausts the token allowance. With no usable candidate the run fails
+explicitly; no empty answer is committed. Each attempt retains its usage and is
+measured separately. Context validation precedes
 fallback, cancellation propagates, and no tool or entire run is replayed. The
 optional suggestion keeps provider-side fallback inside its single bounded call.
 With a pinned model and no alternatives, the existing two SDK retries remain;
@@ -114,11 +118,36 @@ The graph holds a read-only snapshot at `/skills/system/`; both filesystem
 permissions and the backend deny edits, deletion, creation and uploads. Graph
 state cannot shadow those files. Native Deep Agents skills discovery runs once
 per invocation; an adapter rejects incomplete discovery instead of silently
-dropping malformed skills. The context builder includes only names, descriptions
-and paths in its token accounting, with full bodies read on demand. Skills grant
-no permissions and are unavailable to background missions. The bundle allows at
-most 32 skills of 32 KiB each. Publication adds no model request; the first
-bundled skill covers locating a requested training week in an attached document.
+dropping malformed skills. Its native `before_agent` hook then invokes a local
+LangChain retriever once, with callbacks forwarded into the run trace. Skills opt
+into preloading through `metadata.preload-keywords` and may require attachments
+with `metadata.preload-requires: attachments`. BM25 ranks these server-declared
+activation terms against the latest human message (accent-insensitive); document
+contents and older messages do not activate instructions. This lexical selection
+adds no model/embedding request or external I/O, but can miss paraphrases.
+The complete catalog stays available by name, description and read-only path,
+including skills without activation metadata and retrieval misses.
+
+The composer lists the catalog through `GET /agent/skills` when the athlete types
+`/`, with filtering and keyboard/mouse selection before sending. It inserts a
+leading `/skill-name` command into the ordinary persisted draft, so thread changes,
+reloads and explicit retries retain it without a second browser-state contract.
+Only commands in the latest human message select skills. The server resolves
+names against native discovery and prioritizes their complete bodies over BM25
+matches, bypassing relevance but never permissions or budgets. Unknown names and
+explicit selections that exceed the count/token limits fail visibly instead of
+being silently reduced to metadata. Listing builds no model and needs no model key.
+
+At most three complete skill files and 2,048 estimated tokens are preloaded;
+budget omissions are explicit and their files remain readable on demand. The
+context builder places this stable contribution before the profile's current date
+and dynamic evidence, includes it in complete-request accounting, and never
+reselects during the run. This preserves the skill prefix for provider caching;
+it does not guarantee a cache hit. Selection belongs to the invocation context,
+never shared graph state or client-supplied files. Skills grant no permissions and
+are unavailable to background missions. The bundle allows at most 32 skills of
+32 KiB each. Publication adds no model request; the first bundled skill covers
+reading a requested day or week in an attached training plan.
 
 The context builder combines the harness/filesystem contribution, mission
 instructions, the current date for chat, the catalog of toolkits still loadable,

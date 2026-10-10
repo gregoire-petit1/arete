@@ -282,6 +282,51 @@ def test_native_dynamic_and_filesystem_tools_stay_in_one_trace(
     assert roots[0].get("outputs") is not None
 
 
+@pytest.mark.parametrize("streaming", [False, True])
+def test_skill_retrieval_exports_one_child_span_before_inference(
+    monkeypatch, recorder, streaming
+):
+    from arete.agent.backends.attachments import attachment_files
+
+    attachment = "/attachments/plan.md"
+    install_model(
+        monkeypatch,
+        [
+            tool_call("read_file", {"file_path": attachment}, "plan"),
+            AIMessage(content="Séance retrouvée."),
+        ],
+    )
+    question = "regarde la prépa semi ci jointe"
+    inputs = {
+        **state(question),
+        "files": attachment_files({attachment: "2026-10-10 : 3 x 10 minutes"}),
+    }
+    context = AgentContext(attachment_paths=(attachment,), thread_id="skill-thread")
+    if streaming:
+
+        async def consume():
+            return [part async for part in stream_run(inputs, context=context)]
+
+        asyncio.run(consume())
+    else:
+        invoke(inputs, context=context)
+    runs, roots = assert_trace_tree(recorder)
+    retrievals = [run for run in runs if run["run_type"] == "retriever"]
+    assert len(retrievals) == 1  # Native callbacks must not be double-decorated.
+    retrieval = retrievals[0]
+    assert retrieval["name"] == "SystemSkillRetriever"
+    assert retrieval["parent_run_id"] is not None
+    assert retrieval["trace_id"] == roots[0]["trace_id"]
+    assert retrieval["extra"]["metadata"]["thread_id"] == "skill-thread"
+    assert retrieval["inputs"] == {"query": question}
+    assert [doc.metadata["path"] for doc in retrieval["outputs"]["documents"]] == [
+        "/skills/system/document-planning/SKILL.md"
+    ]
+    llms = [run for run in runs if run["run_type"] == "llm"]
+    assert len(llms) == 2
+    assert retrieval["end_time"] <= min(run["start_time"] for run in llms)
+
+
 @pytest.mark.usefixtures("progressive_chat")
 def test_loaded_toolkits_do_not_leak_between_tasks(monkeypatch):
     install_model(

@@ -1,6 +1,9 @@
 ---
 name: document-planning
-description: Retrouver et interpréter une semaine d’entraînement dans un document joint, notamment un tableur, avant de préparer son import.
+description: Consulter et interpréter un planning d’entraînement joint, notamment un tableur, pour un jour ou une semaine ; préparer son import seulement sur demande.
+metadata:
+  preload-requires: attachments
+  preload-keywords: document documents fichier fichiers joint jointe joints jointes pièce pièces tableur excel xlsx pdf planning programme prépa préparation plan import importer
 ---
 
 # Lire un planning joint
@@ -21,7 +24,8 @@ description: Retrouver et interpréter une semaine d’entraînement dans un doc
 5. Assemble les séances de la période avec leurs références de source. Une
    cellule vide ne permet pas d’inventer une séance. Si les données indispensables
    manquent, indique précisément lesquelles et où la lecture s’arrête.
-6. Suis les règles du toolkit planning pour préparer l’import et présenter son
-   aperçu. Distingue toujours ce qui a été lu, proposé et réellement enregistré.
+6. Si l’athlète demande un import, suis les règles du toolkit planning pour le
+   préparer et présenter son aperçu. Une demande de lecture seule n’est pas une
+   demande d’import. Distingue ce qui a été lu, proposé et réellement enregistré.
 
 Ce skill décrit une méthode ; il n’accorde aucun outil ni aucune permission.
