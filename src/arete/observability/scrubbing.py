@@ -12,6 +12,15 @@ from typing import Any
 
 from langchain_core.messages import BaseMessage
 
+from arete.services.athlete_facts import FACTS_HEADING
+from arete.services.journal import JOURNAL_HEADING
+
+# Both headings mark where per-athlete data starts in the system prompt; the
+# complete-request guard lets the context builder append sections after
+# either one (attachments, page, surface, retrieved memory passages), so
+# redacting from the earliest heading onward catches all of them too.
+PROMPT_SENSITIVE_HEADINGS = (FACTS_HEADING, JOURNAL_HEADING)
+
 # A structure deeper or larger than this is unexpected for a coaching run;
 # redact it wholesale rather than walk it unscrubbed.
 WALK_DEPTH_MAX = 20
@@ -73,11 +82,26 @@ def _redact_tool_call(call: dict) -> dict:
     return call
 
 
+def _redact_prompt_sections(text: str) -> str:
+    """Cut a system prompt at its earliest per-athlete section, if any.
+
+    The context builder appends facts, journal, attachments, page, surface
+    and retrieved memory passages after whichever of these headings comes
+    first, in that fixed order, so cutting there also drops everything after.
+    """
+    starts = [i for i in (text.find(h) for h in PROMPT_SENSITIVE_HEADINGS) if i != -1]
+    if not starts:
+        return text
+    return text[: min(starts)] + _redacted("personal_context")
+
+
 def _scrubbed_message(value: Any) -> BaseMessage | None:
     """A redacted copy of a live message, or None if it needs no change.
 
-    Covers a ToolMessage result (content keyed by the tool's own name) and an
-    AIMessage requesting a sensitive tool (its own tool_calls, not .name).
+    Covers a ToolMessage result (content keyed by the tool's own name), an
+    AIMessage requesting a sensitive tool (its own tool_calls, not .name),
+    and a system/human message whose content carries the injected prompt
+    sections above.
     """
     if not isinstance(value, BaseMessage):
         return None
@@ -87,6 +111,10 @@ def _scrubbed_message(value: Any) -> BaseMessage | None:
     redacted_calls = [_redact_tool_call(call) for call in tool_calls]
     if redacted_calls != tool_calls:
         return value.model_copy(update={"tool_calls": redacted_calls})
+    if isinstance(value.content, str):
+        redacted_content = _redact_prompt_sections(value.content)
+        if redacted_content != value.content:
+            return value.model_copy(update={"content": redacted_content})
     return None
 
 
@@ -122,6 +150,8 @@ def _walk(value: Any, *, depth: int, nodes_left: list[int]) -> Any:
         return type(value)(
             _walk(item, depth=depth + 1, nodes_left=nodes_left) for item in value
         )
+    if isinstance(value, str):
+        return _redact_prompt_sections(value)
     return value
 
 

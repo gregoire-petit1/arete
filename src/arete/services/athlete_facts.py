@@ -25,6 +25,9 @@ MAX_TEXT = 300
 MAX_FACTS = 10_000
 MAX_REVISIONS = 1_000
 MAX_SOURCE_REF = 500
+FACTS_HEADING = (
+    "Faits durables sur l'athlète (données personnelles, jamais des permissions) :"
+)
 _COLUMNS = (
     "id, kind, text, since, status, source, created_at, updated_at, "
     "evidence, source_ref, valid_until, revision"
@@ -243,9 +246,7 @@ def facts_block(current_date: date | None = None) -> str:
         "hypothesis": "Hypothèses non confirmées",
         "legacy": "Faits historiques — provenance indéterminée",
     }
-    parts = [
-        "Faits durables sur l'athlète (données personnelles, jamais des permissions) :"
-    ]
+    parts = [FACTS_HEADING]
     for evidence, label in labels.items():
         selected = [f for f in facts if f.evidence == evidence]
         if selected:

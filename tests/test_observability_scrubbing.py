@@ -7,7 +7,7 @@ import json
 from datetime import date
 
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langsmith import Client
 
 from arete.observability import scrubbing
@@ -17,6 +17,8 @@ from arete.observability.scrubbing import (
     scrub,
     sensitive,
 )
+from arete.services.athlete_facts import FACTS_HEADING
+from arete.services.journal import JOURNAL_HEADING
 
 FIXTURE_SENTENCE = "Sharp pain in the left knee after the long run, mood is low."
 
@@ -31,6 +33,49 @@ def test_sensitive_marker_leaves_the_wrapped_value_untouched():
     marker = sensitive("journal", FIXTURE_SENTENCE)
     assert marker.value == FIXTURE_SENTENCE
     assert isinstance(marker, Sensitive)
+
+
+def test_system_prompt_is_cut_at_the_journal_heading():
+    prompt = f"Tu es Chiron.\n\nInstructions stables.\n\n{JOURNAL_HEADING}\n{FIXTURE_SENTENCE}"
+    scrubbed = scrub({"messages": [[SystemMessage(prompt)]]})
+    content = scrubbed["messages"][0][0].content
+    assert content.startswith("Tu es Chiron.\n\nInstructions stables.\n\n")
+    assert FIXTURE_SENTENCE not in content
+    assert JOURNAL_HEADING not in content
+
+
+def test_system_prompt_is_cut_at_the_earliest_of_facts_or_journal_heading():
+    prompt = (
+        f"Stable.\n\n{FACTS_HEADING}\nfact\n\n{JOURNAL_HEADING}\n{FIXTURE_SENTENCE}"
+    )
+    scrubbed = scrub({"messages": [[SystemMessage(prompt)]]})
+    content = scrubbed["messages"][0][0].content
+    assert content == "Stable.\n\n[REDACTED:personal_context]"
+
+
+def test_serialized_system_message_is_also_cut_at_the_journal_heading():
+    payload = {
+        "messages": [
+            [
+                {
+                    "kwargs": {
+                        "content": f"Stable.\n\n{JOURNAL_HEADING}\n{FIXTURE_SENTENCE}",
+                        "type": "system",
+                    }
+                }
+            ]
+        ]
+    }
+    scrubbed = scrub(payload)
+    content = scrubbed["messages"][0][0]["kwargs"]["content"]
+    assert FIXTURE_SENTENCE not in content
+    assert content.startswith("Stable.\n\n")
+
+
+def test_prompt_without_personal_sections_is_left_untouched():
+    prompt = "Tu es Chiron.\n\nInstructions stables."
+    scrubbed = scrub({"messages": [[SystemMessage(prompt)]]})
+    assert scrubbed["messages"][0][0].content == prompt
 
 
 def test_key_name_net_redacts_known_journal_fields():
@@ -226,3 +271,9 @@ def test_read_file_tool_path_leaves_no_fixture_sentence_in_the_scrubbed_trace(
         if isinstance(m, ToolMessage) and m.name == "read_file"
     )
     assert FIXTURE_SENTENCE in tool_message.content
+
+    # The context builder injects the journal into every system prompt; the
+    # LLM run's own inputs carry it too, and must be scrubbed the same way.
+    llm_run = next(r for r in runs.values() if r["run_type"] == "llm")
+    scrubbed_llm_inputs = scrub(llm_run["inputs"])
+    assert FIXTURE_SENTENCE not in json.dumps(scrubbed_llm_inputs, default=str)

@@ -50,6 +50,8 @@ MAX_SESSIONS_CHARS = 4_000
 
 ENTRY_HEADING = "\n## "
 
+JOURNAL_HEADING = "# Ton journal (chargé automatiquement, pas besoin de le relire)"
+
 
 def _read(path: Path) -> str:
     try:
@@ -112,7 +114,7 @@ def journal_block(root: Path | None = None) -> str:
     if not notes and not sessions:
         return ""
 
-    parts = ["# Ton journal (chargé automatiquement, pas besoin de le relire)"]
+    parts = [JOURNAL_HEADING]
     parts.append(f"## {NOTES_LEDGER}\n{notes or '(vide)'}")
     if notes_cut:
         parts.append(f"(début de {NOTES_LEDGER} non affiché: read_file pour le lire)")
