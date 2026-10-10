@@ -63,14 +63,15 @@ test: .venv ## pytest
 	uv run pytest tests/ --tb=short
 
 lint: .venv frontend/node_modules ## ruff + eslint
-	uv run ruff check src tests
-	uv run ruff format --check src tests
+	uv run ruff check src tests scripts/ci
+	uv run ruff format --check src tests scripts/ci
 	npm --prefix frontend run lint
 
 typecheck: .venv ## mypy
 	uv run mypy src/arete
 
-check: lint typecheck test ## Everything CI runs, frontend build included
+check: lint typecheck test ## Static checks, unit tests and frontend build (browser tests separate)
+	uv run python -m unittest discover -s scripts/ci -p 'test_*.py'
 	node --test scripts/openwiki/transport.test.mjs
 	npm --prefix frontend test
 	npm --prefix frontend run build

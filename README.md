@@ -26,7 +26,20 @@ git clone https://github.com/gregoire-petit1/arete.git && cd arete
 make dev        # http://localhost:5173 (app), http://127.0.0.1:8000/docs (API)
 ```
 
-`make dev` installs what is missing (`uv sync`, `npm ci`, `.env` copied from `.env.example`; edit it as needed), then runs the API with auto-reload and the Vite dev server with hot module replacement. Ctrl-C stops both; if either exits, the other is stopped too. Ports: `make dev BACKEND_PORT=8002 FRONTEND_PORT=5174`. `make backend` / `make frontend` run one side alone, `make check` runs what CI runs, `make` lists every target.
+`make dev` installs what is missing (`uv sync`, `npm ci`, `.env` copied from `.env.example`; edit it as needed), then runs the API with auto-reload and the Vite dev server with hot module replacement. Ctrl-C stops both; if either exits, the other is stopped too. Ports: `make dev BACKEND_PORT=8002 FRONTEND_PORT=5174`. `make backend` / `make frontend` run one side alone, `make check` runs static checks, unit tests and the frontend build, `make` lists every target.
+
+CI runs once per PR update against the merge into `main`, plus a full run on
+`main`. Before opening a PR, use `make check` or manually dispatch **CI** in
+GitHub Actions. The required check names stay `lint`, `test`, `typecheck` and
+`frontend`; unaffected jobs are skipped. Python changes run the backend suites,
+frontend changes run lint, unit tests, the production build and browser tests,
+and OpenWiki transport changes run its Node tests. Documentation-only PRs run
+only the lightweight CI selector tests and do not deploy a preview. Test-only
+changes also skip preview deployment, while keeping their suites. Shared or
+unknown paths run every suite. The selector compares the tested merge with its
+first parent, including deleted and renamed paths. Backend tests use two isolated
+workers in CI; local `make test` stays serial. Run browser tests locally with
+`npm --prefix frontend run test:browser` after installing Playwright Chromium.
 
 The Vite dev server proxies `/api/*` to the backend. The schema is (re)initialized on every backend start; scripts that run without the API need `uv run python -c "from arete.dataio.init_duckdb import main; main()"` first.
 
